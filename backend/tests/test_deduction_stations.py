@@ -171,6 +171,17 @@ class CatalogTests(unittest.TestCase):
         self.assertNotIn('31天',result['scope_note'])
         self.assertTrue(any('1 个站点' in warning for warning in result['warnings']))
 
+    def test_lighthouse_sorts_lanorange_cities_first(self):
+        rows=[{'siteId':'001','siteName':'佛山站','cityName':'佛山市','cityId':'0757'},
+              {'siteId':'002','siteName':'深圳站','cityName':'深圳市','cityId':'0755'},
+              {'siteId':'003','siteName':'中山站','cityName':'中山市','cityId':'0760'},
+              {'siteId':'004','siteName':'广州站','cityName':'广州市','cityId':'020'}]
+        with patch.object(stations,'_station_rows',return_value=rows):
+            result=stations.catalog('xiaoxiang')
+        self.assertEqual([item['name'] for item in result['cities']],['广州市','深圳市','中山市','佛山市'])
+        self.assertEqual([item['city'] for item in result['stations']],['广州市','深圳市','中山市','佛山市'])
+
+
     def test_lighthouse_missing_names_does_not_fabricate_station_names(self):
         with patch.object(stations,'_station_rows',return_value=[{'siteId':'1'}]), self.assertRaises(HTTPException) as caught:
             stations.catalog('xiaoxiang')

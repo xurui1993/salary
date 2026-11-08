@@ -264,7 +264,11 @@ def _xiaoxiang(city, version):
                          'poi_id': _id(row['poiId']) if row.get('poiId') is not None else '',
                          'management_city': _text(row['managementCityName']) if row.get('managementCityName') else '',
                          'management_city_id': _id(row['managementCityId']) if row.get('managementCityId') is not None else ''})
-    cities = sorted([{'id': code, 'name': name} for code, name in cities.items()], key=lambda item: (item['name'], item['id']))
+    from lanorange_catalog import SELECTABLE_CITIES
+    cities = sorted(
+        [{'id': code, 'name': name} for code, name in cities.items()],
+        key=lambda item: (0 if item['name'].rstrip('市') in SELECTABLE_CITIES else 1, item['name'], item['id']),
+    )
     warnings = []
     if missing:
         warnings.append(f'{missing} 个站点缺少名称或城市，未列入可选项；可暂用手动维护。')
@@ -275,7 +279,7 @@ def _xiaoxiang(city, version):
     if city:
         chosen = _choose_city(cities, city)
         stations = [item for item in stations if item['city_id'] == chosen['id']]
-    return {**context, 'cities': cities, 'stations': sorted(stations, key=lambda item: (item['city'], item['name'], item['id'])),
+    return {**context, 'cities': cities, 'stations': sorted(stations, key=lambda item: (0 if item['city'].rstrip('市') in SELECTABLE_CITIES else 1, item['city'], item['name'], item['id'])),
             'scope_note': '当前灯塔账号及合作商权限内的站点目录；城市使用后台业务城市，管理城市另行保留。',
             'warnings': warnings}
 

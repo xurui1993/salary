@@ -1,0 +1,2 @@
+// @ts-nocheck
+var __defProp=Object.defineProperty;var __name=(target,value)=>__defProp(target,"name",{value,configurable:true});function stationFilterChoices(stations: any,city?: any): any[]{const rows=stations.filter((s: any)=>!city||s.city===city);return rows.map(s=>({...s,ambiguous:rows.filter(other=>other.name===s.name).length>1,label:`${s.name} \xB7 ${s.city} \xB7 \u7F16\u53F7 ${s.id}`}))}__name(stationFilterChoices,"stationFilterChoices");export{stationFilterChoices};

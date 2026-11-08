@@ -1,1 +1,158 @@
 @import "tailwindcss";
+
+/* 1. Remove outer double-card wrapper nesting on the data collection workbench */
+.wb-task-form.wb-download-workbench,
+.wb-download-main {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+
+.wb-download-main {
+  gap: 12px !important;
+}
+
+/* 2. Refined step cards & compact vertical density so 01 + 02 + 03 fit in one viewport */
+.wb-step-card {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 14px !important;
+  padding: 15px 18px !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03) !important;
+}
+
+.wb-step-card-header {
+  margin-bottom: 10px !important;
+}
+
+/* 3. 6-column compact grid for 01 处理城市 and 02 处理月份 */
+.wb-inline-city-grid {
+  display: grid !important;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+}
+
+@media (max-width: 1240px) {
+  .wb-inline-city-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .wb-inline-city-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+.wb-inline-city-chip {
+  min-height: 35px !important;
+  padding: 5px 10px !important;
+  border-radius: 9px !important;
+  font-size: 12.5px !important;
+}
+
+.wb-city-count-note {
+  margin-top: 8px !important;
+  padding-top: 7px !important;
+}
+
+.wb-date-rule-bar {
+  margin-top: 9px !important;
+  padding: 7px 12px !important;
+  border-radius: 9px !important;
+}
+
+/* 4. Unified header action buttons across 01, 02, 03 and right execution rail */
+.wb-inline-city-toolbar,
+.wb-city-preset-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wb-city-preset-btn,
+.wb-compact-clear-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  min-height: 28px !important;
+  padding: 4px 11px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  line-height: 1.4 !important;
+  color: #475569 !important;
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 8px !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  white-space: nowrap !important;
+  box-shadow: none !important;
+}
+
+.wb-city-preset-btn:hover:not(:disabled),
+.wb-compact-clear-btn:hover:not(:disabled) {
+  color: #0369a1 !important;
+  background: #f0f9ff !important;
+  border-color: #bae6fd !important;
+}
+
+.wb-city-preset-btn:disabled,
+.wb-compact-clear-btn:disabled {
+  opacity: 0.55 !important;
+  cursor: not-allowed !important;
+}
+
+/* 5. Consistent 03 dataset card heights & 2-line description clamping */
+.wb-dataset-card {
+  padding: 9px 12px !important;
+  border-radius: 10px !important;
+}
+
+.wb-dataset-desc {
+  display: -webkit-box !important;
+  -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
+  overflow: hidden !important;
+  white-space: normal !important;
+  line-height: 1.45 !important;
+  margin-top: 3px !important;
+}
+
+/* 6. Cross-module visual consistency (专项报表, 薪资核算, 价格审批, 任务中心, 扣款规则, 模板中心) */
+.rb-shell,
+.pq-upload,
+.pq-queue,
+.pq-detail,
+.wb-panel,
+.wb-compact-rail-top,
+.wb-compact-rail-bottom {
+  border-color: #e2e8f0 !important;
+  border-radius: 14px !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03) !important;
+}
+
+.wb-button {
+  border-radius: 8px !important;
+  border-color: #e2e8f0 !important;
+  font-weight: 500 !important;
+  transition: all 0.15s ease !important;
+}
+
+.wb-button:hover:not(:disabled) {
+  border-color: #bae6fd !important;
+  background: #f0f9ff !important;
+  color: #0369a1 !important;
+}
+
+.pq-table th,
+.wb-table th {
+  background: #f8fafc !important;
+  color: #475569 !important;
+  font-weight: 600 !important;
+  border-bottom-color: #e2e8f0 !important;
+}
+
