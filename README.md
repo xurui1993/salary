@@ -1,11 +1,15 @@
-<div align="center">
+# 薪酬工作台
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+先解压，再双击“启动系统.cmd”。首次运行会安装依赖并构建程序，启动成功后访问 http://localhost:3000/。
 
-  <h1>Built with AI Studio</h2>
+需要 Windows、Node.js 24 或更新版本、Python 3.11 或更新版本和 Microsoft Edge。首次安装依赖需要联网。
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+系统只有一个共享工作台；同一个局域网内的同事通过本机 IP 访问 http://本机IP:3000/，共用一套业务数据与平台认证状态。
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+目录：app 放完整源码、测试与必要业务模板，docs 放本版说明和校验信息。构建、依赖、账号和运行资料在使用时生成，均位于 app 内，不混入源码包。
 
-</div>
+本包没有复制原机业务资料、扣款配置、账号数据库及平台会话；原机资料留在原运行目录。公司电脑需要完成自己的平台认证和公司 MOA 合规检查。
+
+本次真实验证：官方窗口已通过灯塔登录；知了看板停在公司 MOA 合规拦截，按用户确认留到公司电脑完成，未标为两段均成功。内部短信表单曾被官方安全校验拒绝，仍需在公司环境验收；没有跳过官方验证。
+
+维护操作和验证结果见 docs。不要覆盖正在运行的旧目录；新目录首次运行不能自动继承原机数据和登录状态。

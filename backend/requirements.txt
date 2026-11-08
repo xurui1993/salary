@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+pandas<3
+polars
+fastexcel
+openpyxl
+python-calamine
+lxml
+psutil
+xlsxwriter
+requests
+tqdm
+python-multipart

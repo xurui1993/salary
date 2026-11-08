@@ -1,0 +1,6 @@
+{
+  "name": "兼职运力与薪资结算调度中心",
+  "description": "全景兼职运力核算、风神/美团/饿了么数据自动上拉与配送薪酬调度工作台",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

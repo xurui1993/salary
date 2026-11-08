@@ -1,0 +1,2354 @@
+{
+  "format": "source-only",
+  "version": 2,
+  "revision": "bcaa81104aa1d8258cc97341316612d19e28ddd6",
+  "created_at": "2026-11-07T10:32:09.378538+00:00",
+  "root_entries": [
+    "启动系统.cmd",
+    "README.md",
+    "app/",
+    "docs/"
+  ],
+  "excluded": [
+    "dependencies",
+    "builds",
+    "business data",
+    "uploads and results",
+    "platform sessions",
+    "history and logs",
+    "temporary tests",
+    "private environment files"
+  ],
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 1464,
+      "sha256": "99465ed877ae015051d04553b502c4cddd07be50aa533089c26e7da78f2c6827"
+    },
+    {
+      "path": "app/.env.example",
+      "bytes": 454,
+      "sha256": "997fd4cabe96dd692f1dde691a3ea157e86d97c577dfa7198690a91169278bad"
+    },
+    {
+      "path": "app/.gitignore",
+      "bytes": 244,
+      "sha256": "14bcab05a0c01ecc08e776553236426ef27ebd2944f4e434600e841e22a3208a"
+    },
+    {
+      "path": "app/README.md",
+      "bytes": 1294,
+      "sha256": "e7adcaa187f29f7e669dc39f722a26e178b2f46f4ff4b11dde6001e1de33e315"
+    },
+    {
+      "path": "app/backend/.env.example",
+      "bytes": 2503,
+      "sha256": "c55701a52a1c79ba4f40c850fd041d6633b172e468c4f216715d94088876a568"
+    },
+    {
+      "path": "app/backend/abnormal_followup.py",
+      "bytes": 89540,
+      "sha256": "e772524ae93ba825ff990aa0d2609c9167219bbe5987079b6092b986cbb1758c"
+    },
+    {
+      "path": "app/backend/abnormal_riders.py",
+      "bytes": 30084,
+      "sha256": "15b871b94e60fe973b3b8063eb6e6753195c12d9528736311fa8720fd3333297"
+    },
+    {
+      "path": "app/backend/assets/daily_prices_template.xlsx",
+      "bytes": 5319,
+      "sha256": "950e61f0e670b880f15a3681260c2e85098f64afa03a68a93be836e2c454554c"
+    },
+    {
+      "path": "app/backend/atomic_files.py",
+      "bytes": 484,
+      "sha256": "17d5e3a930b07b3c6273d38c938a1664ca98e327a53d56af56c62adef21de88d"
+    },
+    {
+      "path": "app/backend/auth_browser_guard.py",
+      "bytes": 4210,
+      "sha256": "ede4d43e720e38cd7469ef7e138a48d01d46a5fd92b66b2b667e25f087557177"
+    },
+    {
+      "path": "app/backend/auth_browser_runtime.py",
+      "bytes": 3626,
+      "sha256": "280a5472dee721a31465a91bceb16c3603da080ff660d9781a39c3439ea3f3ef"
+    },
+    {
+      "path": "app/backend/auth_captcha_ocr.ps1",
+      "bytes": 3253,
+      "sha256": "b553fc36718ce71dba5ce60eccd1e63640de298e44014e57df40b90e06220b2a"
+    },
+    {
+      "path": "app/backend/auth_challenge.py",
+      "bytes": 2892,
+      "sha256": "bfb266d4b6e9295f62a1edd3c1fa42cf3e9210216e2ad3441b40a5686aec948e"
+    },
+    {
+      "path": "app/backend/auth_diagnostics.py",
+      "bytes": 1720,
+      "sha256": "18367d1e6e4cce9c59d9a2b249fbf2ff0097ad97afba9da1110969940abe61b2"
+    },
+    {
+      "path": "app/backend/auth_math_captcha.py",
+      "bytes": 5316,
+      "sha256": "158e5f15ac0f01534514f722155b1b799e4fea5d2c936fe37a50fc668d6ee9b1"
+    },
+    {
+      "path": "app/backend/auth_preflight.py",
+      "bytes": 2997,
+      "sha256": "8e5eee6f88b5b700cdfd5f34369290c4cfd9ee86765437ceb671ceaa29e21706"
+    },
+    {
+      "path": "app/backend/binding_download.py",
+      "bytes": 13614,
+      "sha256": "a5c6bc7ea2f178f3c49bf70f00168250ceca1966cb43667b31bb295272c2bc32"
+    },
+    {
+      "path": "app/backend/binding_recovery.py",
+      "bytes": 4045,
+      "sha256": "16400277c137c1166396f8e11e26012b4628dc97bb747a4c7d58618b9d55d0b5"
+    },
+    {
+      "path": "app/backend/binding_source_auth.py",
+      "bytes": 58929,
+      "sha256": "e1a3ff7847938b960b07b4a0c8ea311eb029c042c17c89d09732eab67a2e36c8"
+    },
+    {
+      "path": "app/backend/binding_sources_http.py",
+      "bytes": 11164,
+      "sha256": "22db2d1ece7685b1ba0ab7834f337eaa654bb233397cc93c1e4b7f349ffa836b"
+    },
+    {
+      "path": "app/backend/binding_summary.py",
+      "bytes": 19038,
+      "sha256": "dec199af2fe247bb9d4a034901e414cfe91b66f62e2a5e66fffaab6cf5e97f71"
+    },
+    {
+      "path": "app/backend/binding_tables.py",
+      "bytes": 5369,
+      "sha256": "32e87b19009707e0b273c6ff9c2b8535bc0985ea8db52163bd46fd4f62f1ecda"
+    },
+    {
+      "path": "app/backend/check_live_environment.py",
+      "bytes": 1968,
+      "sha256": "c07f96d3f6b403cfb9f399c6ab4d10c28a136f8d14297a6385b1092c2599421a"
+    },
+    {
+      "path": "app/backend/collection_errors.py",
+      "bytes": 7018,
+      "sha256": "116616fdc955a7a353157c4c86461414387ddf961d37f6d97a0f8e14baa6550f"
+    },
+    {
+      "path": "app/backend/deduction_confirmation.py",
+      "bytes": 27194,
+      "sha256": "a3ff8e27ffec3b308ae1b6209265a914dfcaabe0e8ab9f806bb58bbf4a0076e5"
+    },
+    {
+      "path": "app/backend/deduction_stations.py",
+      "bytes": 16824,
+      "sha256": "241579ed829bee94fe6357cf1fc3d1b9893246cb30aa368e73a52a9697c7043c"
+    },
+    {
+      "path": "app/backend/delivery_store.py",
+      "bytes": 18250,
+      "sha256": "b7b3b5975052451d1dbbc94b429f29a67ac3008883b68ea8c91d515f2330a4f6"
+    },
+    {
+      "path": "app/backend/desktop_auth_page.py",
+      "bytes": 15483,
+      "sha256": "6b3e640cfd913ddaeb0e8faf722ce8d5e517d5905108f404762979d028d05405"
+    },
+    {
+      "path": "app/backend/download_account_routes.py",
+      "bytes": 172,
+      "sha256": "dcf997c40c316fa8f527835fae95ff701888fec19bce6cb9dbdb972d803eb7e0"
+    },
+    {
+      "path": "app/backend/download_accounts.py",
+      "bytes": 15613,
+      "sha256": "0f39b8044759a94034a9e56eb22ea371c90a768310e13312fdcd8e5aac69e9ad"
+    },
+    {
+      "path": "app/backend/download_archive.py",
+      "bytes": 20360,
+      "sha256": "245f1af5aefd4889f22cb911601ce90f965dbb15fee889e935fca361bd71771d"
+    },
+    {
+      "path": "app/backend/download_jobs.py",
+      "bytes": 110217,
+      "sha256": "9176469bb603752384765f38b24ea43bbd292fb9d82c7d9148f9acaddeef7c8b"
+    },
+    {
+      "path": "app/backend/download_path_registry.py",
+      "bytes": 2261,
+      "sha256": "cc5d7d0fce3b372d8890172be9af3bd3e3722828df98c729da5a6c8fc7fa1ae0"
+    },
+    {
+      "path": "app/backend/download_pipeline.py",
+      "bytes": 2128,
+      "sha256": "aea795aa171953c07110c4d7c24b1b5105739361049ef0709945fff3d2d5f9b8"
+    },
+    {
+      "path": "app/backend/download_records.py",
+      "bytes": 14417,
+      "sha256": "f0292a78c451bd6621bafb6bb7b13ade38da470424c6119b12c00cebcf2d5c5d"
+    },
+    {
+      "path": "app/backend/download_rider_recovery.py",
+      "bytes": 17966,
+      "sha256": "a5fa0bebbadefbcae78e04b8db42d7e328123c9763334f82647b8899471b6dca"
+    },
+    {
+      "path": "app/backend/download_rider_sources.py",
+      "bytes": 23696,
+      "sha256": "79a9f5eb38c2c557ab75d365db96ebda4c96746e786afb364f9ee9d9c239b178"
+    },
+    {
+      "path": "app/backend/download_routes.py",
+      "bytes": 12543,
+      "sha256": "0067f8ce60045ca73842f845be17c6da4e7a87aea27f44bc498d4d9c53691039"
+    },
+    {
+      "path": "app/backend/download_service.py",
+      "bytes": 101068,
+      "sha256": "08c993f1a2d3131e2a561af4c1e6b9f1dffa089afc680c72d145643abf067095"
+    },
+    {
+      "path": "app/backend/download_single_instance.py",
+      "bytes": 1476,
+      "sha256": "ad616b739a3b0517f218db6b006d3f71b7523116d20e3016441aa23b2d2ab7a0"
+    },
+    {
+      "path": "app/backend/excel_styles.py",
+      "bytes": 2138,
+      "sha256": "9610b21d9f33c31e8ddbdb145ae852860f700405ebba4b7cf8561abc68df73ef"
+    },
+    {
+      "path": "app/backend/fengshen_auth.py",
+      "bytes": 29968,
+      "sha256": "7282e30765b4ce77c1e851113712b53c895fcbeba19d1242cda8616349aac2c9"
+    },
+    {
+      "path": "app/backend/fengshen_auth_routes.py",
+      "bytes": 7295,
+      "sha256": "e8386056138aed9b6978d34d1d49e57c88da4a7d5b99a830ab5909d12ec751cd"
+    },
+    {
+      "path": "app/backend/fengshen_bill.profile.example.json",
+      "bytes": 3723,
+      "sha256": "ef0f9c3d9f529afda3406390336c96a9658ba42cc6c7b8c1e4408d56d98cf6d3"
+    },
+    {
+      "path": "app/backend/fengshen_bill.py",
+      "bytes": 122606,
+      "sha256": "028be3ebf04743289bf948224db399f2ee8a2bd212c1f273f09e1ef2dc8e469b"
+    },
+    {
+      "path": "app/backend/fengshen_cities.json",
+      "bytes": 255,
+      "sha256": "b92c755c8e604b86e7b2d4893a322d3cc4267371ffada8a21d5bdb3a852e4c0f"
+    },
+    {
+      "path": "app/backend/fengshen_city_catalog.py",
+      "bytes": 6215,
+      "sha256": "d6b2ca0e17df595cba34c12f57099ae9f76a2cb95758998ae8263490a3fab492"
+    },
+    {
+      "path": "app/backend/fengshen_http.py",
+      "bytes": 22289,
+      "sha256": "2d54ad0907c00fd30c033b4ed2d9d36b863156b115b0d7249b37ca029d9f178b"
+    },
+    {
+      "path": "app/backend/fengshen_http_auth.py",
+      "bytes": 20189,
+      "sha256": "b92fda7bb918f64e00ce4e8ac44d32fef8298ccf85c76f2a6390b6bc5d2f64f2"
+    },
+    {
+      "path": "app/backend/fengshen_http_daily.py",
+      "bytes": 12505,
+      "sha256": "f038b8caceb95491730d54ebefc85091a920148f0a0cd9ef3810c74e24e673a8"
+    },
+    {
+      "path": "app/backend/fengshen_http_reports.py",
+      "bytes": 30335,
+      "sha256": "546dfaaa4df7f76d9408299a4d88cdf525577fd1201288c44fc90530aeaaa192"
+    },
+    {
+      "path": "app/backend/fengshen_http_riders.py",
+      "bytes": 33764,
+      "sha256": "be4c23a3aacd1f4832adc340661b921b59bed5c6dba2edacd8855dacefd20457"
+    },
+    {
+      "path": "app/backend/fengshen_merchant_exports.py",
+      "bytes": 25522,
+      "sha256": "e1e9c8847e2f0142cb31be8aa29bb43fdef6e7430a14f3791d3df7064b654f23"
+    },
+    {
+      "path": "app/backend/fengshen_merchant_protocol.py",
+      "bytes": 722,
+      "sha256": "4d992417e63d191e5e875b2565671b0c5bceb1e09e3931986739acd50c7ae9a1"
+    },
+    {
+      "path": "app/backend/fengshen_orders.py",
+      "bytes": 35915,
+      "sha256": "6976da54836fc1b93797af52380bbee8045edd366bddf03e0f647b2d7310ebc4"
+    },
+    {
+      "path": "app/backend/fengshen_processor.py",
+      "bytes": 278065,
+      "sha256": "ed1bc1ac2b0bfe504db7d71b55fbf94f010fd76c85d6855b052ecfebc329f5e7"
+    },
+    {
+      "path": "app/backend/fengshen_rider_bill.profile.example.json",
+      "bytes": 2092,
+      "sha256": "e90326275d35583d2484203e62928f19572d527e83475e4b8a8ecba171bb11d2"
+    },
+    {
+      "path": "app/backend/followup_workbook.py",
+      "bytes": 5801,
+      "sha256": "2d16b86fbca55857ddbb16cada633c5e1d9f32ad7a6b5bc9d785dd87244994e4"
+    },
+    {
+      "path": "app/backend/function_availability.py",
+      "bytes": 720,
+      "sha256": "6a9094bdef7ff71275da589618ce2a1f7932e4f7741d86ee1a8525b27f3ba9a7"
+    },
+    {
+      "path": "app/backend/generation_performance.py",
+      "bytes": 15525,
+      "sha256": "a6736977d2ac7be7d41b30975b4b6c8467c51cb7c266a4b250ec59d736e968c7"
+    },
+    {
+      "path": "app/backend/hashlib_compat.py",
+      "bytes": 653,
+      "sha256": "a8eca7e84b3d84ad5228465542d9712476917fb58228f8bf8cb66d40efcfe99a"
+    },
+    {
+      "path": "app/backend/invitation_inspection.py",
+      "bytes": 4336,
+      "sha256": "f53e5143a0318c5d0baa317a4b5dcbfe433d421d060f1d56b99b32bdd91899b1"
+    },
+    {
+      "path": "app/backend/invitation_summary.py",
+      "bytes": 3408,
+      "sha256": "d74422d121c1048203677436b188679012fafa36b9f0e204fd886439aab0c796"
+    },
+    {
+      "path": "app/backend/issue_orders.py",
+      "bytes": 45176,
+      "sha256": "72896d97ed2f32aa78e55c5f5b16b3f92fd80edf38bab94a5bb4ce1ed743ce8f"
+    },
+    {
+      "path": "app/backend/lanorange_approval_client.py",
+      "bytes": 13192,
+      "sha256": "102511c1a188540de376bac5ccb502ba04bed7af0f84d428bf90dd70249dfac4"
+    },
+    {
+      "path": "app/backend/lanorange_approvals.py",
+      "bytes": 29163,
+      "sha256": "940a7033c3d5c1a85e3cd9d2ca8b42fae5e99c6e7b5389fa6ed932e48b3698c0"
+    },
+    {
+      "path": "app/backend/lanorange_catalog.py",
+      "bytes": 3947,
+      "sha256": "323fa05cc8f6a159a34552b2a60c6eb4748fbbefa9a695b8f6d86321ef8e99f5"
+    },
+    {
+      "path": "app/backend/lanorange_download.py",
+      "bytes": 14593,
+      "sha256": "21bf88408b59b40e91058d1e1dc827d3d5b157b13024a719aeb3823180eee9fc"
+    },
+    {
+      "path": "app/backend/lanorange_full.py",
+      "bytes": 17473,
+      "sha256": "7fe961df1f5fda1dbe7af973c060ebc64432f3310d09460bda6e4058359a7641"
+    },
+    {
+      "path": "app/backend/lanorange_http_export.mjs",
+      "bytes": 1631,
+      "sha256": "d8c2bc5112b950ceb22420c5dab0fe8970f99e1fb842b8eefb5c8c5b4929845e"
+    },
+    {
+      "path": "app/backend/lanorange_http_export.py",
+      "bytes": 4751,
+      "sha256": "256bacb5eafe3d949607e8581e9852dff5a9531cf7d73b8655882d2e26ef0167"
+    },
+    {
+      "path": "app/backend/lanorange_price_export.py",
+      "bytes": 20215,
+      "sha256": "98274f20991203af7e9082cec53506d885fb0b58a5000ce531fb0b5050a6b5d5"
+    },
+    {
+      "path": "app/backend/lanorange_price_options.py",
+      "bytes": 4168,
+      "sha256": "d4c8774793b3fdadad89ff75b635af144bb9c469821af4ba148f1dfd756ad91f"
+    },
+    {
+      "path": "app/backend/lanorange_summary.py",
+      "bytes": 3626,
+      "sha256": "11848cde819818519646f9718422b4513e93aeb9a2eee3eabd5c354c4d3c70d1"
+    },
+    {
+      "path": "app/backend/legacy_download_boundary.py",
+      "bytes": 5893,
+      "sha256": "875ae748b635960d7d34a11a3fefdcd6be25277a37593e7b8bc7dfdac1be08eb"
+    },
+    {
+      "path": "app/backend/main.py",
+      "bytes": 30189,
+      "sha256": "89793b90084da1b11e4ccb96ea4cde51973a6042c90a3882cd39063ec61e7d16"
+    },
+    {
+      "path": "app/backend/official_auth_trace.py",
+      "bytes": 3065,
+      "sha256": "428ec6178a3551afc8049df830f4188377f285fe52c08659e7ad9a00c375a79d"
+    },
+    {
+      "path": "app/backend/order_dates.py",
+      "bytes": 2548,
+      "sha256": "d60814811272d80c4e6ce3862cae8447eb19a682780d9d1df12a1e129ebe9735"
+    },
+    {
+      "path": "app/backend/order_metrics.py",
+      "bytes": 1189,
+      "sha256": "0908fdcc547bd593d7930bd841aca9ce80d8153560d42a89c0a3253d4e534dc0"
+    },
+    {
+      "path": "app/backend/order_pipeline.py",
+      "bytes": 20806,
+      "sha256": "4aecc4aa65ed1a9946cfe5384480467de0b62206d62457c7076ee0fc73af1567"
+    },
+    {
+      "path": "app/backend/order_sources.py",
+      "bytes": 18227,
+      "sha256": "4c617253d00cad0183299b75b9ab7db5e528b45239476d4af735323f6a6ed773"
+    },
+    {
+      "path": "app/backend/order_xlsx.py",
+      "bytes": 7221,
+      "sha256": "2f373416e44fe59fa547db2b604e6c465fa161b5fecb8b6a11b8ad515c3a99d1"
+    },
+    {
+      "path": "app/backend/parttime_source.py",
+      "bytes": 39221,
+      "sha256": "2c9ff57a317e22991cec2cfcc3f8cff47dd3c767452419c090d2e2456da5fb8c"
+    },
+    {
+      "path": "app/backend/payroll_automatic.py",
+      "bytes": 6498,
+      "sha256": "ee5b5405307d1f5512a111644cf58faa18f2b4c503cff3694bba6f68628ced24"
+    },
+    {
+      "path": "app/backend/payroll_business.py",
+      "bytes": 4700,
+      "sha256": "826dd3226842b87d16419dc9d870e7befa628b09918032d4b82f124161be3644"
+    },
+    {
+      "path": "app/backend/payroll_control.py",
+      "bytes": 3961,
+      "sha256": "3c4e09a17fa304ff6210b0cc440d388bb72cec24253f2c34481e4853a945fffb"
+    },
+    {
+      "path": "app/backend/payroll_inputs.py",
+      "bytes": 59173,
+      "sha256": "544aa2386a00c461b727fdd98f36fb0866bcf7aa17909d3cd49ec0af34d681d3"
+    },
+    {
+      "path": "app/backend/payroll_material_progress.py",
+      "bytes": 6228,
+      "sha256": "070c420bf5585b5de15a251b90f9bb3e4ce092d284957d151185cef85642c264"
+    },
+    {
+      "path": "app/backend/payroll_performance.py",
+      "bytes": 10807,
+      "sha256": "c9f2b2d94d4c4d9482eb1c639645b8ec6f0358900272a4be0f607cdec3e8264b"
+    },
+    {
+      "path": "app/backend/payroll_queue.py",
+      "bytes": 25322,
+      "sha256": "639f450afadb09a1454c5e63ae74482bb0149aee046f665ce59d7d84b7b8bc89"
+    },
+    {
+      "path": "app/backend/payroll_readable_policy.py",
+      "bytes": 7432,
+      "sha256": "292578909374eeb5c1bb31364fe5da4002e962b62397134869d12c0f40666871"
+    },
+    {
+      "path": "app/backend/payroll_review.py",
+      "bytes": 14467,
+      "sha256": "31f09b7d3eeb1ed0b3b0bca4ec2bcec232fdecfd83d0502a943468e32cd9cfe2"
+    },
+    {
+      "path": "app/backend/payroll_source_notes.py",
+      "bytes": 914,
+      "sha256": "7f709b935b7e6d9b5fe8342373144036b57a2af25915efe4988eb289067948f0"
+    },
+    {
+      "path": "app/backend/payroll_unified_download.py",
+      "bytes": 12749,
+      "sha256": "fccf07b5a1d2240079ccc122a40af2176a290b92dee114c768e76db75d10471e"
+    },
+    {
+      "path": "app/backend/platform_auth_control.py",
+      "bytes": 17232,
+      "sha256": "77794750bb9d5dd2555df875e45bbcf64917e0a5386a62f590b875b019f611e0"
+    },
+    {
+      "path": "app/backend/price_archive.py",
+      "bytes": 8864,
+      "sha256": "c45ac65a306746416cd6c30ef20b487b1b6dd5c8fde0412a7ea179d4d0de39df"
+    },
+    {
+      "path": "app/backend/price_export_workbook.py",
+      "bytes": 8683,
+      "sha256": "5475381db000e660aaaa6304a84d55986166793a3a91b7fec553beb8c7a7918d"
+    },
+    {
+      "path": "app/backend/price_matching.py",
+      "bytes": 3186,
+      "sha256": "68ac49ea4b65de7e20ee046d37664a3eb092361a2075f7922c575ccc8e16949c"
+    },
+    {
+      "path": "app/backend/processor.py",
+      "bytes": 280887,
+      "sha256": "6f7cb3f623b41c36160f570f1ed82de0b8837dbff14370beff5b29f67628d515"
+    },
+    {
+      "path": "app/backend/requirements-crawler.txt",
+      "bytes": 42,
+      "sha256": "9e59cdbfe36aee93d4a096e5fac31cc51729a7eeacb88e94f13ad17b18866e83"
+    },
+    {
+      "path": "app/backend/requirements.txt",
+      "bytes": 134,
+      "sha256": "f2ce4b2698359605b6725adb543887dfda36c6315235e5f38eae95807a67afc7"
+    },
+    {
+      "path": "app/backend/rider_archive.py",
+      "bytes": 9451,
+      "sha256": "fc025601ae2c3ef5618ebe316d109ce652a5edaacebd7691cf133344d338c6e2"
+    },
+    {
+      "path": "app/backend/rider_monthly_summary.py",
+      "bytes": 9890,
+      "sha256": "19aadf85afb6027b507310b5f7a6948d31fa483d357a66153e865bd7a159a6c4"
+    },
+    {
+      "path": "app/backend/rider_sources.py",
+      "bytes": 55323,
+      "sha256": "54e7cad3cec55d8331d00834eec14e105ae99c7db48ad0eebb13fb2a16230215"
+    },
+    {
+      "path": "app/backend/run_tests.py",
+      "bytes": 3057,
+      "sha256": "6dd3cf56457656e2dabe0c3a04c85510b1051c6d6b6c2111803d0b83a672c621"
+    },
+    {
+      "path": "app/backend/salary_bind_processor.py",
+      "bytes": 89056,
+      "sha256": "61662f8fa1f2a314dea5471f2d5c1dbbee7b2a7ac606dfec92cf574c25e9c686"
+    },
+    {
+      "path": "app/backend/salary_bind_sources.py",
+      "bytes": 18223,
+      "sha256": "313762f9cd8a04b54d738bbd94ed6f470b2a0416cf859ea5f12174f5dd028829"
+    },
+    {
+      "path": "app/backend/separation_filter.py",
+      "bytes": 8688,
+      "sha256": "91f815fed6d9ddb80e3b861e019b9f7ae4620f6113236b3a83886be1504bfecd"
+    },
+    {
+      "path": "app/backend/shangyi_sources.py",
+      "bytes": 19017,
+      "sha256": "e4053424e1c6ff565b4a11b66646d2e6f89a7e8be98b653150c0fb66e2eaf9a5"
+    },
+    {
+      "path": "app/backend/source_tables.py",
+      "bytes": 2631,
+      "sha256": "2cacd94ae452ba0fa44a43f40eec3007dc8a9c8586940888f6193cf7b46f3c23"
+    },
+    {
+      "path": "app/backend/station_associations.py",
+      "bytes": 5964,
+      "sha256": "1cb166ad10fc9d8ab2c1dc51fc57e41c8cfe4fac425008c79e7e93a835081d3f"
+    },
+    {
+      "path": "app/backend/station_city_resolution.py",
+      "bytes": 1699,
+      "sha256": "b6cc8bf7d9178e5b6771500e39aa8199d9be680d52bd3f28115edf97f6d80c3b"
+    },
+    {
+      "path": "app/backend/station_directory.py",
+      "bytes": 11339,
+      "sha256": "5798174a5d99e74e242a53f76a3b995a262d2d092b13e34cf90fad8d21d17cd8"
+    },
+    {
+      "path": "app/backend/tabular_export_workbook.py",
+      "bytes": 7548,
+      "sha256": "cdc34ee5514ce879319306835b0aa6264d5746620e190f66620884eb24b03945"
+    },
+    {
+      "path": "app/backend/task_catalog.py",
+      "bytes": 2848,
+      "sha256": "7fd8fc65ec3b356e33c7c62d6ace9720687b8ec9c245be58405123a2e20c66b2"
+    },
+    {
+      "path": "app/backend/task_center.py",
+      "bytes": 18933,
+      "sha256": "59d6d1b6729ccab482efa516f383e3377f015cfbe869ec7bc0a3d97de01a2434"
+    },
+    {
+      "path": "app/backend/tasks.py",
+      "bytes": 55771,
+      "sha256": "7ec2cd29832788a44f3c6acd2af47a738fe835c2349f6ebe01abaa764b297c1b"
+    },
+    {
+      "path": "app/backend/template_library.py",
+      "bytes": 3495,
+      "sha256": "390c5f443945624c50b6fb526a81d0f4361ec9ed1619a55fbd5687ff7aff0ff7"
+    },
+    {
+      "path": "app/backend/tests/company_reference.py",
+      "bytes": 1647,
+      "sha256": "a25150d0ea5af63d32e9dad7f49e779cf0a442598c06d2fad2d6c307ec791ed8"
+    },
+    {
+      "path": "app/backend/tests/profile_fixtures.py",
+      "bytes": 1620,
+      "sha256": "3b8f220ec87bfc01d361bddbf74a38cbe5436c2a5bb432413b84e4f2bed34c49"
+    },
+    {
+      "path": "app/backend/tests/test_abnormal_followup.py",
+      "bytes": 51076,
+      "sha256": "6d7b50b101e1f46726edbb1b674c1f6c157a7fee8074d282696d803cfb37644c"
+    },
+    {
+      "path": "app/backend/tests/test_abnormal_riders.py",
+      "bytes": 13394,
+      "sha256": "d8496d17475584214216a56f64a1b37f56e403e0f1addcfae319ef0ce928d9a1"
+    },
+    {
+      "path": "app/backend/tests/test_anomaly_performance.py",
+      "bytes": 11595,
+      "sha256": "3fef6f79a2a2187018f474eab4d3d9750b7bf675faf5684877c9b0a58b891ec6"
+    },
+    {
+      "path": "app/backend/tests/test_atomic_files.py",
+      "bytes": 2946,
+      "sha256": "55063171dba4196db99b6a3bd0dc2fbd02d2b5d73c52f73bde77ce219d1f2eed"
+    },
+    {
+      "path": "app/backend/tests/test_auth_browser_guard.py",
+      "bytes": 5217,
+      "sha256": "e51c320cb70a0ae8070addf76f332dbe5cf1a9a62156a843b8764f778854c540"
+    },
+    {
+      "path": "app/backend/tests/test_auth_challenge.py",
+      "bytes": 8208,
+      "sha256": "21c84f27cfdbe6f58efe5fdedd76d6d0251967b10e945d2b595ec6ac2ced624e"
+    },
+    {
+      "path": "app/backend/tests/test_auth_preflight.py",
+      "bytes": 11133,
+      "sha256": "b3e0b5b17df88682f8827d384e5c56ca3b5deafb45a8f2140989c1d78d51f356"
+    },
+    {
+      "path": "app/backend/tests/test_auth_recovery.py",
+      "bytes": 10795,
+      "sha256": "6860d2de90b404ad4046da6ecd4215c4d64655ce6ebf4423bc7cccf3b39b2c8d"
+    },
+    {
+      "path": "app/backend/tests/test_auth_refinement.py",
+      "bytes": 8753,
+      "sha256": "093a3466fb51cdb0056ecc61229ace6e40e9c6cdd7a2d5317018c122f2c6278d"
+    },
+    {
+      "path": "app/backend/tests/test_baize_auth_performance.py",
+      "bytes": 1697,
+      "sha256": "76b546e07d01d9ff1c89a007ea5b03758125180b09d9062b90a77097fc4b6749"
+    },
+    {
+      "path": "app/backend/tests/test_baize_standalone.py",
+      "bytes": 10253,
+      "sha256": "d054e2a60feb1f2159b5842089d382af4c6092095801db9f83970ae5d84eaad3"
+    },
+    {
+      "path": "app/backend/tests/test_binding_download.py",
+      "bytes": 21897,
+      "sha256": "63738c3e7d9269293e7454370e3502e105e7b86d2eba70643cf6a32962e2d401"
+    },
+    {
+      "path": "app/backend/tests/test_binding_performance_tuning.py",
+      "bytes": 9085,
+      "sha256": "787fc9b4a843aea01e1b464567f2088075752463cd5a83d6219a44d1eacc9a87"
+    },
+    {
+      "path": "app/backend/tests/test_binding_source_auth.py",
+      "bytes": 24714,
+      "sha256": "884f1775f3f3b50c83bbf95ee49356abc0ff3cce4129c6aec6ecbd8629593bfa"
+    },
+    {
+      "path": "app/backend/tests/test_binding_summary.py",
+      "bytes": 12272,
+      "sha256": "d484f7231a65d7499bab38ef4e31b61ea55e78b39244d82272a3c8ed838e15c1"
+    },
+    {
+      "path": "app/backend/tests/test_business_backup.py",
+      "bytes": 5421,
+      "sha256": "60daa9229bebfe28f3bc48849fbb71eca1fe7c586ac44ad8f44ee153c43a3b2d"
+    },
+    {
+      "path": "app/backend/tests/test_collection_errors.py",
+      "bytes": 6747,
+      "sha256": "e9b3ddbbba5330f6725c3bab4c3550dd3e8aa6ec8dda813603610f88de87e1f4"
+    },
+    {
+      "path": "app/backend/tests/test_collection_startup.py",
+      "bytes": 4839,
+      "sha256": "cee4e8481c5c650ad163827103c8ed90e7bfc72026eca5049bd7f755b0e870bd"
+    },
+    {
+      "path": "app/backend/tests/test_company_merge.py",
+      "bytes": 13463,
+      "sha256": "291dee7732aa174a3e9b86374a86e8b6b2716ee384f92e05cdbb465833fbf3bb"
+    },
+    {
+      "path": "app/backend/tests/test_deduction_confirmation.py",
+      "bytes": 23493,
+      "sha256": "1880710144e8d89fcb478a895bfe1f9947d97625c78cfc0898875827ae06067b"
+    },
+    {
+      "path": "app/backend/tests/test_deduction_station_route.py",
+      "bytes": 3601,
+      "sha256": "d7c1ed77ca3e3e0844132c7ec511de1e1e259826f817c450e12bc6573ed6022f"
+    },
+    {
+      "path": "app/backend/tests/test_deduction_stations.py",
+      "bytes": 15930,
+      "sha256": "1a1ac6afa6f7d8dfac700d1742924b67ec0e3381fe0261e18be93a70f279e4f4"
+    },
+    {
+      "path": "app/backend/tests/test_delivery_store.py",
+      "bytes": 16770,
+      "sha256": "eff338fe931b7690407d281aca5910a5e0acdbef626a0a175b425c340a850749"
+    },
+    {
+      "path": "app/backend/tests/test_desktop_auth_page.py",
+      "bytes": 15379,
+      "sha256": "16faff272d861b7aca190d430b10af26ad6acc501f741498deb4780ac15b0433"
+    },
+    {
+      "path": "app/backend/tests/test_download_account_http.py",
+      "bytes": 4148,
+      "sha256": "62dabc021c5c5be700c18c683ccf4f22fb797cdc6156e5ed304383ce2e92ae58"
+    },
+    {
+      "path": "app/backend/tests/test_download_accounts.py",
+      "bytes": 2876,
+      "sha256": "b8b838e5d59b1a5a524e5318e1e67b24676fa4cdcc7079a5a23afeea89823515"
+    },
+    {
+      "path": "app/backend/tests/test_download_archive.py",
+      "bytes": 12827,
+      "sha256": "c05cfab451c8b60d92ca42d88e322b282f8deb37607a6ca557f9c9b732029687"
+    },
+    {
+      "path": "app/backend/tests/test_download_http_runner.py",
+      "bytes": 3212,
+      "sha256": "dad67be91e281d64c56116a5bd800fc2412f2fb30b4aa00d22e866c2dc32472a"
+    },
+    {
+      "path": "app/backend/tests/test_download_jobs.py",
+      "bytes": 73425,
+      "sha256": "789a6707c6b6a13acbae33e3e69454d179411a3727f024b45f17786d99a4bce8"
+    },
+    {
+      "path": "app/backend/tests/test_download_records.py",
+      "bytes": 11399,
+      "sha256": "d7139be01ffb615f2c728840a6e0b1d3692e157d9785d5d64f612f5d568aaf28"
+    },
+    {
+      "path": "app/backend/tests/test_download_rider_recovery.py",
+      "bytes": 19392,
+      "sha256": "21a6f075351c6ad211ab0fe6bdaecd22f34a1d09832b84c2732040b114ac5c7d"
+    },
+    {
+      "path": "app/backend/tests/test_download_rider_sources.py",
+      "bytes": 21109,
+      "sha256": "258991b0efcf1db6fef0196776562f0247a4060b66e95d01b430ae39669afc09"
+    },
+    {
+      "path": "app/backend/tests/test_download_service.py",
+      "bytes": 77245,
+      "sha256": "f697dd23cc44188ca5a5eccecd4d145ecc09ec11542011e842ef70eaec395882"
+    },
+    {
+      "path": "app/backend/tests/test_download_workflows.py",
+      "bytes": 21662,
+      "sha256": "029e7edc55c42bd26d6cf1945b015b69472d226805d470255ee6346b7fea65bc"
+    },
+    {
+      "path": "app/backend/tests/test_fengshen_acceptance_verification.py",
+      "bytes": 3042,
+      "sha256": "1dae43f9cc8e05739682c75c4a1d3755e27cf68e2b41088114d0f8a9d120cc18"
+    },
+    {
+      "path": "app/backend/tests/test_fengshen_auth.py",
+      "bytes": 32941,
+      "sha256": "05e2cb97a1a0b21fba5b10d5e1c3424ed0a3d9825f5fc5ce81fa47b05b503633"
+    },
+    {
+      "path": "app/backend/tests/test_fengshen_auth_routes.py",
+      "bytes": 13258,
+      "sha256": "6376baf8cf830d3d332f0994be6c22865debe79361709025b9547c499a86a018"
+    },
+    {
+      "path": "app/backend/tests/test_fengshen_auto_inspection.py",
+      "bytes": 10297,
+      "sha256": "94e37090f548bf02ac0eb03881b5af32a4c88e4b39289028164b3073a5faddfb"
+    },
+    {
+      "path": "app/backend/tests/test_fengshen_bill.py",
+      "bytes": 24195,
+      "sha256": "42fa740e31916de7ad680411ab7f7f0d4f4dc2df1aa9ac5a8b54cfc65de138de"
+    },
+    {
+      "path": "app/backend/tests/test_fengshen_capture_verification.py",
+      "bytes": 2183,
+      "sha256": "0a92dac70909f15c97d93b5e9aeb6452e92128a2570603dfbe4bb855df1b7e53"
+    },
+    {
+      "path": "app/backend/tests/test_fengshen_city_catalog.py",
+      "bytes": 7807,
+      "sha256": "5de30b7a899bfcab28696efff2b684e627322dc04f26741e18159bcadbaf5dc0"
+    },
+    {
+      "path": "app/backend/tests/test_fengshen_city_scope.py",
+      "bytes": 14262,
+      "sha256": "8dcb6d73608c0ea3a954e110dc34e244a22239cf171b29ceba6219010577cb3a"
+    },
+    {
+      "path": "app/backend/tests/test_fengshen_daily_delta.py",
+      "bytes": 19888,
+      "sha256": "580fbb9f80e59db1510ac316b78bb4460a0739460429fc5bcedac49496e60fd5"
+    },
+    {
+      "path": "app/backend/tests/test_fengshen_http.py",
+      "bytes": 20311,
+      "sha256": "d014aecc5da6896aa556e62eba98bdd4a8e5dd1fcef429a36a517c4ec3c4a296"
+    },
+    {
+      "path": "app/backend/tests/test_fengshen_http_auth.py",
+      "bytes": 15403,
+      "sha256": "905cf43bf3493eddc12bb25412220b890d94e8f54a656fe439ca2a89c065383d"
+    },
+    {
+      "path": "app/backend/tests/test_fengshen_http_reports.py",
+      "bytes": 23757,
+      "sha256": "189adac6889fb6b0747d32c0bbec345ced0b65ebe0c0a3ba05888493c2baeee0"
+    },
+    {
+      "path": "app/backend/tests/test_fengshen_http_riders.py",
+      "bytes": 4386,
+      "sha256": "0a9c3add14927d289898b8ef976434341d9e30f15b22d24f4e3d7e44c539f40e"
+    },
+    {
+      "path": "app/backend/tests/test_fengshen_inspection.py",
+      "bytes": 17395,
+      "sha256": "d655edd1ac8e2707a4158e597ce6775467d1722dfcefcb1f340fcd697e8accc7"
+    },
+    {
+      "path": "app/backend/tests/test_fengshen_merchant_exports.py",
+      "bytes": 26861,
+      "sha256": "f352ed1364d118188826f7859909edc05abbdc65082f6b00be44c59d16f373c5"
+    },
+    {
+      "path": "app/backend/tests/test_fengshen_monthly_scope.py",
+      "bytes": 9264,
+      "sha256": "b7991d880bf63ceccd44ea0decc5f11962e4356ad89d4c0fc82e5495cdd96fb4"
+    },
+    {
+      "path": "app/backend/tests/test_fengshen_orders.py",
+      "bytes": 28071,
+      "sha256": "6364b13e2d9e584126aac2534564f647f4c460290572bb52e3f324421f402c95"
+    },
+    {
+      "path": "app/backend/tests/test_followup_workbook.py",
+      "bytes": 2745,
+      "sha256": "66705a2fc9a8b0fc162178c018a06d01cd01658e285c11299a4e88904ee33804"
+    },
+    {
+      "path": "app/backend/tests/test_generation_performance.py",
+      "bytes": 13048,
+      "sha256": "a484bd4066fba46be44ba3ffaa6b17e1d2fa9c1bddcfe9c045b923faf7ab804c"
+    },
+    {
+      "path": "app/backend/tests/test_goods_rent.py",
+      "bytes": 5568,
+      "sha256": "bb91155276dc597799c2678e3421f117d2f6dcd340d3ec50b3f290e9014a9b1d"
+    },
+    {
+      "path": "app/backend/tests/test_internal_login_forms.py",
+      "bytes": 9034,
+      "sha256": "2ac176bb74b7008b4b1eb9cd91393fb283681bd89a1e4eac349715635537d3a2"
+    },
+    {
+      "path": "app/backend/tests/test_issue_performance.py",
+      "bytes": 7859,
+      "sha256": "e21747ac187ee556d9d8fa1420e61831192924259112b21e9fec44708044baaf"
+    },
+    {
+      "path": "app/backend/tests/test_lanorange_approvals.py",
+      "bytes": 17502,
+      "sha256": "7239b21b2c148425f8610376c4c967afd2bff2e94112fb32530cb7b5ac8c6c83"
+    },
+    {
+      "path": "app/backend/tests/test_lanorange_download.py",
+      "bytes": 30588,
+      "sha256": "837dbfac20ed558b5eef1703b32092a20ea1a5a3d3fea57e6e281bb83dd39282"
+    },
+    {
+      "path": "app/backend/tests/test_lanorange_full.py",
+      "bytes": 12639,
+      "sha256": "958dc098703404f0f9081c11813edb9e3c64a871657baad63039d4c2fca8456e"
+    },
+    {
+      "path": "app/backend/tests/test_lanorange_price_export.py",
+      "bytes": 9600,
+      "sha256": "fcccd00a8cc39f53d1e6e6708ac9f0fa2e130f53a6a408ad17e40be76b10fadc"
+    },
+    {
+      "path": "app/backend/tests/test_lanorange_price_options.py",
+      "bytes": 3309,
+      "sha256": "e2f6932f5954c23dc6e8520a16fc818a0ecfd133c75b5781c88188ea11b12d53"
+    },
+    {
+      "path": "app/backend/tests/test_lanorange_qr.py",
+      "bytes": 7890,
+      "sha256": "62acac4bb8b070cf10546ed4f7423b8ac005afb34b792ff0774f85375e61b578"
+    },
+    {
+      "path": "app/backend/tests/test_legacy_download_boundary.py",
+      "bytes": 5671,
+      "sha256": "45f8c1e3b3db12ad2f84c4e30889642724c65d0d67fd772ec1dc0bf5aeafdaa8"
+    },
+    {
+      "path": "app/backend/tests/test_manual_payroll.py",
+      "bytes": 4716,
+      "sha256": "b637249b184da6ffd43f44738f8d864335ac83a52c18cdd2c8ccce35f673286d"
+    },
+    {
+      "path": "app/backend/tests/test_merged_daily_integration.py",
+      "bytes": 6885,
+      "sha256": "a708cc44d6ca3a275cd1759b8da4cae6153dff168d7a1710e4de309524e07daf"
+    },
+    {
+      "path": "app/backend/tests/test_official_auth_trace.py",
+      "bytes": 6037,
+      "sha256": "a5c41f37d554d8cd7af7bb0e3097c40ddaf7d1abdb7d7db29af393f4ff5cf516"
+    },
+    {
+      "path": "app/backend/tests/test_optional_payroll_inputs.py",
+      "bytes": 8829,
+      "sha256": "a1993a240e057c7e781e4e2988efa93de8d08709714c2161fc1a3a9b4cc85d83"
+    },
+    {
+      "path": "app/backend/tests/test_order_live_snapshot.py",
+      "bytes": 2153,
+      "sha256": "1d28c0221c7243fc9b7286f9c79345db82a64a549803cf873a63413cfbbcb771"
+    },
+    {
+      "path": "app/backend/tests/test_order_optimizations.py",
+      "bytes": 10693,
+      "sha256": "1df75a1e0cb2ec9df335a49d3e11f11dc3e57c4932d450c92d7ba0010ab798ba"
+    },
+    {
+      "path": "app/backend/tests/test_order_xlsx.py",
+      "bytes": 5509,
+      "sha256": "3ba1449589b6c19bedd81f1edf1805959e1f922f6e5349726a7c9244b9f68b79"
+    },
+    {
+      "path": "app/backend/tests/test_package_layout.py",
+      "bytes": 5175,
+      "sha256": "6c2c895914445ffc681cde5a01016fe4334addb6a3f1d30930c93a4522f5b3df"
+    },
+    {
+      "path": "app/backend/tests/test_parttime_source.py",
+      "bytes": 42930,
+      "sha256": "f13144ae972070c612de54dd25e382909bccedd6cb7ed0e68482bec51fa4e2f4"
+    },
+    {
+      "path": "app/backend/tests/test_payroll_automatic.py",
+      "bytes": 8183,
+      "sha256": "2a62026750269e90966bc3130d72fd1aed053165c3b17ecc8e2c774b9dc947ba"
+    },
+    {
+      "path": "app/backend/tests/test_payroll_control.py",
+      "bytes": 4138,
+      "sha256": "dc634ce1474e241c7c9b10389c3a6006c0b505fe264137d95ffbb20dfd752d12"
+    },
+    {
+      "path": "app/backend/tests/test_payroll_identity.py",
+      "bytes": 5181,
+      "sha256": "0dfe1285cf4a0d06c8e81313d8451f3f47ac9315d5489ee79886911d1c7a019b"
+    },
+    {
+      "path": "app/backend/tests/test_payroll_inputs.py",
+      "bytes": 26382,
+      "sha256": "ae2c60cf680bb518ccc4056506082062384dab926594c3a129e3d8fca12dcf23"
+    },
+    {
+      "path": "app/backend/tests/test_payroll_material_progress.py",
+      "bytes": 3943,
+      "sha256": "0e0da5b670625f7129abe8e76779ce7ca2989312efb333b7b6dd02dec39cd10a"
+    },
+    {
+      "path": "app/backend/tests/test_payroll_performance.py",
+      "bytes": 11788,
+      "sha256": "ed9b31ddbc1eff272bfa6b03ebf6e5e5b8c9ec3bc587c2d046c9277c439d16fd"
+    },
+    {
+      "path": "app/backend/tests/test_payroll_queue.py",
+      "bytes": 16596,
+      "sha256": "244c3af7720ce0b3158e63a8ea4bfcf57f7662e4b9a279171d6b6254f5f81c7a"
+    },
+    {
+      "path": "app/backend/tests/test_payroll_readable_policy.py",
+      "bytes": 15039,
+      "sha256": "f5931ac7eb6458de2dbd927c55a56f1fe6ae833b80f3da3b5685f34e6eb68b2e"
+    },
+    {
+      "path": "app/backend/tests/test_payroll_review.py",
+      "bytes": 5228,
+      "sha256": "f253be5ea8168746bf1748ae1a8dce0868cf39e6bccd73dd3c6ad5caff0c3c49"
+    },
+    {
+      "path": "app/backend/tests/test_payroll_review_flow.py",
+      "bytes": 6200,
+      "sha256": "a114fc73760b0e597fb56c6f530a1c031ad2e73c52751935d2a5836cf7c965c8"
+    },
+    {
+      "path": "app/backend/tests/test_payroll_source_isolation.py",
+      "bytes": 7619,
+      "sha256": "f0cf919892c2896770777a2da592593464d5097735bfe49e5c3b631682d97d22"
+    },
+    {
+      "path": "app/backend/tests/test_platform_auth_control.py",
+      "bytes": 8899,
+      "sha256": "59f801f311170338200c09236437e0ec020fed7ee48a7ec16d6e555590f91a36"
+    },
+    {
+      "path": "app/backend/tests/test_price_archive.py",
+      "bytes": 6416,
+      "sha256": "5bfe21c512220133435351178b62446f1b72293a46179477aae3f5f43b4860fc"
+    },
+    {
+      "path": "app/backend/tests/test_price_export_detail.py",
+      "bytes": 2887,
+      "sha256": "37e0e8b3a1d3c50d59f3dab9f0e02b542548f4528f817deb9498292c5c71243d"
+    },
+    {
+      "path": "app/backend/tests/test_price_matching.py",
+      "bytes": 6304,
+      "sha256": "a1268fd89e01ace1cb600612c6bd11b97db6949a491eb5c0517a16309f9c6b52"
+    },
+    {
+      "path": "app/backend/tests/test_reliability_boundaries.py",
+      "bytes": 3125,
+      "sha256": "f7d992958797b32d4f1dc6d427e66f295edc907c0dc49b9d59cdf40db1acb7c2"
+    },
+    {
+      "path": "app/backend/tests/test_rider_archive.py",
+      "bytes": 5247,
+      "sha256": "137114fd7357c6ec90fa4cc232593f21bbc214013af6eeda53ae0fca71bdb40f"
+    },
+    {
+      "path": "app/backend/tests/test_rider_monthly_summary.py",
+      "bytes": 9701,
+      "sha256": "ae76f877da9fcc520c9f583441ac7b455b8b068ed29bd7fa48826b9bed841247"
+    },
+    {
+      "path": "app/backend/tests/test_rider_sources.py",
+      "bytes": 55321,
+      "sha256": "3f45c7fd3ba2b5d79e695bbb6727c125612f8e73ad30e97a523c668a0a75e94c"
+    },
+    {
+      "path": "app/backend/tests/test_salary_bind_sources.py",
+      "bytes": 14183,
+      "sha256": "5c88faec6734cfd3bffcc24bbc2cc3e9f8d9d478c3bae3f3864cc02e0e82dc14"
+    },
+    {
+      "path": "app/backend/tests/test_selective_downloads.py",
+      "bytes": 14478,
+      "sha256": "6a3000fc1f9bf6ef742d82a9805711589fd112d7d24793762a7377772f225555"
+    },
+    {
+      "path": "app/backend/tests/test_separation_filter.py",
+      "bytes": 6515,
+      "sha256": "4e72aba9d6c89585003f6f5688683fd3ee39271646857c2d94b1601fc838d0b5"
+    },
+    {
+      "path": "app/backend/tests/test_shangyi_sources.py",
+      "bytes": 18454,
+      "sha256": "6ef91a710a393c43b981496fde52194298e4dc189eac078cf36edecc5dcfdaad"
+    },
+    {
+      "path": "app/backend/tests/test_source_auth_interaction.py",
+      "bytes": 6336,
+      "sha256": "7a168c3a7739b75a3052533f5b974afe312e3566b9b32871b1b00c19a327845d"
+    },
+    {
+      "path": "app/backend/tests/test_station_associations.py",
+      "bytes": 11127,
+      "sha256": "f77872e9ec112a055393de62e21b83cc13d25168cf2912b222a7eda79046a8c5"
+    },
+    {
+      "path": "app/backend/tests/test_station_city_resolution.py",
+      "bytes": 1523,
+      "sha256": "821f7b1d557589e3b38d92ccbcb269923422c3d64a1699fbc941ac7feefd8a94"
+    },
+    {
+      "path": "app/backend/tests/test_station_directory.py",
+      "bytes": 5818,
+      "sha256": "682a20284ae128fe63b2585e0af147597ef57f77c6d7663666eda581f71e7e88"
+    },
+    {
+      "path": "app/backend/tests/test_task_catalog.py",
+      "bytes": 9954,
+      "sha256": "7ea55718f80ac238a689b4316814a7c8e8b46eca7108f3ccc351be3c23bc28e7"
+    },
+    {
+      "path": "app/backend/tests/test_task_center.py",
+      "bytes": 9374,
+      "sha256": "9ef6d7b5efb5ede78807cbd2825e9d7ce2ff5d81e79d3609e30fc43790cb243d"
+    },
+    {
+      "path": "app/backend/tests/test_template_library.py",
+      "bytes": 3506,
+      "sha256": "80f7c185a404bc6887b78f4ba4d756362a381e00343c2d4b7c0f6a8a39dcc1ed"
+    },
+    {
+      "path": "app/backend/tests/test_template_payroll_api.py",
+      "bytes": 1636,
+      "sha256": "c1da38c304c4c0986f9a723e18e4d0acdec48af4626e097ef8c73ba3ee1c7a4f"
+    },
+    {
+      "path": "app/backend/tests/test_upload_archive.py",
+      "bytes": 4993,
+      "sha256": "cf0747328eb0ed76d8c58d0b04fb5a4c9535d441596575ca6d09069c1c8217da"
+    },
+    {
+      "path": "app/backend/tests/test_waybill_workbook.py",
+      "bytes": 7779,
+      "sha256": "7e0fd65a144d6fa423364c65bd0abcc3f021a63225d809737caceabc89233bd9"
+    },
+    {
+      "path": "app/backend/tests/test_workbench.py",
+      "bytes": 8803,
+      "sha256": "881901ca62be389489376b418c478890459ef61eb9f6771436668d68614bd59b"
+    },
+    {
+      "path": "app/backend/tests/test_xiaoxiang_board.py",
+      "bytes": 30640,
+      "sha256": "e57e917d32fbd4f9cd52aae4fb5b636092842b5887638ee6ba94234771539574"
+    },
+    {
+      "path": "app/backend/tests/test_xiaoxiang_board_qr.py",
+      "bytes": 4253,
+      "sha256": "9c476090899e142c2667923f5a1b8ef15a834d15d0213133e8f8e15618e7bf4c"
+    },
+    {
+      "path": "app/backend/tests/test_xiaoxiang_board_session.py",
+      "bytes": 3304,
+      "sha256": "15ae92d0c35e7eb0e8a85f67b7da285e8a4ca100bd7ff3aba4802d4b34426c2e"
+    },
+    {
+      "path": "app/backend/tests/test_xiaoxiang_lighthouse.py",
+      "bytes": 12451,
+      "sha256": "c7821dd7ed91568625923348590fc2bfca1627c7b581fa98c60f25f266f19cf8"
+    },
+    {
+      "path": "app/backend/tests/test_xiaoxiang_notice_data.py",
+      "bytes": 17873,
+      "sha256": "7085a2aa299f0690efb04b00fa9120cc8ef5c760a1dc004d5b66a3155cc5aca2"
+    },
+    {
+      "path": "app/backend/tests/test_xiaoxiang_rider_archive.py",
+      "bytes": 14760,
+      "sha256": "b793ca45dce57b6f92ad4ecdb38b50a2b0d40eb8b68ec1151e2ed33cba06b386"
+    },
+    {
+      "path": "app/backend/tests/test_xiaoxiang_source_auth.py",
+      "bytes": 20833,
+      "sha256": "4311fc9d1ee97d17613d3013e3acd2efe5704122d0ef4358f87973d46ab8ff15"
+    },
+    {
+      "path": "app/backend/tests/verify_fengshen_acceptance.py",
+      "bytes": 6521,
+      "sha256": "ff9cbc4ff2f7c9416d7aa47d478545660a59f554e6bfb2a274805e6c85147179"
+    },
+    {
+      "path": "app/backend/tests/verify_fengshen_capture.py",
+      "bytes": 6974,
+      "sha256": "8639dc48bbc99000b4084e1db00b40cb1afdaab9d57be43b0b180256308f8bd3"
+    },
+    {
+      "path": "app/backend/upload_archive.py",
+      "bytes": 5366,
+      "sha256": "2c028e10090cbd95a1ea250d7ec1fe1df4a416c7547260e2684703e0d7766166"
+    },
+    {
+      "path": "app/backend/waybill_created_inspection.py",
+      "bytes": 3865,
+      "sha256": "aa5fd017afc92ffe9d18959aa13910180b63619567b95bae68d1bc0925dc5ceb"
+    },
+    {
+      "path": "app/backend/waybill_filter_inspection.py",
+      "bytes": 10522,
+      "sha256": "6cf0bb75c6bde6c4595ea73ced23277a558d75df7832a18587e39d0f9e64d452"
+    },
+    {
+      "path": "app/backend/waybill_workbook.py",
+      "bytes": 10475,
+      "sha256": "ff271323268944d876429033bb73f56dcc6a6693ef6a3a6b62efb324723d8725"
+    },
+    {
+      "path": "app/backend/workbench.py",
+      "bytes": 25064,
+      "sha256": "914560c70ea2f1f045f64b900b8d7e2331998463939ff8887169648fc3a3c81f"
+    },
+    {
+      "path": "app/backend/workbook_policy.py",
+      "bytes": 1307,
+      "sha256": "7f5d044478187821d3bac78fe5da46e3f8c9c24470044f587484afb9cd49c634"
+    },
+    {
+      "path": "app/backend/xiaoxiang_board.py",
+      "bytes": 35479,
+      "sha256": "87d0dfa064541c58bae32a28f61faecdc280393d984d414c86941afbd49130c5"
+    },
+    {
+      "path": "app/backend/xiaoxiang_lighthouse.py",
+      "bytes": 17881,
+      "sha256": "c4b4eaa4e1f5a2790d73628e2fa8aaa549fbfe40e7ab6252f5dda5d831fab321"
+    },
+    {
+      "path": "app/backend/xiaoxiang_notice_data.py",
+      "bytes": 19385,
+      "sha256": "f95c9f7e9ca9e9b47d29a86e2b8a4b56b699416393f143510f4dfced947c1473"
+    },
+    {
+      "path": "app/backend/xiaoxiang_rider_archive.py",
+      "bytes": 17041,
+      "sha256": "32c62c6938ca708370da4f9edde61477af4e50f404eeae7df12bcb5239e98066"
+    },
+    {
+      "path": "app/backend/xiaoxiang_source_auth.py",
+      "bytes": 26314,
+      "sha256": "876d42b952790f78f4a09514bddec10876d30935d4b44dac4cf6f786246b9642"
+    },
+    {
+      "path": "app/index.html",
+      "bytes": 936,
+      "sha256": "11e72df86153178e583b286220e7a9b50fe992fcfa367da9ad30b118246911e6"
+    },
+    {
+      "path": "app/package-lock.json",
+      "bytes": 178648,
+      "sha256": "b1f164428c3c9a87a98b0593db1654b495f5c037435e103671146365f8ef5e65"
+    },
+    {
+      "path": "app/package.json",
+      "bytes": 1513,
+      "sha256": "8f556114fcbbcffee323a7e1f49bf0a0bdd43e5d66d33007a5d53a5cb4785024"
+    },
+    {
+      "path": "app/public/assets/aistudio/__________20261030_134c252a.zip",
+      "bytes": 2022161,
+      "sha256": "134c252a3892abefc6fac9a382c31b4f241b416e2aa182ebc315ba30a8b35aee"
+    },
+    {
+      "path": "app/public/assets/aistudio/baize_clean.png",
+      "bytes": 107399,
+      "sha256": "9bd5f5b6b091faec006ad6fff1dddc29009c729ba5fb261a2c90ceae3bd71610"
+    },
+    {
+      "path": "app/public/assets/aistudio/default_visible_no_triangles.png",
+      "bytes": 141960,
+      "sha256": "20d81fb1e9df74871ca07aee5a480ec048d31cda08fa2def30ef5432c9442ba9"
+    },
+    {
+      "path": "app/public/assets/aistudio/fengshen_reordered_final.png",
+      "bytes": 141560,
+      "sha256": "52d35df92e792b0cd735befb0482b69d18c3b30f3b72da7b6404f8211eb6d117"
+    },
+    {
+      "path": "app/public/assets/aistudio/harmonized_platform_drawer.png",
+      "bytes": 126114,
+      "sha256": "5f205734503d5075da3e5a2b35fd7ff4a462bf66f263424689326ec441a50708"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_00d136ce.png",
+      "bytes": 266949,
+      "sha256": "00d136cebcb725e086e27f2c96583ce52ffc4405ea29dd92edccf9b30b0b2b08"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_05d5974f.png",
+      "bytes": 72004,
+      "sha256": "05d5974f370ad5f434ccbedc331d6505d2b94421cac4bd09f6120aed6cb14176"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_0778377c.png",
+      "bytes": 69767,
+      "sha256": "0778377c6eafdaaa49ed6b9998c9723b000d998c7582d944d8a5e46adb6c0a71"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_098c6ed3.png",
+      "bytes": 52464,
+      "sha256": "098c6ed37d20d6db0c2d565f81033b804e7551658e5a04a978105e430a2774f6"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_0cf6f7d6.png",
+      "bytes": 50846,
+      "sha256": "0cf6f7d652e32c8b9ed7f378f551bbd1f49c004651ef6622263bbeef24511e0a"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_11030a43.png",
+      "bytes": 40828,
+      "sha256": "11030a432cca7aa259d019fc32787b1d6313f6c50d6275de244eaf43ec946b45"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_185de087.png",
+      "bytes": 239857,
+      "sha256": "185de087b11eac10f1e879b1fcd0632975e9c42611c02d4ae750f4dc3c88bf0b"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_20455acf.png",
+      "bytes": 45515,
+      "sha256": "20455acf046ed1a986118ab436cb0bcf3ca3bd69fd8618566048224a18ee4bdf"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_3e9e2081.png",
+      "bytes": 148590,
+      "sha256": "3e9e2081b07dcc6329ae236fbd7a2450e4e890a14e8b6fadb4c8b527385e17b2"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_5143fc6e.png",
+      "bytes": 58840,
+      "sha256": "5143fc6e56dbae7da4856393fa96fb94eeabac62b1939b68dffe2c4b0159922b"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_5da698c4.png",
+      "bytes": 181786,
+      "sha256": "5da698c434529ea218ec79bf20e280677851d1b196d2772213c030ef09d2a109"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_64736af7.png",
+      "bytes": 26061,
+      "sha256": "64736af7d108b3fd181f438b87fccf55538bafe049793b8cc0f35ba34b06e9b3"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_70288815.png",
+      "bytes": 55340,
+      "sha256": "7028881593249cd18c42fc828d89756c6a6944622b15e4e7f606d88f69341752"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_7cfdfccc.png",
+      "bytes": 36500,
+      "sha256": "7cfdfcccc306c05371e100fc6db51e6953849502aba67b30b8abed8b5da28d3f"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_8af249c7.png",
+      "bytes": 164405,
+      "sha256": "8af249c7997aef7078a692fe641efe4d426815d56be592840883ae0ea39054e3"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_95c4e62a.png",
+      "bytes": 356177,
+      "sha256": "95c4e62a0d01746c0fa52b2f1339a217605d2f40527ce9b7ffbc4f92d06b1cd2"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_97a01856.png",
+      "bytes": 104824,
+      "sha256": "97a01856c3b0162f3620d69f372f11ce7414f72b31832e4c13155f9ad4879cbf"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_9ad3f249.png",
+      "bytes": 12378,
+      "sha256": "9ad3f2498e22ca818f4e5ad00a131fca2111a90f4383d05b432e7a420a7eb8e1"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_a05ed90b.png",
+      "bytes": 247496,
+      "sha256": "a05ed90bb435e34e8edd2fbc4d8a8ae41ca4654797198845d2475dc6e26ed252"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_b2da3888.png",
+      "bytes": 29272,
+      "sha256": "b2da3888c4d184b38a67c19b86dbe03bce8bf3ef2128d50d56424906ff8dd9d1"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_be8b7ad9.png",
+      "bytes": 76119,
+      "sha256": "be8b7ad968894a5817ae367135c5106ca9b535a2001f3574f00f28dc40f5a5ab"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_cf8dfc70.png",
+      "bytes": 37890,
+      "sha256": "cf8dfc704893d3c51788ffe354fae4b4fc70259292946f6cc2e679c868b01eca"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_d4672091.png",
+      "bytes": 14408,
+      "sha256": "d46720916a05f540134a0174f5343f4267f4db94f2ef0e0934634c96f3decddc"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_dc442b8d.png",
+      "bytes": 62835,
+      "sha256": "dc442b8d62ece6d532f7dc549ad60e1cf23b320108af103f312ab26b47cc7dc4"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_e7ded072.png",
+      "bytes": 75713,
+      "sha256": "e7ded072dee85004db9fec905dce238a5b5b2510c7b2ab108a6e6443c6d48425"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_e8ff64c3.png",
+      "bytes": 74129,
+      "sha256": "e8ff64c3bd5e4824c5e19179f2f5facc6aaedba51a58428f55509a88bb2a0b03"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_ee95aa72.png",
+      "bytes": 48796,
+      "sha256": "ee95aa72deacfa900a5c8f5be8adfa5ffb190da275bba4a926fb0b633e27ebbc"
+    },
+    {
+      "path": "app/public/assets/aistudio/image_f0113980.png",
+      "bytes": 64028,
+      "sha256": "f01139805cd900e962be74fc1c72a7e5088c7f5683a566905056ccac9969c688"
+    },
+    {
+      "path": "app/public/assets/aistudio/lanorange_clean.png",
+      "bytes": 134988,
+      "sha256": "92db1a1ff4a22baea9fa40ea80a70326f6d9d46c0c741922ec23cfcb012bcc33"
+    },
+    {
+      "path": "app/public/assets/aistudio/lanorange_clean_final.png",
+      "bytes": 106331,
+      "sha256": "875852803407b09f75f76b58ef69d4d660e500f57b880283bf537c3a4482c71d"
+    },
+    {
+      "path": "app/public/assets/aistudio/reordered_fengshen.png",
+      "bytes": 142142,
+      "sha256": "9eb75c41de1e48ac48a29a64c3bb17d01a23871b28732e4dd43f5aa818ac3939"
+    },
+    {
+      "path": "app/public/assets/aistudio/scheme_1_city_default.png",
+      "bytes": 175737,
+      "sha256": "80850ed92ddca4d955b96e7b395ffb40c3dce4989cdf992fd8e88b7fc571c49e"
+    },
+    {
+      "path": "app/public/assets/aistudio/scheme_1_city_selected.png",
+      "bytes": 180267,
+      "sha256": "a8c62286a1c0060750770c7e78e43ce082ab8cd16a816b342ff2a65d1bbb6809"
+    },
+    {
+      "path": "app/public/assets/aistudio/scheme_a_platform_drawer.png",
+      "bytes": 126732,
+      "sha256": "e2d3315bb02fb505abc1e8ffa0f8506ba7a6782a00513311b3d2ff44171569bf"
+    },
+    {
+      "path": "app/public/assets/aistudio/scheme_b_default.png",
+      "bytes": 129817,
+      "sha256": "b8ec84f888b7c28e4646040b23bda999d6a4c8a14303084fb3f72176d6ee6970"
+    },
+    {
+      "path": "app/public/assets/aistudio/scheme_b_generate.png",
+      "bytes": 165570,
+      "sha256": "741813fe57c813990949b152a2c1f3fff5309ce4f6b2aa40a7ef162217986f27"
+    },
+    {
+      "path": "app/public/assets/aistudio/scheme_b_lanorange.png",
+      "bytes": 117797,
+      "sha256": "d7096b61b3420f5c1c430b36749dc400cfe90006e55e08c060bae1ef7463c553"
+    },
+    {
+      "path": "app/public/assets/aistudio/scheme_b_selected.png",
+      "bytes": 167450,
+      "sha256": "75a7632af01e91fc2c80dca3216977ce1eab2aeab4eb44ce8ad5c2fe811631b7"
+    },
+    {
+      "path": "app/public/assets/aistudio/streamlined_clean_cards.png",
+      "bytes": 118476,
+      "sha256": "9e2d6ce6a814e544b14ff70ac7080d237d8673c069360afb94cd456c38cbac6e"
+    },
+    {
+      "path": "app/public/assets/aistudio/streamlined_no_instructions.png",
+      "bytes": 116496,
+      "sha256": "f0c8e36b6495589b1b616b331590b30c36d3a11cbddf3febc305287c2352a014"
+    },
+    {
+      "path": "app/public/assets/aistudio/streamlined_optimal_layout.png",
+      "bytes": 124050,
+      "sha256": "6893e69d09b0abd72b5d11186e4087e9ff2b607a5d63c48c0484ed6bbf2d70f3"
+    },
+    {
+      "path": "app/public/assets/aistudio/streamlined_ready.png",
+      "bytes": 148826,
+      "sha256": "05e62a8b533b1c76a8ebca03f129cff89e3b94c6f6612050cbafb7e9c66d3864"
+    },
+    {
+      "path": "app/public/assets/aistudio/streamlined_selected_clean.png",
+      "bytes": 165882,
+      "sha256": "859f5ba657708dc0dfbdc252509fc528af86b5db286dfd00a7ac755b4066879a"
+    },
+    {
+      "path": "app/public/assets/aistudio/streamlined_with_dataset.png",
+      "bytes": 148053,
+      "sha256": "1ba3d0a2e1c44fea2dde0043dc3a959b392e258a6272de5cd8063704c9adfd18"
+    },
+    {
+      "path": "app/public/assets/aistudio/xiaoxiang_clean.png",
+      "bytes": 140803,
+      "sha256": "368960616fe9aa224faaceab65c1deb64d33aa86e4b7c7631d2678fe99d5af7d"
+    },
+    {
+      "path": "app/public/assets/aistudio/xiaoxiang_multiselect.png",
+      "bytes": 117358,
+      "sha256": "6efe1be47a4757e631016ac6ba389ed830ab517667516fccbe3c5ba1e65c3d90"
+    },
+    {
+      "path": "app/scripts/business_backup.py",
+      "bytes": 11653,
+      "sha256": "29eeee8caf5a9ff45d85b4b6e5e89aa229c4392a3dbdb71ebcd0937d39bbaf5e"
+    },
+    {
+      "path": "app/scripts/clean-build.mjs",
+      "bytes": 806,
+      "sha256": "3b03fe9a78469c26e2e44796b0786b1d619d6c1e0d2c9a222da0b0d581c09659"
+    },
+    {
+      "path": "app/scripts/compare_generator_workbooks.py",
+      "bytes": 1479,
+      "sha256": "fa596a41814c149638179cb5d2235069452183c32912ee53517b858ae0e72344"
+    },
+    {
+      "path": "app/scripts/migrate_flat_deliveries.py",
+      "bytes": 13136,
+      "sha256": "778280526c7cddd76d20bd630431069153b72ef981e6a21b8ce9578fa271c5f1"
+    },
+    {
+      "path": "app/scripts/pack_home_package.py",
+      "bytes": 9051,
+      "sha256": "9d312157a0b56ec5f9f4853d59d5b9e542f76c5c81ccb58d6fef367d92186bce"
+    },
+    {
+      "path": "app/scripts/package_root/README.md",
+      "bytes": 1464,
+      "sha256": "99465ed877ae015051d04553b502c4cddd07be50aa533089c26e7da78f2c6827"
+    },
+    {
+      "path": "app/scripts/package_root/启动系统.cmd",
+      "bytes": 354,
+      "sha256": "2a4657c4b1ba0682542401f45bd8246a83f66c2ec864356e8cbb42159972b000"
+    },
+    {
+      "path": "app/server.ts",
+      "bytes": 70743,
+      "sha256": "dd977818722946950db990f6fda3df0b619f58d99b285f5ad356f1863767990c"
+    },
+    {
+      "path": "app/server/deliveryDownloadAlias.ts",
+      "bytes": 997,
+      "sha256": "467ba9600cba8e751b5093dad7816918f66ffda55f836f48898b4ea52032a360"
+    },
+    {
+      "path": "app/server/downloadProxy.ts",
+      "bytes": 1922,
+      "sha256": "07cfe21ddf1a05f0a0799dc95c115a9bd7368bd81bb9901d4f83cbf7ce282ab1"
+    },
+    {
+      "path": "app/server/fengshenAuthProxy.ts",
+      "bytes": 1420,
+      "sha256": "33e73c9e675ec355fb27a48d7535b31ef4f842c4dbee432d7d1b78e1624b1025"
+    },
+    {
+      "path": "app/server/legacyDownloadBoundary.ts",
+      "bytes": 6006,
+      "sha256": "552c40ea838be37dfacaf9f13fe1f6d165f5a2b5f0f02b242a5269bd4badd379"
+    },
+    {
+      "path": "app/server/sourceArchive.ts",
+      "bytes": 1736,
+      "sha256": "80a31a8550548f2307a2bfa4fcae28d51d5e63e719c162a39720acc72c6c2585"
+    },
+    {
+      "path": "app/server/startupGuard.ts",
+      "bytes": 2588,
+      "sha256": "540d5976242b429dbc0c06bc0e741f8fafb0742381177a7b35ecce574ddcc001"
+    },
+    {
+      "path": "app/server/workspaceConfig.ts",
+      "bytes": 1243,
+      "sha256": "c480118e978d946f430ed928c4297a0d28948730c7908d5188e9d3d6a8cffbd5"
+    },
+    {
+      "path": "app/src/App.tsx",
+      "bytes": 70155,
+      "sha256": "ced6d8002fe97e1a1ff81437302d0d712cbc6936d43e481793072e6c881ced7e"
+    },
+    {
+      "path": "app/src/components/ApprovalScopeFilters.tsx",
+      "bytes": 2711,
+      "sha256": "53505e0c3a6f8e6a5b7a934edc1c01f2b51603e37a11d5ab8434ba9078cc0f2b"
+    },
+    {
+      "path": "app/src/components/CityDeductionAmounts.tsx",
+      "bytes": 2178,
+      "sha256": "c275fda2b7e8e70aa55ecfedb8237d0e907215101e64600178579422b70970b0"
+    },
+    {
+      "path": "app/src/components/CityStationCount.tsx",
+      "bytes": 378,
+      "sha256": "9de32441055fdba97396ce6df1c87794b9c3bfa1df80db823471bbedec32a571"
+    },
+    {
+      "path": "app/src/components/CollectionScope.tsx",
+      "bytes": 727,
+      "sha256": "af80f3bfb536a67acfe7a45cfabfdac68eef2d48898516c880f9ec8b77b256fd"
+    },
+    {
+      "path": "app/src/components/ControlPanel.tsx",
+      "bytes": 5589,
+      "sha256": "d984398f70bcf3da3347703c4e3502dcb02c6910a54512f042d82a8c08786227"
+    },
+    {
+      "path": "app/src/components/CorePage.tsx",
+      "bytes": 2578,
+      "sha256": "c76e52d68ae8f6bdbc8df2d6edb1fc77af8cd17a46320b7696c0b2556aff7427"
+    },
+    {
+      "path": "app/src/components/DataReadinessMatrix.tsx",
+      "bytes": 1866,
+      "sha256": "02e8502efcd72697da30eadd60d210f825e93a1eaab4457f3eac9205dc558bf8"
+    },
+    {
+      "path": "app/src/components/DeductionAmounts.tsx",
+      "bytes": 5344,
+      "sha256": "2bac60872b5e48c97dd7927797e45c40ac0ef686870fd349a4205dcbbc7b7155"
+    },
+    {
+      "path": "app/src/components/DeductionSettings.tsx",
+      "bytes": 26567,
+      "sha256": "7fa95ddc5f798d9dcb82bb5a59e6518a78c9262c05d9d3107c1c00e88e874462"
+    },
+    {
+      "path": "app/src/components/DeductionStationPicker.tsx",
+      "bytes": 8050,
+      "sha256": "c267ac3e877c3ee8ea3bb148eeaf60e7adf12a9968b4b8b53f0de845dcf7eea5"
+    },
+    {
+      "path": "app/src/components/DownloadAccountPanel.tsx",
+      "bytes": 751,
+      "sha256": "9479b01315ece6cc40e812fec582dd9ecd39b590900394ec3738564e242bb8a7"
+    },
+    {
+      "path": "app/src/components/DownloadRecords.tsx",
+      "bytes": 23812,
+      "sha256": "7c7fbca8ba5cd8db456b7efbda010422871ac10b5ee7bbc08fede61bd7782e0f"
+    },
+    {
+      "path": "app/src/components/ExecutionCockpit.tsx",
+      "bytes": 13278,
+      "sha256": "12da9cf5f20de46896453fd815fb6d6e8ebe08b5812b57021ce494b6ecd19d72"
+    },
+    {
+      "path": "app/src/components/FengshenDownloadCenter.tsx",
+      "bytes": 120030,
+      "sha256": "d784e3b56c8fcf27861e759b703405f77786cfce2fb86a674151f6891dd89bee"
+    },
+    {
+      "path": "app/src/components/FengshenLoginModal.tsx",
+      "bytes": 10768,
+      "sha256": "24c9af52cc30a01dcb000e125b911ee0740e8ed0887f004b468c24ad18c065b9"
+    },
+    {
+      "path": "app/src/components/FlashPayrollWorkbench.tsx",
+      "bytes": 104,
+      "sha256": "76d0657100d4f6630bce1aac95d0747d0de062522cec16ca6336bcbd994d0e68"
+    },
+    {
+      "path": "app/src/components/HeaderDownloadCenter.tsx",
+      "bytes": 3543,
+      "sha256": "780f1aa0456894cab745d2041c67c3390f6c08a8ebb7e3f6eecc1c92cf7fa70d"
+    },
+    {
+      "path": "app/src/components/LanorangeApprovals.tsx",
+      "bytes": 19697,
+      "sha256": "81567100570dd5690b604486cf926eaabe1a21be7408191d94c26aef7dcb4bf8"
+    },
+    {
+      "path": "app/src/components/LanorangePriceExports.tsx",
+      "bytes": 10063,
+      "sha256": "2c1a441eb00363ce9b434bf1afe1dd92d251853e61f8c806fd115893509f2c8b"
+    },
+    {
+      "path": "app/src/components/LanorangePriceFilters.tsx",
+      "bytes": 4043,
+      "sha256": "e39d6b4f9bb3377a6712b231f8097fb1265a9a7db78a3dd216b3e999b61e8c4e"
+    },
+    {
+      "path": "app/src/components/OfficialVerification.tsx",
+      "bytes": 5812,
+      "sha256": "3977822fa01d2dbd09aef39df18aa16a7a3175c1a9a3158e30b8cc761dcb3927"
+    },
+    {
+      "path": "app/src/components/OutputExplorer.tsx",
+      "bytes": 13438,
+      "sha256": "f7947950125399faad0346162d3baecee27becac2dab1264e2bb524115a1fe09"
+    },
+    {
+      "path": "app/src/components/PayrollDeductionReview.tsx",
+      "bytes": 14882,
+      "sha256": "97ee79b87a94358576d9ae55156606e80cea392ea7628d87dcfb4272649c0791"
+    },
+    {
+      "path": "app/src/components/PayrollDownloadProgress.tsx",
+      "bytes": 4276,
+      "sha256": "9d87c4bef213f20782d5619976bb3dc8dbc217289337ed41855bdc0a987af9a5"
+    },
+    {
+      "path": "app/src/components/PayrollPerformancePanel.tsx",
+      "bytes": 2575,
+      "sha256": "2c770829eceb3f218d56365c2bdf450a9d835d9125e00ccc1b0ff3c943dadf78"
+    },
+    {
+      "path": "app/src/components/PayrollPreparation.tsx",
+      "bytes": 18725,
+      "sha256": "c59eb0a2f2aa2e7cdd367a1fc2879be6a9d44fecea29a766b4bbcf4bb2a38d65"
+    },
+    {
+      "path": "app/src/components/PayrollQueueWorkbench.tsx",
+      "bytes": 23820,
+      "sha256": "384c5911ed6ff6db2e8d941f0a265db681923d1edf4abf6b035307f046f61ca4"
+    },
+    {
+      "path": "app/src/components/PayrollReviewSummary.tsx",
+      "bytes": 3217,
+      "sha256": "aab32eaab4550f19af79ed6d8d32ff77d9e274e587972162f68ec27792cff77f"
+    },
+    {
+      "path": "app/src/components/PriceTaskRecords.tsx",
+      "bytes": 3262,
+      "sha256": "bcccde3ff42f7df58a3a69b1cc805fcb1714d3b3ede80824ba372e575c3b5b7f"
+    },
+    {
+      "path": "app/src/components/ReportBuilder.tsx",
+      "bytes": 11001,
+      "sha256": "0f9cc2bece2074fca9c3954f78683502db40e408147407329e7eda9613bd850b"
+    },
+    {
+      "path": "app/src/components/RunResultCard.tsx",
+      "bytes": 5748,
+      "sha256": "6f06d70424f72ca4cbc14cf7eff5645382b715dde6d9fe7476550df5f63cec82"
+    },
+    {
+      "path": "app/src/components/SourceLoginPanel.tsx",
+      "bytes": 15239,
+      "sha256": "af91a344d6ffac05a1c75deea7e0084104c5ac5c11adeb1078731765d356450b"
+    },
+    {
+      "path": "app/src/components/StationAssociations.tsx",
+      "bytes": 9915,
+      "sha256": "7514710e6b59bc9397917e145cd11f4cc492248293010fd7a7a2b572a4e4fc1e"
+    },
+    {
+      "path": "app/src/components/StationDeductionManager.tsx",
+      "bytes": 6181,
+      "sha256": "eadce9533c42f891342513d3e6e7e599f4cf9f19be02f7bf6f40f181b07c30e5"
+    },
+    {
+      "path": "app/src/components/SystemConnections.tsx",
+      "bytes": 13626,
+      "sha256": "aff0a45cc2e3e736880844e1665853bd776e0d8b9de6eb2b58c9c442cd8c3742"
+    },
+    {
+      "path": "app/src/components/SystemTemplatesPanel.tsx",
+      "bytes": 5015,
+      "sha256": "5a1b965b33498f56caedd482d3c8abc74c2980dfc89b434c0971bb368e5724af"
+    },
+    {
+      "path": "app/src/components/TaskFlowSteps.tsx",
+      "bytes": 452,
+      "sha256": "1337c60696b4d7e545cfa87fb227f7cd53b1f66268eded9eb8becf396b9029fc"
+    },
+    {
+      "path": "app/src/components/TaskOutcome.tsx",
+      "bytes": 518,
+      "sha256": "78626208855b39310732013a7fbe8f68dc9b0800c48cebdb65f8cbbcc3ca37e4"
+    },
+    {
+      "path": "app/src/components/TerminalPanel.tsx",
+      "bytes": 3261,
+      "sha256": "1aee5ede984a07bce713165ec97efcf9a272b88827a933726decd0f683897752"
+    },
+    {
+      "path": "app/src/components/UploadProgressOverlay.tsx",
+      "bytes": 7921,
+      "sha256": "cdf9137620b08d868ad8ee7e074c31ab7827c7cbbd603d19aa11150667a57478"
+    },
+    {
+      "path": "app/src/components/WorkbenchDatePicker.tsx",
+      "bytes": 15750,
+      "sha256": "17baec0c6a570fc0f09c073bf1423820754724ddf3e685249b87b666dbdd6b53"
+    },
+    {
+      "path": "app/src/components/WorkbenchDrawer.tsx",
+      "bytes": 2917,
+      "sha256": "5efb658aae17062811a49c0b26d1447edd2a156848cc8c244446d749954c2a08"
+    },
+    {
+      "path": "app/src/constants.ts",
+      "bytes": 1310,
+      "sha256": "500884c341f8dccab5567ceb93fc41d34ff06c0c0ec37014d5571c9d0b2d659d"
+    },
+    {
+      "path": "app/src/index.css",
+      "bytes": 7348,
+      "sha256": "c545c7e691f01e476732b46b28a69068d8408285d7158681f7083c97494fa51d"
+    },
+    {
+      "path": "app/src/lib/authInputDraft.ts",
+      "bytes": 810,
+      "sha256": "9810a754492115420cdb93c867f532c052907863e379981fb505fe5fe1b54f83"
+    },
+    {
+      "path": "app/src/lib/authPreflight.ts",
+      "bytes": 2070,
+      "sha256": "610be0bca263898d1db1639f253d6d88ae8320f9399477d5f77885670236571e"
+    },
+    {
+      "path": "app/src/lib/authPresentation.ts",
+      "bytes": 952,
+      "sha256": "5069ae19ffec5b6c12523209558bf2217862a7f894d6932067626a903fd6ecb9"
+    },
+    {
+      "path": "app/src/lib/deductionBulk.ts",
+      "bytes": 599,
+      "sha256": "b8c1ae77947c9eb8ed625d20518cc45ef80a8953045e77f00f7c478bcae6b081"
+    },
+    {
+      "path": "app/src/lib/deductionStations.ts",
+      "bytes": 6924,
+      "sha256": "86e361f8afe12afbbf657710882615dd9d53a5684a0a29ed11660605bab04fec"
+    },
+    {
+      "path": "app/src/lib/downloadCenterLogic.ts",
+      "bytes": 6911,
+      "sha256": "e17c997d8bb0fa604a3123c7d2d1adab582dd60b0f8c3615d5d23e5721a73a18"
+    },
+    {
+      "path": "app/src/lib/downloadModules.ts",
+      "bytes": 1286,
+      "sha256": "0a7ca864b44c512a606686e50f4a8910532f68741f4a4ec6904dd334d9b13720"
+    },
+    {
+      "path": "app/src/lib/fengshenAuthApi.ts",
+      "bytes": 3569,
+      "sha256": "8a16051d351c9f4fd8511c88cf752081fdba442b5c679149fdb02c5ae2c725ff"
+    },
+    {
+      "path": "app/src/lib/functionAvailability.ts",
+      "bytes": 1387,
+      "sha256": "b3176ef4701b3060706bccbf859e8c099d756faba1b820d96ad57c2a6a66ec25"
+    },
+    {
+      "path": "app/src/lib/outputDownload.ts",
+      "bytes": 2882,
+      "sha256": "bb1ab29a6207c255c05c2762998770a8138c4605e5550140f4cbbef4e6f04ea8"
+    },
+    {
+      "path": "app/src/lib/payrollBusinessLogs.ts",
+      "bytes": 6789,
+      "sha256": "8829c5e4214ac0316f2f7fe7907467808fadfc84e2082deb070ab90e821cc29b"
+    },
+    {
+      "path": "app/src/lib/payrollLogText.ts",
+      "bytes": 944,
+      "sha256": "721db1de2b2f1b09d5af5a2660b760024d8fa6d38160fe016c5ceefb2dba020a"
+    },
+    {
+      "path": "app/src/lib/payrollQueue.ts",
+      "bytes": 2657,
+      "sha256": "48d4f2916076838aa1ccf84bc3e5ef2993e6775368a1e8fb045f097b98c91e9c"
+    },
+    {
+      "path": "app/src/lib/payrollQueueSubmit.ts",
+      "bytes": 2551,
+      "sha256": "c2c05beba3d41466c99e8de5aa5490643fcd2694226a6a6dba37899ce10ae4d5"
+    },
+    {
+      "path": "app/src/lib/payrollReviewActions.ts",
+      "bytes": 2669,
+      "sha256": "0b7d250c791919a283ca536e2526849875da8f2d204e33b1815ee269df518fe1"
+    },
+    {
+      "path": "app/src/lib/platformAuthApi.ts",
+      "bytes": 1779,
+      "sha256": "52981001e1fe1697e48183f70e7d59cb383f8b6927e46e01a035b48d6212ec05"
+    },
+    {
+      "path": "app/src/lib/reportBuilder.ts",
+      "bytes": 1653,
+      "sha256": "cfb9dda011b55baa5dab0afef899b7774e042d42d698cd4c43c773fc1ca3ada1"
+    },
+    {
+      "path": "app/src/lib/stationAssociations.ts",
+      "bytes": 1062,
+      "sha256": "56f559a23eb322cd5a6e59ae536c332930531184560892b5de9894dfe645f38f"
+    },
+    {
+      "path": "app/src/lib/stationFilterChoices.ts",
+      "bytes": 305,
+      "sha256": "b0c29450653d4d748999518ca4b8417a48e0b0f6b0fe6d8d114cfa7bb28e3b4a"
+    },
+    {
+      "path": "app/src/lib/taskCatalog.ts",
+      "bytes": 1330,
+      "sha256": "7dd3edddc429bd58fb318d6d70ff11b77fa581a4f6a71482ec41ded5811eaa04"
+    },
+    {
+      "path": "app/src/lib/taskFlow.ts",
+      "bytes": 850,
+      "sha256": "053254f79ca14783f32cdcd68f285e5a5c8ad0ba2bc3c2a286964df614a101e4"
+    },
+    {
+      "path": "app/src/lib/taskGuidance.ts",
+      "bytes": 4520,
+      "sha256": "2463a0bcd1a66e502df32469d9236c25b1acb983abcbab8faa5fa85ba1027d9f"
+    },
+    {
+      "path": "app/src/lib/uploadArchive.ts",
+      "bytes": 6084,
+      "sha256": "c9c25913b55928b5f863e1aa590c05fd18f2360e5458f2b3b69406e1b2bc692d"
+    },
+    {
+      "path": "app/src/lib/uploadSource.ts",
+      "bytes": 1305,
+      "sha256": "67113577567037a4d2fa2ad9aac236366b7e92556cbb7a47028fa1b07815d419"
+    },
+    {
+      "path": "app/src/lib/useStationDirectory.ts",
+      "bytes": 2726,
+      "sha256": "32478cd06aecd6e0371bf3a2adccad5fc2b90813eb8c8317b4925b032f66daf7"
+    },
+    {
+      "path": "app/src/lib/workbench.ts",
+      "bytes": 45428,
+      "sha256": "8dc42212a5418da3751fd33749dd7ef2cd67b4effc4a0b528cb50423d3c78758"
+    },
+    {
+      "path": "app/src/main.tsx",
+      "bytes": 1171,
+      "sha256": "b6a9ab8072d663d1fccce6dddf6f681488df6fb66585d3c59d3c4bcf272740e4"
+    },
+    {
+      "path": "app/src/payrollSource.ts",
+      "bytes": 284,
+      "sha256": "0b326f98ad4168a20807d79e1cbec8d36ddf99bd51362b6a4e6b2d9bdb59dc9b"
+    },
+    {
+      "path": "app/src/types.ts",
+      "bytes": 1434,
+      "sha256": "925e095875811d8c7cc1869eed577e1831ae2104d401f877ca930756d0ba2208"
+    },
+    {
+      "path": "app/src/utils.ts",
+      "bytes": 3287,
+      "sha256": "a9206f5f2bc4517227da9e3aab123847940fad664c8f302b09c0e3ab7c46ce79"
+    },
+    {
+      "path": "app/src/workbench-unified.css",
+      "bytes": 47903,
+      "sha256": "078f852f573a88e609e2ca314a0d44f410429e373ddbf0ace1166378914eb166"
+    },
+    {
+      "path": "app/src/workbench.css",
+      "bytes": 123967,
+      "sha256": "b402bca8cb7ce559c49b410172cec0af24b18eed6167679fb0b88ff47a2976c1"
+    },
+    {
+      "path": "app/start.ps1",
+      "bytes": 1443,
+      "sha256": "c5ce9264e974bdb33cea9beba1f6dc2eadc24937af50e416fdebe933378a27c4"
+    },
+    {
+      "path": "app/system_templates/三亚-template.xlsx",
+      "bytes": 24362,
+      "sha256": "506441ea0e9ef13390ed4f13cd9b198d75b3b5743230e52f3096620b7c119846"
+    },
+    {
+      "path": "app/system_templates/上海-template.xlsx",
+      "bytes": 22789,
+      "sha256": "190cc0af22396158dc0a83d372a4ba18714435819af09c7bbb3eda046c721b05"
+    },
+    {
+      "path": "app/system_templates/东莞-template.xlsx",
+      "bytes": 22788,
+      "sha256": "350309ecf105255e638fd8d64bb7673f859f85a935033e0f89fe174dd23cd28e"
+    },
+    {
+      "path": "app/system_templates/保定-template.xlsx",
+      "bytes": 22790,
+      "sha256": "fbfe9ee465cbaed737da15fe870063146b24e3f1d3f66f583316cdebad739d7e"
+    },
+    {
+      "path": "app/system_templates/北京-template.xlsx",
+      "bytes": 22790,
+      "sha256": "5308376fb40182db3d70dee0087c3cf3cb3a473e9ba3491741f895ba70952531"
+    },
+    {
+      "path": "app/system_templates/大连-template.xlsx",
+      "bytes": 22818,
+      "sha256": "039f92809876752811894fd247fbd6e83c9dbcd05cc589c812d9a4d6cce07751"
+    },
+    {
+      "path": "app/system_templates/天津-template.xlsx",
+      "bytes": 22790,
+      "sha256": "a4b72179757a1a5aec06e645f2e87cb0fe21cc1ea4e1db239160e8a48b4c541e"
+    },
+    {
+      "path": "app/system_templates/宁波-template.xlsx",
+      "bytes": 22789,
+      "sha256": "08090408ecc74bef98c8034b1423a1b45fc2c79d017defd80497a66daf23aa50"
+    },
+    {
+      "path": "app/system_templates/小象-template.xlsx",
+      "bytes": 23958,
+      "sha256": "c3bb3c7267d9a989a38810f7b424c4c68af51b81b7041d89307d391c77addfa9"
+    },
+    {
+      "path": "app/system_templates/广州-template.xlsx",
+      "bytes": 22789,
+      "sha256": "7b9d878fdf733b7c7a75bce3d4897fb1245ac8dc898d421a73246cc2e0e7ab91"
+    },
+    {
+      "path": "app/system_templates/泉州-template.xlsx",
+      "bytes": 69634,
+      "sha256": "de61858d756a157ff02fa9b2c666140e72ff896fca16e44a4b9871f1b48e7eb4"
+    },
+    {
+      "path": "app/system_templates/深圳-template.xlsx",
+      "bytes": 22877,
+      "sha256": "67f0481a6f11a6151a1790e286f25f8b75f3887abb403bc9475d9c90752f8cc4"
+    },
+    {
+      "path": "app/system_templates/韶关-template.xlsx",
+      "bytes": 22751,
+      "sha256": "959fd8e9d02432abc8f14853d29b08b85ec6584c8a8dd426bdcd5bf2332aef7d"
+    },
+    {
+      "path": "app/tests/authInputDraft.test.ts",
+      "bytes": 1790,
+      "sha256": "67f82dd52bf6adaafc35900a4e62d128d8eb69089acc2fbee3fca3b33cf7660d"
+    },
+    {
+      "path": "app/tests/authPresentation.test.ts",
+      "bytes": 1602,
+      "sha256": "d65a315f1240816bf8cfb7816e375e18091b8e6c9d3652ad4afb32cd6b3272ca"
+    },
+    {
+      "path": "app/tests/batchReadiness.test.ts",
+      "bytes": 1474,
+      "sha256": "fe70bf36749ba49ec3f1ebed5113cc0fda93fa3306fcfd356f8ccfb6c137eb91"
+    },
+    {
+      "path": "app/tests/dailyDownloadScope.test.ts",
+      "bytes": 2350,
+      "sha256": "2d19232cda3f1be38f065d76d2824696788f8477b7c724210fe80a63c4f7c548"
+    },
+    {
+      "path": "app/tests/deductionBulk.test.ts",
+      "bytes": 1912,
+      "sha256": "c39415bb54fee62fe4bd3efd4d1317e87492d063e41dcaa1a0bf8971913ff7c7"
+    },
+    {
+      "path": "app/tests/deductionStations.test.ts",
+      "bytes": 9564,
+      "sha256": "f8a46b551710387852a5872992697082b3e36efb8b3068e90c598ee84a71653e"
+    },
+    {
+      "path": "app/tests/deliveryDownloadAlias.test.ts",
+      "bytes": 1158,
+      "sha256": "6334a36b9074f036763547f2b642174ee8e8f15816d8e08cd5c002aec202dbe3"
+    },
+    {
+      "path": "app/tests/downloadCenterLogic.test.ts",
+      "bytes": 5747,
+      "sha256": "1524a62d28828e60342de729eb1d9b996db51f83dd3b8b625ec14014658a75c5"
+    },
+    {
+      "path": "app/tests/downloadModules.test.ts",
+      "bytes": 1388,
+      "sha256": "9b950aa803f9f9433d5e5bff93092f6486d020fefb07b54a6985928a16999ce0"
+    },
+    {
+      "path": "app/tests/downloadProxy.test.ts",
+      "bytes": 3939,
+      "sha256": "460700bc8920972b16fac02031227c5db2109d71da58ef4226b65f743c57d540"
+    },
+    {
+      "path": "app/tests/downloadSafety.test.ts",
+      "bytes": 2380,
+      "sha256": "b563825ba8ba87bc973c41306b1a176382ff23fabfccfeb64783e3510de451d6"
+    },
+    {
+      "path": "app/tests/fengshenAuthApi.test.ts",
+      "bytes": 7355,
+      "sha256": "aa1ba391e6c5be96410bd7b831794f528516df5322a6d9df006ade2be17a47e3"
+    },
+    {
+      "path": "app/tests/fengshenAuthProxy.test.ts",
+      "bytes": 6513,
+      "sha256": "49712a3994886b9d50f6f55d950f546490fd0b104332b31c61b381f10d8907f0"
+    },
+    {
+      "path": "app/tests/fixtures/company_baseline.json",
+      "bytes": 604,
+      "sha256": "fcec0a8d789e1bfb67cd656e5d46445e7edcbdb2f22c58b7eeac3127cb6ccba8"
+    },
+    {
+      "path": "app/tests/fixtures/downloadCenterUI.tsx",
+      "bytes": 578,
+      "sha256": "82157dff3bccd4195e445299ea61b6f13a887a3c50cfe77134133dd7d4c9df9e"
+    },
+    {
+      "path": "app/tests/fixtures/followup_header.json",
+      "bytes": 6600,
+      "sha256": "1f5d64a27bc6f064ef1d0956b025fd7a94f4a0799d461cf83ebdfad40aa1fc5a"
+    },
+    {
+      "path": "app/tests/fixtures/xiaoxiang_blank_reference_notes.json",
+      "bytes": 525,
+      "sha256": "e511c72c5bf3faf13763c06c2a7308ce43293dcc3b8a68febf6e150b17b2e092"
+    },
+    {
+      "path": "app/tests/fixtures/xiaoxiang_company_expected.json",
+      "bytes": 15563,
+      "sha256": "0fa52de2a560dddc4a1db7638407421c86985878f0a3265c45dcf845374324e3"
+    },
+    {
+      "path": "app/tests/functionAvailability.test.ts",
+      "bytes": 1181,
+      "sha256": "2df7fd9d7bae0e43fde46b0379c81b6d48941f31cd499ee2b21306587d83917c"
+    },
+    {
+      "path": "app/tests/legacyDownloadBoundary.test.ts",
+      "bytes": 5193,
+      "sha256": "12431386bea5e7b1f900c39c01863fcab999553db92b80a0cf037998453db9ab"
+    },
+    {
+      "path": "app/tests/merchantDownloads.test.ts",
+      "bytes": 3311,
+      "sha256": "dc289dc44cc0f53a8d49858d570405847d60742957d55fa0d21700369bed3e17"
+    },
+    {
+      "path": "app/tests/officialVerification.test.ts",
+      "bytes": 5085,
+      "sha256": "deae3b6a7c39e60fe86cb6388ce130b72cb2c8b80a6ae2cfce971124c929005e"
+    },
+    {
+      "path": "app/tests/outputDownload.test.ts",
+      "bytes": 1213,
+      "sha256": "017f5f203812ae0fd7242cc63fc0ef7acb2973e126d819e4bc7f9b8dc3086f49"
+    },
+    {
+      "path": "app/tests/payrollBusinessLogs.test.ts",
+      "bytes": 4476,
+      "sha256": "6619e936da7d77a3e49f9c1475b63768202bc5c7789b449cc00200e7b9c381f4"
+    },
+    {
+      "path": "app/tests/payrollDeductions.test.ts",
+      "bytes": 1585,
+      "sha256": "ef0fdeca52762790712538233cd00fa711d3edb19c0fe774cc6edfe31db5422f"
+    },
+    {
+      "path": "app/tests/payrollDownloadProgress.test.ts",
+      "bytes": 1753,
+      "sha256": "a5925da2ad6150e049ec4c5cd21f9ee637a5ce9e1340069d554badd429fa2551"
+    },
+    {
+      "path": "app/tests/payrollLogText.test.ts",
+      "bytes": 681,
+      "sha256": "1611654bd845797db0c3b80a16503c6eaa590d11b1115fc214c4847b7914d7f5"
+    },
+    {
+      "path": "app/tests/payrollQueueSubmit.test.ts",
+      "bytes": 2617,
+      "sha256": "39b76db7ea66b0798baebb3d992e571adf5dd104479b7e1c593d83ef50f3879a"
+    },
+    {
+      "path": "app/tests/payrollReview.test.ts",
+      "bytes": 2107,
+      "sha256": "058e89654fa69b05c19b661ff2a94a24a35e4c87b2b1754450bec3c3b528f255"
+    },
+    {
+      "path": "app/tests/payrollReviewActions.test.ts",
+      "bytes": 2763,
+      "sha256": "fa5e74efd475a007f44961ab4d5291c8d19bb669a501ba4b63beaa6b8378cd13"
+    },
+    {
+      "path": "app/tests/payrollTwoStep.test.ts",
+      "bytes": 5430,
+      "sha256": "23cb88388361407841bcc06e4d82980c81424c76428ca6a504640931417d16dd"
+    },
+    {
+      "path": "app/tests/platformAuthApi.test.ts",
+      "bytes": 1876,
+      "sha256": "0354382cd94f4d9870f06c32bdc409ae81ddc1d661005601ed3cef1f6fa096d0"
+    },
+    {
+      "path": "app/tests/projectLayout.test.ts",
+      "bytes": 1685,
+      "sha256": "e541ca99235080c9e4da3e2df038449d0589f88d70369da5745e4ece50894970"
+    },
+    {
+      "path": "app/tests/reportBuilder.test.ts",
+      "bytes": 3512,
+      "sha256": "eb9cb394620795021c29ac08f2171f5b851848f3598dd5b839b79e08b46b61f1"
+    },
+    {
+      "path": "app/tests/startupGuard.test.ts",
+      "bytes": 2626,
+      "sha256": "6aafee43d89b3e11b9e81b9305d924d5727957934c983fd9661259903c33cb91"
+    },
+    {
+      "path": "app/tests/stationAssociations.test.ts",
+      "bytes": 2429,
+      "sha256": "31c500d77adc4918bfc44dcf05ceda06ba64c518833c5ea2ea32c9ecdfd0b8f1"
+    },
+    {
+      "path": "app/tests/taskCatalog.test.ts",
+      "bytes": 628,
+      "sha256": "6357251dc78acd7194051ca73a34fd0124da363cd0d4a6b8fcf03e6a12f30053"
+    },
+    {
+      "path": "app/tests/taskFlow.test.ts",
+      "bytes": 2396,
+      "sha256": "c040720881fe8b02f4523e2b5551367040e724c85b3f3975526012ab8c4ca38f"
+    },
+    {
+      "path": "app/tests/taskGuidance.test.ts",
+      "bytes": 3211,
+      "sha256": "f188d60ccd215980233e8a28686dd8386dd348f760b8374b0c588249cca7be51"
+    },
+    {
+      "path": "app/tests/uploadArchive.test.ts",
+      "bytes": 2185,
+      "sha256": "2622005bebc052d81f53b91f97d41f5581be851d5a2802ccbcd35891d7eea8a0"
+    },
+    {
+      "path": "app/tests/uploadSource.test.ts",
+      "bytes": 2874,
+      "sha256": "1b5e08d7dd49b646e9ac76672e948d6e2b4bfd20c054f76992881c7db4fba1d1"
+    },
+    {
+      "path": "app/tests/workbench.test.ts",
+      "bytes": 21395,
+      "sha256": "9ec610c89da4bb75951298e90a257a5bc5f587e4332c48a99909565eca36f006"
+    },
+    {
+      "path": "app/tests/workspaceConfig.test.ts",
+      "bytes": 1246,
+      "sha256": "0d5ea7f30911c1824aad5d3c530147551aa5a5241e871f1b657972f23b02fce5"
+    },
+    {
+      "path": "app/tsconfig.json",
+      "bytes": 589,
+      "sha256": "c55d1fb1febd860efb07d3968371a7324e17b015fb48cfcaa7d17c2427e4c1e7"
+    },
+    {
+      "path": "app/vite.config.ts",
+      "bytes": 737,
+      "sha256": "96527b661655e4bb51677b5324d4e197a3f24f667c619d77f40d954a57699327"
+    },
+    {
+      "path": "docs/BUSINESS_SAFETY_AND_REVIEW.md",
+      "bytes": 4061,
+      "sha256": "af9437c507be8cfd8827eeefea5d013fde0de186f1b9bd518656bc3e93e85a48"
+    },
+    {
+      "path": "docs/DEDUCTION_STATIONS.md",
+      "bytes": 1877,
+      "sha256": "5aa1fac75c0f2debbd27867fe197a3b8be6bf053b6d35cde6890ba133c1bb8bd"
+    },
+    {
+      "path": "docs/DELIVERY_LAYOUT.md",
+      "bytes": 3118,
+      "sha256": "2b74238abd5dff7fdf7ca2941493940c359c38e14dfa5f9a27117ec9600b8657"
+    },
+    {
+      "path": "docs/DYNAMIC_DIRECTORIES.md",
+      "bytes": 1267,
+      "sha256": "f5bbee7c1efee4b97998ee26504cc60159914b48656e7f8b1ea97b07240fed01"
+    },
+    {
+      "path": "docs/PAYROLL_QUEUE.md",
+      "bytes": 4656,
+      "sha256": "a24f4aeb19be43405e5dd18fc1a9169c69c5cf9183d2659703b1a1a8641546a8"
+    },
+    {
+      "path": "docs/PAYROLL_TWO_STEP.md",
+      "bytes": 2735,
+      "sha256": "e0c97e4676c2bb9811490d6e68eb300172228aa5a44b3e18f41f446e23133345"
+    },
+    {
+      "path": "docs/PAYROLL_UPLOAD_AND_IDENTITY_FIXES.md",
+      "bytes": 4588,
+      "sha256": "a603afef02e3aa3d137fe1174c3305d4d8b30e09849c274acc46db37d8570e30"
+    },
+    {
+      "path": "docs/PAYROLL_VERIFICATION_VALIDATION.md",
+      "bytes": 2681,
+      "sha256": "7c0055b359ab727607bb06163d6a794a5c9b636937d06d8a438bb78fe644517e"
+    },
+    {
+      "path": "docs/REPORT_EXTENSION.md",
+      "bytes": 2162,
+      "sha256": "7bd2b459f58f647f14ba6ac0844f83e82beb2a55b305539c3adde80cf21fc888"
+    },
+    {
+      "path": "docs/STATION_ASSOCIATIONS.md",
+      "bytes": 1953,
+      "sha256": "5578825514749ac04dbb097029e4138571e8bcf0ab7d8db125be0a930587fc3e"
+    },
+    {
+      "path": "docs/STATION_COUNTS_AND_PAYROLL_CONFIRMATION.md",
+      "bytes": 7370,
+      "sha256": "ccba3f875d7a6b0cb2865e5d57b12deb6ce9735a3d57c7ca759bdabd3813155d"
+    },
+    {
+      "path": "docs/UI_WORKFLOW_GUIDE.md",
+      "bytes": 2718,
+      "sha256": "c9b0757475f1b6475947c9af6608f7728ebf243c04a90bdad9472e52f588ab08"
+    },
+    {
+      "path": "docs/目录与维护.md",
+      "bytes": 1688,
+      "sha256": "d5700b530fef3d2cb7ce96343663a1b5916d08f9b1e87bb29acf807c2d39bd46"
+    },
+    {
+      "path": "docs/验证说明.md",
+      "bytes": 3422,
+      "sha256": "40b61f1467c2c45ac7ab849578c2b03a819df3ee088ddff683270537a9612f14"
+    },
+    {
+      "path": "启动系统.cmd",
+      "bytes": 354,
+      "sha256": "2a4657c4b1ba0682542401f45bd8246a83f66c2ec864356e8cbb42159972b000"
+    }
+  ]
+}

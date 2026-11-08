@@ -1,0 +1,10 @@
+import React from 'react';
+import type {DeductionEntry} from './DeductionAmounts';
+export function CityDeductionAmounts({entries,columns,disabled,onChange}:{entries:DeductionEntry[];columns:string[];disabled:boolean;onChange:(entries:DeductionEntry[])=>void}){
+  const update=(index:number,entry:DeductionEntry)=>onChange(entries.map((old,i)=>i===index?entry:old));
+  return <div className="city-fee-editors">{entries.map((entry,index)=>{
+    const zero=()=>({...entry.row,...Object.fromEntries(columns.filter(c=>!c.endsWith('_maxDays')&&(entry.row[c]===null||entry.row[c]==='')).map(c=>[c,0]))});
+    const charged=columns.some(c=>!c.endsWith('_maxDays')&&entry.row[c]!=null&&entry.row[c]!==''&&Number(entry.row[c])!==0);
+    return <div key={entry.key}><h4>{entry.station.city} <small>{entry.configured?'已保存城市默认金额':'待配置'}</small></h4><div className="city-fee-grid">{columns.map(column=>{const value=entry.row[column],text=column==='招聘来源'||typeof value==='string'&&!Number.isFinite(Number(value));return <label key={column}>{column.replace('_maxDays','天数阈值')}{typeof value==='boolean'?<input type="checkbox" disabled={disabled} checked={value} onChange={e=>update(index,{...entry,edited:true,zero_confirmed:false,row:{...entry.row,[column]:e.target.checked}})}/>:<input className="wb-input" type={text?'text':'number'} step="any" disabled={disabled} aria-label={`${entry.station.name} ${column}`} placeholder={column.endsWith('_maxDays')?'沿用原空白规则':'待填写'} value={value??''} onChange={e=>update(index,{...entry,edited:true,zero_confirmed:false,row:{...entry.row,[column]:text?e.target.value:e.target.value===''?null:Number(e.target.value)}})}/>}</label>;})}</div><div className="city-fee-actions"><button className="wb-button" disabled={disabled} onClick={()=>update(index,{...entry,edited:true,row:zero()})}>空白项填零</button><label><input type="checkbox" disabled={disabled||charged} checked={entry.zero_confirmed} onChange={e=>update(index,{...entry,edited:true,zero_confirmed:e.target.checked,row:e.target.checked?zero():entry.row})}/>确认本市默认零扣款</label></div></div>;
+  })}</div>;
+}
