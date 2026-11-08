@@ -142,7 +142,6 @@ export default function App() {
   }, [activeMenu]);
 
   const [deductionOpen, setDeductionOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [globalTemplatesOpen, setGlobalTemplatesOpen] = useState(false);
   const [deductionDefaultOnly, setDeductionDefaultOnly] = useState(false);
   const [deductionVersion, setDeductionVersion] = useState(0);
@@ -922,14 +921,7 @@ export default function App() {
                   );
                 }
 
-                const MENU_LABELS: Record<string, string> = {
-                  dashboard: "首页看板",
-                  core: "兼职薪资核算",
-                  tools: "独立工具箱",
-                  chat: "带薪摸鱼官",
-                  monitor: "任务监控",
-                };
-                const taskName = shangyiDownload ? '商翼员工下载' : riderDownload ? '骑手资料下载' : MENU_LABELS[activeMenu] || activeMenu;
+                const taskName = shangyiDownload ? '商翼员工下载' : riderDownload ? '骑手资料下载' : '兼职薪资核算';
                 const newRecord: TaskHistoryRecord = {
                   id:
                     Date.now().toString() +
@@ -1111,30 +1103,28 @@ export default function App() {
                   </span>
                 )}
               </button>
-              {workspaceView !== 'approval' && workspaceView !== 'price-export' && !(workspaceView === 'create' && taskKind === 'payroll') && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => { setDeductionDefaultOnly(true); setDeductionOpen(true); }}
-                    className="wb-sidebar-item"
-                  >
-                    <span className="wb-sidebar-icon" aria-hidden="true">
-                      <SlidersHorizontal size={15} />
-                    </span>
-                    <span className="wb-sidebar-text">扣款规则</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setGlobalTemplatesOpen(true)}
-                    className="wb-sidebar-item"
-                  >
-                    <span className="wb-sidebar-icon" aria-hidden="true">
-                      <FileSpreadsheet size={15} />
-                    </span>
-                    <span className="wb-sidebar-text">模板中心</span>
-                  </button>
-                </>
-              )}
+              <button
+                type="button"
+                aria-pressed={deductionOpen}
+                onClick={() => { setDeductionDefaultOnly(true); setDeductionOpen(true); }}
+                className="wb-sidebar-item"
+              >
+                <span className="wb-sidebar-icon" aria-hidden="true">
+                  <SlidersHorizontal size={15} />
+                </span>
+                <span className="wb-sidebar-text">扣款规则</span>
+              </button>
+              <button
+                type="button"
+                aria-pressed={globalTemplatesOpen}
+                onClick={() => setGlobalTemplatesOpen(true)}
+                className="wb-sidebar-item"
+              >
+                <span className="wb-sidebar-icon" aria-hidden="true">
+                  <FileSpreadsheet size={15} />
+                </span>
+                <span className="wb-sidebar-text">模板中心</span>
+              </button>
             </div>
           </div>
         </aside>
@@ -1313,7 +1303,6 @@ export default function App() {
             </section>
             <section hidden={workspaceView !== 'create' || taskKind !== 'payroll'} aria-label="兼职薪资核算">
                 <CorePage
-                  onOpenSettings={() => setSettingsOpen(true)}
                   onOpenDeductions={(defaultOnly = false) => { setDeductionDefaultOnly(defaultOnly); setDeductionOpen(true); }}
                   onOpenConnections={() => window.dispatchEvent(new CustomEvent('workbench:connections'))}
                   onOpenDownloads={() => navigateWorkspace('history')}
@@ -1354,9 +1343,6 @@ export default function App() {
         </div>
       </div>
       {globalTemplatesOpen && <WorkbenchDrawer title="系统模板" wide bodyClassName="wb-template-body" onClose={() => setGlobalTemplatesOpen(false)}><SystemTemplatesPanel onNavigatePayroll={()=>{setGlobalTemplatesOpen(false);handleNavigatePayroll();}} /></WorkbenchDrawer>}
-      {settingsOpen && <WorkbenchDrawer title="工作台设置" onClose={() => setSettingsOpen(false)}>
-        <section className="wb-setting-row"><div><h3>扣款配置</h3><p className="wb-muted">维护默认配置；核算开始时自动保存实际采用的规则。</p></div><button className="wb-button" onClick={() => { setSettingsOpen(false); setDeductionDefaultOnly(true); setDeductionOpen(true); }}>扣款设置</button></section>
-      </WorkbenchDrawer>}
       {deductionOpen && <StationDeductionManager platform={(!deductionDefaultOnly && payrollPreparation ? payrollPreparation.mode : appConfig.payrollSourceMode)==='xiaoxiang'?'xiaoxiang':'fengshen'} apiFetch={fetchWithAuth} onClose={() => { setDeductionOpen(false); setDeductionVersion(value => value + 1); }} onSaved={() => setDeductionVersion(value => value + 1)} />}
 
 

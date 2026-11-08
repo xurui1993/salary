@@ -944,8 +944,8 @@ const DATASET_CARD_META_MAP: Record<string, Omit<DatasetCardMeta, 'id'>> = {
   },
   lanorange_part_price: {
     title: '价格档案',
-    scopeTag: '全城·全量',
-    tone: 'full',
+    scopeTag: '按月',
+    tone: 'monthly',
     desc: '各城市站点兼职阶梯单价与补贴表',
   },
   lanorange_rider_archive: {
@@ -1453,7 +1453,9 @@ export function buildExecutionRailSummary(input: ExecutionRailSummaryInput): Exe
     if (baizeOnly) {
       listFooterText = '商翼全量员工档案 · 独立归档';
     } else if (xiaoxiangOnly) {
-      listFooterText = `已选 ${datasetsCount} 类灯塔资料 · 全城自动覆盖`;
+      listFooterText = cities.length > 0
+        ? `已选 ${datasetsCount} 类灯塔资料 · 已选 ${cities.length} 城`
+        : `已选 ${datasetsCount} 类灯塔资料 · 全城自动覆盖`;
     } else if (blueOnly) {
       listFooterText = `已选 ${datasetsCount} 类蓝橙资料 · 全城全量直连`;
     } else if (merchantOnly) {

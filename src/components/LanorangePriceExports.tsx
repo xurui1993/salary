@@ -33,20 +33,41 @@ export function LanorangePriceExports({apiFetch,workspaceId,onActiveCount,onSwit
   async function find(){await perform('find',async()=>{const result=await request<{exports:Export[]}>('/exports');const found=result.exports.find(j=>j.request_id===attempt?.request_id);if(!found)throw Error('尚未找到本次提交，可使用原标识再次发起导出；不会创建重复任务。');setHistory(result.exports);setJob(found);save(null);});}
   async function download(){if(!job)return;await perform('download',async()=>{const response=await fetchRef.current(BASE+`/exports/${job.id}/result.xlsx`);if(!response.ok){const value=await response.json();throw Error(value.detail||'文件未就绪或校验失败');}const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=url;link.download=`${job.query.month}_蓝橙待审每日价格${job.status==='partial'?'_部分':''}.xlsx`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});}
   const active=history.some(j=>ACTIVE.has(j.status));
-  return <div className="wb-approvals"><section className="wb-approval-card"><div className="wb-approval-heading"><div className="wb-stage-heading-left"><div className="wb-stage-title-row"><h2>待审每日价格导出</h2>{onSwitchView && <nav className="wb-module-tabs wb-stage-tabs" aria-label="蓝橙价格管理功能"><button type="button" aria-pressed={false} className="wb-button" onClick={()=>onSwitchView('approval')}>批量审批</button><button type="button" aria-pressed={true} className="wb-button" onClick={()=>onSwitchView('price-export')}>待审每日价格导出</button></nav>}</div><p className="wb-muted">读取蓝橙业务列表中有权限的站点，按“骑手 × 日期”纵向生成 Excel。</p></div></div>
+  return <div className="wb-approvals">
+    {onSwitchView && (
+      <div className="pq-mode-bar">
+        <div className="pq-mode-left">
+          <div className="wb-segment pq-mode-tabs" role="tablist" aria-label="蓝橙价格管理功能">
+            <button type="button" role="tab" aria-selected={false} onClick={() => onSwitchView('approval')}>批量审批</button>
+            <button type="button" role="tab" aria-selected={true} className="is-active" onClick={() => onSwitchView('price-export')}>待审每日价格导出</button>
+          </div>
+          <span className="pq-mode-hint">读取蓝橙有权限站点，按“骑手 × 日期”纵向生成 Excel</span>
+        </div>
+      </div>
+    )}
+    <section className="wb-approval-card">
     <form onSubmit={start}>
       <div className="wb-approval-filters"><LanorangePriceFilters apiFetch={apiFetch} workspaceId={workspaceId} city={query.city} station={query.station} month={query.month} requiredMonth disabled={!!attempt || !!busy} onChange={value=>setQuery({...query,...value})}/></div>
       <details className="wb-price-date-filter"><summary>限定导出日期（可选）</summary><div className="wb-approval-filters"><div className="wb-approval-filter-item"><span>开始日期</span><WorkbenchDatePicker ariaLabel="限定导出开始日期" value={query.date_from} rangeRole="start" rangeStart={query.date_from} rangeEnd={query.date_to} allowClear disabled={!!attempt} onChange={v=>setQuery({...query,date_from:v})}/></div><div className="wb-approval-filter-item"><span>结束日期</span><WorkbenchDatePicker ariaLabel="限定导出结束日期" value={query.date_to} rangeRole="end" rangeStart={query.date_from} rangeEnd={query.date_to} allowClear disabled={!!attempt} onChange={v=>setQuery({...query,date_to:v})}/></div></div></details>
       <div className="wb-approval-toolbar"><span>状态：审批中、待审核；仅取最新版本。0保留，空价格留空。</span><button className="wb-primary" disabled={!!busy || active || (!attempt && !query.month)}>{busy==='start'?'正在创建导出…':attempt?'使用原标识再次发起':'开始导出'}</button></div>
     </form>
-    {error && <p className="wb-error" role="alert">{error}</p>}
+    {error && (
+      <div className="wb-error wb-error-with-action" role="alert">
+        <span>{error}</span>
+        {error.includes('登录') && (
+          <button type="button" className="wb-button wb-error-login-btn" onClick={() => window.dispatchEvent(new CustomEvent('workbench:connections'))}>
+            立即登录蓝橙
+          </button>
+        )}
+      </div>
+    )}
     {attempt && <div className="wb-approval-notice">本次导出提交尚未确认，请先查找已有任务。<button className="wb-button" disabled={!!busy} onClick={()=>void find()}>查找本次导出</button></div>}
-    <p className="wb-muted">主表：结算模式、日期、城市名称、片区名称、站点名称、骑手姓名、身份证号、价格。版本及跳过、失败原因记录在“采集记录”中。</p>
-  </section><section className="wb-approval-card" id="price-record-result"><div className="wb-approval-heading"><h2>导出结果</h2><button className="wb-button" disabled={!!busy} onClick={()=>void refresh()}>刷新导出记录</button></div>
+  </section>
+  {(history.length > 0 || !!job) && <section className="wb-approval-card" id="price-record-result"><div className="wb-approval-heading"><h2>导出结果</h2><button className="wb-button" disabled={!!busy} onClick={()=>void refresh()}>刷新导出记录</button></div>
     {!job?<p className="wb-muted">暂无导出任务。</p>:<><TaskOutcome task={{status:job.status,kind:'price-export',availableFiles:['completed','partial'].includes(job.status)?1:0}}/><label className="wb-approval-history">查看导出<select className="wb-select" value={job.id} onChange={e=>setJob(history.find(j=>j.id===e.target.value)||null)}>{job&&!history.some(j=>j.id===job.id)&&<option value={job.id}>{job.query.month} · 当前任务</option>}{history.map(j=><option key={j.id} value={j.id}>{j.query.month} · {new Date(j.created*1000).toLocaleString('zh-CN')} · {labels[j.status]||j.status}</option>)}</select></label>
       <div className="wb-approval-toolbar"><div><p>{job.message}</p><p className="wb-muted">已处理{job.completed}/{job.total}个站点周期 · 已生成{job.rows}行</p></div><div className="wb-row">{ACTIVE.has(job.status)&&<button className="wb-button" disabled={!!busy || job.status==='stopping'} onClick={()=>void perform('stop',async()=>{setJob(await request<Export>(`/exports/${job.id}/stop`,{}));})}>停止后续采集</button>}{['completed','partial'].includes(job.status)&&<button className="wb-primary" disabled={!!busy} onClick={()=>void download()}>下载 Excel</button>}</div></div>
       {job.status==='partial' && <p className="wb-error">部分站点未导出，请按下方失败原因单独筛选处理；当前文件含已成功读取的数据和完整采集记录。</p>}
       <details className="wb-receipts" key={job.id} open={['partial','failed','interrupted'].includes(job.status)}><summary>采集明细与版本（{job.receipts.length} 条）</summary><div className="wb-approval-table"><table><thead><tr><th>城市 / 站点</th><th>结算周期</th><th>最新版本</th><th>状态</th><th>行数</th><th>结果 / 原因</th></tr></thead><tbody>{job.receipts.map((r,index)=><tr key={index}><td>{r.city}<small>{r.station}</small></td><td>{r.period}</td><td>{r.version || '—'}</td><td>{r.status || '—'}</td><td>{r.row_count}</td><td className={r.result==='失败'?'wb-error':''}>{r.result}<small>{r.message}</small></td></tr>)}</tbody></table></div></details>
     </>}
-  </section></div>;
+  </section>}</div>;
 }

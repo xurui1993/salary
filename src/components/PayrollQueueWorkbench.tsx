@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
-import {FileSpreadsheet, Download, MoreHorizontal, Square, FolderOpen, ChevronRight, ArchiveRestore, X, Loader2} from 'lucide-react';
+import {FileSpreadsheet, Download, Square, FolderOpen, ChevronRight, ArchiveRestore, X, Loader2} from 'lucide-react';
 import type {CorePageProps} from './CorePage';
 import {ControlPanel} from './ControlPanel';
 import {PayrollPreparation, type PayrollPreparationState} from './PayrollPreparation';
@@ -64,7 +64,7 @@ function formatLogTime(value:string){
 export function FlashPayrollWorkbench({config,onConfigChange,uploadExtracted,isRunning,progress,progressText,logs,payrollPreparation:value,apiFetch,onPreparationChange,onUploadFiles,onRun,onOpenDownloads,onOpenConnections,onOpenFengshenLogin,onOpenDeductions,onOpenSettings,onOtherMode}:Props){
   const [tasks,setTasks]=useState<PayrollQueueTask[]>([]),[selectedId,setSelectedId]=useState(''),[checked,setChecked]=useState<string[]>([]);
   const [loading,setLoading]=useState(true),[uploading,setUploading]=useState(false),[busy,setBusy]=useState(false);
-  const [error,setError]=useState(''),[loadError,setLoadError]=useState(''),[more,setMore]=useState(false),[templates,setTemplates]=useState(false),[hidden,setHidden]=useState(false);
+  const [error,setError]=useState(''),[loadError,setLoadError]=useState(''),[templates,setTemplates]=useState(false),[hidden,setHidden]=useState(false);
   const [reviewId,setReviewId]=useState(''),[removeTargets,setRemoveTargets]=useState<PayrollQueueTask[]>([]),[skipLegacy,setSkipLegacy]=useState(false);
   const api=useRef(apiFetch);api.current=apiFetch;
   const selectedRef=useRef(selectedId);selectedRef.current=selectedId;
@@ -93,7 +93,6 @@ export function FlashPayrollWorkbench({config,onConfigChange,uploadExtracted,isR
   useEffect(()=>{const changed=()=>void refresh();window.addEventListener('payroll-queue:changed',changed);return()=>window.removeEventListener('payroll-queue:changed',changed);},[refresh]);
   useEffect(()=>{setChecked([]);setSelectedId('');setReviewId('');setTasks([]);setLoading(true);},[hidden]);
   useEffect(()=>{setSkipLegacy(false);},[value?.id]);
-  useEffect(()=>{const open=()=>setMore(true);window.addEventListener('workbench:payroll-more',open);return()=>window.removeEventListener('workbench:payroll-more',open);},[]);
   const legacy=value&&!hidden&&!skipLegacy&&!tasks.some(task=>task.batch_id===value.id)?legacyPayrollTask(value,logs,progress,progressText):null;
   const visible=legacy?[legacy,...tasks]:tasks;
   const selected=visible.find(task=>task.id===selectedId)||visible.find(task=>task.batch_id===value?.id)||visible.find(payrollQueueRunning)||visible[0];
@@ -139,8 +138,12 @@ export function FlashPayrollWorkbench({config,onConfigChange,uploadExtracted,isR
   const updatePreparation=(task:PayrollQueueTask,next:PayrollPreparationState)=>{if(task.legacy)onPreparationChange(next);else setTasks(previous=>previous.map(entry=>entry.id===task.id?{...entry,preparation:next}:entry));};
   const review=visible.find(task=>task.id===reviewId);
   return <div className="pq-workbench">
-    <header className="pq-heading"><h2>兼职薪资核算</h2><div className="pq-heading-actions"><button className="wb-link" onClick={onOpenDownloads}>任务记录</button><button className="pq-icon-button" aria-label="更多核算设置" onClick={()=>setMore(true)}><MoreHorizontal size={21}/></button></div></header>
-    <div className="pq-mode-bar"><div className="wb-segment pq-mode-tabs" role="tablist" aria-label="核算方式">{([['fengshen','闪购自动'],['manual','闪购手动'],['xiaoxiang','小象超市']] as const).map(([key,label])=><button key={key} role="tab" aria-selected={mode===key} className={mode===key?'is-active':''} disabled={uploading} onClick={()=>{if(mode!==key)onOtherMode(key);}}>{label}</button>)}</div><span className="pq-mode-hint">{mode==='fengshen'?'上传后自动执行':'按任务准备资料并核算'}</span></div>
+    <div className="pq-mode-bar">
+      <div className="pq-mode-left">
+        <div className="wb-segment pq-mode-tabs" role="tablist" aria-label="核算方式">{([['fengshen','闪购自动'],['manual','闪购手动'],['xiaoxiang','小象超市']] as const).map(([key,label])=><button key={key} role="tab" aria-selected={mode===key} className={mode===key?'is-active':''} disabled={uploading} onClick={()=>{if(mode!==key)onOtherMode(key);}}>{label}</button>)}</div>
+        <span className="pq-mode-hint">{mode==='fengshen'?'上传后自动执行':'按任务准备资料并核算'}</span>
+      </div>
+    </div>
     <section className="pq-intake" aria-label="添加核算任务"><ControlPanel payrollSourceMode={mode} onUploadFiles={upload} onOpenTemplates={()=>setTemplates(true)} isRunning={uploading||(mode==='xiaoxiang'&&isRunning)}/>{mode==='fengshen'&&<div className="pq-intake-options"><label><input type="checkbox" aria-label="排除取分离站点" checked={excludeSeparation} disabled={uploading} onChange={event=>onConfigChange({payrollExcludeSeparation:event.target.checked})}/>排除取分离站点</label><span>取消勾选则下载全部站点，范围在任务建立时固定。</span></div>}</section>
     {error&&<p className="pq-message is-error" role="alert">{error}</p>}
     {loadError&&<p className="pq-message" role="status">{loadError}；现有记录保留，系统会继续更新。</p>}
@@ -160,7 +163,6 @@ export function FlashPayrollWorkbench({config,onConfigChange,uploadExtracted,isR
       {selected.mode!=='fengshen'&&hasFullPayrollPreparation(selected.preparation)&&selected.status==='waiting_confirmation'&&reviewId!==selected.id&&<details className="pq-disclosure" open={selected.preparation.status==='waiting_materials'}><summary>本任务资料</summary><PayrollPreparation value={selected.preparation} busy={busy} apiFetch={apiFetch} onChange={next=>updatePreparation(selected,next)} onContinue={()=>confirm(selected)} upload={uploadExtracted}/></details>}
       {review&&review.preparation&&review.id===selected.id&&<PayrollDeductionReview key={review.id} apiFetch={apiFetch} batchId={review.batch_id!} platform={review.mode==='xiaoxiang'?'xiaoxiang':'fengshen'} plan={review.plan||undefined} onOpenConnections={onOpenConnections} inline onClose={()=>setReviewId('')} onConfirmed={(next,version)=>{updatePreparation(review,next);void act(()=>continueTask(review,version));}}/>}
     </section>}
-    {more&&<WorkbenchDrawer title="核算设置" onClose={()=>setMore(false)}><div className="pq-settings"><button className="wb-button" onClick={()=>{setMore(false);onOpenDeductions(true);}}>站点默认扣款</button><button className="wb-button" onClick={()=>{setMore(false);onOpenConnections();}}>平台登录</button>{onOpenSettings&&<button className="wb-button" onClick={()=>{setMore(false);onOpenSettings();}}>工作台设置</button>}</div></WorkbenchDrawer>}
     {templates&&<WorkbenchDrawer title="系统模板" wide onClose={()=>setTemplates(false)}><SystemTemplatesPanel onNavigatePayroll={()=>setTemplates(false)}/></WorkbenchDrawer>}
     {!!removeTargets.length&&<WorkbenchDrawer title={removeTargets.some(payrollQueueRunning)?'停止并移出任务':'移出任务列表'} onClose={()=>setRemoveTargets([])}><p>{removeTargets.length} 项任务将从共享列表移出；文件和处理记录保留，可在“已移出”恢复。</p>{removeTargets.some(payrollQueueRunning)&&<p>执行中的任务会先停止。</p>}<div className="pq-dialog-actions"><button className="wb-button" disabled={busy} onClick={()=>setRemoveTargets([])}>取消</button><button className="wb-primary" disabled={busy} onClick={()=>void act(async()=>{const current=removeTargets.filter(task=>!task.legacy),old=removeTargets.filter(task=>task.legacy);if(current.length)await request(API+'/visibility',{ids:current.map(task=>task.id),restore:false,stop_first:true});if(old.length){await request('/api/workbench/task-center/visibility',{ids:old.map(task=>'payroll_'+task.batch_id),restore:false,stop_first:true});setSkipLegacy(true);}setRemoveTargets([]);setChecked([]);await refresh();})}>确认移出，保留文件</button></div></WorkbenchDrawer>}
   </div>;

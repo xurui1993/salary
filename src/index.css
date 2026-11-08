@@ -122,17 +122,223 @@
   margin-top: 3px !important;
 }
 
-/* 6. Cross-module visual consistency (专项报表, 薪资核算, 价格审批, 任务中心, 扣款规则, 模板中心) */
+/* 6. Unified Right-Hand Execution Card (合并右侧已选清单与执行范围核对为一体化卡片) */
+.wb-task-preview.wb-preview-compact {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 14px !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03) !important;
+  padding: 0 !important;
+  gap: 0 !important;
+  overflow: hidden !important;
+  align-self: start !important;
+  height: auto !important;
+}
+
+.wb-task-preview.wb-preview-compact .wb-compact-rail-top {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 15px 16px 14px !important;
+}
+
+.wb-task-preview.wb-preview-compact .wb-compact-rail-bottom {
+  background: #f8fafc !important;
+  border: 0 !important;
+  border-top: 1px solid #e2e8f0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 14px 16px 16px !important;
+}
+
+.wb-task-preview.wb-preview-compact .wb-compact-scope-box {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 10px !important;
+  padding: 10px 12px !important;
+}
+
+/* 7. Streamlined Baize single-line inline banner in 01 & 02 and full-width card in 03 */
+.wb-baize-inline-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 9px 14px;
+  background: linear-gradient(90deg, #f0f9ff 0%, #f8fafc 100%);
+  border: 1px solid #bae6fd;
+  border-radius: 10px;
+}
+
+.wb-baize-inline-banner .wb-city-check-box {
+  background: #0284c7 !important;
+  border-color: #0284c7 !important;
+  color: #ffffff !important;
+}
+
+.wb-source-group > .wb-baize-single-grid {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.wb-baize-banner-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.wb-baize-banner-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0c4a6e;
+}
+
+.wb-baize-banner-desc {
+  font-size: 12px;
+  color: #475569;
+  line-height: 1.5;
+  flex: 1;
+  min-width: 220px;
+}
+
+/* 8. Cross-module visual consistency & merged Payroll toolbar */
+.pq-mode-bar {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  margin-bottom: 14px !important;
+}
+
+.pq-mode-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .rb-shell,
 .pq-upload,
 .pq-queue,
 .pq-detail,
-.wb-panel,
-.wb-compact-rail-top,
-.wb-compact-rail-bottom {
+.wb-approval-card,
+.tc-center,
+.wb-panel {
   border-color: #e2e8f0 !important;
   border-radius: 14px !important;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03) !important;
+}
+
+/* 9. Price Approval & Task Center streamlined toolbars and empty states */
+.approval-scope {
+  border-color: #e2e8f0 !important;
+  border-radius: 12px !important;
+  background: #f8fafc !important;
+  padding: 14px 16px !important;
+}
+
+.approval-scope-empty {
+  margin-top: 8px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px dashed #cbd5e1;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.wb-error-with-action {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  flex-wrap: wrap !important;
+  gap: 10px 14px !important;
+  padding: 10px 14px !important;
+  border-radius: 10px !important;
+}
+
+.wb-error-login-btn {
+  min-height: 28px !important;
+  padding: 4px 12px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #be123c !important;
+  background: #ffffff !important;
+  border: 1px solid #fecdd3 !important;
+  border-radius: 8px !important;
+  cursor: pointer !important;
+  flex-shrink: 0 !important;
+}
+
+.wb-error-login-btn:hover {
+  background: #fff1f2 !important;
+  border-color: #fda4af !important;
+}
+
+.tc-toolbar {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  flex-wrap: wrap !important;
+  gap: 12px !important;
+  margin-bottom: 14px !important;
+}
+
+.tc-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 10. ReportBuilder visual alignment */
+.rb-catalog-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #64748b;
+  margin-bottom: 10px;
+  padding: 0 4px;
+}
+
+.rb-station-field select,
+.rb-city-trigger {
+  min-height: 36px !important;
+  border-radius: 9px !important;
+  border: 1px solid #cbd5e1 !important;
+  background: #ffffff !important;
+  font-size: 13px !important;
+  color: #1e293b !important;
+  padding: 6px 12px !important;
+}
+
+.rb-label-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rb-label-row button {
+  min-height: 24px !important;
+  padding: 2px 9px !important;
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+  color: #475569 !important;
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 6px !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.rb-label-row button:hover:not(:disabled) {
+  color: #0369a1 !important;
+  background: #f0f9ff !important;
+  border-color: #bae6fd !important;
 }
 
 .wb-button {
@@ -154,5 +360,22 @@
   color: #475569 !important;
   font-weight: 600 !important;
   border-bottom-color: #e2e8f0 !important;
+}
+
+.wb-approval-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 36px 16px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  margin: 12px 0;
+}
+
+.wb-approval-empty-state p {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
 }
 

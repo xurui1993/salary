@@ -100,32 +100,45 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
     const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=url;link.download=`蓝橙价格审批结果_${batch.id.slice(0,8)}.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   });}
   return <div className="wb-approvals">
-    <section className="wb-approval-card">
-      <div className="wb-approval-heading">
-        <div className="wb-stage-heading-left">
-          <div className="wb-stage-title-row">
-            <h2>蓝橙价格审批</h2>
-            {onSwitchView && (
-              <nav className="wb-module-tabs wb-stage-tabs" aria-label="蓝橙价格管理功能">
-                <button type="button" aria-pressed={true} className="wb-button" onClick={() => onSwitchView('approval')}>批量审批</button>
-                <button type="button" aria-pressed={false} className="wb-button" onClick={() => onSwitchView('price-export')}>待审每日价格导出</button>
-              </nav>
-            )}
+    {onSwitchView && (
+      <div className="pq-mode-bar">
+        <div className="pq-mode-left">
+          <div className="wb-segment pq-mode-tabs" role="tablist" aria-label="蓝橙价格管理功能">
+            <button type="button" role="tab" aria-selected={true} className="is-active" onClick={() => onSwitchView('approval')}>批量审批</button>
+            <button type="button" role="tab" aria-selected={false} onClick={() => onSwitchView('price-export')}>待审每日价格导出</button>
           </div>
-          <p className="wb-muted">筛选并勾选本人待办，预览后统一同意当前节点。单价由你判断。</p>
+          <span className="pq-mode-hint">筛选并勾选本人待办，预览后统一同意当前节点</span>
         </div>
       </div>
+    )}
+    <section className="wb-approval-card">
       <ApprovalScopeFilters rows={allRows} cities={scopeCities} months={scopeMonths} site={scopeSite} busy={listBusy||!!command} onChange={(cities,months,site)=>{setScopeCities(cities);setScopeMonths(months);setScopeSite(site);setPage(1);setSelection({});setPreview(null);}} onRefresh={()=>{setPage(1);setRefresh(v=>v+1);}}/>
-      {error && <p className="wb-error" role="alert">{error}</p>}
+      {error && (
+        <div className="wb-error wb-error-with-action" role="alert">
+          <span>{error}</span>
+          {error.includes('登录') && (
+            <button type="button" className="wb-button wb-error-login-btn" onClick={() => window.dispatchEvent(new CustomEvent('workbench:connections'))}>
+              立即登录蓝橙
+            </button>
+          )}
+        </div>
+      )}
       {attempt && <div className="wb-approval-notice" role="status"><p>本次提交尚待确认。请先查找批次，避免重复审批。</p><button className="wb-button" disabled={!!command} onClick={()=>void findAttempt()}>查找本次提交</button>{attemptMissing && <button className="wb-button" disabled={!!command} onClick={()=>void sendAttempt(attempt)}>用原标识重试提交</button>}</div>}
-      <div className="wb-approval-toolbar"><span>{actor?`蓝橙账号：${actor} · `:''}当前范围 {filtered.length} 条 / 本人待办 {allRows.length} 条 · 已选{selected.length}条（跨页保留）</span><div className="wb-row"><button className="wb-button" disabled={listBusy||!!command||!filtered.length||filtered.length>200} onClick={()=>choose(filtered,true)}>勾选当前范围全部 {filtered.length} 条</button><button className="wb-button" disabled={!selected.length || !!command} onClick={()=>setSelection({})}>清空勾选</button><button className="wb-primary" disabled={!selected.length || !!command || active || !!attempt || listBusy} onClick={()=>void makePreview()}>{command==='preview'?'正在核对明细…':`预览已选${selected.length}条`}</button></div></div>
-      {filtered.length>200&&<p className="wb-muted">每批最多审批200条，请缩小城市、月份或站点范围，或按页勾选。</p>}
-      {active && <p className="wb-muted">已有批次执行中，可在下方查看进度；离开此页仍会继续。</p>}
-      <div className="wb-approval-table" aria-busy={listBusy}><table><thead><tr><th><input type="checkbox" aria-label="选择本页可审批流程" disabled={listBusy || !rows.some(r=>!r.reason)} checked={rows.some(r=>!r.reason) && rows.filter(r=>!r.reason).every(r=>!!selection[r.id])} onChange={e=>choose(rows,e.target.checked)}/></th><th>业务编号</th><th>城市 / 站点</th><th>结算周期</th><th>人数</th><th>申请人 / 时间</th><th>当前节点</th><th>操作</th></tr></thead><tbody>{rows.map(task=><tr key={task.id}><td><input type="checkbox" aria-label={`选择流程${code(task)}`} checked={!!selection[task.id]} disabled={!!task.reason || listBusy} onChange={e=>choose([task],e.target.checked)}/></td><td>{code(task)}{task.reason && <small className="wb-error">{task.reason}</small>}</td><td>{task.cityName || '—'}<small>{task.siteName || '—'}</small></td><td>{period(task)}</td><td>{task.rider_count ?? '—'}</td><td>{task.createByName || '—'}<small>{task.createTime || '—'}</small></td><td>{task.nodeName || '—'}</td><td><button className="wb-button" disabled={!!command || !!task.reason} onClick={()=>void showDetail(task)}>查看明细</button></td></tr>)}</tbody></table></div>
-      {!rows.length && <p className="wb-muted" role="status">{listBusy?'正在读取蓝橙本人待办…':'当前筛选范围没有可显示的骑手价格提审。'}</p>}
-      <div className="wb-approval-pagination"><span>第{page}/{pages}页 · 每页20条</span><button className="wb-button" disabled={page<=1 || listBusy} onClick={()=>setPage(p=>p-1)}>上一页</button><button className="wb-button" disabled={page>=pages || listBusy} onClick={()=>setPage(p=>p+1)}>下一页</button></div>
+      {filtered.length > 0 ? (
+        <>
+          <div className="wb-approval-toolbar"><span>{actor?`蓝橙账号：${actor} · `:''}当前范围 {filtered.length} 条 / 本人待办 {allRows.length} 条 · 已选{selected.length}条（跨页保留）</span><div className="wb-row"><button className="wb-button" disabled={listBusy||!!command||!filtered.length||filtered.length>200} onClick={()=>choose(filtered,true)}>勾选当前范围全部 {filtered.length} 条</button><button className="wb-button" disabled={!selected.length || !!command} onClick={()=>setSelection({})}>清空勾选</button><button className="wb-primary" disabled={!selected.length || !!command || active || !!attempt || listBusy} onClick={()=>void makePreview()}>{command==='preview'?'正在核对明细…':`预览已选${selected.length}条`}</button></div></div>
+          {filtered.length>200&&<p className="wb-muted">每批最多审批200条，请缩小城市、月份或站点范围，或按页勾选。</p>}
+          {active && <p className="wb-muted">已有批次执行中，可在下方查看进度；离开此页仍会继续。</p>}
+          <div className="wb-approval-table" aria-busy={listBusy}><table><thead><tr><th><input type="checkbox" aria-label="选择本页可审批流程" disabled={listBusy || !rows.some(r=>!r.reason)} checked={rows.some(r=>!r.reason) && rows.filter(r=>!r.reason).every(r=>!!selection[r.id])} onChange={e=>choose(rows,e.target.checked)}/></th><th>业务编号</th><th>城市 / 站点</th><th>结算周期</th><th>人数</th><th>申请人 / 时间</th><th>当前节点</th><th>操作</th></tr></thead><tbody>{rows.map(task=><tr key={task.id}><td><input type="checkbox" aria-label={`选择流程${code(task)}`} checked={!!selection[task.id]} disabled={!!task.reason || listBusy} onChange={e=>choose([task],e.target.checked)}/></td><td>{code(task)}{task.reason && <small className="wb-error">{task.reason}</small>}</td><td>{task.cityName || '—'}<small>{task.siteName || '—'}</small></td><td>{period(task)}</td><td>{task.rider_count ?? '—'}</td><td>{task.createByName || '—'}<small>{task.createTime || '—'}</small></td><td>{task.nodeName || '—'}</td><td><button className="wb-button" disabled={!!command || !!task.reason} onClick={()=>void showDetail(task)}>查看明细</button></td></tr>)}</tbody></table></div>
+          <div className="wb-approval-pagination"><span>第{page}/{pages}页 · 每页20条</span><button className="wb-button" disabled={page<=1 || listBusy} onClick={()=>setPage(p=>p-1)}>上一页</button><button className="wb-button" disabled={page>=pages || listBusy} onClick={()=>setPage(p=>p+1)}>下一页</button></div>
+        </>
+      ) : (
+        <div className="wb-approval-empty-state">
+          <p className="wb-muted" role="status">{listBusy ? '正在读取蓝橙本人待办…' : '当前筛选范围没有待处理的骑手价格提审。'}</p>
+        </div>
+      )}
     </section>
-    <section className="wb-approval-card" id="price-record-result"><div className="wb-approval-heading"><h2>审批结果</h2><button className="wb-button" disabled={!!command} onClick={()=>void readHistory()}>刷新结果</button></div>
+    {(history.length > 0 || !!batch) && <section className="wb-approval-card" id="price-record-result"><div className="wb-approval-heading"><h2>审批结果</h2><button className="wb-button" disabled={!!command} onClick={()=>void readHistory()}>刷新结果</button></div>
       {history.length>0 && <label className="wb-approval-history">查看批次<select className="wb-select" value={batch?.id || ''} onChange={e=>setBatch(history.find(b=>b.id===e.target.value) || null)}>{batch&&!history.some(b=>b.id===batch.id)&&<option value={batch.id}>当前任务 · {batchLabels[batch.status]||batch.status}</option>}{history.map(b=><option value={b.id} key={b.id}>{new Date(b.created*1000).toLocaleString('zh-CN')} · {batchLabels[b.status] || b.status} · {b.items.length}条</option>)}</select></label>}
       {!batch?<p className="wb-muted">暂无审批批次。</p>:<><TaskOutcome task={{status:batch.status,kind:'approval',availableFiles:1}}/><div className="wb-approval-toolbar"><div><p className="wb-muted">已同意{batch.counts.success || 0} · 被拒绝{batch.counts.failed || 0} · 变化{batch.counts.changed || 0} · 待核实{batch.counts.uncertain || 0} · 未提交{batch.counts.not_sent || 0} · 等待{batch.counts.pending || 0}</p></div><div className="wb-row">
         {ACTIVE.has(batch.status) && <button className="wb-button" disabled={!!command || batch.status==='stopping'} onClick={()=>void perform('stop',async()=>{setBatch(await request<Batch>(`/batches/${batch.id}/stop`,{confirm:true}));void readHistory();})}>停止后续审批</button>}
@@ -133,7 +146,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
         <button className="wb-button" disabled={!!command} onClick={()=>void downloadResult()}>下载结果</button></div></div>
         {batch.status==='stopping' && <p className="wb-muted">当前已发出的官方请求会先核实结果，后续条目不再提交。</p>}
         <details className="wb-receipts" key={batch.id} open={batch.status!=='completed'}><summary>逐项审批结果（{batch.items.length} 条）</summary><div className="wb-approval-table"><table><thead><tr><th>业务编号</th><th>城市 / 站点</th><th>结果</th><th>说明</th></tr></thead><tbody>{batch.items.map((item,index)=><tr key={index}><td>{code(item.task)}</td><td>{item.task.cityName || '—'} / {item.task.siteName || '—'}</td><td className={item.status==='success'?'wb-success':item.status==='uncertain'?'wb-error':''}>{item.status_label}</td><td>{item.message}</td></tr>)}</tbody></table></div></details></>}
-    </section>
+    </section>}
     {preview && <WorkbenchDrawer title="审批预览" wide onClose={()=>{if(!command)setPreview(null);}}>
       <div className="wb-approval-preview"><p><strong>蓝橙账号：{preview.actor_label}</strong></p><p>本批可提交{preview.eligible_count}条，需另行处理{preview.items.length-preview.eligible_count}条；审批意见统一为“同意”。</p><p className="wb-muted">仅同意本人当前节点，不更改单价。沿用官方默认抄送及站内通知；预览有效至{new Date(preview.expires_at*1000).toLocaleTimeString('zh-CN')}。</p>
       {error && <p className="wb-error" role="alert">{error}</p>}

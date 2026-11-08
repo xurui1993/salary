@@ -163,9 +163,18 @@ export function StationDeductionManager({
       </p>
 
       {(error || directory.error || directory.data?.message) && (
-        <p className="wb-error" role="alert">
-          {error || directory.error || directory.data?.message}
-        </p>
+        <div className="wb-error wb-error-with-action" role="alert">
+          <span>{error || directory.error || directory.data?.message}</span>
+          {String(error || directory.error || directory.data?.message || '').includes('登录') && (
+            <button
+              type="button"
+              className="wb-button wb-error-login-btn"
+              onClick={() => window.dispatchEvent(new CustomEvent('workbench:connections'))}
+            >
+              立即登录平台
+            </button>
+          )}
+        </div>
       )}
       {notice && (
         <p role="status" className="wb-notice">
