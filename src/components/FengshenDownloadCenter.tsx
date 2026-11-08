@@ -4,7 +4,7 @@ import { recoverySummary } from '../lib/downloadCenterLogic';
 import { readDownloadResponse, saveDownloadBlob, downloadOutput, downloadErrorMessage } from '../lib/outputDownload';
 import { isBaize, isXiaoxiang, isRiderArchive, isGlobalDataset, datasetGroup,isMerchant,isMerchantSnapshot,toggleDownloadDataset } from '../lib/downloadCenterLogic';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle2, CloudDownload, Download, KeyRound, Loader2, RefreshCw, Square, X, XCircle, FileSpreadsheet, Calculator } from 'lucide-react';
+import { AlertCircle, CheckCircle2, CloudDownload, Download, KeyRound, Loader2, Plus, RefreshCw, Square, X, XCircle, FileSpreadsheet, Calculator, Pencil, Trash2, LayoutGrid, List, AlertTriangle } from 'lucide-react';
 import { DownloadAccountPanel } from './DownloadAccountPanel';
 import type { FengshenAuthStatus } from './FengshenLoginModal';
 import { itemKey, phaseLabel, recoverable, retainAttempt, selectionKey, isLanorange } from '../lib/downloadCenterLogic';
@@ -146,6 +146,9 @@ interface Props {
 const API_ROOT = '/api/fengshen-downloads';
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const LANORANGE_CITIES = ['保定','北京','潮州','大连','东莞','广州','惠州','宁波','泉州','三亚','汕头','上海','韶关','深圳','台州','天津'];
+
+// 预设配置现已全面切换为用户自定义，支持增删改与持久化存储
+
 const DATASET_LABELS: Record<string, string> = {
   invitation_records:'邀请记录（全量）',attendance_detail:'骑手出勤明细',baize_employees: '商翼员工资料（全量）', rider_daily: '日维度骑手分析（灯塔）', rider_archive: '骑手档案（灯塔）', detail_orders: '配送订单明细（灯塔）', detail_kesu: '配送客诉明细（灯塔）', detail_reviews: '配送评价明细（灯塔）', rider_order_detail: '骑手订单明细（灯塔）', xiaoxiang_attendance_detail: '骑手出勤明细合并（灯塔）', delivery_fee: '配送费', penalty: '违规扣款', rider_monthly: '风神骑手月度 UB 账单',
   receive_account: '骑手风神绑定', rider_detail: '骑手数据明细', rider_info: '骑手信息导出', fraud: '欺诈单', problem: '问题单',
@@ -288,6 +291,92 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   });
   const [presetInputOpen, setPresetInputOpen] = useState(false);
   const [presetDraft, setPresetDraft] = useState('');
+
+  // 自定义城市片区预设 (持久化至 localStorage，删除写死默认片区，纯用户自定义)
+  const regionStorageKey = `workbench_region_presets:${user.id}`;
+  const [regionPresets, setRegionPresets] = useState<{ id: string; label: string; cities: string[] }[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(regionStorageKey) || 'null');
+      if (Array.isArray(saved)) {
+        return saved.filter(r => r && !['south', 'east', 'north'].includes(r.id));
+      }
+    } catch {}
+    return [];
+  });
+  const saveRegionPresetsToStorage = (next: { id: string; label: string; cities: string[] }[]) => {
+    setRegionPresets(next);
+    try { localStorage.setItem(regionStorageKey, JSON.stringify(next)); } catch {}
+  };
+
+  // 自定义资料场景包预设 (持久化至 localStorage，删除写死默认预设，纯用户自定义)
+  const scenarioStorageKey = `workbench_scenario_presets:${user.id}`;
+  const [scenarioPresets, setScenarioPresets] = useState<{ id: string; label: string; title: string; datasets: string[] }[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(scenarioStorageKey) || 'null');
+      if (Array.isArray(saved)) {
+        return saved.filter(s => s && !['payroll_bundle', 'risk_bundle', 'snapshot_bundle'].includes(s.id));
+      }
+    } catch {}
+    return [];
+  });
+  const saveScenarioPresetsToStorage = (next: { id: string; label: string; title: string; datasets: string[] }[]) => {
+    setScenarioPresets(next);
+    try { localStorage.setItem(scenarioStorageKey, JSON.stringify(next)); } catch {}
+  };
+
+  // 预设弹窗状态：支持创建、修改名称/内容及删除
+  interface PresetModalState {
+    mode: 'create' | 'edit';
+    type: 'region' | 'scenario';
+    id?: string;
+    label: string;
+    cities?: string[];
+    datasets?: string[];
+    syncWithCurrentSelection?: boolean;
+  }
+  const [presetModal, setPresetModal] = useState<PresetModalState | null>(null);
+
+  // 03 资料分类快捷过滤与视图模式
+  const [datasetCategory, setDatasetCategory] = useState<'all' | 'payroll' | 'risk' | 'personnel'>('all');
+  const [datasetViewMode, setDatasetViewMode] = useState<'standard' | 'compact'>(() => {
+    try { return (localStorage.getItem('wb_dataset_view_mode') as 'standard' | 'compact') || 'standard'; } catch { return 'standard'; }
+  });
+  const handleToggleViewMode = (mode: 'standard' | 'compact') => {
+    setDatasetViewMode(mode);
+    try { localStorage.setItem('wb_dataset_view_mode', mode); } catch {}
+  };
+
+  // 右侧执行核对栏引导平滑定位
+  const [pulsingStep, setPulsingStep] = useState<'cities' | 'datasets' | null>(null);
+  const scrollToStep = (step: 'cities' | 'datasets') => {
+    const targetId = step === 'cities' ? 'step-01-cities' : 'step-03-datasets';
+    const el = document.getElementById(targetId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setPulsingStep(step);
+      setTimeout(() => setPulsingStep(curr => (curr === step ? null : curr)), 1600);
+    }
+  };
+
+  const matchDatasetCategory = (id: string, category: 'all' | 'payroll' | 'risk' | 'personnel') => {
+    if (category === 'all') return true;
+    if (category === 'payroll') {
+      return ['attendance_detail', 'delivery_fee', 'penalty', 'rider_monthly', 'receive_account', 'rider_order_detail', 'xiaoxiang_attendance_detail'].includes(id);
+    }
+    if (category === 'risk') {
+      return ['fraud', 'problem'].includes(id);
+    }
+    if (category === 'personnel') {
+      return [
+        'invitation_records', 'delivery_waybill', 'rider_daily_summary', 'rider_info',
+        'goods_rent', 'baize_employees', 'rider_daily', 'rider_archive', 'detail_orders',
+        'detail_kesu', 'detail_reviews', 'lanorange_rider_profile', 'lanorange_monthly_insurance',
+        'lanorange_batch_quit', 'abnormal_riders', 'shangyi_employees'
+      ].includes(id);
+    }
+    return true;
+  };
+
   const [systemFilter, setSystemFilter] = useState<'all' | 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang'>('all');
   const [historyFocusId,setHistoryFocusId]=useState('');
   const [submittedTaskInfo, setSubmittedTaskInfo] = useState<{ id: string; name: string } | null>(null);
@@ -699,9 +788,15 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     }
   };
 
-  const retrySelected = async (only?: ItemSelection) => {
+  const retrySelected = async (only?: ItemSelection | ItemSelection[]) => {
     if (retryPendingRef.current || (!retryAttempt.current && !selectedRun)) return;
-    const selected = selectedRun?.items?.filter(item => (only ? itemKey(only) === itemKey(item) : retryKeys.includes(itemKey(item))) && recoverable(item)) || [];
+    const isOnlyArray = Array.isArray(only);
+    const selected = selectedRun?.items?.filter(item => {
+      if (isOnlyArray) {
+        return only.some(target => itemKey(target) === itemKey(item)) && recoverable(item);
+      }
+      return (only ? itemKey(only) === itemKey(item) : retryKeys.includes(itemKey(item))) && recoverable(item);
+    }) || [];
     if (!retryAttempt.current && !selected.length) return;
     if (!retryAttempt.current) retryAttempt.current = retainAttempt(null, { runId: selectedRun!.id, items: selected.map(({ city, dataset, start, end }) => ({ city, dataset, start, end })) });
     storeAttempt(retryStorageKey, retryAttempt.current);
@@ -979,7 +1074,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                   </div>
                 </div>}
 
-                <fieldset aria-labelledby="download-cities-label" className="wb-step-card">
+                <fieldset id="step-01-cities" aria-labelledby="download-cities-label" className={`wb-step-card transition-all duration-300 ${pulsingStep === 'cities' ? 'wb-field-pulse-highlight' : ''}`}>
                   <div className="wb-step-card-header">
                     <div className="wb-step-badge">
                       <span className="wb-step-number">01</span>
@@ -1006,7 +1101,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                       )}
                     </div>
 
-                    <div className="wb-inline-city-toolbar">
+                    <div className="wb-inline-city-toolbar flex-wrap">
                       {baizeOnly ? null : blueOnly ? (
                         <>
                           <button
@@ -1016,6 +1111,78 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                             onClick={() => setBlueCities(blueCities.length === LANORANGE_CITIES.length ? [] : [...LANORANGE_CITIES])}
                           >
                             {blueCities.length === LANORANGE_CITIES.length ? '清空城市' : '全选城市'}
+                          </button>
+                          {regionPresets.map(preset => {
+                            const matched = LANORANGE_CITIES.filter(city => preset.cities.includes(city));
+                            if (!matched.length) return null;
+                            const isActive = matched.length > 0 && matched.every(c => blueCities.includes(c));
+                            return (
+                              <div key={preset.id} className="wb-preset-pill-item">
+                                <button
+                                  type="button"
+                                  className={`wb-city-preset-btn ${isActive ? 'is-active' : ''}`}
+                                  disabled={formLocked || datasets.includes('abnormal_riders')}
+                                  title={`快捷勾选：${matched.join('、')}`}
+                                  onClick={() => {
+                                    if (isActive) {
+                                      setBlueCities(blueCities.filter(c => !matched.includes(c)));
+                                    } else {
+                                      setBlueCities([...new Set([...blueCities, ...matched])]);
+                                    }
+                                  }}
+                                >
+                                  {preset.label}
+                                </button>
+                                <div className="wb-preset-actions">
+                                  <button
+                                    type="button"
+                                    className="wb-preset-edit-btn"
+                                    title={`修改预设「${preset.label}」`}
+                                    onClick={e => {
+                                      e.stopPropagation();
+                                      setPresetModal({
+                                        mode: 'edit',
+                                        type: 'region',
+                                        id: preset.id,
+                                        label: preset.label,
+                                        cities: [...preset.cities],
+                                        syncWithCurrentSelection: false,
+                                      });
+                                    }}
+                                  >
+                                    <Pencil size={11} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="wb-preset-remove-btn"
+                                    title={`删除预设「${preset.label}」`}
+                                    onClick={e => {
+                                      e.stopPropagation();
+                                      saveRegionPresetsToStorage(regionPresets.filter(r => r.id !== preset.id));
+                                    }}
+                                  >
+                                    <X size={11} />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          <button
+                            type="button"
+                            className="wb-city-preset-btn wb-preset-add-trigger"
+                            disabled={formLocked || !blueCities.length}
+                            title={blueCities.length ? `将当前已勾选的 ${blueCities.length} 个城市保存为新片区预设` : '请先勾选城市再保存为新预设'}
+                            onClick={() => {
+                              setPresetModal({
+                                mode: 'create',
+                                type: 'region',
+                                label: '',
+                                cities: [...blueCities],
+                              });
+                            }}
+                          >
+                            <Plus size={13} />
+                            <span>存为预设</span>
                           </button>
                           {blueCities.length > 0 && blueCities.length < LANORANGE_CITIES.length && (
                             <button
@@ -1037,6 +1204,87 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                             onClick={() => setCities(cities.length === selectableCities.length ? [] : selectableCities.map(c => c.name))}
                           >
                             {cities.length === selectableCities.length && cities.length ? '清空城市' : '全选城市'}
+                          </button>
+                          {regionPresets.length === 0 ? (
+                            <span className="wb-preset-empty-hint">
+                              暂无自定义片区，勾选城市后点击「+ 存为预设」
+                            </span>
+                          ) : (
+                            regionPresets.map(preset => {
+                              const matched = selectableCities.filter(c =>
+                                preset.cities.some(pc => c.name.includes(pc) || pc.includes(c.name.replace(/市$/, ''))),
+                              );
+                              if (!matched.length) return null;
+                              const matchedNames = matched.map(c => c.name);
+                              const isActive = matchedNames.length > 0 && matchedNames.every(name => cities.includes(name));
+                              return (
+                                <div key={preset.id} className="wb-preset-pill-item">
+                                  <button
+                                    type="button"
+                                    className={`wb-city-preset-btn ${isActive ? 'is-active' : ''}`}
+                                    disabled={formLocked}
+                                    title={`快捷勾选：${matchedNames.join('、')}`}
+                                    onClick={() => {
+                                      if (isActive) {
+                                        setCities(cities.filter(name => !matchedNames.includes(name)));
+                                      } else {
+                                        setCities([...new Set([...cities, ...matchedNames])]);
+                                      }
+                                    }}
+                                  >
+                                    {preset.label}
+                                  </button>
+                                  <div className="wb-preset-actions">
+                                    <button
+                                      type="button"
+                                      className="wb-preset-edit-btn"
+                                      title={`修改预设「${preset.label}」`}
+                                      onClick={e => {
+                                        e.stopPropagation();
+                                        setPresetModal({
+                                          mode: 'edit',
+                                          type: 'region',
+                                          id: preset.id,
+                                          label: preset.label,
+                                          cities: [...preset.cities],
+                                          syncWithCurrentSelection: false,
+                                        });
+                                      }}
+                                    >
+                                      <Pencil size={11} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="wb-preset-remove-btn"
+                                      title={`删除预设「${preset.label}」`}
+                                      onClick={e => {
+                                        e.stopPropagation();
+                                        saveRegionPresetsToStorage(regionPresets.filter(r => r.id !== preset.id));
+                                      }}
+                                    >
+                                      <X size={11} />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                          <button
+                            type="button"
+                            className="wb-city-preset-btn wb-preset-add-trigger"
+                            disabled={formLocked || !cities.length}
+                            title={cities.length ? `将当前已勾选的 ${cities.length} 个城市保存为新片区预设` : '请先勾选城市再保存为新预设'}
+                            onClick={() => {
+                              setPresetModal({
+                                mode: 'create',
+                                type: 'region',
+                                label: '',
+                                cities: [...cities],
+                              });
+                            }}
+                          >
+                            <Plus size={13} />
+                            <span>存为预设</span>
                           </button>
                           {cities.length > 0 && cities.length < selectableCities.length && (
                             <button
@@ -1321,7 +1569,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                   )}
                 </fieldset>
 
-                <fieldset aria-labelledby="download-datasets-label" className="wb-step-card">
+                <fieldset id="step-03-datasets" aria-labelledby="download-datasets-label" className={`wb-step-card transition-all duration-300 ${pulsingStep === 'datasets' ? 'wb-field-pulse-highlight' : ''}`}>
                   {!platform && (
                     <div className="wb-step-card-header">
                       <div className="wb-step-badge">
@@ -1331,11 +1579,159 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                       </div>
                     </div>
                   )}
+
+                  {/* 常用业务场景包（由用户纯自定义，支持新增、修改与删除） */}
+                  {(!platform || platform === 'fengshen') && (
+                    <div className="wb-scenario-pills" role="toolbar" aria-label="常用业务场景推荐包">
+                      <span className="wb-scenario-label">常用场景包：</span>
+                      {scenarioPresets.length === 0 ? (
+                        <span className="wb-preset-empty-hint">
+                          暂无自定义场景包，勾选下方资料后点击「+ 存为场景包」
+                        </span>
+                      ) : (
+                        scenarioPresets.map(bundle => {
+                          const allSelected = bundle.datasets.length > 0 && bundle.datasets.every(id => datasets.includes(id));
+                          return (
+                            <div key={bundle.id} className="wb-preset-pill-item">
+                              <button
+                                type="button"
+                                className={`wb-scenario-btn ${allSelected ? 'is-active' : ''}`}
+                                disabled={formLocked}
+                                title={bundle.title || bundle.label}
+                                onClick={() => {
+                                  if (allSelected) {
+                                    setDatasets(datasets.filter(id => !bundle.datasets.includes(id)));
+                                  } else {
+                                    setDatasets([...new Set([...datasets.filter(id => !isBaize(id) && !isXiaoxiang(id)), ...bundle.datasets])]);
+                                  }
+                                }}
+                              >
+                                <span>{bundle.label}</span>
+                              </button>
+                              <div className="wb-preset-actions">
+                                <button
+                                  type="button"
+                                  className="wb-preset-edit-btn"
+                                  title={`修改场景包「${bundle.label}」`}
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    setPresetModal({
+                                      mode: 'edit',
+                                      type: 'scenario',
+                                      id: bundle.id,
+                                      label: bundle.label,
+                                      datasets: [...bundle.datasets],
+                                      syncWithCurrentSelection: false,
+                                    });
+                                  }}
+                                >
+                                  <Pencil size={11} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="wb-preset-remove-btn"
+                                  title={`删除场景包「${bundle.label}」`}
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    saveScenarioPresetsToStorage(scenarioPresets.filter(s => s.id !== bundle.id));
+                                  }}
+                                >
+                                  <X size={11} />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                      <button
+                        type="button"
+                        className="wb-scenario-btn wb-preset-add-trigger"
+                        disabled={formLocked || !datasets.length}
+                        title={datasets.length ? `将当前已勾选的 ${datasets.length} 类资料保存为常用场景包` : '请先勾选资料再保存为新场景包'}
+                        onClick={() => {
+                          setPresetModal({
+                            mode: 'create',
+                            type: 'scenario',
+                            label: '',
+                            datasets: [...datasets],
+                          });
+                        }}
+                      >
+                        <Plus size={12} />
+                        <span>存为场景包</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* 分类快捷过滤标签与视图切换 */}
+                  <div className="wb-dataset-category-bar">
+                    <div className="wb-dataset-tabs" role="tablist" aria-label="资料分类过滤">
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={datasetCategory === 'all'}
+                        className={`wb-dataset-tab-btn ${datasetCategory === 'all' ? 'is-active' : ''}`}
+                        onClick={() => setDatasetCategory('all')}
+                      >
+                        全部资料
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={datasetCategory === 'payroll'}
+                        className={`wb-dataset-tab-btn ${datasetCategory === 'payroll' ? 'is-active' : ''}`}
+                        onClick={() => setDatasetCategory('payroll')}
+                      >
+                        发薪核心
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={datasetCategory === 'risk'}
+                        className={`wb-dataset-tab-btn ${datasetCategory === 'risk' ? 'is-active' : ''}`}
+                        onClick={() => setDatasetCategory('risk')}
+                      >
+                        风控对账
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={datasetCategory === 'personnel'}
+                        className={`wb-dataset-tab-btn ${datasetCategory === 'personnel' ? 'is-active' : ''}`}
+                        onClick={() => setDatasetCategory('personnel')}
+                      >
+                        基础人事
+                      </button>
+                    </div>
+                    <div className="wb-dataset-view-toggle">
+                      <button
+                        type="button"
+                        className={`wb-dataset-view-btn ${datasetViewMode === 'standard' ? 'is-active' : ''}`}
+                        title="标准详细卡片视图"
+                        onClick={() => handleToggleViewMode('standard')}
+                      >
+                        <LayoutGrid size={12} />
+                        <span>标准</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={`wb-dataset-view-btn ${datasetViewMode === 'compact' ? 'is-active' : ''}`}
+                        title="高密度紧凑磁贴视图，大幅压减视高"
+                        onClick={() => handleToggleViewMode('compact')}
+                      >
+                        <List size={12} />
+                        <span>紧凑</span>
+                      </button>
+                    </div>
+                  </div>
+
                   {(['fengshen', 'lanorange', 'baize', 'xiaoxiang'] as const).filter(group => platform?group===platform:systemFilter === 'all' || systemFilter === group).map(group => {
                     const groupDatasets = visibleDatasets.filter(value => !isGenerator(value.id) && datasetGroup(value.id) === group);
-                    const ids = groupDatasets.map(value => value.id);
+                    const filteredDatasets = groupDatasets.filter(value => matchDatasetCategory(value.id, datasetCategory));
+                    if (datasetCategory !== 'all' && filteredDatasets.length === 0) return null;
+                    const ids = filteredDatasets.map(value => value.id);
                     const allSelected = ids.length > 0 && ids.every(id => datasets.includes(id));
-                    const selectedCount = datasets.filter(id => datasetGroup(id) === group).length;
+                    const selectedCount = datasets.filter(id => datasetGroup(id) === group && matchDatasetCategory(id, datasetCategory)).length;
                     return (
                       <div key={group} className="wb-source-group">
                         <div className={platform ? 'wb-step-card-header' : 'wb-source-header'}>
@@ -1345,7 +1741,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                             <span id={platform ? 'download-datasets-label' : undefined} className={platform ? 'wb-step-title' : ''}>
                               {group === 'baize' ? '选择资料 · 商翼员工资料' : group === 'xiaoxiang' ? '选择资料 · 灯塔资料' : group === 'lanorange' ? '选择资料 · 蓝橙资料' : '选择资料 · 风神资料'}
                             </span>
-                            <span className="wb-step-count-pill tabular-nums">已选 {selectedCount} / {groupDatasets.length}</span>
+                            <span className="wb-step-count-pill tabular-nums">已选 {selectedCount} / {filteredDatasets.length}</span>
                           </div>
                           {group !== 'baize' && (
                             <button
@@ -1357,29 +1753,55 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                 if(!allSelected&&ids.includes('attendance_detail')){if(end>attendanceLast)setEnd(attendanceLast);if(start>attendanceLast)setStart(attendanceLast);if(start<attendanceFirst)setStart(attendanceFirst);}
                               }}
                             >
-                              {group === 'fengshen' ? (allSelected ? '清空城市资料' : '全选城市资料') : (allSelected ? '清空本组' : '全选本组')}
+                              {group === 'fengshen' ? (allSelected ? '清空所显资料' : '全选所显资料') : (allSelected ? '清空本组' : '全选本组')}
                             </button>
                           )}
                         </div>
-                        <div className={group === 'baize' ? 'wb-baize-single-grid gap-2.5' : 'grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3'}>
-                          {groupDatasets.map(dataset => {
+                        <div className={datasetViewMode === 'compact' ? 'wb-dataset-grid-compact' : (group === 'baize' ? 'wb-baize-single-grid gap-2.5' : 'grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3')}>
+                          {filteredDatasets.map(dataset => {
                             const selected = datasets.includes(dataset.id);
                             const cardMeta = getDatasetCardMeta(dataset.id, dataset.label);
                             const showExceptionTag = !['城市·账期', '全城·全量', '全城·日期', '全站·全量'].includes(cardMeta.scopeTag);
+                            const handleToggle = () => {
+                              setDatasets(values => toggleDownloadDataset(values, dataset.id));
+                              if (dataset.id === 'attendance_detail') {
+                                if (end > attendanceLast) setEnd(attendanceLast);
+                                if (start > attendanceLast) setStart(attendanceLast);
+                                if (start < attendanceFirst) setStart(attendanceFirst);
+                              }
+                            };
+
+                            if (datasetViewMode === 'compact') {
+                              return (
+                                <label
+                                  key={dataset.id}
+                                  className={`wb-dataset-compact-card ${selected ? 'is-selected' : ''} ${formLocked ? 'is-disabled' : ''}`}
+                                  title={group === 'baize' ? '含员工工号、姓名、身份证号、所属站点、入离职日期及当前在职状态' : cardMeta.desc}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={selected}
+                                    disabled={formLocked}
+                                    onChange={handleToggle}
+                                    className="accent-sky-700 shrink-0 h-4 w-4 rounded border-slate-300"
+                                  />
+                                  <span className="wb-dataset-compact-label">
+                                    {cardMeta.title}
+                                  </span>
+                                  {showExceptionTag && (
+                                    <span className="wb-dataset-compact-tag">{cardMeta.scopeTag}</span>
+                                  )}
+                                </label>
+                              );
+                            }
+
                             return (
                               <label key={dataset.id} className={`${choiceStyle(selected)} wb-dataset-card ${selected ? 'is-selected' : ''} !items-start`}>
                                 <input
                                   type="checkbox"
                                   checked={selected}
                                   disabled={formLocked}
-                                  onChange={() => {
-                                    setDatasets(values => toggleDownloadDataset(values, dataset.id));
-                                    if (dataset.id === 'attendance_detail') {
-                                      if (end > attendanceLast) setEnd(attendanceLast);
-                                      if (start > attendanceLast) setStart(attendanceLast);
-                                      if (start < attendanceFirst) setStart(attendanceFirst);
-                                    }
-                                  }}
+                                  onChange={handleToggle}
                                   className="accent-sky-700 shrink-0 mt-0.5 h-4 w-4 rounded border-slate-300 wb-dataset-checkbox"
                                 />
                                 <div className="wb-dataset-body flex-1 min-w-0">
@@ -1526,11 +1948,37 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                         {creating ? '提交中…' : uncertainCreate ? '确认原请求' : matchingRun && !TERMINAL_STATUSES.has(matchingRun.status) ? '查看进行中任务' : completedMatch && duplicateApproval !== currentSelectionKey ? '查看已有文件' : '开始下载'}
                       </span>
                     </button>
-                    {!submitReady && datasets.length > 0 && railSummary.blockerHint && (
+                    {!canSubmit && !uncertainCreate && !creating ? (
+                      !baizeOnly && (blueOnly ? blueCities.length === 0 : cities.length === 0) ? (
+                        <button
+                          type="button"
+                          className="wb-execution-prompt-btn"
+                          title="点击平滑定位至 01 城市选择"
+                          onClick={() => scrollToStep('cities')}
+                        >
+                          <AlertTriangle size={13} className="shrink-0 text-amber-600" />
+                          <span>请至少选择 1 个处理城市（点击定位）</span>
+                        </button>
+                      ) : datasets.length === 0 ? (
+                        <button
+                          type="button"
+                          className="wb-execution-prompt-btn"
+                          title="点击平滑定位至 03 资料选择"
+                          onClick={() => scrollToStep('datasets')}
+                        >
+                          <AlertTriangle size={13} className="shrink-0 text-amber-600" />
+                          <span>请至少勾选 1 类资料（点击定位）</span>
+                        </button>
+                      ) : !submitReady && railSummary.blockerHint ? (
+                        <p className="wb-compact-submit-hint is-warn">
+                          {railSummary.blockerHint}
+                        </p>
+                      ) : null
+                    ) : !submitReady && datasets.length > 0 && railSummary.blockerHint ? (
                       <p className="wb-compact-submit-hint is-warn">
                         {railSummary.blockerHint}
                       </p>
-                    )}
+                    ) : null}
                     {submittedTaskInfo && (
                       <div role="status" className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/95 p-2.5 text-xs text-emerald-800">
                         <div className="flex items-center justify-between gap-2 font-medium">
@@ -1619,13 +2067,80 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
               {!!selectedRun.items?.length && <details key={`items-${selectedRun.id}`} open={failedItems.length > 0} className="border-t border-slate-200 pt-3">
                 <summary className="cursor-pointer text-sm text-slate-700">任务明细{failedItems.length > 0 ? ` · ${failedItems.length} 项需要处理` : ` · ${selectedRun.items.length} 项`}</summary>
                 <div className="mt-3 space-y-3">
-                  {!activeRun && selectedRecoverable.length > 0 && <div className="flex flex-wrap items-center justify-between gap-2"><label className="flex items-center gap-2 text-xs"><input type="checkbox" disabled={retryPending || uncertainRetry} checked={selectedRecoverable.every(item => retryKeys.includes(itemKey(item)))} onChange={event => setRetryKeys(event.target.checked ? selectedRecoverable.map(itemKey) : [])} />全选可恢复项</label><button type="button" className={smallButton} disabled={retryPending || uncertainRetry || !selectedRecoverable.some(item => retryKeys.includes(itemKey(item)))} onClick={() => void retrySelected()}>{retryPending ? <Loader2 size={14} /> : <RefreshCw size={14} />}处理选中的失败项</button></div>}
-                  <div className="max-h-96 space-y-2 overflow-y-auto">{selectedRun.items.map((item, index) => <div key={`${itemKey(item)}-${index}`} className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs">
-                    <div className="flex items-start justify-between gap-3"><label className="flex items-start gap-2">{!activeRun && recoverable(item) && <input aria-label={`选择处理${item.city}${datasetLabel(item.dataset)}${item.start}`} type="checkbox" disabled={retryPending || uncertainRetry} checked={retryKeys.includes(itemKey(item))} onChange={() => toggle(itemKey(item), retryKeys, setRetryKeys)} />}<span className="font-medium text-slate-800">{item.city} · {datasetLabel(item.dataset)}</span></label><span className={`shrink-0 rounded px-1.5 py-0.5 ${statusInfo(item.status).color}`}>{statusInfo(item.status).label}</span></div>
+                  {!activeRun && selectedRecoverable.length > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-lg bg-orange-50/70 border border-orange-200/80">
+                      <label className="flex items-center gap-2 text-xs text-orange-950 font-medium">
+                        <input
+                          type="checkbox"
+                          disabled={retryPending || uncertainRetry}
+                          checked={selectedRecoverable.every(item => retryKeys.includes(itemKey(item)))}
+                          onChange={event => setRetryKeys(event.target.checked ? selectedRecoverable.map(itemKey) : [])}
+                          className="accent-orange-600 rounded"
+                        />
+                        全选可重试项 ({selectedRecoverable.length})
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="wb-retry-all-failed-btn"
+                          disabled={retryPending || uncertainRetry}
+                          onClick={() => void retrySelected(selectedRecoverable)}
+                          title="批量为所有失败或未完成城市发起补采重试"
+                        >
+                          <RefreshCw size={12} className={retryPending ? 'animate-spin' : ''} />
+                          <span>一键重试全部失败城 ({selectedRecoverable.length} 项)</span>
+                        </button>
+                        <button
+                          type="button"
+                          className={smallButton}
+                          disabled={retryPending || uncertainRetry || !selectedRecoverable.some(item => retryKeys.includes(itemKey(item)))}
+                          onClick={() => void retrySelected()}
+                        >
+                          {retryPending ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                          <span>处理所选项</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <div className="max-h-96 space-y-2 overflow-y-auto">
+                    {selectedRun.items.map((item, index) => (
+                      <div key={`${itemKey(item)}-${index}`} className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs">
+                        <div className="flex items-start justify-between gap-3">
+                          <label className="flex items-start gap-2">
+                            {!activeRun && recoverable(item) && (
+                              <input
+                                aria-label={`选择处理${item.city}${datasetLabel(item.dataset)}${item.start}`}
+                                type="checkbox"
+                                disabled={retryPending || uncertainRetry}
+                                checked={retryKeys.includes(itemKey(item))}
+                                onChange={() => toggle(itemKey(item), retryKeys, setRetryKeys)}
+                                className="accent-sky-700 rounded mt-0.5"
+                              />
+                            )}
+                            <span className="font-medium text-slate-800">{item.city} · {datasetLabel(item.dataset)}</span>
+                          </label>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {!activeRun && recoverable(item) && (
+                              <button
+                                type="button"
+                                className="wb-retry-single-btn"
+                                disabled={retryPending || uncertainRetry}
+                                onClick={() => void retrySelected(item)}
+                                title={`仅重试 ${item.city} 的 ${datasetLabel(item.dataset)}`}
+                              >
+                                <RefreshCw size={11} className={retryPending ? 'animate-spin' : ''} />
+                                <span>重试此城 ({item.city})</span>
+                              </button>
+                            )}
+                            <span className={`shrink-0 rounded px-1.5 py-0.5 ${statusInfo(item.status).color}`}>
+                              {statusInfo(item.status).label}
+                            </span>
+                          </div>
+                        </div>
                     <p className="mt-1.5 text-slate-500">{isBaize(item.dataset) ? '商翼全量员工原表 · 不按城市或日期筛选' : isRiderArchive(item.dataset) ? '小象灯塔骑手档案 · 全部站点当前快照 · 手机号/身份证为明文 · 照片以链接提供' : item.dataset === 'rider_order_detail' || item.dataset === 'xiaoxiang_attendance_detail' ? `灯塔通知附件合并 · ${item.start} 至 ${item.end} · 按附件数据日期筛选` : isXiaoxiang(item.dataset) ? (item.start===item.end ? `小象灯塔商配送看板 · ${item.start} 单日 · 全部站点一份工作簿` : `小象灯塔商配送看板 · ${item.start} 至 ${item.end} 区间合并 · 全部站点一份工作簿${item.dataset === 'rider_daily' ? ' · 按附件20列格式' : ''}`) : item.dataset === 'abnormal_riders' ? '生成表 · 由本任务的 5 类蓝橙成品整理生成（全部城市一份）' : isLanorange(item.dataset) ? (item.city === '全部城市' ? selectedRun.lanorange_full_delivery ? '全量统一交付 · 全部状态、无日期筛选；缺失批次不计为完成' : '全量原始表 · 全部城市、全部状态、无业务筛选' : item.dataset === 'lanorange_batch_quit' ? '平台城市批次原表 · 汇总按骑手城市归属筛选' : '城市原始表 · 全部状态、不按日期筛选') : item.dataset === 'rider_info' ? '当前快照' : `${item.start} 至 ${item.end}`}{item.phase && !['completed', 'failed', 'cancelled', 'interrupted'].includes(item.phase) ? ` · ${phaseLabel(item.phase)}` : ''}</p>
                     {item.error && <p className="mt-2 break-words text-rose-700">{item.error}</p>}
                     {!activeRun && item.status !== 'success' && item.recovery && <div className="mt-2"><p className={item.recovery.mode === 'blocked' ? 'text-amber-800' : 'text-sky-800'}>{!recoverable(item) ? '需人工核对后处理' : item.recovery.mode === 'resume_existing' ? '复用已有资料，继续处理' : '尚未提交，可重新执行'}</p><details open className="mt-1 text-slate-500"><summary className="cursor-pointer">原因与处理说明</summary><p className="mt-2 leading-relaxed">{item.recovery.reason}</p>{item.failure_phase && <p className="mt-1">失败阶段：{phaseLabel(item.failure_phase)}</p>}</details>{recoverable(item) && <button type="button" className="wb-button wb-item-recovery" disabled={retryPending || uncertainRetry} onClick={() => void retrySelected(item)}>{item.recovery.mode === 'resume_existing' ? '继续此项已有资料' : '仅重试此未提交项'}</button>}</div>}
-                  </div>)}</div>
+                  </div>))}</div>
                 </div>
               </details>}
               {selectedRun.performance && <details className="wb-performance"><summary>底层运行诊断（耗时与内存）</summary>
@@ -1650,6 +2165,195 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
           </div>
         );
       })()}
+
+    {/* 预设新建 / 修改 / 删除通用弹窗 */}
+    {presetModal && (
+      <div
+        className="wb-modal-backdrop"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="custom-preset-title"
+        onClick={() => setPresetModal(null)}
+      >
+        <div className="wb-preset-modal-content" onClick={e => e.stopPropagation()}>
+          <div className="wb-preset-modal-header">
+            <h3 id="custom-preset-title" className="wb-preset-modal-title">
+              {presetModal.mode === 'create'
+                ? (presetModal.type === 'region' ? '存为自定义城市片区' : '存为自定义场景包')
+                : (presetModal.type === 'region' ? '修改城市片区预设' : '修改业务场景包')}
+            </h3>
+            <button
+              type="button"
+              className="wb-popover-close-btn"
+              aria-label="关闭"
+              onClick={() => setPresetModal(null)}
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="wb-preset-modal-summary">
+            {presetModal.type === 'region' ? (
+              <div>
+                <div className="font-medium text-slate-700 mb-1">
+                  {presetModal.mode === 'create' ? '将包含以下已选城市：' : '当前预设所含城市：'}
+                </div>
+                <div className="text-xs text-slate-600 break-words leading-relaxed">
+                  {(presetModal.mode === 'create' ? (blueOnly ? blueCities : cities) : (presetModal.cities || [])).join('、') || '（未选城市）'}
+                </div>
+                {presetModal.mode === 'edit' && (
+                  <label className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-200 text-xs text-sky-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!presetModal.syncWithCurrentSelection}
+                      disabled={!(blueOnly ? blueCities : cities).length}
+                      onChange={e => setPresetModal(prev => prev ? { ...prev, syncWithCurrentSelection: e.target.checked } : null)}
+                      className="rounded text-sky-600 focus:ring-sky-500"
+                    />
+                    <span>以当前已勾选的 {(blueOnly ? blueCities : cities).length} 个城市覆盖更新此预设</span>
+                  </label>
+                )}
+              </div>
+            ) : (
+              <div>
+                <div className="font-medium text-slate-700 mb-1">
+                  {presetModal.mode === 'create' ? '将包含以下已选资料：' : '当前预设所含资料：'}
+                </div>
+                <div className="text-xs text-slate-600 break-words leading-relaxed">
+                  {(presetModal.mode === 'create' ? datasets : (presetModal.datasets || [])).map(datasetLabel).join('、') || '（未选资料）'}
+                </div>
+                {presetModal.mode === 'edit' && (
+                  <label className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-200 text-xs text-sky-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!presetModal.syncWithCurrentSelection}
+                      disabled={!datasets.length}
+                      onChange={e => setPresetModal(prev => prev ? { ...prev, syncWithCurrentSelection: e.target.checked } : null)}
+                      className="rounded text-sky-600 focus:ring-sky-500"
+                    />
+                    <span>以当前已勾选的 {datasets.length} 类资料覆盖更新此预设</span>
+                  </label>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <label htmlFor="custom-preset-input" className="block text-xs font-medium text-slate-700">
+              预设名称
+            </label>
+            <input
+              id="custom-preset-input"
+              type="text"
+              autoFocus
+              maxLength={15}
+              placeholder={presetModal.type === 'region' ? '例如：大湾区核心、包邮区三城' : '例如：阿信日常对账、离职清算包'}
+              value={presetModal.label}
+              onChange={e => setPresetModal(prev => prev ? { ...prev, label: e.target.value } : null)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  const trimmed = presetModal.label.trim();
+                  if (!trimmed) return;
+                  if (presetModal.mode === 'create') {
+                    if (presetModal.type === 'region') {
+                      const cur = blueOnly ? blueCities : cities;
+                      const next = [...regionPresets, { id: `custom_reg_${Date.now()}`, label: trimmed, cities: [...cur] }];
+                      saveRegionPresetsToStorage(next);
+                    } else {
+                      const next = [...scenarioPresets, { id: `custom_scen_${Date.now()}`, label: trimmed, title: datasets.map(datasetLabel).join(' + '), datasets: [...datasets] }];
+                      saveScenarioPresetsToStorage(next);
+                    }
+                  } else if (presetModal.id) {
+                    if (presetModal.type === 'region') {
+                      const cur = blueOnly ? blueCities : cities;
+                      const targetCities = presetModal.syncWithCurrentSelection && cur.length > 0
+                        ? [...cur]
+                        : (presetModal.cities || []);
+                      const next = regionPresets.map(p => p.id === presetModal.id ? { ...p, label: trimmed, cities: targetCities } : p);
+                      saveRegionPresetsToStorage(next);
+                    } else {
+                      const targetDatasets = presetModal.syncWithCurrentSelection && datasets.length > 0
+                        ? [...datasets]
+                        : (presetModal.datasets || []);
+                      const next = scenarioPresets.map(s => s.id === presetModal.id ? { ...s, label: trimmed, datasets: targetDatasets, title: targetDatasets.map(datasetLabel).join(' + ') } : s);
+                      saveScenarioPresetsToStorage(next);
+                    }
+                  }
+                  setPresetModal(null);
+                } else if (e.key === 'Escape') {
+                  setPresetModal(null);
+                }
+              }}
+              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+            />
+          </div>
+
+          <div className="wb-preset-modal-footer">
+            {presetModal.mode === 'edit' && presetModal.id && (
+              <button
+                type="button"
+                className="mr-auto inline-flex items-center gap-1 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2.5 py-1.5 rounded transition-colors"
+                onClick={() => {
+                  if (presetModal.type === 'region') {
+                    saveRegionPresetsToStorage(regionPresets.filter(r => r.id !== presetModal.id));
+                  } else {
+                    saveScenarioPresetsToStorage(scenarioPresets.filter(s => s.id !== presetModal.id));
+                  }
+                  setPresetModal(null);
+                }}
+              >
+                <Trash2 size={12} />
+                <span>删除此预设</span>
+              </button>
+            )}
+            <button
+              type="button"
+              className="wb-button"
+              onClick={() => setPresetModal(null)}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="wb-primary px-4 py-1.5 text-xs font-medium"
+              disabled={!presetModal.label.trim()}
+              onClick={() => {
+                const trimmed = presetModal.label.trim();
+                if (!trimmed) return;
+                if (presetModal.mode === 'create') {
+                  if (presetModal.type === 'region') {
+                    const cur = blueOnly ? blueCities : cities;
+                    const next = [...regionPresets, { id: `custom_reg_${Date.now()}`, label: trimmed, cities: [...cur] }];
+                    saveRegionPresetsToStorage(next);
+                  } else {
+                    const next = [...scenarioPresets, { id: `custom_scen_${Date.now()}`, label: trimmed, title: datasets.map(datasetLabel).join(' + '), datasets: [...datasets] }];
+                    saveScenarioPresetsToStorage(next);
+                  }
+                } else if (presetModal.id) {
+                  if (presetModal.type === 'region') {
+                    const cur = blueOnly ? blueCities : cities;
+                    const targetCities = presetModal.syncWithCurrentSelection && cur.length > 0
+                      ? [...cur]
+                      : (presetModal.cities || []);
+                    const next = regionPresets.map(p => p.id === presetModal.id ? { ...p, label: trimmed, cities: targetCities } : p);
+                    saveRegionPresetsToStorage(next);
+                  } else {
+                    const targetDatasets = presetModal.syncWithCurrentSelection && datasets.length > 0
+                      ? [...datasets]
+                      : (presetModal.datasets || []);
+                    const next = scenarioPresets.map(s => s.id === presetModal.id ? { ...s, label: trimmed, datasets: targetDatasets, title: targetDatasets.map(datasetLabel).join(' + ') } : s);
+                    saveScenarioPresetsToStorage(next);
+                  }
+                }
+                setPresetModal(null);
+              }}
+            >
+              {presetModal.mode === 'create' ? '保存预设' : '保存修改'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
 
     </div>
   );

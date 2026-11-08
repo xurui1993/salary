@@ -6,7 +6,7 @@ import { THEMES } from "./constants";
 import { LogEntry, AppConfig, TaskHistoryRecord } from "./types";
 import { FengshenLoginModal, FengshenAuthStatus } from "./components/FengshenLoginModal";
 import { CorePage, TaskItem } from "./components/CorePage";
-import { X, SlidersHorizontal, Calculator, FileSpreadsheet, Compass, Layers, UsersRound, Radar, BarChart3, WalletCards, BadgeDollarSign, FolderCheck } from "lucide-react";
+import { X, SlidersHorizontal, Calculator, FileSpreadsheet, Compass, Layers, UsersRound, Radar, BarChart3, WalletCards, BadgeDollarSign, FolderCheck, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { UploadProgressOverlay } from "./components/UploadProgressOverlay";
 import type { PayrollPreparationState } from './components/PayrollPreparation';
 import type { RunResult } from './components/RunResultCard';
@@ -143,6 +143,9 @@ export default function App() {
 
   const [deductionOpen, setDeductionOpen] = useState(false);
   const [globalTemplatesOpen, setGlobalTemplatesOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('sidebar_collapsed') === 'true'; } catch { return false; }
+  });
   const [deductionDefaultOnly, setDeductionDefaultOnly] = useState(false);
   const [deductionVersion, setDeductionVersion] = useState(0);
   const [workspaceView, setWorkspaceView] = useState<'create' | 'history' | 'approval' | 'price-export'>('create');
@@ -997,14 +1000,29 @@ export default function App() {
 
   return (
     <div className="workbench-app">
-      <div className="wb-shell">
-        <aside className="wb-sidebar" aria-label="桌面端工作台侧栏">
+      <div className={`wb-shell ${sidebarCollapsed ? 'has-collapsed-sidebar' : ''}`}>
+        <aside className={`wb-sidebar ${sidebarCollapsed ? 'is-collapsed' : ''}`} aria-label="桌面端工作台侧栏">
           <div className="wb-sidebar-brand">
             <span className="wb-sidebar-logo"><Calculator size={20} /></span>
-            <div>
+            <div className="wb-sidebar-brand-text">
               <strong>薪酬结算中心</strong>
               <small>多平台数据采集与自动化核算</small>
             </div>
+            <button
+              type="button"
+              className="wb-sidebar-toggle-btn"
+              title={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
+              aria-label={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
+              onClick={() => {
+                setSidebarCollapsed(prev => {
+                  const next = !prev;
+                  try { localStorage.setItem('sidebar_collapsed', String(next)); } catch {}
+                  return next;
+                });
+              }}
+            >
+              {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+            </button>
           </div>
           <div className="wb-sidebar-scroll">
             <div className="wb-sidebar-group">
@@ -1022,6 +1040,7 @@ export default function App() {
                   <button
                     key={platform.id}
                     type="button"
+                    title={platform.navLabel}
                     disabled={taskFormLocked}
                     aria-pressed={(workspaceView === 'create' || (workspaceView === 'history' && !historyAll)) && taskKind === 'download' && downloadPlatform === platform.id}
                     onClick={() => openDownloadModule(platform.id)}
@@ -1039,6 +1058,7 @@ export default function App() {
               <span className="wb-sidebar-label">核算与业务</span>
               <button
                 type="button"
+                title="专项报表"
                 disabled={taskFormLocked}
                 aria-pressed={(workspaceView === 'create' || (workspaceView === 'history' && !historyAll)) && taskKind === 'generate'}
                 onClick={() => { setHistoryAll(false); setTaskKind('generate'); navigateWorkspace('create'); }}
@@ -1054,6 +1074,7 @@ export default function App() {
                 return (
                   <button
                     type="button"
+                    title="薪资核算"
                     disabled={taskFormLocked}
                     aria-pressed={workspaceView === 'create' && taskKind === 'payroll'}
                     onClick={() => { setTaskKind('payroll'); navigateWorkspace('create'); }}
@@ -1071,6 +1092,7 @@ export default function App() {
               })()}
               <button
                 type="button"
+                title="价格审批"
                 className="wb-sidebar-item"
                 disabled={taskFormLocked}
                 aria-pressed={workspaceView === 'approval' || workspaceView === 'price-export'}
@@ -1089,6 +1111,7 @@ export default function App() {
               <span className="wb-sidebar-label">归档与配置</span>
               <button
                 type="button"
+                title="任务中心"
                 aria-pressed={workspaceView === 'history' && historyAll}
                 onClick={() => { setHistoryAll(true); navigateWorkspace('history'); }}
                 className="wb-sidebar-item"
@@ -1105,6 +1128,7 @@ export default function App() {
               </button>
               <button
                 type="button"
+                title="扣款规则"
                 aria-pressed={deductionOpen}
                 onClick={() => { setDeductionDefaultOnly(true); setDeductionOpen(true); }}
                 className="wb-sidebar-item"
@@ -1116,6 +1140,7 @@ export default function App() {
               </button>
               <button
                 type="button"
+                title="模板中心"
                 aria-pressed={globalTemplatesOpen}
                 onClick={() => setGlobalTemplatesOpen(true)}
                 className="wb-sidebar-item"
@@ -1126,6 +1151,67 @@ export default function App() {
                 <span className="wb-sidebar-text">模板中心</span>
               </button>
             </div>
+          </div>
+
+          {/* 侧栏底部微型状态中心（纯图标折叠与展开自适应） */}
+          <div className="wb-sidebar-bottom-status" aria-label="系统与任务微型状态中心">
+            {sidebarCollapsed ? (
+              <div className="flex flex-col items-center gap-2">
+                <button
+                  type="button"
+                  className="wb-sidebar-mini-dots-grid"
+                  title="平台连接健康状态（风神、蓝橙、商翼、灯塔），点击管理登录"
+                  onClick={() => window.dispatchEvent(new CustomEvent('workbench:connections'))}
+                >
+                  <span className="wb-mini-dot-cell ready" />
+                  <span className="wb-mini-dot-cell warn" />
+                  <span className="wb-mini-dot-cell busy" />
+                  <span className="wb-mini-dot-cell ready" />
+                </button>
+                <button
+                  type="button"
+                  className={`wb-sidebar-mini-task-btn ${activeDownloadCount > 0 || isRunning ? 'is-active' : ''}`}
+                  title={activeDownloadCount > 0 || isRunning ? `${activeDownloadCount + (isRunning ? 1 : 0)} 个任务正在进行中` : '任务中心 · 暂无进行中任务'}
+                  onClick={() => { setHistoryAll(true); navigateWorkspace('history'); }}
+                >
+                  <FolderCheck size={14} />
+                  <span className="tabular-nums">{activeDownloadCount + (isRunning ? 1 : 0)}</span>
+                </button>
+              </div>
+            ) : (
+              <div className="wb-sidebar-expanded-status">
+                <div className="wb-sidebar-status-header">
+                  <span>通道状态</span>
+                  <button
+                    type="button"
+                    className="text-[11px] text-sky-600 hover:text-sky-700 font-normal"
+                    onClick={() => window.dispatchEvent(new CustomEvent('workbench:connections'))}
+                  >
+                    管理
+                  </button>
+                </div>
+                <div className="wb-sidebar-cluster-row">
+                  <span
+                    className="wb-sidebar-cluster-pill"
+                    title="数据源平台连接通道"
+                    onClick={() => window.dispatchEvent(new CustomEvent('workbench:connections'))}
+                  >
+                    <span className="wb-dot ready" />
+                    <span>平台通道就绪</span>
+                  </span>
+                  {(activeDownloadCount > 0 || isRunning) && (
+                    <span
+                      className="wb-sidebar-cluster-pill text-sky-700 border-sky-200 bg-sky-50"
+                      title="点击查看进行中任务"
+                      onClick={() => { setHistoryAll(true); navigateWorkspace('history'); }}
+                    >
+                      <span className="wb-dot busy" />
+                      <span>{activeDownloadCount + (isRunning ? 1 : 0)} 任务执行中</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </aside>
         <div className="wb-viewport">

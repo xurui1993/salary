@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React, { useEffect, useRef, useState } from 'react';
-import { Compass, Layers, Radar, RefreshCw, UsersRound } from 'lucide-react';
+import { Compass, Layers, Radar, RefreshCw, UsersRound, X } from 'lucide-react';
 import {
   AUTH_PREFLIGHT_CANCEL_EVENT as PREFLIGHT_CANCELLED_EVENT,
   AUTH_PREFLIGHT_EVENT as PREFLIGHT_EVENT,
@@ -302,163 +302,200 @@ export function SystemConnections({
     return st.state === 'ready' && !st.offline;
   }).length;
 
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!drawerOpen) return;
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        handleCloseDrawer();
+      }
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        handleCloseDrawer();
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [drawerOpen]);
+
   return (
     <>
       {(!hideTrigger || busyAuthSource) && (
-        <button
-          className="wb-connection-trigger"
-          aria-label="管理系统连接"
-          onClick={() => setDrawerOpen(true)}
-        >
-          <span className="wb-connection-title">平台登录</span>
-          <span className="wb-connection-sep" aria-hidden="true" />
-          <span className="wb-connection-cluster" aria-hidden="true">
-            {cluster.map(item => (
-              <span
-                key={item.key}
-                className={`wb-connection-chip is-${item.tone}`}
-                title={`${item.shortLabel}：${item.statusText}`}
-              >
+        <div className="wb-connection-dropdown" ref={dropdownRef}>
+          <button
+            className="wb-connection-trigger"
+            aria-label="管理系统连接"
+            aria-expanded={drawerOpen}
+            onClick={() => setDrawerOpen(open => !open)}
+          >
+            <span className="wb-connection-title">平台登录</span>
+            <span className="wb-connection-sep" aria-hidden="true" />
+            <span className="wb-connection-cluster" aria-hidden="true">
+              {cluster.map(item => (
                 <span
-                  className={`wb-dot ${
-                    item.tone === 'ready'
-                      ? 'ready'
-                      : item.tone === 'warn'
-                        ? 'offline'
-                        : item.tone === 'busy'
-                          ? 'busy'
-                          : ''
-                  }`}
-                />
-                <span>{item.shortLabel}</span>
-              </span>
-            ))}
-          </span>
-        </button>
-      )}
+                  key={item.key}
+                  className={`wb-connection-chip is-${item.tone}`}
+                  title={`${item.shortLabel}：${item.statusText}`}
+                >
+                  <span
+                    className={`wb-dot ${
+                      item.tone === 'ready'
+                        ? 'ready'
+                        : item.tone === 'warn'
+                          ? 'offline'
+                          : item.tone === 'busy'
+                            ? 'busy'
+                            : ''
+                    }`}
+                  />
+                  <span>{item.shortLabel}</span>
+                </span>
+              ))}
+            </span>
+          </button>
 
-      {drawerOpen && (
-        <WorkbenchDrawer title="平台登录" onClose={handleCloseDrawer}>
-          <div className="wb-platform-overview-bar">
-            <div className="wb-platform-overview-stat">
-              <span className="wb-platform-overview-dot" />
-              <span>
-                数据源通道 · <strong>{readyCount}</strong> / {PLATFORM_DEFS.length} 已就绪
-              </span>
-            </div>
-            <button
-              type="button"
-              className="wb-platform-refresh-btn"
-              title="重新刷新检测平台连接"
-              onClick={() => {
-                for (const { key } of PLATFORM_DEFS) {
-                  const st = statuses[key];
-                  const version = st?.session_version;
-                  if (st?.saved && !st?.busy && !st?.offline && version && acquireLock(key, 'verify')) {
-                    fetchPlatformAuthJson(
-                      fetchRef.current,
-                      `/api/fengshen-downloads/platform-auth/${key}/check${key === 'xiaoxiang' ? '?deep=true' : ''}`,
-                      {},
-                      key === 'xiaoxiang' ? 45000 : 20000,
-                    )
-                      .then(res =>
-                        setStatuses(prev =>
-                          prev[key]?.session_version === version ? { ...prev, [key]: res } : prev,
-                        ),
-                      )
-                      .catch(err => recordError(key, err))
-                      .finally(() => releaseLock(key));
-                  }
-                }
-              }}
-            >
-              <RefreshCw size={12} />
-              <span>检测状态</span>
-            </button>
-          </div>
+          {drawerOpen && (
+            <div className="wb-connection-popover" role="dialog" aria-label="平台登录状态">
+              <div className="wb-popover-header">
+                <span className="wb-popover-title">数据源平台通道</span>
+                <button
+                  type="button"
+                  className="wb-popover-close-btn"
+                  aria-label="关闭浮窗"
+                  onClick={handleCloseDrawer}
+                >
+                  <X size={15} />
+                </button>
+              </div>
 
-          {preflightItems.length > 0 && (
-            <div className="wb-preflight-banner" role="status">
-              <strong>本次任务需要先完成认证：</strong>
-              {preflightItems.map(item => item.label).join('、')}
-              。完成认证后任务将自动继续创建，无需重新提交。
+              <div className="wb-platform-overview-bar mb-2.5">
+                <div className="wb-platform-overview-stat">
+                  <span className="wb-platform-overview-dot" />
+                  <span>
+                    数据源通道 · <strong>{readyCount}</strong> / {PLATFORM_DEFS.length} 已就绪
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="wb-platform-refresh-btn"
+                  title="重新刷新检测平台连接"
+                  onClick={() => {
+                    for (const { key } of PLATFORM_DEFS) {
+                      const st = statuses[key];
+                      const version = st?.session_version;
+                      if (st?.saved && !st?.busy && !st?.offline && version && acquireLock(key, 'verify')) {
+                        fetchPlatformAuthJson(
+                          fetchRef.current,
+                          `/api/fengshen-downloads/platform-auth/${key}/check${key === 'xiaoxiang' ? '?deep=true' : ''}`,
+                          {},
+                          key === 'xiaoxiang' ? 45000 : 20000,
+                        )
+                          .then(res =>
+                            setStatuses(prev =>
+                              prev[key]?.session_version === version ? { ...prev, [key]: res } : prev,
+                            ),
+                          )
+                          .catch(err => recordError(key, err))
+                          .finally(() => releaseLock(key));
+                      }
+                    }
+                  }}
+                >
+                  <RefreshCw size={12} />
+                  <span>检测状态</span>
+                </button>
+              </div>
+
+              {preflightItems.length > 0 && (
+                <div className="wb-preflight-banner mb-2.5" role="status">
+                  <strong>本次任务需要先完成认证：</strong>
+                  {preflightItems.map(item => item.label).join('、')}
+                  。完成认证后任务将自动继续创建，无需重新提交。
+                </div>
+              )}
+
+              <div className="wb-platform-card-list">
+                {PLATFORM_DEFS.map(({ key, label, icon: Icon }) => {
+                  const st = statuses[key] || (key === 'fengshen' && fengshenStatus) || {};
+                  const ready = st.state === 'ready' && !st.offline;
+                  const canLogout =
+                    !!st.saved ||
+                    !!st.busy ||
+                    ready ||
+                    ['starting', 'waiting_login'].includes(st.state || '');
+                  const badge = getPlatformCardBadge(st, pendingActions[key]);
+                  return (
+                    <section key={key} className={`wb-platform-login-row is-${key}`}>
+                      <div className="wb-platform-login-summary">
+                        <div className="wb-platform-identity">
+                          <span className="wb-platform-avatar" aria-hidden="true">
+                            <Icon size={17} />
+                          </span>
+                          <h3 className="wb-platform-name">{label}</h3>
+                        </div>
+                        <div className="wb-platform-status-area">
+                          <span className={`wb-status-badge is-${badge.tone}`}>
+                            <span
+                              className={`wb-dot ${
+                                badge.tone === 'ready'
+                                  ? 'ready'
+                                  : badge.tone === 'warn'
+                                    ? 'offline'
+                                    : badge.tone === 'busy'
+                                      ? 'busy'
+                                      : ''
+                              }`}
+                            />
+                            <span>{badge.label}</span>
+                          </span>
+                        </div>
+                        <div className="wb-platform-actions">
+                          {!ready && (
+                            <button
+                              type="button"
+                              className="wb-button wb-btn-login"
+                              disabled={!!pendingActions[key]}
+                              onClick={() => void handleStartLogin(key)}
+                            >
+                              {getActionLabel(key, st)}
+                            </button>
+                          )}
+                          {canLogout && (
+                            <button
+                              type="button"
+                              className="wb-button wb-btn-logout"
+                              disabled={!!pendingActions[key]}
+                              onClick={() => void handleLogout(key)}
+                            >
+                              退出
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="wb-muted">{getCapabilitySummary(key, st)}</p>
+                      {(st.account_label || st.organization) && (
+                        <p className="wb-muted">
+                          {[st.account_label, st.organization].filter(Boolean).join(' · ')}
+                        </p>
+                      )}
+                      {(errors[key] || st.offline) && (
+                        <p role="alert" className="wb-error">
+                          {errors[key] || '连接状态暂不可用，请稍候再试。'}
+                        </p>
+                      )}
+                    </section>
+                  );
+                })}
+              </div>
             </div>
           )}
-
-          <div className="wb-platform-card-list">
-            {PLATFORM_DEFS.map(({ key, label, icon: Icon }) => {
-              const st = statuses[key] || (key === 'fengshen' && fengshenStatus) || {};
-              const ready = st.state === 'ready' && !st.offline;
-              const canLogout =
-                !!st.saved ||
-                !!st.busy ||
-                ready ||
-                ['starting', 'waiting_login'].includes(st.state || '');
-              const badge = getPlatformCardBadge(st, pendingActions[key]);
-              return (
-                <section key={key} className={`wb-platform-login-row is-${key}`}>
-                  <div className="wb-platform-login-summary">
-                    <div className="wb-platform-identity">
-                      <span className="wb-platform-avatar" aria-hidden="true">
-                        <Icon size={17} />
-                      </span>
-                      <h3 className="wb-platform-name">{label}</h3>
-                    </div>
-                    <div className="wb-platform-status-area">
-                      <span className={`wb-status-badge is-${badge.tone}`}>
-                        <span
-                          className={`wb-dot ${
-                            badge.tone === 'ready'
-                              ? 'ready'
-                              : badge.tone === 'warn'
-                                ? 'offline'
-                                : badge.tone === 'busy'
-                                  ? 'busy'
-                                  : ''
-                          }`}
-                        />
-                        <span>{badge.label}</span>
-                      </span>
-                    </div>
-                    <div className="wb-platform-actions">
-                      {!ready && (
-                        <button
-                          type="button"
-                          className="wb-button wb-btn-login"
-                          disabled={!!pendingActions[key]}
-                          onClick={() => void handleStartLogin(key)}
-                        >
-                          {getActionLabel(key, st)}
-                        </button>
-                      )}
-                      {canLogout && (
-                        <button
-                          type="button"
-                          className="wb-button wb-btn-logout"
-                          disabled={!!pendingActions[key]}
-                          onClick={() => void handleLogout(key)}
-                        >
-                          退出
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <p className="wb-muted">{getCapabilitySummary(key, st)}</p>
-                  {(st.account_label || st.organization) && (
-                    <p className="wb-muted">
-                      {[st.account_label, st.organization].filter(Boolean).join(' · ')}
-                    </p>
-                  )}
-                  {(errors[key] || st.offline) && (
-                    <p role="alert" className="wb-error">
-                      {errors[key] || '连接状态暂不可用，请稍候再试。'}
-                    </p>
-                  )}
-                </section>
-              );
-            })}
-          </div>
-        </WorkbenchDrawer>
+        </div>
       )}
 
       {!!activeDef && (

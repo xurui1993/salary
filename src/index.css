@@ -379,3 +379,704 @@
   color: #64748b;
 }
 
+/* 11. Collapsible Sidebar (左侧栏折叠为纯图标模式，释放 180px+ 宽度并收紧网格) */
+.wb-shell {
+  transition: grid-template-columns 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.wb-shell:has(.wb-sidebar.is-collapsed),
+.wb-shell.has-collapsed-sidebar {
+  grid-template-columns: 64px minmax(0, 1fr) !important;
+}
+
+.wb-sidebar {
+  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.wb-sidebar-brand {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wb-sidebar-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.wb-sidebar-toggle-btn:hover {
+  background: #f1f5f9;
+  color: #0369a1;
+  border-color: #e2e8f0;
+}
+
+.wb-sidebar.is-collapsed {
+  width: 64px !important;
+  min-width: 64px !important;
+}
+
+.wb-sidebar.is-collapsed .wb-sidebar-brand {
+  justify-content: center;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+.wb-sidebar.is-collapsed .wb-sidebar-brand-text,
+.wb-sidebar.is-collapsed .wb-sidebar-label,
+.wb-sidebar.is-collapsed .wb-sidebar-text,
+.wb-sidebar.is-collapsed .wb-sidebar-badge {
+  display: none !important;
+}
+
+.wb-sidebar.is-collapsed .wb-sidebar-item {
+  justify-content: center !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+.wb-sidebar.is-collapsed .wb-sidebar-item .wb-sidebar-icon {
+  margin: 0 !important;
+}
+
+/* 12. City Presets & Active State */
+.wb-city-preset-btn.is-active {
+  background: #0284c7 !important;
+  color: #ffffff !important;
+  border-color: #0284c7 !important;
+  font-weight: 600 !important;
+}
+
+/* 13. Scenario Presets in 03 选择资料 (发薪齐套包、风控对账包、人员快照包) */
+.wb-scenario-pills {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 6px 10px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+}
+
+.wb-scenario-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #475569;
+  margin-right: 2px;
+  white-space: nowrap;
+}
+
+.wb-scenario-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 3px 9px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #0369a1;
+  background: #ffffff;
+  border: 1px solid #bae6fd;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.wb-scenario-btn:hover:not(:disabled) {
+  background: #e0f2fe;
+  border-color: #7dd3fc;
+  color: #0284c7;
+}
+
+.wb-scenario-btn.is-active {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #0284c7;
+  font-weight: 600;
+}
+
+.wb-scenario-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 14. Lightweight Popover Dropdown for 平台登录 (轻量级非全屏阻塞浮窗) */
+.wb-connection-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.wb-connection-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 440px;
+  max-width: 90vw;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.15), 0 8px 10px -6px rgba(15, 23, 42, 0.08);
+  z-index: 1000;
+  padding: 14px 16px;
+  animation: wb-popover-in 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes wb-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.wb-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.wb-popover-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.wb-popover-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.wb-popover-close-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.wb-connection-popover .wb-platform-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.wb-connection-popover .wb-platform-login-row {
+  padding: 10px 12px !important;
+  border-radius: 10px !important;
+  border: 1px solid #e2e8f0 !important;
+  background: #f8fafc;
+}
+
+/* 15. Custom Presets Add, Edit & Delete Controls */
+.wb-preset-pill-item {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+}
+
+.wb-preset-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 2px;
+}
+
+.wb-preset-edit-btn,
+.wb-preset-pill-item .wb-preset-remove-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.wb-preset-edit-btn:hover {
+  color: #0284c7;
+  background: #e0f2fe;
+}
+
+.wb-preset-pill-item:hover .wb-preset-remove-btn {
+  color: #e11d48;
+  background: #ffe4e6;
+}
+
+.wb-preset-empty-hint {
+  font-size: 11.5px;
+  color: #94a3b8;
+  padding: 2px 6px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.wb-preset-add-trigger {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  border-style: dashed !important;
+  border-color: #93c5fd !important;
+  color: #0284c7 !important;
+  background: #f0f9ff !important;
+  font-weight: 500 !important;
+}
+
+.wb-preset-add-trigger:hover:not(:disabled) {
+  border-color: #0284c7 !important;
+  background: #e0f2fe !important;
+}
+
+/* 16. Modal Dialog for Saving Presets */
+.wb-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(2px);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: wb-fade-in 0.15s ease;
+}
+
+@keyframes wb-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.wb-preset-modal-content {
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 20px 25px -5px rgba(15, 23, 42, 0.2), 0 8px 10px -6px rgba(15, 23, 42, 0.1);
+  width: 100%;
+  max-width: 420px;
+  padding: 20px;
+  border: 1px solid #e2e8f0;
+}
+
+.wb-preset-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.wb-preset-modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.wb-preset-modal-summary {
+  font-size: 12.5px;
+  color: #475569;
+  background: #f8fafc;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+
+.wb-preset-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+/* 17. Sidebar Bottom Mini Status Center (在折叠侧栏底部充分利用垂直留白) */
+.wb-sidebar-bottom-status {
+  padding: 12px 10px;
+  border-top: 1px solid #e2e8f0;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.wb-sidebar.is-collapsed .wb-sidebar-bottom-status {
+  padding: 12px 6px;
+  align-items: center;
+}
+
+.wb-sidebar-expanded-status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wb-sidebar-status-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.wb-sidebar-cluster-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.wb-sidebar-cluster-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #475569;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 2px 7px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.wb-sidebar-cluster-pill:hover {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+  color: #0369a1;
+}
+
+/* Collapsed Mode Mini Dots Grid & Task Capsule */
+.wb-sidebar-mini-dots-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 5px;
+  padding: 6px 7px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.wb-sidebar-mini-dots-grid:hover {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+}
+
+.wb-mini-dot-cell {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #cbd5e1;
+}
+
+.wb-mini-dot-cell.ready {
+  background: #10b981;
+}
+
+.wb-mini-dot-cell.warn {
+  background: #f59e0b;
+}
+
+.wb-mini-dot-cell.busy {
+  background: #0284c7;
+  animation: wb-pulse 1.5s infinite;
+}
+
+@keyframes wb-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+.wb-sidebar-mini-task-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 38px;
+  border-radius: 8px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  color: #0369a1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px;
+}
+
+.wb-sidebar-mini-task-btn:hover {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #0284c7;
+}
+
+.wb-sidebar-mini-task-btn.is-active {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #0284c7;
+}
+
+/* 18. Pulse Highlight Animation for Guided Navigation */
+@keyframes wb-field-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.6);
+    border-color: #0284c7 !important;
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(14, 165, 233, 0.25);
+    border-color: #0284c7 !important;
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(14, 165, 233, 0);
+  }
+}
+
+.wb-field-pulse-highlight {
+  animation: wb-field-pulse 1.5s ease-out !important;
+  border-color: #0284c7 !important;
+  background-color: #f0f9ff !important;
+}
+
+.wb-execution-prompt-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+  text-decoration: none;
+}
+
+.wb-execution-prompt-btn:hover {
+  background: #ffedd5;
+  border-color: #fb923c;
+  color: #9a3412;
+  box-shadow: 0 2px 4px rgba(234, 88, 12, 0.1);
+  transform: translateY(-1px);
+}
+
+/* 19. Dataset Category Filter Tabs & Compact Tile View */
+.wb-dataset-category-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.wb-dataset-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: #f1f5f9;
+  padding: 3px;
+  border-radius: 8px;
+}
+
+.wb-dataset-tab-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.wb-dataset-tab-btn:hover {
+  color: #0f172a;
+}
+
+.wb-dataset-tab-btn.is-active {
+  background: #ffffff;
+  color: #0284c7;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.wb-dataset-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 2px;
+  border-radius: 7px;
+}
+
+.wb-dataset-view-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 11.5px;
+  color: #64748b;
+  border-radius: 5px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.wb-dataset-view-btn:hover {
+  color: #0f172a;
+}
+
+.wb-dataset-view-btn.is-active {
+  background: #ffffff;
+  color: #0284c7;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+/* Compact Tile View Grid & Cards */
+.wb-dataset-grid-compact {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 8px;
+}
+
+.wb-dataset-compact-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+  min-height: 38px;
+}
+
+.wb-dataset-compact-card:hover:not(.is-disabled) {
+  border-color: #93c5fd;
+  background: #f8fbff;
+}
+
+.wb-dataset-compact-card.is-selected {
+  border-color: #0284c7;
+  background: #f0f9ff;
+}
+
+.wb-dataset-compact-card.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: #f8fafc;
+}
+
+.wb-dataset-compact-label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #1e293b;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-dataset-compact-card.is-selected .wb-dataset-compact-label {
+  color: #0369a1;
+  font-weight: 600;
+}
+
+.wb-dataset-compact-tag {
+  font-size: 10.5px;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 1px 5px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+/* 20. Granular Task Retry Buttons */
+.wb-retry-single-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #c2410c;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-top: 4px;
+}
+
+.wb-retry-single-btn:hover:not(:disabled) {
+  background: #ffedd5;
+  border-color: #fb923c;
+  color: #9a3412;
+}
+
+.wb-retry-all-failed-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+  background: #ea580c;
+  border: 1px solid #c2410c;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 3px rgba(234, 88, 12, 0.25);
+}
+
+.wb-retry-all-failed-btn:hover:not(:disabled) {
+  background: #c2410c;
+}
+
+
