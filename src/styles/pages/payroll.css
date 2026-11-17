@@ -7,150 +7,907 @@
 .wbx-payroll {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   min-width: 0;
 }
 
-.wbx-payroll.is-empty {
-  gap: 0;
-  box-shadow: var(--wbx-shadow-sm);
-  border-radius: 14px;
+/* ─── 顶部：精简模式切换条与快捷入口 ───────────────────────────────────── */
+.wbx-payroll__topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.03);
 }
 
-/* 顶部模式切换栏 + 操作卡头部融合 */
-.wbx-payroll__bar {
+.wbx-payroll__mode-switch-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  min-width: 0;
+}
+
+.wbx-payroll__mode-hint {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #475569;
+}
+
+.wbx-payroll__topbar-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ─── 顶部：双模式卡片切换 + 批次引擎与规则总览 ───────────────────────── */
+.wbx-payroll__top-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.wbx-payroll__mode-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.wbx-payroll__mode-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+              background-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 160ms cubic-bezier(0.22, 1, 0.36, 1),
+              transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wbx-payroll__mode-card:hover:not(:disabled) {
+  border-color: #38bdf8;
+  background: #f8fafc;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px -6px rgba(2, 132, 199, 0.14);
+}
+
+.wbx-payroll__mode-card.is-active {
+  background: linear-gradient(145deg, #f0f9ff 0%, #ffffff 72%);
+  border-color: #0284c7;
+  box-shadow: 0 0 0 1px #0284c7, 0 10px 22px -8px rgba(2, 132, 199, 0.22);
+}
+
+.wbx-payroll__mode-card-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.wbx-payroll__mode-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.wbx-payroll__mode-card.is-active .wbx-payroll__mode-icon {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 4px 10px -2px rgba(2, 132, 199, 0.38);
+}
+
+.wbx-payroll__mode-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.wbx-payroll__mode-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+.wbx-payroll__mode-card.is-active .wbx-payroll__mode-title {
+  color: #0369a1;
+}
+
+.wbx-payroll__mode-pill {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.wbx-payroll__mode-pill.is-active {
+  background: #e0f2fe;
+  color: #0369a1;
+  border-color: #7dd3fc;
+}
+
+.wbx-payroll__mode-radio {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 2px solid #cbd5e1;
+  background: #ffffff;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.wbx-payroll__mode-card.is-active .wbx-payroll__mode-radio {
+  border-color: #0284c7;
+  background: #0284c7;
+  box-shadow: inset 0 0 0 3px #ffffff;
+}
+
+.wbx-payroll__mode-desc {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #334155;
+  font-weight: 500;
+}
+
+.wbx-payroll__mode-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.wbx-payroll__mode-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  background: #f8fafc;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.wbx-payroll__mode-card.is-active .wbx-payroll__mode-tag {
+  background: rgba(255, 255, 255, 0.9);
+  color: #075985;
+  border-color: #bae6fd;
+}
+
+/* ─── 右侧：批次引擎与规则工作台概览卡 ──────────────────────────────── */
+.wbx-payroll__overview-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: linear-gradient(165deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.wbx-payroll__overview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.wbx-payroll__overview-eyebrow {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #0284c7;
+  margin-bottom: 2px;
+}
+
+.wbx-payroll__overview-head h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.wbx-payroll__kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.wbx-payroll__kpi-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+}
+
+.wbx-payroll__kpi-item span {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.wbx-payroll__kpi-item strong {
+  font-size: 18px;
+  font-weight: 800;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.wbx-payroll__kpi-item.is-running strong {
+  color: #0284c7;
+}
+
+.wbx-payroll__kpi-item.is-waiting strong {
+  color: #d97706;
+}
+
+.wbx-payroll__kpi-item.is-done strong {
+  color: #059669;
+}
+
+.wbx-payroll__overview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wbx-payroll__quick-btn {
+  flex: 1 1 auto;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 650;
+  padding: 6px 10px;
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #1e293b;
+}
+
+.wbx-payroll__quick-btn:hover {
+  border-color: #0284c7;
+  color: #0369a1;
+  background: #f0f9ff;
+}
+
+/* ─── 中部：宽松易用的拖拽/点选上传工作台 ────────────────────────────────── */
+.pq-intake .pq-upload.wbx-payroll__upload {
+  min-height: 118px;
+  padding: 22px 26px;
+  border-radius: 14px;
+  border: 1.5px dashed #7dd3fc;
+  background: linear-gradient(135deg, #f4f9ff 0%, #ffffff 58%, #f0f9ff 100%);
+  box-shadow: 0 3px 12px -6px rgba(2, 132, 199, 0.14);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.pq-intake .pq-upload.wbx-payroll__upload:hover {
+  border-color: #38bdf8;
+  box-shadow: 0 6px 18px -8px rgba(2, 132, 199, 0.2);
+}
+
+.pq-intake .pq-upload.wbx-payroll__upload.dragging {
+  border-color: #0284c7;
+  background: #e0f2fe;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.18);
+}
+
+.wbx-payroll__upload-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 24px;
+  width: 100%;
+  flex-wrap: wrap;
+}
+
+.wbx-payroll__upload-copy {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1 1 480px;
+  min-width: 0;
+}
+
+.wbx-payroll__upload-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 6px 14px -4px rgba(2, 132, 199, 0.38);
+}
+
+.wbx-payroll__upload-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.wbx-payroll__upload-text h3 {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+.wbx-payroll__upload-text p {
+  margin: 0;
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.wbx-payroll__upload-hints {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 2px;
+}
+
+.wbx-payroll__upload-hints span {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #0369a1;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+}
+
+.wbx-payroll__upload-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  flex-shrink: 0;
+}
+
+.wbx-payroll__upload-btn-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+.wbx-payroll__upload-btn-group .wb-primary {
+  min-height: 38px;
+  padding: 0 18px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.wbx-payroll__upload-btn-group .wbx-btn {
+  min-height: 38px;
+  padding: 0 14px;
+}
+
+/* ─── 底部：批次队列卡片与三步能力说明 ───────────────────────────────── */
+.pq-queue {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  box-shadow: 0 3px 10px -4px rgba(15, 23, 42, 0.05);
+  overflow: hidden;
+}
+
+.pq-queue-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 10px 16px;
   padding: 12px 18px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-  border: 1px solid var(--wbx-border);
-  border-radius: 14px 14px 0 0;
+  background: #ffffff;
 }
 
-.wbx-payroll__mode-hint {
+.pq-queue-title-group h3 {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
+  gap: 8px;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.pq-queue-title-group h3 span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 7px;
   border-radius: 999px;
-  background: #f0f9ff;
-  border: 1px solid #bae6fd;
+  font-size: 12px;
+  font-weight: 800;
+  background: #e0f2fe;
   color: #0369a1;
-  font-size: 11.5px;
+  border: 1px solid #bae6fd;
+}
+
+.pq-queue-title-group p {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: #475569;
   font-weight: 500;
 }
 
-/* 空缺站点下载范围选项条 */
-.wbx-payroll__vacant-options {
+.pq-queue-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pq-queue-actions .wb-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+
+.pq-queue-actions .wb-link:hover {
+  border-color: #0284c7;
+  background: #f0f9ff;
+  color: #0369a1;
+}
+
+.wbx-payroll__queue-empty {
+  padding: 20px;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  border-top: 1px solid #e2e8f0;
+  border-radius: 0 0 16px 16px;
+}
+
+.wbx-payroll__guide-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.wbx-payroll__guide-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
+}
+
+.wbx-payroll__guide-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  padding: 10px 18px;
-  background: #f8fafc;
-  border-inline: 1px solid var(--wbx-border);
-  border-bottom: 1px solid var(--wbx-border);
-  font-size: 12.5px;
-  color: var(--wbx-text-secondary);
+  color: #0284c7;
 }
 
-.wbx-payroll__vacant-options label {
+.wbx-payroll__guide-step {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  font-weight: 600;
-  color: var(--wbx-text);
-  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  background: #e0f2fe;
+  color: #0369a1;
 }
 
-/* 薪资核算队列空状态引导卡 */
-.wbx-payroll__empty {
-  padding: 32px 24px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-  border-radius: 0 0 14px 14px;
-  border: 1px solid var(--wbx-border);
-  border-top: 0;
+.wbx-payroll__guide-card h4 {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 800;
+  color: #0f172a;
 }
 
-.wbx-payroll__steps {
-  list-style: none;
-  margin: 14px 0 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  width: min(780px, 100%);
-  text-align: left;
+.wbx-payroll__guide-card p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #475569;
 }
 
-.wbx-payroll__steps li {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 14px 16px;
-  border-radius: 10px;
-  background: #ffffff;
-  border: 1px solid var(--wbx-border);
-  box-shadow: var(--wbx-shadow-xs);
-  transition: border-color var(--wbx-dur-fast) var(--wbx-ease),
-              transform var(--wbx-dur-fast) var(--wbx-ease);
-}
-
-.wbx-payroll__steps li:hover {
-  border-color: #93c5fd;
-  transform: translateY(-1px);
-}
-
-.wbx-payroll__steps strong {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--wbx-primary-hover);
-}
-
-.wbx-payroll__steps span {
-  font-size: 12px;
-  color: var(--wbx-text-muted);
-  line-height: 1.45;
-}
-
-@media (max-width: 720px) {
-  .wbx-payroll__steps {
+@media (max-width: 1180px) {
+  .wbx-payroll__top-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
-.wbx-payroll__skeleton {
-  padding: var(--wbx-s3) var(--wbx-s4);
+@media (max-width: 860px) {
+  .wbx-payroll__mode-cards,
+  .wbx-payroll__guide-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wbx-payroll__upload-actions {
+    align-items: flex-start;
+    width: 100%;
+  }
 }
 
-/* 站点扣款规则子视图（StationDeductionManager） */
+/* 站点扣款规则子视图（StationDeductionManager / CityDeductionAmounts / DeductionAmounts） */
 .wbx-deduction {
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
 
+/* 扣款项类目模板条 */
+.wbx-deduction-taxonomy {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
+}
+
+.wbx-deduction-taxonomy__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.wbx-deduction-taxonomy__heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.wbx-deduction-taxonomy__heading svg {
+  color: #0284c7;
+  flex-shrink: 0;
+}
+
+.wbx-deduction-taxonomy__sub {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #475569;
+}
+
+.wbx-deduction-meta-sep {
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.wbx-deduction-cat-tabs {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+}
+
+.wbx-deduction-cat-tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 6px 12px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: #475569;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.wbx-deduction-cat-tab:hover {
+  color: #0f172a;
+}
+
+.wbx-deduction-cat-tab.is-active {
+  background: #ffffff;
+  color: #0369a1;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.wbx-deduction-taxonomy__items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.wbx-deduction-cat-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.wbx-deduction-cat-row__title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 196px;
+}
+
+.wbx-deduction-cat-row__title strong {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.wbx-deduction-cat-row__title span {
+  font-size: 11.5px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.wbx-deduction-cat-row__fields {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: #334155;
+  font-weight: 500;
+}
+
+/* 14+ 城市快速切换矩阵 */
+.wbx-deduction-city-nav {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
+}
+
+.wbx-deduction-city-nav__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.wbx-deduction-city-nav__title {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.wbx-deduction-city-nav__title svg {
+  color: #0284c7;
+  flex-shrink: 0;
+}
+
+.wbx-deduction-city-nav__stats {
+  font-size: 12.5px;
+  color: #475569;
+  font-weight: 500;
+}
+
+.wbx-deduction-city-nav__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wbx-deduction-city-search {
+  width: 170px;
+  min-height: 32px;
+  font-size: 12.5px;
+}
+
+.wbx-city-matrix {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 8px;
+  max-height: 224px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.wbx-city-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.wbx-city-tile:hover {
+  border-color: #38bdf8;
+  background: #ffffff;
+}
+
+.wbx-city-tile.is-active {
+  background: #f0f9ff;
+  border-color: #0284c7;
+  box-shadow: 0 0 0 1px #0284c7;
+}
+
+.wbx-city-tile__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.wbx-city-tile__top strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wbx-city-tile.is-active .wbx-city-tile__top strong {
+  color: #0369a1;
+}
+
+.wbx-city-tile__top span {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #475569;
+  flex-shrink: 0;
+}
+
+.wbx-city-tile__sub {
+  font-size: 11.5px;
+  color: #64748b;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wbx-city-tile.is-complete .wbx-city-tile__sub {
+  color: #15803d;
+}
+
+.wbx-city-tile.is-pending .wbx-city-tile__sub {
+  color: #b45309;
+}
+
+.wbx-city-matrix-empty {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  font-size: 12.5px;
+  color: #475569;
+}
+
+.wbx-deduction-stat-text {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #0369a1;
+}
+
+.wbx-deduction-alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.wbx-deduction-alert__body {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .wbx-deduction-columns {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
   gap: 14px;
   align-items: start;
 }
 
 .wbx-deduction-city,
 .wbx-deduction-problem {
-  background: var(--wbx-surface);
-  border: 1px solid var(--wbx-border);
-  border-radius: var(--wbx-r-lg);
-  box-shadow: var(--wbx-shadow-sm);
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
   padding: 18px 20px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+}
+
+.wbx-deduction-city.is-expanded {
+  grid-column: 1 / -1;
+}
+
+.wbx-deduction-city.is-expanded .city-fee-grid {
+  grid-template-columns: repeat(auto-fill, minmax(156px, 1fr));
 }
 
 .wbx-deduction-city h3,
@@ -158,20 +915,1717 @@
   margin: 0;
   font-size: 15px;
   font-weight: 700;
-  color: var(--wbx-text);
+  color: #0f172a;
+}
+
+.wbx-city-select-prompt {
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+}
+
+.wbx-city-fee-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.wbx-city-fee-card__head h4 {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.wbx-city-fee-card__head h4 small {
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  margin-left: 8px;
+}
+
+.wbx-city-fee-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.wbx-city-fee-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.wbx-city-fee-group:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.wbx-city-fee-group__title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wbx-city-fee-group__title span {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0369a1;
+}
+
+.wbx-city-fee-group__title small {
+  font-size: 11.5px;
+  color: #64748b;
+}
+
+.wbx-city-fee-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.wbx-city-fee-field__label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.wbx-city-fee-field__label small {
+  font-size: 11px;
+  font-weight: 500;
+  color: #64748b;
 }
 
 .wbx-deduction-columns > .wbx-empty,
+.wbx-deduction-offline-panel,
 .wbx-deduction-exceptions {
   grid-column: 1 / -1;
-  background: var(--wbx-surface);
-  border: 1px solid var(--wbx-border);
-  border-radius: var(--wbx-r-lg);
-  box-shadow: var(--wbx-shadow-sm);
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
 }
 
-@media (max-width: 1100px) {
+.wbx-deduction-table thead th {
+  vertical-align: bottom;
+}
+
+.wbx-deduction-table tbody th,
+.wbx-deduction-table tbody td {
+  padding: 10px 12px;
+}
+
+.wbx-deduction-th-cat {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 2px;
+}
+
+.wbx-deduction-th-name {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.wbx-deduction-col-sticky-left {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #ffffff;
+  box-shadow: 1px 0 0 #e2e8f0;
+  min-width: 190px;
+}
+
+.wbx-deduction-station-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 2px;
+}
+
+.wbx-deduction-table thead th.wbx-deduction-col-sticky-left,
+.wbx-deduction-table thead th.wbx-deduction-col-sticky-right {
+  z-index: 3;
+  background: #f8fafc;
+}
+
+.wbx-deduction-col-sticky-right {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: #ffffff;
+  box-shadow: -1px 0 0 #e2e8f0;
+  min-width: 210px;
+}
+
+.wbx-deduction-row-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.wbx-deduction-row-actions .wb-button {
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.wbx-deduction-row-actions .wb-zero-confirm {
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.wbx-site-state.is-edited {
+  color: #0369a1;
+  font-weight: 600;
+}
+
+.wbx-site-state.is-ready {
+  color: #15803d;
+}
+
+.wbx-site-state.is-pending {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.wbx-deduction-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 0 0 14px 14px;
+}
+
+.wbx-deduction-pagination__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 扣款项类目单行切换条（全部 + 3 大类目） */
+.wbx-category-strip {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.72fr) repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.wbx-category-card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.wbx-category-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 13px;
+  border-radius: 11px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.wbx-category-card:hover {
+  border-color: #7dd3fc;
+  background: #f8fbff;
+}
+
+.wbx-category-card.is-active {
+  background: #f0f9ff;
+  border-color: #0284c7;
+  box-shadow: 0 0 0 1px #0284c7;
+}
+
+.wbx-category-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wbx-category-card__head strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.wbx-category-card.is-active .wbx-category-card__head strong {
+  color: #0369a1;
+}
+
+.wbx-category-card__head span {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.wbx-category-card__fields {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #475569;
+  font-weight: 500;
+}
+
+/* 城市与站点层级控制栏 */
+.wbx-hierarchy-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.03);
+}
+
+.wbx-hierarchy-toolbar__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.wbx-hierarchy-toolbar__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.wbx-hierarchy-toolbar__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wbx-hierarchy-toolbar__filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wbx-hierarchy-toolbar__summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  color: #0f172a;
+}
+
+.wbx-hierarchy-toolbar__summary svg {
+  color: #0284c7;
+  flex-shrink: 0;
+}
+
+.wbx-hierarchy-toolbar__summary span:last-child {
+  font-size: 12.5px;
+  color: #475569;
+  font-weight: 500;
+}
+
+.wbx-hierarchy-search {
+  width: 220px;
+  min-height: 32px;
+  font-size: 12.5px;
+}
+
+/* 14+ 城市紧凑折叠卡片列表 */
+.wbx-city-accordion-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-anchor: none;
+}
+
+.wbx-city-accordion {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
+  overflow: hidden;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.wbx-city-accordion.is-open {
+  border-color: #93c5fd;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.08);
+}
+
+.wbx-city-accordion__head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 18px;
+  background: #ffffff;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  text-align: left;
+  cursor: pointer;
+  list-style: none;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.wbx-city-accordion__head:hover {
+  background: #f8fafc;
+}
+
+.wbx-city-accordion.is-open > .wbx-city-accordion__head {
+  background: #f8fbff;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.wbx-city-accordion__lead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.wbx-city-accordion__chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  color: #334155;
+  flex-shrink: 0;
+}
+
+.wbx-city-accordion.is-open .wbx-city-accordion__chevron {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.wbx-city-accordion__titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.wbx-city-accordion__title-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 7px;
+  font-size: 13px;
+}
+
+.wbx-city-accordion__title-row strong {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.wbx-city-accordion__count {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.wbx-city-accordion__override {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0369a1;
+}
+
+.wbx-city-accordion__default-tag {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.wbx-city-accordion__default-tag.is-edited {
+  color: #0369a1;
+}
+
+.wbx-city-accordion__default-tag.is-ready {
+  color: #15803d;
+}
+
+.wbx-city-accordion__default-tag.is-pending {
+  color: #b45309;
+}
+
+.wbx-city-accordion__preview {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wbx-city-accordion__progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.wbx-city-accordion__progress-meta {
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
+  min-width: 120px;
+}
+
+.wbx-city-accordion__progress-meta .is-ready {
+  color: #15803d;
+}
+
+.wbx-city-accordion__progress-meta .is-pending {
+  color: #b45309;
+}
+
+.wbx-city-accordion__bar {
+  width: 84px;
+  height: 4px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.wbx-city-accordion__bar > span {
+  display: block;
+  height: 100%;
+  background: #0284c7;
+  border-radius: 999px;
+  transition: width 180ms ease;
+}
+
+.wbx-city-accordion.is-complete .wbx-city-accordion__bar > span {
+  background: #16a34a;
+}
+
+.wbx-city-accordion__action-hint {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0369a1;
+  min-width: 34px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.wbx-city-accordion__body {
+  display: flex;
+  flex-direction: column;
+}
+
+.wbx-city-accordion__default {
+  padding: 14px 18px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.wbx-city-accordion__default .city-fee-grid {
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 8px;
+}
+
+.wbx-city-accordion__stations {
+  padding: 14px 20px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #ffffff;
+}
+
+.wbx-city-stations-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.wbx-city-stations-bar__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.wbx-city-stations-bar__title svg {
+  color: #0284c7;
+}
+
+.wbx-city-stations-bar__title span:last-child {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.wbx-city-stations-empty {
+  padding: 16px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  font-size: 12.5px;
+  color: #64748b;
+  text-align: center;
+}
+
+/* 城市下属 10+ 站点 2 列紧凑折叠卡网格 */
+.wbx-station-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-flow: dense;
+  gap: 10px;
+  align-items: start;
+}
+
+.wbx-station-card {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.wbx-station-card.is-open {
+  grid-column: 1 / -1;
+  background: #ffffff;
+  border-color: #7dd3fc;
+}
+
+.wbx-station-card.is-edited {
+  border-color: #0284c7;
+}
+
+.wbx-station-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+}
+
+.wbx-station-card__check {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.wbx-station-card__toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wbx-station-card__main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wbx-station-card__top {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.wbx-station-card__top strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.wbx-station-card__id {
+  font-size: 11.5px;
+  color: #64748b;
+}
+
+.wbx-station-card__state {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.wbx-station-card__state.is-edited,
+.wbx-station-card__state.is-override {
+  color: #0369a1;
+}
+
+.wbx-station-card__state.is-ready {
+  color: #15803d;
+}
+
+.wbx-station-card__state.is-pending {
+  color: #b45309;
+}
+
+.wbx-station-card__summary {
+  margin: 0;
+  font-size: 11.5px;
+  color: #475569;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wbx-station-card__chevron {
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.wbx-station-card__body {
+  padding: 12px;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #ffffff;
+}
+
+.wbx-station-card__group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.wbx-station-card__group:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.wbx-station-card__group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wbx-station-card__group-head span {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0369a1;
+}
+
+.wbx-station-card__group-head small {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.wbx-station-card__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: 8px;
+}
+
+.wbx-station-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wbx-station-field__label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.wbx-station-field__label small {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.wbx-station-field .wb-input {
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: 12.5px;
+}
+
+.wbx-station-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.wbx-station-card__foot-btns {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.wbx-station-card__foot-btns .wb-button {
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.wbx-problem-accordion__body {
+  padding: 14px 18px 18px;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@media (max-width: 1180px) {
   .wbx-deduction-columns {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .wbx-category-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .wbx-category-card-grid,
+  .wbx-station-card-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wbx-city-accordion__bar {
+    display: none;
+  }
 }
+
+/* ─── 核算批次队列筛选条、行内进度、滚动约束与长文件名省略优化 ─────────────── */
+.wbx-payroll__filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 8px 18px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.wbx-payroll__search {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 240px;
+  flex: 0 1 320px;
+  height: 34px;
+  padding: 0 11px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #64748b;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.wbx-payroll__search:focus-within {
+  border-color: #0284c7;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.14);
+  color: #0284c7;
+}
+
+.wbx-payroll__search input {
+  border: 0;
+  outline: none;
+  background: transparent;
+  width: 100%;
+  font-size: 12.5px;
+  color: #0f172a;
+}
+
+.wbx-payroll__scroll {
+  max-height: 540px;
+  overflow-y: auto;
+  border: 0;
+  border-radius: 0;
+}
+
+.wbx-payroll__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: #f8fafc;
+  box-shadow: 0 1px 0 #e2e8f0;
+}
+
+.wbx-payroll__table thead th.pq-ops-cell {
+  z-index: 5;
+  right: 0;
+  background: #f8fafc;
+}
+
+.wbx-payroll__table tbody td.pq-ops-cell {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: #ffffff;
+  box-shadow: -6px 0 10px -6px rgba(15, 23, 42, 0.08);
+}
+
+.wbx-core-stage {
+  min-width: 0;
+}
+
+.wbx-payroll__table tbody tr.pq-row td,
+.wbx-payroll__table tbody tr.pq-row td.pq-ops-cell {
+  background: #ffffff;
+}
+
+.wbx-payroll__table tbody tr.pq-row.is-alt td,
+.wbx-payroll__table tbody tr.pq-row.is-alt td.pq-ops-cell {
+  background: #f8fafc;
+}
+
+.wbx-payroll__table tbody tr.pq-row:hover td,
+.wbx-payroll__table tbody tr.pq-row:hover td.pq-ops-cell {
+  background: #f0f7ff;
+}
+
+.wbx-payroll__table tbody tr.pq-row.is-selected td,
+.wbx-payroll__table tbody tr.pq-row.is-selected td.pq-ops-cell {
+  background: #eef6ff;
+}
+
+.wbx-payroll__table .pq-task-cell {
+  max-width: 340px;
+}
+
+.wbx-payroll__table .pq-task-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.wbx-payroll__table .pq-expand-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #64748b;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.wbx-payroll__table .pq-expand-toggle:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.wbx-payroll__table .pq-expand-toggle svg {
+  transition: transform 150ms ease;
+}
+
+.wbx-payroll__table .pq-expand-toggle[aria-expanded="false"] svg {
+  transform: rotate(-90deg);
+}
+
+.wbx-payroll__table .pq-expand-toggle[aria-expanded="true"] {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.wbx-payroll__table .pq-task-name {
+  flex: 1;
+  min-width: 0;
+  max-width: 270px;
+}
+
+.wbx-payroll__table .pq-task-name > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wbx-payroll__table .pq-task-cell > small {
+  margin-left: 28px;
+}
+
+.wbx-payroll__table .pq-progress-cell {
+  min-width: 220px;
+  max-width: 340px;
+}
+
+.pq-inline-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  max-width: 220px;
+}
+
+.pq-inline-progress__track {
+  flex: 1;
+  height: 5px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.pq-inline-progress__track > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #0284c7 0%, #38bdf8 100%);
+  transition: width 220ms ease;
+}
+
+.pq-inline-progress > .tabular-nums {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #0369a1;
+  min-width: 34px;
+}
+
+.wbx-payroll__table .pq-progress-desc {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  color: #475569;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wbx-payroll__table .pq-elapsed {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: #64748b;
+}
+
+/* ─── 扣款规则：20城快选概览条 ───────────────────────────────────────────── */
+.wbx-deduction-head__title {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.wbx-deduction-head__lead p {
+  margin: 2px 0 0;
+}
+
+.wbx-city-jump-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 6px;
+  padding: 8px 2px 2px;
+  border-top: 1px solid #f1f5f9;
+  max-height: 156px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.wbx-city-jump-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 0 0 1px transparent;
+  font-size: 12px;
+  color: #1e293b;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.wbx-city-jump-chip:hover {
+  border-color: #7dd3fc;
+  background: #ffffff;
+}
+
+.wbx-city-jump-chip.is-active {
+  background: #f0f9ff;
+  border-color: #0284c7;
+  color: #0369a1;
+  box-shadow: 0 0 0 1px #0284c7;
+}
+
+.wbx-city-jump-chip strong {
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wbx-city-jump-chip span {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.wbx-city-jump-chip.is-complete span {
+  color: #15803d;
+}
+
+.wbx-city-jump-chip.is-pending span {
+  color: #b45309;
+}
+
+/* ─── 核算批次队列分页条 ────────────────────────────────────────────────── */
+.wbx-payroll__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 10px 18px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+}
+
+.wbx-payroll__pagination-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 12.5px;
+  color: #475569;
+  font-weight: 500;
+}
+
+.wbx-payroll__page-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wbx-payroll__page-size .wb-select {
+  min-height: 28px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.wbx-payroll__pagination-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wbx-payroll__page-indicator {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #334155;
+  padding: 0 4px;
+}
+
+/* ─── 扣款规则：关键词规则行内摘要 & 统一明细面板 ───────────────────────── */
+.wbx-city-accordion__kw-tag {
+  font-size: 11.5px;
+  font-weight: 650;
+  color: #6d28d9;
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.wbx-station-card__kw-badge {
+  font-size: 11px;
+  font-weight: 650;
+  color: #6d28d9;
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.wbx-kw-inline-bar {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+}
+
+.wbx-kw-inline-bar__label {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #5b21b6;
+  line-height: 22px;
+  flex-shrink: 0;
+}
+
+.wbx-kw-inline-bar__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+  flex: 1;
+}
+
+.wbx-kw-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #ffffff;
+  border: 1px solid #c4b5fd;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #3b0764;
+}
+
+.wbx-kw-chip b {
+  font-weight: 700;
+  color: #6d28d9;
+}
+
+.wbx-problem-panel {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wbx-problem-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.wbx-problem-panel__title {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 14.5px;
+  color: #0f172a;
+}
+
+.wbx-problem-panel__title svg {
+  color: #6d28d9;
+  flex-shrink: 0;
+}
+
+.wbx-problem-table-scroll {
+  width: 100%;
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.wbx-problem-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f8fafc;
+}
+
+.wbx-problem-table th,
+.wbx-problem-table td {
+  padding: 8px 12px;
+  font-size: 12.5px;
+}
+
+.wbx-problem-preview__actions {
+  margin-top: 8px;
+}
+
+/* ─── 扣款规则：城市 & 站点紧凑均衡 Bento 栅格 + 动态问题单关键词编辑器 ─── */
+.wbx-city-fee-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wbx-city-fee-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.wbx-city-fee-card__title-wrap {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wbx-city-fee-card__title-wrap h4 {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.wbx-city-fee-card__actions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wbx-zero-confirm-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.wbx-zero-confirm-inline:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.wbx-deduction-bento {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wbx-deduction-bento__split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 2.05fr);
+  gap: 10px;
+  align-items: stretch;
+}
+
+.wbx-deduction-subcard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  min-width: 0;
+}
+
+.wbx-station-card__body .wbx-deduction-subcard {
+  background: #f8fafc;
+}
+
+.wbx-deduction-subcard__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wbx-deduction-subcard__head span {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0369a1;
+}
+
+.wbx-deduction-subcard__head small {
+  font-size: 11px;
+  font-weight: 500;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.wbx-deduction-bento__grid {
+  display: grid;
+  gap: 8px;
+}
+
+.wbx-deduction-bento__grid.is-seven {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.wbx-deduction-bento__grid.is-cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.wbx-deduction-bento__grid.is-cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.wbx-deduction-bento__grid.is-cols-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.wbx-deduction-bento__grid.is-cols-1 {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.wbx-deduction-bento__grid.is-auto {
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+}
+
+.wbx-deduction-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.wbx-deduction-field__label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.wbx-deduction-field__label span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wbx-deduction-field__label small {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.wbx-deduction-field .wb-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: 12.5px;
+}
+
+@media (max-width: 1120px) {
+  .wbx-deduction-bento__grid.is-seven {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .wbx-deduction-bento__split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 680px) {
+  .wbx-deduction-bento__grid.is-seven,
+  .wbx-deduction-bento__grid.is-cols-4,
+  .wbx-deduction-bento__grid.is-cols-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ─── 动态问题单关键词扣款编辑器 ─────────────────────────────────────── */
+.wbx-kw-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #faf8ff;
+  border: 1px solid #ddd6fe;
+}
+
+.wbx-kw-editor__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wbx-kw-editor__title {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #5b21b6;
+}
+
+.wbx-kw-editor__count {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #ede9fe;
+  color: #5b21b6;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.wbx-kw-editor__hint {
+  font-size: 11.5px;
+  font-weight: 450;
+  color: #6b7280;
+}
+
+.wbx-kw-editor__add-trigger {
+  border-color: #c4b5fd;
+  color: #5b21b6;
+  background: #ffffff;
+}
+
+.wbx-kw-editor__add-trigger:hover:not(:disabled) {
+  border-color: #7c3aed;
+  background: #f5f3ff;
+  color: #4c1d95;
+}
+
+.wbx-kw-editor__error {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.wbx-kw-editor__list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.wbx-kw-editor__row,
+.wbx-kw-editor__add-row {
+  display: grid;
+  grid-template-columns: minmax(105px, 0.95fr) minmax(120px, 1.25fr) 96px auto;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #e9d5ff;
+}
+
+.wbx-kw-editor__add-row {
+  border-style: dashed;
+  border-color: #a78bfa;
+  background: #f5f3ff;
+}
+
+.wbx-kw-editor__input,
+.wbx-kw-editor__amount {
+  min-height: 30px;
+  height: 30px;
+  padding: 3px 8px;
+  font-size: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.wbx-kw-editor__amount-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.wbx-kw-editor__unit {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.wbx-kw-editor__del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.wbx-kw-editor__del:hover:not(:disabled) {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.wbx-kw-editor__add-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.wbx-kw-editor__empty {
+  margin: 0;
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.45;
+}
+
+@media (max-width: 1120px) {
+  .wbx-kw-editor__list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 680px) {
+  .wbx-kw-editor__row,
+  .wbx-kw-editor__add-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ─── 队列内骑手信息导出验证提示条（移入队列顶部，不挤压上传区） ───────── */
+.wbx-payroll__verify-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 10px 18px;
+  background: #fffbeb;
+  border-top: 1px solid #fde68a;
+  color: #92400e;
+  font-size: 12.5px;
+}
+
+.wbx-payroll__verify-banner-copy {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-weight: 600;
+}
+
+.wbx-payroll__verify-banner-copy svg {
+  color: #d97706;
+  flex-shrink: 0;
+}
+
+.wbx-payroll__verify-banner-copy .wbx-hint {
+  color: #b45309;
+  font-weight: 500;
+}
+
+.wbx-payroll__verify-btn {
+  background: #ffffff;
+  border-color: #f59e0b;
+  color: #b45309;
+  font-weight: 700;
+}
+
+.wbx-payroll__verify-btn:hover {
+  background: #fef3c7;
+  border-color: #d97706;
+  color: #92400e;
+}
+
+/* ─── 扣款规则：紧凑分段器（复用于审批回执） & 2 列城市卡片网格 ─────────────── */
+.wbx-segmented--compact {
+  padding: 2px;
+  border-radius: 8px;
+}
+
+.wbx-segmented--compact .wbx-segmented__item {
+  padding: 4px 10px;
+  font-size: 12px;
+  gap: 5px;
+}
+
+.wbx-city-accordion-list.is-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-flow: dense;
+  gap: 10px;
+  align-items: start;
+}
+
+.wbx-city-accordion-list.is-grid .wbx-city-accordion.is-open {
+  grid-column: 1 / -1;
+}
+
+.wbx-city-accordion-list.is-grid .wbx-city-accordion:not(.is-open) .wbx-city-accordion__head {
+  padding: 12px 14px;
+  gap: 10px;
+}
+
+.wbx-city-accordion-list.is-grid .wbx-city-accordion:not(.is-open) .wbx-city-accordion__progress-meta {
+  min-width: 0;
+  font-size: 11.5px;
+}
+
+.wbx-city-accordion-list.is-grid .wbx-city-accordion:not(.is-open) .wbx-city-accordion__bar {
+  width: 56px;
+}
+
+@media (max-width: 1120px) {
+  .wbx-city-accordion-list.is-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+

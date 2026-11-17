@@ -319,13 +319,7 @@
   flex-wrap: wrap;
 }
 
-.pq-upload,
-.pq-queue,
-.pq-detail,
-.wb-approval-card,
-.tc-center,
-/* migrated -> src/styles/pages/*.css  (dead selector: .wb-panel) */
-
+/* migrated -> src/styles/pages/*.css */
 .workbench-app .rb-shell {
   background: transparent !important;
   border: 0 !important;
@@ -1746,35 +1740,24 @@
   text-overflow: ellipsis !important;
 }
 
-/* Payroll Batches Unified Intake Card (.pq-mode-bar + .pq-intake) */
+/* Payroll Batches Unified Intake & Queue Cards */
 .pq-workbench {
   display: flex;
   flex-direction: column;
-  gap: 0 !important;
-}
-
-.pq-workbench > .pq-mode-bar {
-  margin: 0 !important;
-  padding: 10px 16px !important;
-  background: #f8fafc !important;
-  border: 1px solid #e2e8f0 !important;
-  border-bottom: 0 !important;
-  border-radius: 12px 12px 0 0 !important;
+  gap: 16px;
 }
 
 .pq-workbench > .pq-intake {
-  margin: 0 0 14px 0 !important;
-  border-radius: 0 0 12px 12px !important;
-  border: 1px solid #e2e8f0 !important;
-  background: #ffffff !important;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03) !important;
+  margin: 0;
+  border-radius: 16px;
 }
 
 .pq-workbench > .pq-queue {
-  margin-top: 0 !important;
-  border-radius: 12px !important;
-  border: 1px solid #e2e8f0 !important;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03) !important;
+  margin-top: 0;
+  border-radius: 16px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  box-shadow: 0 4px 14px -4px rgba(15, 23, 42, 0.05);
 }
 
 /* Price Approval De-Nested Clean Layout */

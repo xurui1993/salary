@@ -7,97 +7,580 @@
 .wbx-approval {
   display: flex;
   flex-direction: column;
-  gap: var(--wbx-s4);
+  gap: 12px;
   min-width: 0;
 }
 
+/* ─── 顶部：精简连接状态与操作带 ─────────────────────────────────────────── */
+.wbx-approval__compact-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.03);
+}
+
+.wbx-approval__compact-lead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  min-width: 0;
+}
+
+.wbx-approval__compact-meta {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #475569;
+  padding-left: 12px;
+  border-left: 1px solid #e2e8f0;
+}
+
+.wbx-approval__compact-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ─── 顶部：双工作流模式切换卡 + 实时审批/导出总览控制台 ──────────────── */
+.wbx-approval__top-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.wbx-approval__mode-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.wbx-approval__mode-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+              background-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 160ms cubic-bezier(0.22, 1, 0.36, 1),
+              transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wbx-approval__mode-card:hover:not(:disabled) {
+  border-color: #38bdf8;
+  background: #f8fafc;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px -6px rgba(2, 132, 199, 0.14);
+}
+
+.wbx-approval__mode-card.is-active {
+  background: linear-gradient(145deg, #f0f9ff 0%, #ffffff 72%);
+  border-color: #0284c7;
+  box-shadow: 0 0 0 1px #0284c7, 0 10px 22px -8px rgba(2, 132, 199, 0.22);
+}
+
+.wbx-approval__mode-head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.wbx-approval__mode-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: #f1f5f9;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.wbx-approval__mode-card.is-active .wbx-approval__mode-icon {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 4px 10px -2px rgba(2, 132, 199, 0.38);
+}
+
+.wbx-approval__mode-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.wbx-approval__mode-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+.wbx-approval__mode-card.is-active .wbx-approval__mode-title {
+  color: #0369a1;
+}
+
+.wbx-approval__mode-sub {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.wbx-approval__mode-card.is-active .wbx-approval__mode-sub {
+  color: #0284c7;
+}
+
+.wbx-approval__mode-radio {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 2px solid #cbd5e1;
+  background: #ffffff;
+  flex-shrink: 0;
+}
+
+.wbx-approval__mode-card.is-active .wbx-approval__mode-radio {
+  border-color: #0284c7;
+  background: #0284c7;
+  box-shadow: inset 0 0 0 3px #ffffff;
+}
+
+.wbx-approval__mode-desc {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #334155;
+  font-weight: 500;
+}
+
+.wbx-approval__mode-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #475569;
+  padding-top: 2px;
+}
+
+.wbx-approval__mode-card.is-active .wbx-approval__mode-meta {
+  color: #075985;
+}
+
+/* ─── 右侧：蓝橙连接与审批统计控制台 ───────────────────────────────── */
+.wbx-approval__console-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: linear-gradient(165deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.wbx-approval__console-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.wbx-approval__console-eyebrow {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #0284c7;
+  margin-bottom: 2px;
+}
+
+.wbx-approval__console-head h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.wbx-approval__session-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #475569;
+}
+
+.wbx-approval__session-status.is-ready {
+  color: #059669;
+}
+
+.wbx-approval__session-status.is-warn {
+  color: #d97706;
+}
+
+.wbx-approval__kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.wbx-approval__kpi-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+}
+
+.wbx-approval__kpi-box span {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.wbx-approval__kpi-box strong {
+  font-size: 17px;
+  font-weight: 800;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+.wbx-approval__kpi-box.is-primary strong {
+  color: #0284c7;
+}
+
+.wbx-approval__kpi-box.is-amber strong {
+  color: #d97706;
+}
+
+.wbx-approval__kpi-box.is-emerald strong {
+  color: #059669;
+}
+
+.wbx-approval__console-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wbx-approval__quick-btn {
+  flex: 1 1 auto;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 650;
+  padding: 6px 10px;
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #1e293b;
+}
+
+.wbx-approval__quick-btn:hover:not(:disabled) {
+  border-color: #0284c7;
+  color: #0369a1;
+  background: #f0f9ff;
+}
+
+/* ─── 中部：精简多维范围筛选面板（ApprovalScopeFilters） ──────────────── */
+.wbx-approval__scope-compact {
+  padding: 11px 16px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.wbx-approval__scope-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.wbx-approval__scope-row--secondary {
+  padding-top: 8px;
+  border-top: 1px solid #f1f5f9;
+  flex-wrap: wrap;
+}
+
+.wbx-approval__scope-label {
+  flex-shrink: 0;
+  width: 34px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #475569;
+}
+
+.wbx-approval__scope-chips {
+  flex: 1;
+  min-width: 0;
+}
+
+.wbx-approval__scope-chips .approval-chips {
+  gap: 6px;
+}
+
+.wbx-approval__scope-empty {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.wbx-approval__scope-reset {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.wbx-approval__station-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.wbx-approval__station-inline > span {
+  font-size: 12px;
+  font-weight: 700;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.wbx-approval__station-inline .wb-select {
+  min-width: 210px;
+  min-height: 30px;
+  font-size: 12.5px;
+}
+
+/* ─── 中部：多维范围筛选面板（ApprovalScopeFilters 兼容保留） ────────── */
+.wbx-approval__scope-panel {
+  padding: 16px 20px;
+  border-radius: 16px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.wbx-approval__scope-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.wbx-approval__scope-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: #0284c7;
+}
+
+.wbx-approval__scope-title strong {
+  font-size: 14.5px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.wbx-approval__scope-title span {
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.wbx-approval__scope-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(240px, 0.9fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.wbx-approval__scope-field {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.wbx-approval__scope-field legend,
+.wbx-approval__station-label > span {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.wbx-approval__scope-field legend small,
+.wbx-approval__station-label > span small {
+  font-size: 11px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.wbx-approval__station-label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.wbx-approval__scope-placeholder {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px dashed #cbd5e1;
+  font-size: 12px;
+  color: #64748b;
+}
+
+/* ─── 底部：审批/导出队列卡片与三步核验指南 ────────────────────────── */
 .wbx-approval__head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--wbx-s3);
-  padding-bottom: var(--wbx-s3);
-  border-bottom: 1px solid var(--wbx-border);
+  gap: 10px 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e2e8f0;
 }
 
-.wbx-approval__workflow-banner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.wbx-approval__workflow-badge {
+.wbx-approval__queue-title h3 {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 8px;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  color: #b45309;
-  font-size: 12px;
-  font-weight: 600;
+  gap: 8px;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
 }
 
-.wbx-approval__workflow-desc {
+.wbx-approval__queue-title h3 > span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+
+.wbx-approval__queue-title p {
+  margin: 4px 0 0;
   font-size: 12.5px;
-  color: var(--wbx-text-muted);
+  color: #475569;
+  font-weight: 500;
 }
 
 .wbx-approval__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--wbx-s2);
+  gap: 8px;
   margin-left: auto;
 }
 
-.wbx-approval__filters {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: var(--wbx-s3);
-  align-items: end;
-  padding: 14px 16px;
-  background: #f8fafc;
-  border: 1px solid var(--wbx-border);
-  border-radius: var(--wbx-r-md);
+.wbx-approval__empty-stage {
+  margin-top: 16px;
 }
 
-.wbx-approval__filters > label {
+.wbx-approval__guide-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.wbx-approval__guide-card {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  font-size: var(--wbx-fs-caption);
-  font-weight: 600;
-  color: var(--wbx-text-secondary);
-  min-width: 0;
+  gap: 8px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.02);
 }
 
-.wbx-approval__query {
+.wbx-approval__guide-head {
   display: flex;
-  align-items: flex-end;
-}
-
-.wbx-approval__bar {
-  display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--wbx-s3);
-  padding: 10px 14px;
-  border-radius: var(--wbx-r-md);
-  background: #f8fafc;
-  border: 1px solid var(--wbx-border);
+  color: #0284c7;
 }
 
-.wbx-approval__summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--wbx-s2);
-  min-width: 0;
+.wbx-approval__guide-step {
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #0369a1;
+}
+
+.wbx-approval__guide-card h4 {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.wbx-approval__guide-card p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #475569;
 }
 
 /* 修复带操作按钮的警告/错误横幅（如未登录蓝橙时） */
@@ -107,13 +590,31 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 10px 16px;
-  padding: 11px 16px;
-  border-radius: 10px;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
+  padding: 12px 18px;
+  border-radius: 12px;
+  background: linear-gradient(90deg, #fffbeb 0%, #fef3c7 100%);
+  border: 1px solid #fcd34d;
   color: #92400e;
   font-size: 13px;
   font-weight: 500;
+}
+
+.wbx-approval__alert-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wbx-approval__alert-copy strong {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #78350f;
+}
+
+.wbx-approval__alert-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .wb-inline-login-action {
@@ -121,19 +622,33 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 5px 12px;
-  border-radius: 7px;
+  padding: 6px 14px;
+  border-radius: 8px;
   background: #d97706;
   border: 1px solid #b45309;
   color: #ffffff;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 12.5px;
+  font-weight: 700;
   cursor: pointer;
   transition: background-color var(--wbx-dur-fast) var(--wbx-ease);
 }
 
 .wb-inline-login-action:hover {
   background: #b45309;
+}
+
+@media (max-width: 1180px) {
+  .wbx-approval__top-grid,
+  .wbx-approval__scope-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 860px) {
+  .wbx-approval__mode-cards,
+  .wbx-approval__guide-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* 审批确认弹窗 */
@@ -171,4 +686,285 @@
   gap: var(--wbx-s2);
   padding-top: var(--wbx-s3);
   border-top: 1px solid var(--wbx-border);
+}
+
+/* ─── 批量审批筛选栏、滚动队列与异常阻断行适配 ───────────────────────────── */
+.wbx-approval__notice-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  color: #075985;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.wbx-approvals__filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 10px 0 4px;
+}
+
+.wbx-approvals__search {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 240px;
+  flex: 0 1 340px;
+  height: 34px;
+  padding: 0 11px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #64748b;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.wbx-approvals__search:focus-within {
+  border-color: #0284c7;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.14);
+  color: #0284c7;
+}
+
+.wbx-approvals__search input {
+  border: 0;
+  outline: none;
+  background: transparent;
+  width: 100%;
+  font-size: 12.5px;
+  color: #0f172a;
+}
+
+.wbx-approvals__scroll {
+  max-height: 560px;
+  overflow-y: auto;
+}
+
+.wbx-approvals__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: #f8fafc;
+  box-shadow: 0 1px 0 #e2e8f0;
+}
+
+.wbx-approvals__table thead th.wbx-table__actions {
+  z-index: 5;
+  background: #f8fafc;
+}
+
+.wbx-approvals__table tbody tr.is-blocked td {
+  background: #fffbeb;
+}
+
+.wbx-approvals__table tbody tr.is-blocked:hover td {
+  background: #fef3c7;
+}
+
+.wbx-approvals__code {
+  display: block;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+}
+
+.wbx-approvals__reason {
+  display: block;
+  margin-top: 3px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: #b45309;
+  font-weight: 600;
+}
+
+.wbx-approvals__city {
+  display: block;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.wbx-approvals__site {
+  display: block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: #475569;
+}
+
+/* ─── 批量审批顶层视图切换条（待办审批列表 vs 审批结果回执） ──────────────── */
+.wbx-approval__view-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.03);
+}
+
+.wbx-approval__view-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.wbx-approval__batch-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.wbx-approval__batch-picker .wb-select {
+  min-width: 240px;
+  min-height: 32px;
+  font-size: 12.5px;
+}
+
+.wbx-approval__result-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px;
+  margin-top: 12px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.wbx-approval__result-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.wbx-approval__result-status .wb-outcome {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.wbx-approval__result-kpis {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.wbx-approval__result-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+}
+
+.wbx-approval__result-kpi span {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.wbx-approval__result-kpi strong {
+  font-size: 18px;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.wbx-approval__result-kpi.is-success strong {
+  color: #059669;
+}
+
+.wbx-approval__result-kpi.is-danger strong {
+  color: #dc2626;
+}
+
+.wbx-approval__result-kpi.is-warn strong {
+  color: #d97706;
+}
+
+.wbx-approval__receipts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.wbx-approval__receipts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.wbx-approval__receipts-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #0f172a;
+}
+
+.wbx-approval__receipts-scroll {
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.wbx-approval__receipts-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #f8fafc;
+  box-shadow: 0 1px 0 #e2e8f0;
+}
+
+.wbx-approval__receipts-table tbody tr:nth-child(even) td {
+  background: #f8fafc;
+}
+
+.wbx-approval__receipts-table tbody tr:hover td {
+  background: #f0f7ff;
+}
+
+.wbx-approval__receipts-empty {
+  text-align: center;
+  padding: 28px 16px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.wbx-approval__queue-title h3 em.wbx-pill {
+  font-style: normal;
+  height: auto;
+  border-radius: 999px;
+}
+
+.wbx-approval__receipts-table td:nth-child(3) {
+  white-space: nowrap;
+}
+
+@media (max-width: 1020px) {
+  .wbx-approval__result-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }

@@ -1,2 +1,67 @@
 // @ts-nocheck
 import assert from"node:assert/strict";import test from"node:test";import{itemKey,newRequestId,phaseLabel,recoverable,retainAttempt,selectionKey}from"../src/lib/downloadCenterLogic.ts";test("Baize employee snapshots ignore unused dates and cities but stay distinct from Blue Orange",()=>{const selection={cities:[],datasets:["baize_employees"],start:"",end:""};assert.equal(selectionKey(selection),selectionKey({...selection,cities:["\u6CC9\u5DDE"],start:"2026-10-01",end:"2026-10-26"}));assert.notEqual(selectionKey(selection),selectionKey({...selection,datasets:["lanorange_rider_archive"]}))});test("global Blue selections ignore irrelevant city and business dates",()=>{const a={cities:[],datasets:["lanorange_rider_archive"],start:"",end:""};const b={...a,cities:["\u5168\u90E8\u57CE\u5E02"],start:"2026-10-18",end:"2026-10-18"};assert.equal(selectionKey(a),selectionKey(b));assert.notEqual(selectionKey(a),selectionKey({...a,datasets:["lanorange_rider_quit"]}))});test("unconfirmed create and retry retain original request and immutable payload",()=>{const selection={cities:["\u6CC9\u5DDE"],datasets:["rider_detail"],start:"2026-09-20",end:"2026-10-10"};const original=retainAttempt(null,selection);selection.cities.push("\u5E7F\u5DDE");assert.deepEqual(original.payload.cities,["\u6CC9\u5DDE"]);const changed={cities:["\u5B81\u6CE2"],datasets:["rider_info"],start:"2026-10-01",end:"2026-10-17"};assert.strictEqual(retainAttempt(original,changed),original);assert.match(original.request_id,/^[A-Za-z0-9_-]{8,128}$/);assert.notEqual(retainAttempt(null,selection).request_id,original.request_id);const retry=retainAttempt(null,{runId:"old-run",items:[{city:"\u6CC9\u5DDE",dataset:"rider_detail",start:"2026-09-20",end:"2026-10-10"}]});assert.strictEqual(retainAttempt(retry,{runId:"different-run",items:[]}),retry)});test("equivalent selections match independent of city and dataset checkbox order",()=>{const base={cities:["\u6CC9\u5DDE","\u5E7F\u5DDE"],datasets:["delivery_fee","penalty"],start:"2026-10-01",end:"2026-10-10"};assert.equal(selectionKey(base),selectionKey({...base,cities:[...base.cities].reverse(),datasets:[...base.datasets].reverse()}));assert.notEqual(selectionKey(base),selectionKey({...base,end:"2026-10-11"}));assert.notEqual(selectionKey(base),selectionKey({...base,datasets:["penalty"]}));assert.equal(selectionKey(base),selectionKey({...base,refresh_history:false}));assert.notEqual(selectionKey(base),selectionKey({...base,refresh_history:true}))});test("recovery selection excludes success, running and blocked unknown submissions",()=>{assert.equal(recoverable({status:"success",recovery:{mode:"resume_existing",reason:""}}),false);assert.equal(recoverable({status:"running",recovery:{mode:"resume_existing",reason:""}}),false);assert.equal(recoverable({status:"error",recovery:{mode:"blocked",reason:"\u63D0\u4EA4\u7ED3\u679C\u4E0D\u660E"}}),false);assert.equal(recoverable({status:"interrupted",recovery:{mode:"resume_existing",reason:"\u5DF2\u6709\u51ED\u636E"}}),true);assert.equal(recoverable({status:"cancelled",recovery:{mode:"retry_unsubmitted",reason:"\u672A\u63D0\u4EA4"}}),true);assert.equal(recoverable({status:"error"}),false)});test("item selections distinguish covered monthly periods and phase labels cover waiting causes",()=>{const base={city:"\u6CC9\u5DDE",dataset:"rider_monthly",start:"2026-09-01",end:"2026-09-30"};assert.notEqual(itemKey(base),itemKey({...base,start:"2026-10-01",end:"2026-10-31"}));assert.match(phaseLabel("waiting_login"),/登录/);assert.match(phaseLabel("waiting_manual"),/平台验证/);assert.match(phaseLabel("waiting_export"),/平台生成/);assert.match(phaseLabel("waiting_collection"),/主机采集会话/);assert.equal(phaseLabel(),"");assert.equal(phaseLabel("future-phase"),"\u6B63\u5728\u5904\u7406")});test("LAN HTTP request identifiers use cryptographic fallback when randomUUID is unavailable",()=>{const original=Object.getOwnPropertyDescriptor(globalThis,"crypto");const crypto=globalThis.crypto;try{Object.defineProperty(globalThis,"crypto",{configurable:true,value:{getRandomValues:crypto.getRandomValues.bind(crypto)}});const first=newRequestId(),second=newRequestId();assert.match(first,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);assert.notEqual(first,second)}finally{if(original)Object.defineProperty(globalThis,"crypto",original)}});test("new city Blue selections distinguish cities but ignore unused dates and legacy global tasks",()=>{const a={cities:["\u6CC9\u5DDE"],datasets:["lanorange_rider_archive"],start:"2026-09-01",end:"2026-09-30",lanorange_by_city:true};assert.notEqual(selectionKey(a),selectionKey({...a,cities:["\u97F6\u5173"]}));assert.equal(selectionKey(a),selectionKey({...a,start:"2026-10-01",end:"2026-10-18"}));assert.notEqual(selectionKey(a),selectionKey({...a,lanorange_by_city:false}))});test("full delivery ignores Fengshen city/date selection and distinguishes old scope",()=>{const selection={cities:["\u6CC9\u5DDE"],datasets:["lanorange_part_price"],start:"2026-09-01",end:"2026-09-30",lanorange_full_delivery:true};assert.equal(selectionKey(selection),selectionKey({...selection,cities:["\u4E0A\u6D77","\u97F6\u5173"],start:"bad",end:"bad"}));assert.notEqual(selectionKey(selection),selectionKey({...selection,lanorange_full_delivery:false}))});
+
+import {
+  computeTaskElapsedSeconds,
+  computeTaskProgressMeta,
+  formatTaskDuration,
+} from "../src/lib/downloadCenterLogic.ts";
+
+test("formatTaskDuration formats seconds, minutes, hours, and handles invalid inputs", () => {
+  assert.equal(formatTaskDuration(0), "0秒");
+  assert.equal(formatTaskDuration(45), "45秒");
+  assert.equal(formatTaskDuration(134), "2分14秒");
+  assert.equal(formatTaskDuration(3725), "1小时02分05秒");
+  assert.equal(formatTaskDuration(null), "—");
+  assert.equal(formatTaskDuration(-3), "—");
+});
+
+test("computeTaskElapsedSeconds handles active demo ticking, ended demo fixed, and live ISO timestamps", () => {
+  const base = 1_700_000_000_000;
+  assert.equal(
+    computeTaskElapsedSeconds({ status: "running", elapsed_seconds: 120 }, base + 5500, base),
+    125,
+  );
+  assert.equal(
+    computeTaskElapsedSeconds({ status: "success", elapsed_seconds: 210 }, base + 9000, base),
+    210,
+  );
+  assert.equal(
+    computeTaskElapsedSeconds(
+      { status: "running", created_at: new Date(base - 42_000).toISOString() },
+      base + 3000,
+    ),
+    45,
+  );
+  assert.equal(
+    computeTaskElapsedSeconds(
+      {
+        status: "success",
+        created_at: new Date(base - 100_000).toISOString(),
+        updated_at: new Date(base - 10_000).toISOString(),
+      },
+      base + 50_000,
+    ),
+    90,
+  );
+});
+
+test("computeTaskProgressMeta distinguishes determinate active, indeterminate active/queued, and ended tasks", () => {
+  assert.deepEqual(
+    computeTaskProgressMeta({ status: "running", completed_items: 6, total_items: 9 }),
+    { isActive: true, hasTotal: true, pct: 67, indeterminate: false },
+  );
+  assert.deepEqual(
+    computeTaskProgressMeta({ status: "running", completed_items: 0, total_items: 5 }),
+    { isActive: true, hasTotal: true, pct: 0, indeterminate: true },
+  );
+  assert.deepEqual(
+    computeTaskProgressMeta({ status: "queued", completed_items: 0, total_items: 0 }),
+    { isActive: true, hasTotal: false, pct: 14, indeterminate: true },
+  );
+  assert.deepEqual(
+    computeTaskProgressMeta({ status: "success", completed_items: 9, total_items: 9 }),
+    { isActive: false, hasTotal: true, pct: 100, indeterminate: false },
+  );
+});
+

@@ -1109,7 +1109,8 @@ export default function App() {
               {PRIMARY_NAV_ITEMS.map(item => {
                 const isCollectionActive =
                   item.id === 'collection' &&
-                  (workspaceView === 'history' || (workspaceView === 'create' && taskKind !== 'payroll'));
+                  workspaceView === 'create' &&
+                  taskKind !== 'payroll';
                 const isPayrollActive =
                   item.id === 'payroll' && workspaceView === 'create' && taskKind === 'payroll';
                 const isApprovalActive =
@@ -1186,27 +1187,6 @@ export default function App() {
                             </button>
                           );
                         })}
-                        <button
-                          type="button"
-                          disabled={taskFormLocked}
-                          onClick={() => {
-                            setHistoryAll(true);
-                            setTaskKind('download');
-                            navigateWorkspace('history');
-                            setMobileNavOpen(false);
-                          }}
-                          className={`wbx-subnav-link ${workspaceView === 'history' ? 'is-active' : ''}`}
-                        >
-                          <span className="inline-flex items-center gap-2 min-w-0">
-                            <span className="wbx-subnav-dot" />
-                            <span className="truncate">任务中心</span>
-                          </span>
-                          {(activeDownloadCount > 0 || isRunning) && (
-                            <span className="text-[11px] font-bold text-sky-600 tabular-nums">
-                              {activeDownloadCount + (isRunning ? 1 : 0)}
-                            </span>
-                          )}
-                        </button>
                       </div>
                     )}
 
@@ -1274,6 +1254,35 @@ export default function App() {
                   </div>
                 );
               })}
+
+              <div className="wbx-nav-group-block wbx-nav-group-block--global">
+                <span className="wbx-sidebar__section-label mt-2">全局记录与交付</span>
+                <button
+                  type="button"
+                  title="任务中心"
+                  disabled={taskFormLocked}
+                  aria-pressed={workspaceView === 'history'}
+                  onClick={() => {
+                    setHistoryAll(true);
+                    setTaskKind('download');
+                    navigateWorkspace('history');
+                    setMobileNavOpen(false);
+                  }}
+                  className={`wb-sidebar-item wbx-nav-item ${workspaceView === 'history' ? 'is-active' : ''}`}
+                >
+                  <span className="wb-sidebar-icon wbx-nav-item__icon" aria-hidden="true">
+                    <FolderCheck size={16} />
+                  </span>
+                  <span className="wb-sidebar-text wbx-nav-item__body">
+                    <span className="wbx-nav-item__label">任务中心</span>
+                  </span>
+                  {activeDownloadCount + (isRunning ? 1 : 0) + approvalActiveCount + priceExportActiveCount > 0 && (
+                    <span className="wb-sidebar-badge wbx-nav-item__badge tabular-nums">
+                      {activeDownloadCount + (isRunning ? 1 : 0) + approvalActiveCount + priceExportActiveCount}
+                    </span>
+                  )}
+                </button>
+              </div>
             </nav>
 
             <div className="wbx-sidebar__footer">
@@ -1315,12 +1324,14 @@ export default function App() {
                               : FolderCheck;
             const isPriceModule = workspaceView === 'approval' || workspaceView === 'price-export';
             const isPayrollModule = workspaceView === 'create' && taskKind === 'payroll';
-            const isCollectionModule = !isPriceModule && !isPayrollModule;
-            const moduleBadgeText = isPriceModule
-              ? '价格审批'
-              : isPayrollModule
-                ? '薪资核算'
-                : '数据采集';
+            const isHistoryModule = workspaceView === 'history';
+            const moduleBadgeText = isHistoryModule
+              ? '任务中心'
+              : isPriceModule
+                ? '价格审批'
+                : isPayrollModule
+                  ? '薪资核算'
+                  : '数据采集';
 
             return (
               <header className="wb-header wbx-header">
@@ -1351,103 +1362,6 @@ export default function App() {
                       </p>
                     )}
                   </div>
-
-                  <span className="wbx-header__sep hidden md:inline-block" aria-hidden="true" />
-
-                  {isCollectionModule && (
-                    <div className="wb-subview-segmented wbx-tabs" role="tablist" aria-label="数据采集子视图切换">
-                      {COLLECTION_SUB_VIEWS.map(sub => {
-                        const isSubActive = workspaceView === sub.id;
-                        const SubIcon = sub.id === 'create' ? Compass : FolderCheck;
-                        return (
-                          <button
-                            key={sub.id}
-                            type="button"
-                            role="tab"
-                            aria-selected={isSubActive}
-                            disabled={taskFormLocked}
-                            onClick={() => {
-                              if (sub.id === 'history') {
-                                setHistoryAll(true);
-                                navigateWorkspace('history');
-                              } else {
-                                setHistoryAll(false);
-                                setTaskKind('download');
-                                navigateWorkspace('create');
-                              }
-                            }}
-                            className={`wb-subview-tab wbx-tabs__tab ${isSubActive ? 'is-active' : ''}`}
-                          >
-                            <SubIcon size={13} />
-                            <span>{sub.label}</span>
-                            {sub.id === 'history' && (activeDownloadCount > 0 || isRunning) && (
-                              <span className="wb-subview-badge is-active tabular-nums">
-                                {activeDownloadCount + (isRunning ? 1 : 0)}
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {isPayrollModule && (
-                    <div className="wb-subview-segmented wbx-tabs" role="tablist" aria-label="薪资核算子视图切换">
-                      {PAYROLL_SUB_VIEWS.map(sub => {
-                        const isSubActive = payrollSubView === sub.id;
-                        const SubIcon =
-                          sub.id === 'batches'
-                            ? WalletCards
-                            : sub.id === 'deductions'
-                              ? SlidersHorizontal
-                              : FileSpreadsheet;
-                        return (
-                          <button
-                            key={sub.id}
-                            type="button"
-                            role="tab"
-                            aria-selected={isSubActive}
-                            onClick={() => setPayrollSubView(sub.id)}
-                            className={`wb-subview-tab wbx-tabs__tab ${isSubActive ? 'is-active' : ''}`}
-                          >
-                            <SubIcon size={13} />
-                            <span>{sub.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {isPriceModule && (
-                    <div className="wb-subview-segmented wbx-tabs" role="tablist" aria-label="蓝橙价格管理功能">
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={workspaceView === 'approval'}
-                        onClick={() => {
-                          setPriceRecordId(undefined);
-                          navigateWorkspace('approval');
-                        }}
-                        className={`wb-subview-tab wbx-tabs__tab ${workspaceView === 'approval' ? 'is-active' : ''}`}
-                      >
-                        <BadgeDollarSign size={13} />
-                        <span>批量审批</span>
-                      </button>
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={workspaceView === 'price-export'}
-                        onClick={() => {
-                          setPriceRecordId(undefined);
-                          navigateWorkspace('price-export');
-                        }}
-                        className={`wb-subview-tab wbx-tabs__tab ${workspaceView === 'price-export' ? 'is-active' : ''}`}
-                      >
-                        <FileSpreadsheet size={13} />
-                        <span>待审每日价格导出</span>
-                      </button>
-                    </div>
-                  )}
                 </div>
 
                 <div className="wb-header-actions wbx-header__tools">

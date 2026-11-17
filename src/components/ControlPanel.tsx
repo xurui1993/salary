@@ -47,6 +47,12 @@ export function ControlPanel({ payrollSourceMode = 'fengshen', onUploadFiles, on
       return;
     }
 
+    const rawItems = Array.from(e.dataTransfer.items || []);
+    if (!rawItems.some(item => item.webkitGetAsEntry?.()?.isDirectory)) {
+      setError('手动上传仅支持上传资料目录，请直接拖入文件夹或点击「选择文件夹」。');
+      return;
+    }
+
     const items = e.dataTransfer.items;
     const filesToUpload: { file: File; relativePath: string }[] = [];
 
@@ -91,7 +97,11 @@ export function ControlPanel({ payrollSourceMode = 'fengshen', onUploadFiles, on
 
   const handleClick = () => {
     if (isRunning) return;
-    multiFileInputRef.current?.click();
+    if (automatic) {
+      multiFileInputRef.current?.click();
+    } else {
+      fileInputRef.current?.click();
+    }
   };
 
   const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -111,17 +121,105 @@ export function ControlPanel({ payrollSourceMode = 'fengshen', onUploadFiles, on
     }
   };
 
-  return <div className={`pq-upload wbx-toolbar wbx-payroll__upload ${isDragging ? 'dragging' : ''}`} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={processDrop}>
-    {!automatic && <input ref={fileInputRef} type="file" className="hidden" webkitdirectory="true" {...({ directory: 'true' } as any)} onChange={handleFileInput} aria-label="选择资料文件夹" />}
-    <input ref={multiFileInputRef} type="file" className="hidden" multiple accept={automatic?'.xlsx':'.xlsx,.xls,.csv,.txt'} onChange={handleFileInput} aria-label={automatic?'上传薪资申请表':'模板及补充资料'} />
-    <div className="pq-upload-copy wbx-payroll__upload-copy"><UploadCloud size={24}/><div><h3>{automatic ? '添加核算模板' : '添加模板与核算资料'}</h3>
-    <p>{payrollSourceMode === 'xiaoxiang' ? '拖拽小象 .xlsx template 到此处，自动下载灯塔与价格档案并执行。' : automatic ? '拖拽 .xlsx 标准模板到此处，支持多份并按顺序自动执行。' : '上传多个 template 及其资料，按模板所在目录建立任务。'}</p></div></div>
-    <div className="pq-upload-actions wbx-payroll__upload-actions">
-      {separationOption}
-      <button type="button" className="wb-primary" disabled={isRunning} onClick={handleClick}>{isRunning?'正在添加…':automatic?'选择模板':'选择文件'}</button>
-      {!automatic && <button type="button" className="wb-button" disabled={isRunning} onClick={() => fileInputRef.current?.click()}>选择文件夹</button>}
-      {onOpenTemplates && <button type="button" className="wbx-btn wbx-btn--primary" onClick={onOpenTemplates}>标准模板</button>}
+  return (
+    <div
+      className={`pq-upload wbx-toolbar wbx-payroll__upload ${isDragging ? 'dragging' : ''}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={processDrop}
+    >
+      {!automatic && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          webkitdirectory="true"
+          {...({ directory: 'true' } as any)}
+          onChange={handleFileInput}
+          aria-label="选择资料文件夹"
+        />
+      )}
+      <input
+        ref={multiFileInputRef}
+        type="file"
+        className="hidden"
+        multiple
+        accept={automatic ? '.xlsx' : '.xlsx,.xls,.csv,.txt'}
+        onChange={handleFileInput}
+        aria-label={automatic ? '上传薪资申请表' : '模板及补充资料'}
+      />
+
+      <div className="wbx-payroll__upload-main">
+        <div className="pq-upload-copy wbx-payroll__upload-copy">
+          <div className="wbx-payroll__upload-icon">
+            <UploadCloud size={24} />
+          </div>
+          <div className="wbx-payroll__upload-text">
+            <h3>{automatic ? '上传薪资申请表（自动核算）' : '上传资料目录（手动上传）'}</h3>
+            <p>
+              {automatic
+                ? '拖拽或点选 1 份或多份含 template 的 .xlsx 文件，自动拉取风神与蓝橙源表并执行算薪。'
+                : '仅支持拖入或选择包含标准模板与本地补充源表的整个资料文件夹。'}
+            </p>
+            <div className="wbx-payroll__upload-hints">
+              {automatic ? (
+                <>
+                  <span>支持多份 .xlsx 并发入队</span>
+                  <span>自动齐套风神 / 蓝橙源表</span>
+                  <span>行内展开全链路核验日志</span>
+                </>
+              ) : (
+                <>
+                  <span>支持整资料目录拖拽上传</span>
+                  <span>自动核验本地补充源表</span>
+                  <span>站点独立扣款优先应用</span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="pq-upload-actions wbx-payroll__upload-actions">
+          {separationOption}
+          <div className="wbx-payroll__upload-btn-group">
+            {automatic ? (
+              <button
+                type="button"
+                className="wb-primary"
+                disabled={isRunning}
+                onClick={handleClick}
+              >
+                {isRunning ? '正在添加…' : '选择模板'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="wb-primary"
+                disabled={isRunning}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {isRunning ? '正在添加…' : '选择文件夹'}
+              </button>
+            )}
+            {onOpenTemplates && (
+              <button
+                type="button"
+                className="wbx-btn wbx-btn--ghost"
+                onClick={onOpenTemplates}
+              >
+                标准模板
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {error && (
+        <p className="wb-error" role="alert">
+          {error}
+        </p>
+      )}
     </div>
-    {error && <p className="wb-error" role="alert">{error}</p>}
-  </div>;
+  );
 }
+

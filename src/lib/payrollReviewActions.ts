@@ -1,2 +1,92 @@
 // @ts-nocheck
-var __defProp=Object.defineProperty;var __name=(target,value)=>__defProp(target,"name",{value,configurable:true});const MONEY=new Set(["\u5B89\u5168\u57FA\u91D1","\u4FDD\u9669\u8D39","\u4F7F\u7528\u8D39","\u5FAA\u73AF\u7269\u8D44\u4F7F\u7528\u8D39","\u9644\u52A0\u9669","\u975E\u8702\u5361","\u6708\u8D39"]);function deductionIssues(entry,columns){const fields=columns.filter(c=>{const value=entry.row[c];if(c.endsWith("_maxDays")&&value===null)return false;if(c==="\u62DB\u8058\u6765\u6E90")return value==null;if(!MONEY.has(c)&&(typeof value==="string"||typeof value==="boolean"))return false;return typeof value!=="number"||!Number.isFinite(value)});const charged=columns.some(c=>MONEY.has(c)&&typeof entry.row[c]==="number"&&entry.row[c]!==0)||!!String(entry.row["\u62DB\u8058\u6765\u6E90"]||"").replace(/^0(?:\.0)?$/,"");return{fields,zero:!fields.length&&!charged&&!entry.zero_confirmed}}__name(deductionIssues,"deductionIssues");function applyCityAmounts(entries,cities,columns){return entries.map(entry=>{const source=cities.find(c=>c.station.platform===entry.station.platform&&c.station.city_id===entry.station.city_id);if(!source||!source.edited||entry.configured&&!entry.inherited_city||entry.edited)return entry;const issue=deductionIssues(source,columns);if(issue.fields.length||issue.zero)return entry;return{...entry,inherited_city:true,row:{...entry.row,...Object.fromEntries(columns.map(c=>[c,source.row[c]]))},zero_confirmed:source.zero_confirmed}})}__name(applyCityAmounts,"applyCityAmounts");function nextReviewAction(data,entries,accepted,platform){if(platform==="fengshen"&&data.separation_stations?.length&&!data.separation_enabled)return{kind:"separation",label:"\u542F\u7528\u5E76\u5173\u8054\u53D6\u5206\u79BB\u7AD9\u70B9",hint:"\u7533\u8BF7\u540D\u5355\u542B\u53D6\u5206\u79BB\u7AD9\u70B9\uFF0C\u5148\u540C\u6B65\u771F\u5B9E\u76EE\u5F55\u3002"};const count=data.unresolved?.length||0;if(count)return{kind:"links",label:`\u5904\u7406\u7AD9\u70B9\u5173\u8054\uFF08${count}\uFF09`,hint:`\u8FD8\u6709 ${count} \u4E2A\u7533\u8BF7\u7AD9\u70B9\u9700\u8981\u786E\u8BA4\u540E\u53F0\u5F52\u5C5E\u3002`};const invalid=entries.filter(e=>{const issue=deductionIssues(e,data.columns);return issue.fields.length||issue.zero});if(invalid.length)return{kind:"amounts",label:`\u8865\u9F50\u6263\u6B3E\u91D1\u989D\uFF08${invalid.length}\u7AD9\uFF09`,hint:"\u586B\u5199\u7A7A\u767D\u91D1\u989D\uFF1B\u5168\u96F6\u7AD9\u70B9\u9700\u660E\u786E\u786E\u8BA4\u96F6\u6263\u6B3E\u3002"};const differences=data.differences?.filter(d=>!accepted.includes(d.id)).length||0;if(differences)return{kind:"differences",label:`\u6838\u5BF9\u5F52\u5C5E\u5DEE\u5F02\uFF08${differences}\u9879\uFF09`,hint:"\u8BF7\u9010\u9879\u6838\u5B9E\u7533\u8BF7\u4E0E\u8D26\u5355\u7684\u7AD9\u70B9\u5DEE\u5F02\u3002"};return{kind:"execute",label:"\u786E\u8BA4\u6263\u6B3E\u5E76\u81EA\u52A8\u6267\u884C",hint:"\u91D1\u989D\u53CA\u7AD9\u70B9\u5F52\u5C5E\u5DF2\u5C31\u7EEA\uFF0C\u786E\u8BA4\u540E\u81EA\u52A8\u83B7\u53D6\u8D44\u6599\u5E76\u6838\u7B97\u3002"}}__name(nextReviewAction,"nextReviewAction");export{applyCityAmounts,deductionIssues,nextReviewAction};
+const MONEY = new Set([
+  '投诉',
+  '差评',
+  '违规虚假',
+  '物流责',
+  '不准时单',
+  '超时',
+  'T10',
+  '工具费',
+  '代领费率',
+  '安全基金',
+  '保险费',
+  '使用费',
+  '循环物资使用费',
+  '附加险',
+  '非蜂卡',
+  '月费',
+]);
+
+export function deductionIssues(entry, columns) {
+  const fields = columns.filter(c => {
+    const value = entry.row[c];
+    if (c.endsWith('_maxDays') && value === null) return false;
+    if (c === '招聘来源') return value == null;
+    if (!MONEY.has(c) && (typeof value === 'string' || typeof value === 'boolean')) return false;
+    return typeof value !== 'number' || !Number.isFinite(value);
+  });
+  const charged =
+    columns.some(c => MONEY.has(c) && typeof entry.row[c] === 'number' && entry.row[c] !== 0) ||
+    Boolean(String(entry.row['招聘来源'] || '').replace(/^0(?:\.0)?$/, ''));
+  return { fields, zero: !fields.length && !charged && !entry.zero_confirmed };
+}
+
+export function applyCityAmounts(entries, cities, columns) {
+  return entries.map(entry => {
+    const source = cities.find(
+      c => c.station.platform === entry.station.platform && c.station.city_id === entry.station.city_id,
+    );
+    if (!source || !source.edited || (entry.configured && !entry.inherited_city) || entry.edited) return entry;
+    const issue = deductionIssues(source, columns);
+    if (issue.fields.length || issue.zero) return entry;
+    return {
+      ...entry,
+      inherited_city: true,
+      row: { ...entry.row, ...Object.fromEntries(columns.map(c => [c, source.row[c]])) },
+      zero_confirmed: source.zero_confirmed,
+    };
+  });
+}
+
+export function nextReviewAction(data, entries, accepted, platform) {
+  if (platform === 'fengshen' && data.separation_stations?.length && !data.separation_enabled) {
+    return {
+      kind: 'separation',
+      label: '启用并关联取分离站点',
+      hint: '申请名单含取分离站点，先同步真实目录。',
+    };
+  }
+  const count = data.unresolved?.length || 0;
+  if (count) {
+    return {
+      kind: 'links',
+      label: `处理站点关联（${count}）`,
+      hint: `还有 ${count} 个申请站点需要确认后台归属。`,
+    };
+  }
+  const invalid = entries.filter(e => {
+    const issue = deductionIssues(e, data.columns);
+    return issue.fields.length || issue.zero;
+  });
+  if (invalid.length) {
+    return {
+      kind: 'amounts',
+      label: `补齐扣款金额（${invalid.length}站）`,
+      hint: '填写空白金额；全零站点需明确确认零扣款。',
+    };
+  }
+  const differences = data.differences?.filter(d => !accepted.includes(d.id)).length || 0;
+  if (differences) {
+    return {
+      kind: 'differences',
+      label: `核对归属差异（${differences}项）`,
+      hint: '请逐项核实申请与账单的站点差异。',
+    };
+  }
+  return {
+    kind: 'execute',
+    label: '确认扣款并自动执行',
+    hint: '金额及站点归属已就绪，确认后自动获取资料并核算。',
+  };
+}

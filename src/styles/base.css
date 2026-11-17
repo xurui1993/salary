@@ -6,6 +6,10 @@
  * 既满足 V19（新层 important 计数 = 0），又能覆盖普通声明。
  */
 
+html {
+  scrollbar-gutter: stable;
+}
+
 html, body {
   margin: 0; padding: 0;
   background: var(--wbx-bg); color: var(--wbx-text);

@@ -335,5 +335,17 @@ class ConfirmationTests(unittest.TestCase):
         self.state.update(deductions=deduction,deduction_confirmation=receipt)
         review.require_confirmation(self.state,deduction['version'])
 
+    def test_config_rule_columns_and_categories_cover_all_13_fields(self):
+        self.directory['cities']=[{'id':'001','name':'测试城'}]
+        cols=review.columns_for('fengshen',self.root)
+        expected=('投诉','差评','违规虚假','物流责','不准时单','超时','T10','工具费','代领费率','安全基金','使用费','非蜂卡','月费')
+        self.assertEqual(tuple(cols[:len(expected)]),expected)
+        draft=review.station_drafts('fengshen',self.root,self.directory)
+        self.assertEqual(draft['columns'],cols)
+        self.assertEqual([c['id'] for c in draft['categories']],['violation','tools','fund_monthly'])
+        self.assertEqual(draft['categories'][0]['columns'],['投诉','差评','违规虚假','物流责','不准时单','超时','T10'])
+        self.assertEqual(draft['categories'][1]['columns'],['工具费','代领费率'])
+        self.assertEqual(draft['categories'][2]['columns'],['安全基金','使用费','非蜂卡','月费'])
+
 
 if __name__=='__main__':unittest.main()

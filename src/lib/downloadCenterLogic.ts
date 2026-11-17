@@ -91,3 +91,71 @@ export function recoverySummary(items: {status: string; submission_state?: strin
     unsubmitted: items.filter(i => recoverable(i) && i.recovery?.mode === 'retry_unsubmitted').length,
     blocked: items.filter(i => ['error','failed','cancelled','interrupted'].includes(i.status.toLowerCase()) && !recoverable(i)).length };
 }
+
+export const TASK_CENTER_ACTIVE_STATUSES = new Set([
+  'queued',
+  'running',
+  'waiting_login',
+  'waiting_manual',
+  'cancelling',
+  'preparing',
+  'stopping',
+]);
+
+export function formatTaskDuration(seconds?: number | null): string {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds) || seconds < 0) {
+    return '—';
+  }
+  const total = Math.floor(seconds);
+  if (total < 60) return `${total}秒`;
+  const hours = Math.floor(total / 3600);
+  const mins = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  if (hours > 0) {
+    return `${hours}小时${String(mins).padStart(2, '0')}分${String(secs).padStart(2, '0')}秒`;
+  }
+  return `${mins}分${String(secs).padStart(2, '0')}秒`;
+}
+
+export function computeTaskElapsedSeconds(
+  task: { status: string; created_at?: string; updated_at?: string; elapsed_seconds?: number },
+  nowMs: number,
+  baseSyncMs?: number,
+): number | null {
+  const isActive = TASK_CENTER_ACTIVE_STATUSES.has(task.status);
+  if (typeof task.elapsed_seconds === 'number' && Number.isFinite(task.elapsed_seconds)) {
+    const base = Math.max(0, Math.floor(task.elapsed_seconds));
+    if (!isActive) return base;
+    const extra = baseSyncMs && nowMs > baseSyncMs ? Math.floor((nowMs - baseSyncMs) / 1000) : 0;
+    return base + extra;
+  }
+  const startMs = task.created_at ? Date.parse(task.created_at) : NaN;
+  if (!Number.isFinite(startMs)) return null;
+  if (isActive) {
+    return Math.max(0, Math.floor((nowMs - startMs) / 1000));
+  }
+  const endMs = task.updated_at ? Date.parse(task.updated_at) : NaN;
+  if (Number.isFinite(endMs) && endMs >= startMs) {
+    return Math.max(0, Math.floor((endMs - startMs) / 1000));
+  }
+  return null;
+}
+
+export function computeTaskProgressMeta(task: {
+  status: string;
+  completed_items: number;
+  total_items: number;
+}) {
+  const isActive = TASK_CENTER_ACTIVE_STATUSES.has(task.status);
+  const hasTotal = task.total_items > 0;
+  const pct = hasTotal
+    ? Math.max(0, Math.min(100, Math.round((task.completed_items / task.total_items) * 100)))
+    : isActive
+      ? task.status === 'queued'
+        ? 14
+        : 46
+      : null;
+  const indeterminate = isActive && (!hasTotal || task.completed_items === 0);
+  return { isActive, hasTotal, pct, indeterminate };
+}
+

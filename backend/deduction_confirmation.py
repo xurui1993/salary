@@ -16,8 +16,19 @@ import problem_deductions
 
 LOCK = threading.RLock()
 META = ('城市', '团队名称', '团队ID')
-DEFAULT_COLUMNS = ('安全基金', '保险费', '使用费', '循环物资使用费', '附加险', '非蜂卡', '月费')
-SUPPORTED = {*DEFAULT_COLUMNS, '招聘来源'}
+CONFIG_RULE_COLUMNS = (
+    '投诉', '差评', '违规虚假', '物流责', '不准时单', '超时', 'T10',
+    '工具费', '代领费率', '安全基金', '使用费', '非蜂卡', '月费',
+)
+LEGACY_MONEY_COLUMNS = ('保险费', '循环物资使用费', '附加险')
+DEDUCTION_CATEGORY_DEFS = (
+    ('violation', '违规与时效扣款', ('投诉', '差评', '违规虚假', '物流责', '不准时单', '超时', 'T10')),
+    ('tools', '工具与代领费率', ('工具费', '代领费率')),
+    ('fund_monthly', '保障基金与月费', ('安全基金', '使用费', '非蜂卡', '月费')),
+)
+DEFAULT_COLUMNS = CONFIG_RULE_COLUMNS
+MONEY_COLUMNS = {*CONFIG_RULE_COLUMNS, *LEGACY_MONEY_COLUMNS}
+SUPPORTED = {*MONEY_COLUMNS, '招聘来源'}
 TEAM = ('团队名称', '骑手所属站点名称', '骑手所属团队名称', '站点名称', '站点', '所属站点', '团队', '站点名')
 RID = ('骑手ID', '风神骑手ID', '蜂鸟骑手ID', '骑手编号', '工号', 'riderid')
 
@@ -92,6 +103,21 @@ def columns_for(platform, root):
     return columns
 
 
+def categories_for(columns):
+    assigned = set()
+    categories = []
+    column_set = set(columns)
+    for key, label, items in DEDUCTION_CATEGORY_DEFS:
+        present = [col for col in items if col in column_set]
+        if present:
+            categories.append({'id': key, 'label': label, 'columns': present})
+            assigned.update(present)
+    extra = [col for col in columns if col not in assigned]
+    if extra:
+        categories.append({'id': 'extended', 'label': '扩展与阈值字段', 'columns': extra})
+    return categories
+
+
 def station_drafts(platform, root, directory):
     defaults = profile(platform, root)
     legacy = legacy_rows(platform, root)
@@ -126,7 +152,8 @@ def station_drafts(platform, root, directory):
         cities.append({'key': key, 'station': station, 'row': row, 'configured': bool(previous),
                        'zero_confirmed': bool(previous and previous.get('zero_confirmed')),
                        'problem_rules': problem_deductions.sorted_rules(problem_rules.get(key, []))})
-    return {'entries': result, 'cities': cities, 'columns': columns, 'version': defaults['version'], 'directory': directory}
+    return {'entries': result, 'cities': cities, 'columns': columns, 'categories': categories_for(columns),
+            'version': defaults['version'], 'directory': directory}
 
 
 def validate_entry(entry, station, columns, retained=None):
@@ -142,12 +169,12 @@ def validate_entry(entry, station, columns, retained=None):
         value = row[col]
         if col.endswith('_maxDays') and value is None:
             continue
-        if col == '招聘来源' or (col not in DEFAULT_COLUMNS and isinstance(value, (str, bool))):
+        if col == '招聘来源' or (col not in MONEY_COLUMNS and isinstance(value, (str, bool))):
             if value is None:
                 raise SourceError('请明确填写招聘来源配置')
         elif value is None or value == '' or type(value) not in (int, float) or not math.isfinite(value):
             raise SourceError('请填写全部扣款值；未配置的站点不能自动视为零扣款')
-    monetary = [row[c] for c in columns if c in DEFAULT_COLUMNS and type(row[c]) in (int, float)]
+    monetary = [row[c] for c in columns if c in MONEY_COLUMNS and type(row[c]) in (int, float)]
     keyword_charge = str(row.get('招聘来源') or '').strip() not in ('', '0', '0.0')
     if not any(monetary) and not keyword_charge and entry.get('zero_confirmed') is not True:
         raise SourceError('全零扣款站点需要明确确认零扣款')
