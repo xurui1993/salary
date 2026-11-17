@@ -1,4 +1,7 @@
 """Authentication-only browser handoff; business downloads use HTTPS requests."""
+import base64
+import functools
+import hashlib
 import json
 from datetime import datetime, timezone
 from collections import deque
@@ -6,6 +9,7 @@ import secrets
 import logging
 import os
 from pathlib import Path
+import re
 import tempfile
 import threading
 import time
@@ -27,11 +31,16 @@ SOURCES = {
                   'state_hosts': ('login.dingtalk.com', 'dingtalk.com')},
     'baize': {'host': 'merchant.shangyiworker.com', 'entry': '/freelancer/merchantFreelancer',
               'token': 'Yunke-Mer-Token', 'label': '白泽'},
+    # 本来人力把登录态放在浏览器会话里：官方前端用 Cookies.get('fengxin-saas')
+    # 拼接 Authorization，因此以加密 storage_state 为认证载体。
+    'benlai': {'host': 'b.icp88.com', 'entry': '/login', 'label': '本来人力',
+               'cookie_auth': True, 'identity_path': '/api/getUserInfo',
+               'identity_codes': (0,), 'token': 'fengxin-saas'},
 }
 DINGTALK_CONFIRM_LABELS = ('同意', '确认登录', '确认授权', '继续登录')
 ROOT = Path(__file__).parent / '.local_auth'
 STATE_LIMIT = 256 * 1024
-KEEPALIVE_SECONDS = 600
+KEEPALIVE_SECONDS = 300
 CONSENT_TOGGLE = """(e,want)=>{
   if(!!e.checked===want)return true;
   let label=e.closest('label');
@@ -87,6 +96,82 @@ def _host_matches(domain, host):
 def _safe_detail(exc):
     """异常摘要用于日志，去掉查询串里的临时令牌并截断。"""
     return ' '.join(str(exc).split()).split('?', 1)[0][:200]
+
+
+def _response_diagnostic(response):
+    """身份接口异常响应的安全摘要，用于区分网关拦截页、BOM 与编码异常。"""
+    headers = getattr(response, 'headers', None) or {}
+    content_type = headers.get('Content-Type', '?')
+    raw = getattr(response, 'content', b'') or b''
+    try: text = getattr(response, 'text', '') or ''
+    except Exception: text = ''
+    body = ''
+    if 'json' not in str(content_type).lower() and not text.lstrip().startswith(('{', '[')):
+        body = ' body=' + ' '.join(text.split())[:120]
+    prefix = bytes(raw)[:24].hex() if isinstance(raw, (bytes, bytearray)) else ''
+    return 'status=%s content_type=%s bytes=%s encrypted=%s prefix=%s%s' % (
+        getattr(response, 'status_code', '?'), content_type, len(raw) or len(text),
+        'yes' if headers.get('encrypt-key') else 'no', prefix, body)
+
+
+# 商翼前端把响应解密私钥直接打包在 JS 里（jsencrypt 模块），服务器用对应公钥
+# 加密本次 AES 密钥并通过 encrypt-key 响应头下发；这里复用同一套公开方案。
+_BAIZE_RESPONSE_RSA_KEY = (
+    'MIIBVAIBADANBgkqhkiG9w0BAQEFAASCAT4wggE6AgEAAkEAqhHyZfSsYourNxaY7Nt+PrgrxkiA50efORdI5U5lsW79MmFnusUA355oaSXcLhu5xxB38SMSyP2KvuKNPuH3owIDAQABAkAfoiLyL+Z4lf4Myxk6xUDgLaWGximj20CUf+5BKKnlrK+Ed8gAkM0HqoTt2UZwA5E2MzS4EI2gjfQhz5X28uqxAiEA3wNFxfrCZlSZHb0gn2zDpWowcSxQAgiCstxGUoOqlW8CIQDDOerGKH5OmCJ4Z21v+F25WaHYPxCFMvwxpcw99EcvDQIgIdhDTIqD2jfYjPTY8Jj3EDGPbH2HHuffvflECt3Ek60CIQCFRlCkHpi7hthhYhovyloRYsM+IS9h/0BzlEAuO0ktMQIgSPT3aFAgJYwKpqRYKlLDVcflZFCKY7u3UP8iWi1Qw0Y='
+)
+
+
+@functools.lru_cache(maxsize=1)
+def _baize_response_private_key():
+    from cryptography.hazmat.primitives import serialization
+    return serialization.load_der_private_key(base64.b64decode(_BAIZE_RESPONSE_RSA_KEY), password=None)
+
+
+def _decrypt_official_payload(text, header):
+    from cryptography.hazmat.primitives import padding as sym_padding
+    from cryptography.hazmat.primitives.asymmetric import padding as asym_padding
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    key = base64.b64decode(_baize_response_private_key().decrypt(
+        base64.b64decode(header), asym_padding.PKCS1v15()))
+    if len(key) not in (16, 24, 32):
+        raise ValueError('encrypted response key length unexpected')
+    decryptor = Cipher(algorithms.AES(key), modes.ECB()).decryptor()
+    padded = decryptor.update(base64.b64decode(text)) + decryptor.finalize()
+    unpadder = sym_padding.PKCS7(128).unpadder()
+    plain = unpadder.update(padded) + unpadder.finalize()
+    return json.loads(plain.decode('utf-8'), strict=False)
+
+
+def _response_json(response):
+    """官方返回 200 JSON、响应加密或带 BOM/控制字符时尽量还原载荷。"""
+    headers = getattr(response, 'headers', None) or {}
+    header = headers.get('encrypt-key')
+    if header:
+        try:
+            text = getattr(response, 'text', '') or ''
+            if not text:
+                text = bytes(getattr(response, 'content', b'') or b'').decode('ascii')
+            return _decrypt_official_payload(text.strip(), header)
+        except Exception:
+            pass
+    try:
+        return response.json()
+    except (ValueError, TypeError) as first:
+        raw = getattr(response, 'content', b'') or b''
+        encodings = []
+        if isinstance(raw, (bytes, bytearray)):
+            for encoding in ('utf-8-sig', getattr(response, 'encoding', None), 'gb18030'):
+                if encoding and encoding not in encodings:
+                    encodings.append(encoding)
+        for encoding in encodings:
+            try:
+                return json.loads(bytes(raw).decode(encoding), strict=False)
+            except (UnicodeDecodeError, ValueError, TypeError):
+                continue
+        try:
+            return json.loads(getattr(response, 'text', '').lstrip('\ufeff'), strict=False)
+        except (ValueError, TypeError, AttributeError):
+            raise first
 
 
 def _host_filter(hosts):
@@ -151,6 +236,22 @@ def _scoped_state(source, state):
 
 def _token_from_state(source, state):
     config = SOURCES[source]
+    if config.get('cookie_auth'):
+        # 浏览器会话本身就是凭据：用当前域下的 cookie/localStorage 名称生成
+        # 稳定的会话标记，登录成功后新增的认证项会改变标记，错误状态不会被复用。
+        names = set()
+        for cookie in state.get('cookies', []):
+            if isinstance(cookie, dict) and cookie.get('name') and _host_matches(cookie.get('domain'), config['host']):
+                names.add(('cookie', str(cookie['name'])))
+        for origin in state.get('origins', []):
+            if not isinstance(origin, dict) or not str(origin.get('origin', '')).startswith('https://' + config['host']):
+                continue
+            for item in origin.get('localStorage', []):
+                if isinstance(item, dict) and item.get('name'):
+                    names.add(('storage', str(item['name'])))
+        if not names:
+            return None
+        return 'cookie-' + hashlib.sha256(repr(sorted(names)).encode()).hexdigest()[:40]
     token = next((unquote(cookie['value']) for cookie in state.get('cookies', [])
                   if isinstance(cookie, dict) and cookie.get('name') == config['token']
                   and isinstance(cookie.get('value'), str) and _host_matches(cookie.get('domain'), config['host'])), None)
@@ -166,6 +267,12 @@ def _token_from_state(source, state):
             if isinstance(candidate, str):
                 token = candidate
     return token if isinstance(token, str) and 8 < len(token) < 16384 else None
+
+
+def _mask_account(value):
+    text = ''.join(str(value).split())
+    if len(text) <= 4: return '****' if text else ''
+    return text[:3] + '****' + text[-4:]
 
 
 def _confirm_dingtalk(page):
@@ -206,6 +313,46 @@ def save_token(source, token):
     _write_encrypted(path, json.dumps({'source': source, 'token': token}).encode())
 
 
+def credentials_path(source):
+    if source not in ('baize', 'benlai'):
+        raise BillCollectionError('此来源不支持保存登录凭据')
+    return ROOT / (source + '.credentials.dpapi')
+
+
+def load_credentials(source):
+    path = credentials_path(source)
+    if not path.exists():
+        return None
+    if path.is_symlink() or path.stat().st_size > 16384:
+        raise BillCollectionError('登录凭据文件异常，请重新保存')
+    try:
+        data = json.loads(dpapi(path.read_bytes(), decrypt=True))
+        username, password = data.get('username'), data.get('password')
+        if (data.get('source') != source or not isinstance(username, str) or not 1 <= len(username) <= 256
+                or not isinstance(password, str) or not 1 <= len(password) <= 512):
+            raise ValueError()
+        return {'username': username, 'password': password}
+    except Exception:
+        raise BillCollectionError('登录凭据无法解密，请重新登录并保存') from None
+
+
+def save_credentials(source, username, password):
+    if (not isinstance(username, str) or not 1 <= len(username) <= 256
+            or not isinstance(password, str) or not 1 <= len(password) <= 512):
+        raise BillCollectionError('登录凭据格式无效')
+    _write_encrypted(credentials_path(source),
+                     json.dumps({'source': source, 'username': username, 'password': password}).encode())
+
+
+def clear_credentials(source):
+    if source not in ('baize', 'benlai'):
+        return
+    try:
+        credentials_path(source).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def load_state(source):
     path = state_path(source)
     if not path.exists():
@@ -229,16 +376,63 @@ def save_state(source, state):
     _write_encrypted(state_path(source), value)
 
 
-def client(source, token=None):
+def _browser_cookies(source, state):
+    config = SOURCES[source]
+    cookies = []
+    for cookie in (state or {}).get('cookies', []):
+        if not isinstance(cookie, dict) or not _host_matches(cookie.get('domain'), config['host']):
+            continue
+        name, value = cookie.get('name'), cookie.get('value')
+        if isinstance(name, str) and isinstance(value, str) and 0 < len(name) <= 128 and len(value) <= 16384:
+            cookies.append({**cookie, 'domain': str(cookie.get('domain')).lstrip('.')})
+    return cookies
+
+
+def client(source, token=None, state=None):
     config = SOURCES[source]
     token = token or load_token(source)
     if not token:
         raise SourceAuthenticationRequired(config['label'] + '尚未登录，请在下载中心完成来源认证')
     session = requests.Session()
-    session.headers.update({'Authorization': 'Bearer ' + token, 'Accept': 'application/json',
+    session.headers.update({'Accept': 'application/json',
                             'Origin': 'https://' + config['host'], 'Referer': 'https://' + config['host'] + '/'})
+    if not config.get('cookie_auth'):
+        session.headers['Authorization'] = 'Bearer ' + token
     if config.get('clientid'):
         session.headers['clientid'] = config['clientid']
+    if source == 'benlai':
+        session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+            'Accept-Language': 'zh-CN,zh;q=0.9',
+            'Referer': 'https://' + config['host'] + '/staff',
+        })
+        if state is None:
+            try:
+                state = load_state(source) if state_path(source).exists() else None
+            except Exception:
+                state = None
+        for cookie in _browser_cookies(source, state):
+            try:
+                session.cookies.set(cookie['name'], cookie['value'], domain=cookie['domain'],
+                                    path=cookie.get('path') or '/', secure=bool(cookie.get('secure')))
+            except (TypeError, ValueError):
+                continue
+        # 官方 axios 拦截器发送 Authorization: Bearer Cookies.get('fengxin-saas')。
+        token_cookie = next((str(cookie['value']) for cookie in _browser_cookies(source, state)
+                             if cookie.get('name') == config['token'] and cookie.get('value')), None)
+        if token_cookie:
+            session.headers['Authorization'] = token_cookie if token_cookie.lower().startswith('bearer ') else 'Bearer ' + token_cookie
+        # 官方前端把令牌存进 localStorage 时，同步带到 Authorization；
+        # 统一从浏览器会话取，避免把令牌复制到其他文件。
+        for origin in (state or {}).get('origins', []):
+            if not isinstance(origin, dict) or origin.get('origin') != 'https://' + config['host']:
+                continue
+            for item in origin.get('localStorage', []):
+                name = str(item.get('name', '')).lower() if isinstance(item, dict) else ''
+                value = item.get('value') if isinstance(item, dict) else None
+                if isinstance(value, str) and ('token' in name or 'authorization' in name) and value:
+                    session.headers['Authorization'] = value if value.lower().startswith('bearer ') else 'Bearer ' + value
+                    break
     if source == 'lanorange':
         session.headers['Content-Language'] = 'zh_CN'
         session.headers['Referer'] = 'https://' + config['host'] + '/admin/'
@@ -251,6 +445,25 @@ def client(source, token=None):
         # first-party token cookie. Keep the same authenticated context for
         # streaming exports; never send this cookie to the other source.
         session.cookies.set(config['token'], token, domain=config['host'], path='/', secure=True)
+    if source == 'baize':
+        # 与浏览器一致的请求头，避免网关把身份探测当成脚本流量返回拦截页。
+        session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+            'Accept-Language': 'zh-CN,zh;q=0.9',
+        })
+        # 官方网关会把缺少反爬 cookie 的请求回成 4KB 挑战体；复用浏览器
+        # 会话里的 first-party cookie 才能拿到正常 JSON。
+        if state is None:
+            try:
+                state = load_state(source) if state_path(source).exists() else None
+            except Exception:
+                state = None
+        for cookie in _browser_cookies(source, state):
+            try:
+                session.cookies.set(cookie['name'], cookie['value'], domain=cookie['domain'],
+                                    path=cookie.get('path') or '/', secure=bool(cookie.get('secure')))
+            except (TypeError, ValueError):
+                continue
     return session
 
 
@@ -263,27 +476,53 @@ class SourceProbeUnavailable(BillCollectionError):
 
 
 def identity(source, session, timeout=20):
-    response = session.get('https://' + SOURCES[source]['host'] + '/prod-api/system/user/getInfo',
+    config = SOURCES[source]
+    response = session.get('https://' + config['host'] + (config.get('identity_path') or '/prod-api/system/user/getInfo'),
                            timeout=timeout, allow_redirects=False)
-    if response.status_code == 401:
+    if response.status_code == 401 or (config.get('cookie_auth') and response.status_code == 403):
         raise SourceAuthenticationRequired('登录已失效，请重新认证')
     if response.status_code in (301, 302, 303, 307, 308):
         location = response.headers.get('Location', '')
-        parsed = urlparse(urljoin('https://' + SOURCES[source]['host'], location))
-        own_login = parsed.hostname == SOURCES[source]['host'] and (parsed.path.rstrip('/').endswith('/login') or parsed.fragment.rstrip('/').endswith('/login'))
+        parsed = urlparse(urljoin('https://' + config['host'], location))
+        own_login = parsed.hostname == config['host'] and (parsed.path.rstrip('/').endswith('/login') or parsed.fragment.rstrip('/').endswith('/login'))
         dingtalk_login = source == 'lanorange' and parsed.hostname == 'login.dingtalk.com'
         if parsed.scheme == 'https' and (own_login or dingtalk_login):
             raise SourceAuthenticationRequired('官方身份接口要求重新登录')
     if response.status_code != 200:
         raise SourceProbeUnavailable('官方身份接口暂不可用或权限待确认；原会话保留')
-    try: data = response.json()
-    except (ValueError, TypeError):
+    try: data = _response_json(response)
+    except (ValueError, TypeError) as exc:
+        _log.warning('官方身份接口响应无法解析 source=%s error=%s %s', source, _safe_detail(exc), _response_diagnostic(response))
         raise SourceProbeUnavailable('官方身份接口未能确认，请检查网络后重试；原会话保留') from None
-    if isinstance(data, dict) and str(data.get('code')) == '401':
+    if isinstance(data, dict) and (str(data.get('code')) == '401' or (config.get('cookie_auth') and str(data.get('code')) == '403')):
         raise SourceAuthenticationRequired('登录已失效，请重新认证')
+    if config.get('cookie_auth'):
+        if (isinstance(data, dict) and data.get('code') in config.get('identity_codes', (0,))
+                and isinstance(data.get('data'), dict)):
+            return data['data']
+        message = str(data.get('msg') or data.get('message') or '') if isinstance(data, dict) else ''
+        if re.search(r'未登录|登录.{0,6}(失效|过期)|请重新登录', message):
+            raise SourceAuthenticationRequired('登录已失效，请重新认证')
+        raise SourceProbeUnavailable('官方身份接口暂不可用或权限待确认；原会话保留')
     if response.status_code != 200 or not isinstance(data, dict) or str(data.get('code')) != '200' or not isinstance(data.get('data'), dict):
         raise SourceProbeUnavailable('官方身份接口暂不可用或权限待确认；原会话保留')
     return data['data']
+
+
+def _probe_identity(source, session, timeout=None, attempts=2):
+    """短暂网络抖动时重试身份探测；令牌失效立即上抛，避免把断网误判成过期。"""
+    attempts = max(1, attempts)
+    for index in range(attempts):
+        try:
+            return identity(source, session) if timeout is None else identity(source, session, timeout=timeout)
+        except SourceAuthenticationRequired:
+            raise
+        except Exception as exc:
+            if index + 1 >= attempts:
+                raise
+            _log.warning('来源身份校验暂未确认 source=%s attempt=%s/%s error=%s: %s',
+                         source, index + 1, attempts, type(exc).__name__, _safe_detail(exc))
+            time.sleep(0.5)
 
 
 class SourceAuth:
@@ -303,6 +542,12 @@ class SourceAuth:
         self.qr_captured_at = {}
         self.consent_choice = {}
         self.consent_attempts = {}
+        self.transitions = {}
+        self.retry_forms = {}
+        self.pending_credentials = {}
+        self.credential_prompt = {}
+        self.auto_login_last = {}
+        self.auto_login_failed_until = {}
 
     def login_mode(self, source):
         return 'qr' if source == 'lanorange' else 'sms'
@@ -326,6 +571,9 @@ class SourceAuth:
                     **{key: state[key] for key in ('checked_at', 'verified_at', 'account_label', 'organization', 'organization_reference', 'input_pending', 'input_seq', 'input_completed', 'cancelling', 'phase', 'phase_started_at') if key in state},
                     'input_error': state.get('input_error', ''), 'input_result': state.get('input_result', ''),
                     'session_id': state.get('session_id'), 'interactive': state.get('state') == 'waiting_login',
+                    **({'credential_prompt': True, 'credential_account': self.credential_prompt[source].get('account', '')}
+                       if source in ('baize', 'benlai') and self.credential_prompt.get(source)
+                       else {'credential_prompt': False}),
                     **{k: v for k, v in self.desktop.get(source, {}).items() if not k.startswith('_')}}
 
     def interact(self, source, command):
@@ -378,8 +626,15 @@ class SourceAuth:
                 desktop = self.desktop.get(source, {})
                 allowed = self.form_bindings.get(source, {})
                 identifiers = [v['id'] for v in payload.get('values', [])] + [v for v in [payload.get('id'), payload.get('submit_id')] if v]
-                if not desktop.get('form_id') or payload['form_id'] != desktop['form_id'] or any(v not in allowed for v in identifiers):
+                if not desktop.get('form_id') or any(v not in allowed for v in identifiers):
                     raise HTTPException(409, '官方表单已变化，请等待刷新后重新填写')
+                if payload.get('form_id') != desktop['form_id']:
+                    # 用户填表期间表单可能因官方刷新验证码而换版；输入项仍属于当前
+                    # 表单时按当前页面执行，但按钮类操作仍要求版本一致，避免误发短信。
+                    if action == 'control':
+                        raise HTTPException(409, '官方表单已变化，请等待刷新后重新填写')
+                    _log.warning('认证表单版本已更新 source=%s action=%s stale=%s current=%s',
+                                 source, action, str(payload.get('form_id'))[:8], str(desktop['form_id'])[:8])
                 field_ids = {v['id'] for v in desktop.get('fields', [])}
                 controls = {v['id']: v['kind'] for v in desktop.get('controls', [])}
                 if (any(v['id'] not in field_ids for v in payload.get('values', []))
@@ -393,6 +648,27 @@ class SourceAuth:
                 for value in payload.get('values',[]):
                     if value['id'] in consent_ids and value['text'] in ('true','false'):
                         self.consent_choice[source]={'form_id':payload['form_id'],'choice':'checked' if value['text']=='true' else 'unchecked'}
+                if source in ('baize', 'benlai') and payload.get('values'):
+                    roles = {f['id']: f.get('role') for f in desktop.get('fields', [])}
+                    pending = self.pending_credentials.setdefault(source, {})
+                    for value in payload['values']:
+                        role = roles.get(value['id'])
+                        if role in ('username', 'phone') and value['text'].strip():
+                            pending['username'] = value['text'].strip()
+                        elif role == 'password' and value['text']:
+                            pending['password'] = value['text']
+                if source == 'baize' and action == 'fill_fields' and payload.get('submit_id'):
+                    roles = {f['id']: f.get('role') for f in desktop.get('fields', [])}
+                    account = next((v['text'] for v in payload.get('values', []) if roles.get(v['id']) == 'username'), '')
+                    parts = desktop.get('_signature_parts') or ()
+                    self.transitions[source] = {'started': time.monotonic(), 'signature': desktop.get('_signature'),
+                                                'step': hashlib.sha256(''.join(map(str, parts[:2])).encode()).hexdigest(),
+                                                'account': _mask_account(account), 'stable': 0, 'last': None}
+                    self.retry_forms.pop(source, None)
+                    current = self.desktop.setdefault(source, {})
+                    current['transitioning'] = True
+                    current['submitted'] = {'account': _mask_account(account)}
+                    current.pop('retry', None)
             if action=='control' and controls.get(payload.get('id'))=='sms':
                 if time.monotonic()<self.sms_until.get(self.sms_key(source,payload.get('id')),0):raise HTTPException(429,'请等待短信发送冷却时间结束后再操作')
                 self.sms_until[self.sms_key(source,payload.get('id'))]=time.monotonic()+60
@@ -417,8 +693,6 @@ class SourceAuth:
                 if not trusted(source, page.url):
                     raise ValueError('untrusted login page')
                 if action in ('fill_fields', 'control'):
-                    if payload['form_id'] != self.desktop.get(source, {}).get('form_id'):
-                        raise ValueError('form changed')
                     bindings = self.form_bindings.get(source, {})
                     fields={f['id']:f for f in self.desktop.get(source,{}).get('fields',[])}
                     for value in payload.get('values',[]):
@@ -475,6 +749,9 @@ class SourceAuth:
                 self.states.setdefault(source, {}).pop('image_qr', None)
                 self.states.setdefault(source, {}).update(input_pending=False,
                     input_result='官方认证页面已切换，请在新页面继续操作')
+                transition = self.transitions.get(source)
+                if transition is not None:
+                    self.desktop[source] = {'transitioning': True, 'submitted': {'account': transition['account']}}
         return selected
 
     @staticmethod
@@ -518,6 +795,48 @@ class SourceAuth:
             desktop, bindings = inspect_login_page(source, page, previous)
             challenge=desktop.pop('_challenge',None)
             qr_element=desktop.pop('_qr_element',None)
+            for flag in ('transitioning', 'submitted', 'retry'): desktop.pop(flag, None)
+            transition = self.transitions.get(source) if source == 'baize' else None
+            if transition is not None:
+                # 提交后先展示“验证中”，页面签名稳定两轮才恢复表单，
+                # 避免跳转动画或中间页把同一张表闪回成一张空白表。
+                elapsed = time.monotonic() - transition['started']
+                parts = desktop.get('_signature_parts') or ()
+                step = hashlib.sha256(''.join(map(str, parts[:2])).encode()).hexdigest()
+                has_form = bool(desktop.get('fields'))
+                if desktop.get('_signature') == transition['signature']:
+                    transition['stable'] = 0
+                    settled = elapsed > 4 or bool(desktop.get('official_feedback'))
+                    retry = settled
+                else:
+                    if desktop.get('_signature') == transition.get('last'):
+                        transition['stable'] += 1
+                    else:
+                        transition['stable'], transition['last'] = 1, desktop.get('_signature')
+                    retry = has_form and step == transition['step']
+                    settled = transition['stable'] >= 2 and (has_form or retry)
+                if settled:
+                    self.transitions.pop(source, None)
+                    if has_form and retry:
+                        # 同一登录步骤重新出现：保留摘要，只补填密码/算式。
+                        self.retry_forms[source] = {'step': transition['step'], 'account': transition['account']}
+                    elif has_form:
+                        self.retry_forms.pop(source, None)
+                elif elapsed > 30:
+                    self.transitions.pop(source, None)
+                else:
+                    desktop['transitioning'] = True
+                    desktop['submitted'] = {'account': transition['account']}
+            if source == 'baize' and source not in self.transitions:
+                retry_state = self.retry_forms.get(source)
+                if retry_state is not None:
+                    parts = desktop.get('_signature_parts') or ()
+                    step = hashlib.sha256(''.join(map(str, parts[:2])).encode()).hexdigest()
+                    if desktop.get('fields') and step == retry_state['step']:
+                        desktop['retry'] = True
+                        desktop['submitted'] = {'account': retry_state['account']}
+                    else:
+                        self.retry_forms.pop(source, None)
             if source=='lanorange':
                 preferred=self.login_mode(source)
                 # 小象灯塔的官方 SSO 入口默认就是美团App扫码页，保持扫码视图；
@@ -537,7 +856,6 @@ class SourceAuth:
                         challenge=desktop.pop('_challenge',None)
                         qr_element=desktop.pop('_qr_element',None)
             if source=='lanorange':
-                import hashlib
                 from desktop_auth_page import trusted
                 preferred=self.login_mode(source);desktop['login_mode']=preferred
                 region=desktop.get('regions',{}).get('qr')
@@ -555,7 +873,6 @@ class SourceAuth:
                         desktop['qr_version']=hashlib.sha256(image).hexdigest()[:20]
                     else:self.states.setdefault(source,{}).pop('image',None)
             if source=='xiaoxiang':
-                import hashlib
                 from urllib.parse import urlsplit
                 from desktop_auth_page import trusted
                 host=urlsplit(page.url).hostname or ''
@@ -602,7 +919,6 @@ class SourceAuth:
                 with self.lock:
                     if image:
                         self.states.setdefault(source,{})['image']=image
-                        import hashlib
                         desktop['challenge_version']=hashlib.sha256(image).hexdigest()[:20]
                     else:self.states.setdefault(source,{}).pop('image',None)
                 try:
@@ -612,6 +928,9 @@ class SourceAuth:
                     pass
         except Exception:
             desktop, bindings = {'form_detection': 'unavailable'}, {}
+            transition = self.transitions.get(source)
+            if transition is not None and time.monotonic() - transition['started'] <= 30:
+                desktop.update(transitioning=True, submitted={'account': transition['account']})
             if source in ('lanorange','xiaoxiang'):
                 if source=='lanorange':desktop['login_mode']=self.login_mode(source)
                 with self.lock:self.states.setdefault(source,{}).pop('image',None)
@@ -656,6 +975,11 @@ class SourceAuth:
             self.consent_attempts.pop(source, None)
             self.qr_captured_at.pop(source, None)
             self.qr_captured_at.pop(source + ':qr', None)
+            self.pending_credentials.pop(source, None)
+            self.credential_prompt.pop(source, None)
+            self.auto_login_failed_until.pop(source, None)
+            self.transitions.pop(source, None)
+            self.retry_forms.pop(source, None)
             self.states.setdefault(source, {}).pop('image_qr', None)
             worker = threading.Thread(target=self._login, args=(source,), daemon=True)
             self.workers[source] = worker
@@ -694,6 +1018,154 @@ class SourceAuth:
                            '已复用浏览器会话，下载使用 HTTP 接口' if refreshed else '已保存的浏览器会话需要重新登录' if state is not None else '没有可复用的浏览器会话，需要登录一次', epoch=epoch)
         return bool(refreshed)
 
+    def _offer_credentials(self, source):
+        if source not in ('baize', 'benlai'):
+            return
+        pending = self.pending_credentials.get(source)
+        if not pending or not pending.get('username') or not pending.get('password'):
+            return
+        try:
+            saved = load_credentials(source)
+        except Exception:
+            saved = None
+        if saved and saved.get('username') == pending['username'] and saved.get('password') == pending['password']:
+            self.pending_credentials.pop(source, None)
+            self.credential_prompt.pop(source, None)
+            return
+        self.credential_prompt[source] = {'account': _mask_account(pending['username'])}
+
+    def confirm_credentials(self, source, save):
+        if source not in ('baize', 'benlai'):
+            raise BillCollectionError('此来源不支持保存登录凭据')
+        with self.lock:
+            pending = self.pending_credentials.pop(source, None)
+            self.credential_prompt.pop(source, None)
+        if save:
+            if not pending or not pending.get('username') or not pending.get('password'):
+                raise BillCollectionError('没有可保存的登录凭据，请重新登录')
+            save_credentials(source, pending['username'], pending['password'])
+        else:
+            clear_credentials(source)
+        return self.status(source)
+
+    def recover(self, source):
+        """Try SSO refresh, then saved credentials, without making the user log in."""
+        if source not in ('baize', 'benlai'):
+            return False
+        with self.lock:
+            if self.states.get(source, {}).get('state') in ('starting', 'waiting_login', 'refreshing'):
+                return False
+        try:
+            if self.refresh(source):
+                return True
+        except Exception as exc:
+            _log.warning('来源会话静默续期失败 source=%s error=%s: %s', source, type(exc).__name__, _safe_detail(exc))
+        try:
+            credentials = load_credentials(source)
+        except Exception:
+            credentials = None
+        if not credentials:
+            return False
+        now = time.monotonic()
+        if now < self.auto_login_failed_until.get(source, 0):
+            return False
+        if now - self.auto_login_last.get(source, 0) < 300:
+            return False
+        self.auto_login_last[source] = now
+        with self.lock:
+            if self.states.get(source, {}).get('state') in ('starting', 'waiting_login', 'refreshing'):
+                return False
+            self.states[source] = {'state': 'refreshing', 'message': '正在使用保存的账号密码尝试自动登录'}
+        try:
+            if self._auto_login(source, credentials):
+                self.auto_login_failed_until.pop(source, None)
+                return True
+        except Exception as exc:
+            _log.warning('来源自动登录失败 source=%s error=%s: %s', source, type(exc).__name__, _safe_detail(exc))
+        self.auto_login_failed_until[source] = now + 1800
+        with self.lock:
+            if self.states.get(source, {}).get('state') == 'refreshing':
+                self.states[source] = {'state': 'saved', 'message': '自动登录未完成，请人工登录；原会话保留'}
+        return False
+
+    def _auto_login(self, source, credentials):
+        from playwright.sync_api import sync_playwright
+        from auth_browser_runtime import launch_edge, navigate
+        from desktop_auth_page import inspect_login_page, trusted
+        config = SOURCES[source]
+        entry = 'https://' + config['host'] + config['entry']
+        try:
+            state = load_state(source)
+        except Exception:
+            state = None
+        with sync_playwright() as pw:
+            browser = launch_edge(pw, headless=True)
+            try:
+                options = {'viewport': {'width': 1100, 'height': 850}, 'locale': 'zh-CN', 'timezone_id': 'Asia/Shanghai'}
+                if state is not None:
+                    options['storage_state'] = state
+                context = browser.new_context(**options)
+                getattr(context, 'set_default_timeout', lambda _: None)(2000)
+                page = context.new_page()
+                page.goto(entry, wait_until='domcontentloaded', timeout=30000)
+                page.wait_for_timeout(1200)
+                if not trusted(source, page.url):
+                    return False
+                desktop, bindings = inspect_login_page(source, page, None)
+                fields = desktop.get('fields', [])
+                roles = {field['id']: field.get('role') for field in fields}
+                if any(role in ('sms_code', 'voice_code', 'math') for role in roles.values()):
+                    return False
+                if any(control.get('kind') == 'sms' for control in desktop.get('controls', [])):
+                    return False
+                if any(role == 'consent' and not field.get('filled') for field, role in
+                       ((field, field.get('role')) for field in fields)):
+                    return False
+                filled = 0
+                for field in fields:
+                    role = field.get('role')
+                    element = bindings.get(field['id'])
+                    if element is None:
+                        continue
+                    if role in ('username', 'phone'):
+                        element.fill(credentials['username'], timeout=3000)
+                        filled += 1
+                    elif role == 'password':
+                        element.fill(credentials['password'], timeout=3000)
+                        filled += 1
+                submit = next((control for control in desktop.get('controls', [])
+                               if control.get('kind') == 'submit' and control.get('enabled', True)), None)
+                if not filled or submit is None or submit['id'] not in bindings:
+                    return False
+                bindings[submit['id']].click(timeout=3000)
+                deadline = time.monotonic() + 30
+                while time.monotonic() < deadline:
+                    current = context.storage_state()
+                    token = _token_from_state(source, current)
+                    if token:
+                        try:
+                            with client(source, token, current) as session:
+                                identity(source, session, timeout=(5, 15))
+                        except SourceAuthenticationRequired:
+                            token = None
+                        except Exception:
+                            token = None
+                        if token:
+                            save_token(source, token)
+                            try:
+                                save_state(source, current)
+                            except Exception:
+                                pass
+                            with self.lock:
+                                self.states[source] = {'state': 'ready',
+                                                       'message': '已使用保存的账号密码自动登录，下载使用 HTTP 接口'}
+                            self.auto_login_last.pop(source, None)
+                            return True
+                    page.wait_for_timeout(500)
+                return False
+            finally:
+                browser.close()
+
     def keepalive(self, source):
         with self.lock:
             epoch = self.epochs.get(source, 0)
@@ -701,11 +1173,16 @@ class SourceAuth:
         try:
             token = load_token(source)
             if not token: return False
-            with client(source, token) as session: data = identity(source, session)
+            with client(source, token) as session: data = _probe_identity(source, session)
         except SourceAuthenticationRequired:
+            if self.recover(source):
+                return True
+            with self.lock:
+                epoch = self.epochs.get(source, 0)
             self._probe_result(source, 'login_required', SOURCES[source]['label'] + '官方已确认会话失效，请重新认证；原会话保留', epoch=epoch)
             return False
-        except Exception:
+        except Exception as exc:
+            _log.warning('来源会话保活校验失败 source=%s error=%s: %s', source, type(exc).__name__, _safe_detail(exc))
             self._probe_result(source, 'unknown', '连接暂未确认，请检查网络后重试；原会话保留', epoch=epoch)
             return False
         with self.lock:
@@ -751,11 +1228,12 @@ class SourceAuth:
         if not token:
             return False
         try:
-            with client(source, token) as session:
-                identity(source, session, timeout=(3, 6))
+            with client(source, token, current) as session:
+                _probe_identity(source, session, timeout=(5, 20))
         except SourceAuthenticationRequired:
             return False
-        except Exception:
+        except Exception as exc:
+            _log.warning('来源身份校验失败 source=%s phase=reuse_context error=%s: %s', source, type(exc).__name__, _safe_detail(exc))
             raise SourceProbeUnavailable('连接暂未确认，请检查网络后重试；原会话保留') from None
         if cancelled is not None and cancelled.is_set():
             raise BillCollectionError('认证已取消，原会话保留')
@@ -777,10 +1255,11 @@ class SourceAuth:
             return False
         try:
             with client(source, token) as session:
-                identity(source, session, timeout=(3, 6))
+                _probe_identity(source, session, timeout=(5, 20))
         except SourceAuthenticationRequired:
             return False
-        except Exception:
+        except Exception as exc:
+            _log.warning('来源身份校验失败 source=%s phase=reuse_saved error=%s: %s', source, type(exc).__name__, _safe_detail(exc))
             raise SourceProbeUnavailable('连接暂未确认，请检查网络后重试；原会话保留') from None
         return True
 
@@ -804,11 +1283,12 @@ class SourceAuth:
                     token = _token_from_state(source, current)
                     if token:
                         try:
-                            with client(source, token) as session:
-                                identity(source, session, timeout=(3, 6))
+                            with client(source, token, current) as session:
+                                _probe_identity(source, session, timeout=(5, 20))
                         except SourceAuthenticationRequired:
                             return False
-                        except Exception:
+                        except Exception as exc:
+                            _log.warning('来源身份校验失败 source=%s phase=refresh error=%s: %s', source, type(exc).__name__, _safe_detail(exc))
                             raise SourceProbeUnavailable('连接暂未确认，请检查网络后重试；原会话保留') from None
                         save_token(source, token)
                         try:
@@ -914,10 +1394,11 @@ class SourceAuth:
                 deadline, last_image, last_confirm = time.monotonic() + 900, 0, 0
                 session_id = secrets.token_urlsafe(24)
                 rejected_token = None
+                probe_failures = 0
                 while time.monotonic() < deadline:
                     if cancelled.is_set(): raise BillCollectionError('认证已取消，原会话保留')
                     page = self._active_page(source, context, page)
-                    if source!='baize':
+                    if source not in ('baize', 'benlai'):
                         self._capture_desktop(source, page)
                         self._apply_inputs(source, page, viewport)
                     state = context.storage_state()
@@ -925,13 +1406,25 @@ class SourceAuth:
                     if token and token==rejected_token:token=None
                     if token:
                         try:
-                            with client(source, token) as session:
-                                identity(source, session, timeout=(3, 6))
+                            with client(source, token, state) as session:
+                                identity(source, session, timeout=(5, 20))
                         except SourceAuthenticationRequired:
                             rejected_token = token
                             token = None
-                        except Exception:
-                            raise SourceProbeUnavailable('连接暂未确认，请检查网络后重试；原会话保留') from None
+                            probe_failures = 0
+                        except Exception as exc:
+                            # 官方已在浏览器下发令牌；校验失败多为网络抖动或网关拦截页，
+                            # 保留登录窗口并退避重试，不能因一次失败终止整个认证。
+                            probe_failures += 1
+                            _log.warning('来源身份校验暂未确认 source=%s phase=login_probe attempt=%s error=%s: %s',
+                                         source, probe_failures, type(exc).__name__, _safe_detail(exc))
+                            if probe_failures >= 6:
+                                raise SourceProbeUnavailable('连接暂未确认，请检查网络后重试；原会话保留') from None
+                            token = None
+                            try: page.wait_for_timeout(500 * probe_failures)
+                            except Exception: time.sleep(0.5 * probe_failures)
+                        else:
+                            probe_failures = 0
                     if token:
                         if cancelled.is_set(): raise BillCollectionError('认证已取消，原会话保留')
                         save_token(source, token)
@@ -940,10 +1433,11 @@ class SourceAuth:
                         except Exception:
                             pass
                         authenticated = True
+                        self._offer_credentials(source)
                         with self.lock:
                             self.states[source] = {'state': 'ready', 'message': '认证成功，下载使用 HTTP 接口'}
                         break
-                    if source=='baize':
+                    if source in ('baize', 'benlai'):
                         # Confirm a newly issued token before scanning the old
                         # login page. OCR never blocks this worker or a submit.
                         self._capture_desktop(source,page)
@@ -962,10 +1456,11 @@ class SourceAuth:
                         entry = self.states.setdefault(source, {})
                         entry.update(state='waiting_login', session_id=session_id, message='请使用手机钉钉扫码，确认后自动连接蓝橙'
                                      if source == 'lanorange'
+                                     else '请在内部表单完成本来人力登录' if source == 'benlai'
                                      else '请在内部表单完成白泽登录')
                         if image: entry['image'] = image
                         elif confirmed: entry.pop('image', None)
-                    page.wait_for_timeout(150 if source=='baize' else 1000)
+                    page.wait_for_timeout(150 if source in ('baize', 'benlai') else 1000)
                 else:
                     raise BillCollectionError('官方认证等待超时，请重新打开登录')
                 self._close_browser(source, browser); browser = None
@@ -984,6 +1479,8 @@ class SourceAuth:
                 self.inputs.pop(source, None)
                 self.desktop.pop(source, None)
                 self.form_bindings.pop(source, None)
+                self.transitions.pop(source, None)
+                self.retry_forms.pop(source, None)
                 self.states.get(source, {}).pop('image', None)
                 self.states.get(source, {}).pop('session_id', None)
             if browser is not None:
@@ -1062,3 +1559,17 @@ async def interact(source: str, request: Request):
     except (ValueError, UnicodeDecodeError):
         raise HTTPException(400, '认证操作格式无效') from None
     return target.interact(source, command)
+
+
+@router.post('/{source}/credentials')
+async def credentials(source: str, request: Request):
+    require_admin(request)
+    if source not in ('baize', 'benlai'):
+        raise HTTPException(404, '此来源不支持保存登录凭据')
+    try:
+        data = await request.json()
+    except (ValueError, UnicodeError):
+        raise HTTPException(400, '凭据操作格式无效') from None
+    if not isinstance(data, dict) or data.get('action') not in ('save', 'skip'):
+        raise HTTPException(400, '凭据操作无效')
+    return AUTH.confirm_credentials(source, data['action'] == 'save')

@@ -21,7 +21,7 @@ export function HeaderDownloadCenter({apiFetch,onNavigateHistory,runningTask,pro
     const controller=new AbortController();let timer:ReturnType<typeof setTimeout>;
     const poll=async()=>{
       try {
-        const response=await api.current('/api/workbench/task-center?page_size=20',{signal:AbortSignal.any([controller.signal,AbortSignal.timeout(15000)])});
+        const response=await api.current('/api/workbench/task-center?page_size=20',{signal:AbortSignal.any([controller.signal,AbortSignal.timeout(30000)])});
         const data=await response.json();if(!response.ok)throw new Error();
         if(!controller.signal.aborted){setCounts(data.counts);setTasks(data.records.slice(0,5).map((r:any)=>({id:r.id,title:r.title||`${r.kind==='payroll'?'薪资核算':r.kind==='generate'?'业务报表':'资料下载'} · ${r.cities.join('、')}`,status:r.status})));setError(data.warnings?.length?'部分记录暂不可读':'');}
       }catch{if(!controller.signal.aborted)setError('任务通知暂不可读，请到任务中心查看');}

@@ -19,8 +19,15 @@ const API='/api/workbench/task-center';
 const ACTIVE=new Set(['queued','running','waiting_login','waiting_manual','cancelling','preparing','stopping']);
 const ENDED=new Set(['success','partial','error','cancelled','interrupted']);
 const statusLabel=(status:string)=>taskGuidance({status}).label;
+const pollErrorMessage=(error:unknown)=>{
+  const name=(error as {name?:string})?.name||'';
+  const text=String((error as {message?:string})?.message||'');
+  if(name==='TimeoutError'||name==='AbortError'||/timed out|aborted/i.test(text))return '后台仍在启动或响应较慢，正在自动重试…';
+  if(error instanceof TypeError)return '后台连接暂时中断，正在自动重试…';
+  return downloadErrorMessage(error);
+};
 const KINDS:Record<string,string>={download:'资料下载',generate:'业务报表',payroll:'薪资核算',approval:'价格审批','price-export':'每日价格'};
-const SYSTEMS:Record<string,string>={fengshen:'风神',lanorange:'蓝橙',baize:'商翼',xiaoxiang:'灯塔'};
+const SYSTEMS:Record<string,string>={fengshen:'风神',lanorange:'蓝橙',baize:'商翼',benlai:'本来人力',xiaoxiang:'灯塔'};
 const stamp=(v:string)=>v?new Date(v).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'—';
 const size=(n:number)=>n>=1048576?`${(n/1048576).toFixed(1)} MB`:`${Math.max(1,Math.ceil(n/1024))} KB`;
 
@@ -49,12 +56,12 @@ export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttemp
     const poll=async()=>{
       try {
         const params=new URLSearchParams({page:String(page),q:query,status,system,kind,from,to,archived:archived?'1':'0',module:recordModule||'',focus:focusRef.current?.id||''});
-        const response=await api.current(`${API}?${params}`,{signal:AbortSignal.any([controller.signal,AbortSignal.timeout(20000)])});
+        const response=await api.current(`${API}?${params}`,{signal:AbortSignal.any([controller.signal,AbortSignal.timeout(45000)])});
         const data=await response.json();if(!response.ok)throw new Error(data.detail||'任务列表暂不可读');
         if(controller.signal.aborted)return;
         setRecords(previous=>selectedRef.current.length?previous.map(r=>data.records.find((next:Task)=>next.id===r.id)||r):data.records);setTotal(data.total);setPages(data.pages);setPage(data.page);setCounts(data.counts);setLoading(false);setPollError((data.warnings||[]).join('；'));
         setFocused(previous=>previous?(data.focused?.id===previous.id?data.focused:data.records.find((r:Task)=>r.id===previous.id)||previous):null);
-      }catch(e){if(!controller.signal.aborted){setPollError(downloadErrorMessage(e));setLoading(false);}}
+      }catch(e){if(!controller.signal.aborted){setPollError(pollErrorMessage(e));setLoading(false);}}
       if(!controller.signal.aborted)timer=setTimeout(poll,5000);
     };setLoading(true);void poll();return()=>{controller.abort();clearTimeout(timer);};
   },[page,query,status,system,kind,from,to,archived,recordModule,version,refreshVersion]);
@@ -116,10 +123,10 @@ export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttemp
       {!recordModule&&<><select className="wb-select" aria-label="筛选平台" value={system} onChange={e=>{setSystem(e.target.value);reset();}}><option value="">全部平台</option>{Object.entries(SYSTEMS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select><select className="wb-select" aria-label="筛选任务类型" value={kind} onChange={e=>{setKind(e.target.value);reset();}}><option value="">全部类型</option>{Object.entries(KINDS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></>}
       <details className="tc-filters"><summary className="wb-button">日期筛选{from||to?' · 已启用':''}</summary><div><div className="tc-filter-date-item"><span>创建日期从</span><WorkbenchDatePicker ariaLabel="创建日期从" value={from} rangeRole="start" rangeStart={from} rangeEnd={to} allowClear align="right" onChange={v=>{setFrom(v);reset();}}/></div><div className="tc-filter-date-item"><span>至</span><WorkbenchDatePicker ariaLabel="创建日期至" value={to} rangeRole="end" rangeStart={from} rangeEnd={to} allowClear align="right" onChange={v=>{setTo(v);reset();}}/></div><button className="wb-link" onClick={()=>{setFrom('');setTo('');reset();}}>清除日期</button></div></details><button className="wb-icon" aria-label="刷新任务列表" onClick={()=>setVersion(v=>v+1)}><RefreshCw size={17}/></button></div>
     {archived&&<p className="tc-info">已移出的任务仍保留文件和处理记录，恢复后所有同事同步可见。</p>}
-    {pollError&&<p role="status" className="wb-notice">{pollError}；正在自动重试，现有记录保留。</p>}{error&&<p role="alert" className="wb-error">{error}</p>}{notice&&<p role="status" className="tc-info">{notice}</p>}
+    {pollError&&<p role="status" className="wb-notice">{pollError}现有记录保留。</p>}{error&&<p role="alert" className="wb-error">{error}</p>}{notice&&<p role="status" className="tc-info">{notice}</p>}
     {!!selected.length&&<div className="tc-batchbar"><strong>已选 {selected.length} 项（当前页）</strong><button className="wb-button" disabled={busy||!canBatch} title="最多20个有文件的资料或报表任务" onClick={()=>void act(async()=>{const response=await request(`${API}/bundle`,{ids:selected});saveDownloadBlob(await readDownloadResponse(response,'批量任务结果.zip'),'批量任务结果.zip');setNotice('已发起批量文件保存。');})}><Download size={15}/>批量下载</button><button className="wb-button" disabled={busy||!chosen.length} onClick={()=>setConfirm(chosen)}>{archived?'恢复显示':'移出列表'}</button><button className="wb-link" onClick={()=>setSelected([])}>取消选择</button></div>}
     <div className="tc-table-scroll"><table className="tc-table"><thead><tr><th><input type="checkbox" aria-label="选择当前页任务" checked={records.length>0&&records.every(r=>selected.includes(r.id))} onChange={e=>setSelected(e.target.checked?records.map(r=>r.id):[])}/></th><th>任务内容</th><th>范围 / 账期</th><th>创建时间</th><th>状态</th><th>操作</th></tr></thead><tbody>{records.map(r=><React.Fragment key={r.id}><tr data-task-ids={r.member_ids.join(' ')}><td><input type="checkbox" aria-label={`选择${title(r)}`} checked={selected.includes(r.id)} onChange={e=>setSelected(v=>e.target.checked?[...v,r.id]:v.filter(id=>id!==r.id))}/></td><td className="tc-title"><button onClick={()=>open(r)} title={title(r)}>{title(r)}</button><small>{platform(r)} · {KINDS[r.kind]||'资料下载'} · {r.id.slice(-6).toUpperCase()}</small></td><td className="tc-scope"><span title={r.cities.join('、')}>{r.cities.length>2?`${r.cities.slice(0,2).join('、')}等${r.cities.length}城`:r.cities.join('、')}</span><small>{scope(r)}</small></td><td className="tc-time">{stamp(r.created_at)}</td><td><span className={`tc-status is-${r.status}`}>{taskGuidance(context(r)).label}</span><small>{r.files.length&&!r.available_files?'文件不可用':r.available_files?`${r.available_files} 个文件`:ACTIVE.has(r.status)?`${r.completed_items}/${r.total_items} 项`:''}</small></td><td><div className="tc-actions">{needsAction(r)?<button className="wb-primary" onClick={()=>mainAction(r)}>{actionLabel(r)}</button>:r.available_files>0?<button className="wb-primary" disabled={busy} onClick={()=>downloadResult(r)}>下载结果</button>:null}{r.files.length>1&&<button className="wb-link" aria-expanded={filesOpen===r.id} onClick={()=>setFilesOpen(filesOpen===r.id?'':r.id)}>文件<ChevronDown size={13}/></button>}<button className="wb-link" onClick={()=>open(r)}>详情</button>{!archived&&ACTIVE.has(r.status)&&<button className="wb-link" disabled={busy||['stopping','cancelling'].includes(r.status)} onClick={()=>void act(async()=>{await request(`${API}/stop`,{id:r.id});setVersion(v=>v+1);setNotice('已请求停止，确认停止前任务保留在列表。');})}>停止</button>}<button className="wb-link" disabled={busy} onClick={()=>setConfirm([r])}>{archived?'恢复':ACTIVE.has(r.status)?'停止并移出':'移出'}</button></div></td></tr>{filesOpen===r.id&&<tr className="tc-file-row"><td/><td colSpan={5}>{r.failed_items>0&&<p className="wb-notice">另有 {r.failed_items} 项未完成，已有文件可先领取。</p>}{files(r,r.files)}</td></tr>}</React.Fragment>)}</tbody></table></div>
-    {!records.length&&<div className="tc-empty">{loading?'正在读取任务…':pollError?'暂时无法读取，请刷新重试。':archived?'暂无已移出的任务。':'没有符合条件的任务。'}</div>}
+    {!records.length&&<div className="tc-empty">{loading?'正在读取任务…':pollError?'正在连接后台，稍后自动刷新。':archived?'暂无已移出的任务。':'没有符合条件的任务。'}</div>}
     <footer className="tc-pagination"><span>共 {total} 条 · 每页 20 条</span><div><button className="wb-button" disabled={page<=1||loading} onClick={()=>{setPage(p=>p-1);setSelected([]);}}>上一页</button><span>{page} / {pages}</span><button className="wb-button" disabled={page>=pages||loading} onClick={()=>{setPage(p=>p+1);setSelected([]);}}>下一页</button></div></footer>
     {focused&&<WorkbenchDrawer title="任务详情" wide onClose={()=>setFocused(null)} bodyClassName="tc-detail"><div className="tc-detail-title"><h3>{title(focused)}</h3><span className={`tc-status is-${focused.status}`}>{statusLabel(focused.status)}</span></div><p className="wb-muted">{platform(focused)} · {focused.cities.join('、')} · {scope(focused)}</p><p className="wb-muted">{stamp(focused.created_at)} · 编号 {focused.id.slice(-8).toUpperCase()}</p>
       <TaskOutcome task={context(focused)}/>

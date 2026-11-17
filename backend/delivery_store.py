@@ -136,6 +136,9 @@ class DeliveryStore:
                     raise ValueError('交付来源校验失败，原文件保留')
                 name = leaf(entry.get('name') or source.name)
                 city = entry.get('city','')
+                group = entry.get('delivery_group')
+                if group is not None:
+                    group = leaf(group)
                 if city == '多城市汇总':
                     name = name.replace('多城市汇总','汇总_',1)
                 elif city and city not in name and entry.get('dataset') not in ('rider_daily', 'rider_archive',
@@ -143,10 +146,11 @@ class DeliveryStore:
                                                                                  'xiaoxiang_attendance_detail'):
                     # 日维度骑手分析/灯塔骑手档案按「名称+日期」交付，不额外加城市前缀。
                     name = archive_component(city) + '_' + name
-                if name.casefold() in used:
+                used_key = ((group or ''), name.casefold())
+                if used_key in used:
                     name = f"{Path(name).stem}_{entry['run_id'][:6]}_{entry['id'][:6]}{Path(name).suffix}"
-                used.add(name.casefold())
-                target = folder / leaf(name)
+                used.add(((group or ''), name.casefold()))
+                target = folder / group / leaf(name) if group else folder / leaf(name)
                 prepared.append((entry,source,target,checksum,length))
             desired = {(e['run_id'],e['id']) for e,_,_,_,_ in prepared}
             with self.db() as db:
@@ -173,6 +177,7 @@ class DeliveryStore:
                     with self.db() as db:
                         db.execute('UPDATE artifacts SET path=? WHERE run_id=? AND file_id=?',(str(retired),entry['run_id'],entry['file_id']))
             for entry,source,target,checksum,length in prepared:
+                target.parent.mkdir(parents=True,exist_ok=True)
                 registered = self.location(entry['run_id'],entry['id'])
                 if target.exists() and target == registered and digest(target) != checksum:
                     with self.db() as db:

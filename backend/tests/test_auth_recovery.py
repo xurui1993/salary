@@ -1,4 +1,5 @@
 import contextlib
+import json
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
@@ -56,6 +57,83 @@ class RecoveryTests(unittest.TestCase):
         with self.assertRaises(source.SourceAuthenticationRequired):source.identity('baize',session)
         session.get.return_value=SimpleNamespace(status_code=302,headers={'Location':'https://untrusted.example/login'})
         with self.assertRaises(source.SourceProbeUnavailable):source.identity('baize',session)
+
+    def test_cookie_auth_identity_accepts_benlai_payload_and_maps_login_messages(self):
+        session=Mock()
+        session.get.return_value=SimpleNamespace(status_code=200,json=lambda:{'code':0,'data':{'user':{'userId':1}}})
+        self.assertEqual(source.identity('benlai',session)['user']['userId'],1)
+        session.get.return_value=SimpleNamespace(status_code=200,json=lambda:{'code':500,'msg':'用户未登录，请重新登录'})
+        with self.assertRaises(source.SourceAuthenticationRequired):source.identity('benlai',session)
+        session.get.return_value=SimpleNamespace(status_code=200,json=lambda:{'code':500,'msg':'服务异常'})
+        with self.assertRaises(source.SourceProbeUnavailable):source.identity('benlai',session)
+
+    def test_transient_probe_failure_is_retried_before_reporting_unknown(self):
+        calls = []
+        def flaky(*_, **__):
+            calls.append(1)
+            if len(calls) == 1: raise requests.ConnectionError('temporary')
+            return {'user': {'userName': 'x'}}
+        with patch.object(source, 'identity', side_effect=flaky), patch.object(source.time, 'sleep'):
+            self.assertIn('user', source._probe_identity('baize', Mock()))
+        self.assertEqual(len(calls), 2)
+
+    def test_unparseable_probe_response_logs_gateway_diagnostic(self):
+        response = SimpleNamespace(status_code=200, headers={'Content-Type': 'text/html; charset=utf-8'},
+                                   text='<html><body>Request blocked</body></html>',
+                                   json=Mock(side_effect=ValueError('not json')))
+        session = Mock(); session.get.return_value = response
+        with self.assertLogs('binding_source_auth', level='WARNING') as logs:
+            with self.assertRaises(source.SourceProbeUnavailable): source.identity('baize', session)
+        self.assertIn('text/html', logs.output[0])
+        self.assertIn('Request blocked', logs.output[0])
+
+    def test_probe_accepts_utf8_bom_and_literal_control_characters(self):
+        body = ('\ufeff{"code":"200","data":{"user":{"userName":"商翼\t测试"}}}').encode('utf-8')
+        response = SimpleNamespace(status_code=200, headers={'Content-Type': 'application/json;charset=UTF-8'},
+                                   content=body, encoding='utf-8', text=body.decode('utf-8'))
+        response.json = Mock(side_effect=ValueError('unexpected BOM'))
+        session = Mock(); session.get.return_value = response
+        self.assertEqual(source.identity('baize', session)['user']['userName'], '商翼\t测试')
+
+    def test_probe_accepts_payload_with_mismatched_charset_declaration(self):
+        raw = json.dumps({'code': '200', 'data': {'merchantName': '商翼测试'}}, ensure_ascii=False).encode('gb18030')
+        response = SimpleNamespace(status_code=200, headers={'Content-Type': 'application/json;charset=UTF-8'},
+                                   content=raw, encoding='utf-8', text=raw.decode('utf-8', errors='replace'))
+        response.json = Mock(side_effect=ValueError('not json'))
+        session = Mock(); session.get.return_value = response
+        self.assertEqual(source.identity('baize', session)['merchantName'], '商翼测试')
+
+    def test_encrypted_official_payload_is_decrypted_with_embedded_key(self):
+        import base64
+        from cryptography.hazmat.primitives import padding as sym_padding
+        from cryptography.hazmat.primitives.asymmetric import padding
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+        key = b'0123456789abcdef0123456789abcdef'
+        private = source._baize_response_private_key()
+        header = base64.b64encode(private.public_key().encrypt(
+            base64.b64encode(key), padding.PKCS1v15())).decode()
+        plain = json.dumps({'code': '200', 'data': {'user': {'userName': '加密用户'}}}).encode('utf-8')
+        padder = sym_padding.PKCS7(128).padder()
+        padded = padder.update(plain) + padder.finalize()
+        encryptor = Cipher(algorithms.AES(key), modes.ECB()).encryptor()
+        body = base64.b64encode(encryptor.update(padded) + encryptor.finalize())
+        response = SimpleNamespace(status_code=200, headers={'Content-Type': 'application/json', 'encrypt-key': header},
+                                   content=body, text=body.decode(), json=Mock(side_effect=ValueError('ciphertext')))
+        session = Mock(); session.get.return_value = response
+        self.assertEqual(source.identity('baize', session)['user']['userName'], '加密用户')
+        response.headers['encrypt-key'] = 'not-a-valid-key'
+        with self.assertRaises(source.SourceProbeUnavailable): source.identity('baize', session)
+
+    def test_recorded_live_encrypted_response_matches_official_wire_format(self):
+        # 录自官方公开接口（/prod-api/system/smsSwitch/config）的真实响应，确认服务端加密开关开启时
+        # 的线上报文格式可被现网密钥解开；该报文不含任何凭据。
+        header = ('jidBp62ab+mPFLHCdNtZyNyajhfQny3XQTbrNxmVJm0dUxu4bkD04TPcM0+byDqAOLwvRAsgobjXU1mXsXaS4w==')
+        body = ('qftA1T7n+qhJQyi/g1T326i+rwRnXtbFpMQw2f2mlDR0fohLVuLEmVhGHT8AVe6rIvQbaBIapjfDk1jvjACCe2H4JUkcqfBvQdiJKjr4Hh8VRF/d35Nuo7Fm4wvwHf30IRtDqQk+QAOVmkU94jBVF/CPKRRbxTgOIJFle4LZMDlOJGtEGjKf2ChDKzRgZRlj6DsW0qARLy1C5agqoCjuGz7CHkE+j8tZHXHVfhpjNWpDPVibt2AOn/li1ilR1L+mB3xotrD+1VDl3oSQmDCNPA==')
+        response = SimpleNamespace(status_code=200, headers={'Content-Type': 'application/json;charset=UTF-8', 'encrypt-key': header},
+                                   text=body, content=body.encode(), json=Mock(side_effect=ValueError('ciphertext')))
+        payload = source._response_json(response)
+        self.assertEqual(payload['code'], 200)
+        self.assertEqual(payload['data']['isEncrypt'], 1)
 
     def test_old_manual_probe_does_not_mask_new_keepalive_failure(self):
         self.auth.states['baize']={'state':'unknown','message':'latest failure','checked_at':'2026-10-27T02:00:00+00:00'}

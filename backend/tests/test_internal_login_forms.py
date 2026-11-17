@@ -12,6 +12,38 @@ from desktop_auth_page import field_role
 
 
 class MathTests(unittest.TestCase):
+    def setUp(self):
+        math._captcha_pngs.clear()
+
+    def test_captcha_identity_follows_source_not_animated_frames(self):
+        class Image:
+            src = 'data:image/gif;base64,synthetic'
+            calls = 0
+            def bounding_box(self, timeout=None):
+                return {'x': 0, 'y': 0, 'width': 108, 'height': 44}
+            def get_attribute(self, name, timeout=None):
+                return {'src': self.src, 'alt': '验证码', 'class': 'login-form-code'}.get(name, '')
+            def evaluate(self, script, timeout=None):
+                return True
+            def screenshot(self, type=None, timeout=None):
+                Image.calls += 1
+                return b'\x89PNGframe-' + str(Image.calls).encode()
+        image = Image()
+        frame = Mock()
+        frame.url = 'https://merchant.shangyiworker.com/login'
+        frame.locator.return_value = SimpleNamespace(all=lambda: [image])
+        page = Mock(frames=[frame])
+        fields = [{'id': 'math-field', 'role': 'math'}]
+        with patch.object(math, 'deferred_answer', return_value=('manual', None)):
+            first = math.inspect_captcha(page, fields, {}, deferred=True)
+            second = math.inspect_captcha(page, fields, {}, deferred=True)
+            image.src = 'data:image/gif;base64,refreshed'
+            third = math.inspect_captcha(page, fields, {}, deferred=True)
+        self.assertEqual(first['id'], second['id'])
+        self.assertNotEqual(first['id'], third['id'])
+        self.assertEqual(first['image'], second['image'])
+        self.assertEqual(Image.calls, 2)
+
     def test_arithmetic_uses_strict_small_expressions(self):
         for text,answer in [('8+7=?','15'),('2-9 = ?','-7'),('3×4','12'),('12÷3=?','4'),('３＋４＝？','7')]:
             with self.subTest(text=text):self.assertEqual(math.solve_expression(text)['answer'],answer)

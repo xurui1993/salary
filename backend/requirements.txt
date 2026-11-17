@@ -8,6 +8,7 @@ python-calamine
 lxml
 psutil
 xlsxwriter
+cryptography>=42
 requests
 tqdm
 python-multipart

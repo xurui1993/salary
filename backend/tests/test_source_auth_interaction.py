@@ -41,6 +41,20 @@ class SourceInteractionTests(TestCase):
                 self.auth.interact('baize', {'action': 'click', 'x': .1, 'y': .1, 'session_id': sid})
             self.assertEqual(error.exception.status_code, 409)
 
+    def test_stale_form_version_applies_when_inputs_belong_to_current_form(self):
+        self.auth.desktop['baize'] = {'form_id': 'current-form',
+                                      'fields': [{'id': 'user', 'type': 'text'}, {'id': 'math', 'type': 'text'}],
+                                      'controls': [{'id': 'submit', 'kind': 'submit'}]}
+        self.auth.form_bindings['baize'] = {'user': Mock(), 'math': Mock(), 'submit': Mock()}
+        command = {'session_id': 'current', 'action': 'fill_fields', 'form_id': 'previous-form',
+                   'values': [{'id': 'user', 'text': 'synthetic-account'}, {'id': 'math', 'text': '30'}],
+                   'submit_id': 'submit'}
+        self.assertTrue(self.auth.interact('baize', command)['accepted'])
+        command['values'] = [{'id': 'unknown-field', 'text': 'x'}]
+        with self.assertRaises(HTTPException) as error:
+            self.auth.interact('baize', command)
+        self.assertEqual(error.exception.status_code, 409)
+
     def test_rejects_arbitrary_actions_keys_and_invalid_coordinates(self):
         for command in [None, [], {'action': 'navigate', 'url': 'file:///secret'},
                         {'action': 'key', 'key': 'Control+L'}, {'action': 'fill', 'text': 'a' * 4097},

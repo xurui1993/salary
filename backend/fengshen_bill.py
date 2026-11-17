@@ -25,6 +25,8 @@ BILL_URL = "https://aeolus.ele.me/?targetId=58668#/bill/download"
 RIDER_BILL_URL = "https://aeolus.ele.me/?targetId=58484#/salary-bill-ub"
 WAYBILL_URL = "https://aeolus.ele.me/?targetId=55220#/delivery/data"
 INSPECTION_URLS = {"agency_daily": BILL_URL, "rider_monthly": RIDER_BILL_URL, "waybill_fraud": WAYBILL_URL}
+# 平台全量导出子表：各城市成品一致，汇总/合并只保留一份。
+PLATFORM_SHEET_NAMES = ('商翼绑定表', '本来人力绑定表')
 DAILY_CREATE_URL = "https://freyja.ele.me/api/freyja/hq/offline/bill/create"
 DAILY_QUERY_URL = "https://freyja.ele.me/api/freyja/offline/bill/query"
 DAILY_DOWNLOAD_URL = "https://freyja.ele.me/api/freyja/bill/export/download"

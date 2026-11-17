@@ -22,7 +22,8 @@ def city_output(root, item, cancelled=False):
     raw = root / '原始资料' / city / 'payment_binding' / month
     raw.mkdir(parents=True)
     counts = dict(total_riders=1, total_orders=3, fengshen_bind_count=1,
-                  shangyi_bind_count=1, fully_bound_count=1, black_count=0)
+                  shangyi_bind_count=1, fully_bound_count=1, black_count=0,
+                  bind_platform='本来人力' if city == '泉州' else '商翼')
     atomic_json(raw / 'binding_stats.json', {'cities': {city: counts},
                 'source_range': {'start': item['start'], 'end': item['end']}})
     book = Workbook(); book.remove(book.active)
@@ -36,6 +37,10 @@ def city_output(root, item, cancelled=False):
     fengshen.append(['团队ID', '团队名称', '骑手ID']); fengshen.append([9, city + '-站点', '001'])
     shangyi = book.create_sheet('商翼绑定表')
     shangyi.append(['骑手姓名', '身份证']); shangyi.append(['共享骑手', '110000000000000000'])
+    benlai = book.create_sheet('本来人力绑定表')
+    benlai.append(['骑手姓名', '身份证', '签约城市', '签约状态', '城市'])
+    benlai.append(['本来骑手', '110000000000000001', '泉州', '已签约', '泉州市'])
+    benlai.append(['外地骑手', '110000000000000002', '深圳', '已签约', '深圳市'])
     detail = book.create_sheet('骑手详情表')
     detail.append(['日期', '骑手ID', '有效完成单']); detail.append([item['start'], '001', 3])
     info = book.create_sheet('骑手信息表')
@@ -81,6 +86,10 @@ class BindingSummaryTests(unittest.TestCase):
                                                 (9, '泉州-站点', '001', '泉州'), (9, '上海-站点', '001', '上海')])
                     shangyi = list(book['商翼绑定表'].iter_rows(values_only=True))
                     self.assertEqual(shangyi, [('骑手姓名', '身份证'), ('共享骑手', '110000000000000000')])
+                    benlai = list(book['本来人力绑定表'].iter_rows(values_only=True))
+                    self.assertEqual(benlai, [('骑手姓名', '身份证', '签约城市', '签约状态', '城市'),
+                                              ('本来骑手', '110000000000000001', '泉州', '已签约', '泉州市'),
+                                              ('外地骑手', '110000000000000002', '深圳', '已签约', '深圳市')])
                     for label in ('骑手详情表', '骑手信息表'):
                         aggregated = list(book[label].iter_rows(values_only=True))
                         self.assertEqual(len(aggregated), 3)
@@ -93,7 +102,7 @@ class BindingSummaryTests(unittest.TestCase):
                     self.assertEqual(book['城市汇总'].freeze_panes, 'D2')
                     self.assertEqual(book['汇总说明'].freeze_panes, 'A2')
                     for label in (f'{month}月骑手绑定情况', f'{month}月未绑名单',
-                                  f'{month}月黑户代领明细', '风神绑定表', '商翼绑定表',
+                                  f'{month}月黑户代领明细', '风神绑定表', '商翼绑定表', '本来人力绑定表',
                                   '骑手详情表', '骑手信息表'):
                         self.assertEqual(book[label].freeze_panes, 'A2', label)
                 finally: book.close()
@@ -105,7 +114,7 @@ class BindingSummaryTests(unittest.TestCase):
             files = [city_output(root, item) for item in items]
             month = '2026-09'
             labels = [f'{int(month[5:])}月骑手绑定情况', f'{int(month[5:])}月未绑名单',
-                      f'{int(month[5:])}月黑户代领明细', '风神绑定表', '商翼绑定表', '骑手详情表', '骑手信息表']
+                      f'{int(month[5:])}月黑户代领明细', '风神绑定表', '商翼绑定表', '本来人力绑定表', '骑手详情表', '骑手信息表']
             for item, file in zip(items, files):
                 source = root / file['relative_path']
                 book = load_workbook(source, read_only=True, data_only=True)
@@ -128,6 +137,138 @@ class BindingSummaryTests(unittest.TestCase):
                 book.close()
             proof = json.loads((root / ('binding_summary_' + month + '.json')).read_text(encoding='utf-8'))
             self.assertEqual({value['layout'] for value in proof['sources']}, {'sidecar'})
+
+    def test_platform_split_city_workbooks_merge_single_shared_sheet_each(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory); config = self.config()
+            items = [{**item, 'status': 'success'} for item in _initial_items(config)]
+            files = [city_output(root, item) for item in items]
+            for item, info in zip(items, files):
+                source = root / info['relative_path']
+                book = load_workbook(source)
+                try:
+                    other = '商翼绑定表' if item['city'] == '泉州' else '本来人力绑定表'
+                    book.remove(book[other])
+                    book.save(source)
+                finally:
+                    book.close()
+                info.update(bytes=source.stat().st_size,
+                            sha256=hashlib.sha256(source.read_bytes()).hexdigest())
+                (root / '原始资料' / item['city'] / 'payment_binding' / item['start'][:7]
+                 / 'binding_layout.json').unlink(missing_ok=True)
+            summaries = build_binding_summaries(root, config, files, items, threading.Event())
+            book = load_workbook(root / summaries[0]['relative_path'], read_only=True)
+            try:
+                self.assertIn('商翼绑定表', book.sheetnames)
+                self.assertIn('本来人力绑定表', book.sheetnames)
+                main = list(book['9月骑手绑定情况'].values)
+                self.assertEqual(len(main), 3)
+                platform_header = list(book['9月骑手绑定情况'].values)[0]
+                self.assertNotIn('发薪绑定平台', platform_header)
+            finally:
+                book.close()
+
+    def test_platform_summary_contains_only_platform_cities_and_binding_sheet(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory); config = self.config()
+            items = [{**item, 'status': 'success'} for item in _initial_items(config)]
+            files = [city_output(root, item) for item in items]
+            shangyi = build_binding_summaries(root, config, files, items, threading.Event(),
+                                              platform='商翼', summary_city='天津商翼',
+                                              shared_sheets=('商翼绑定表',), proof_suffix='_天津商翼')
+            benlai = build_binding_summaries(root, config, files, items, threading.Event(),
+                                             platform='本来人力', summary_city='本来人力',
+                                             shared_sheets=('本来人力绑定表',), proof_suffix='_本来人力')
+            self.assertEqual(len(shangyi), 1)
+            self.assertEqual(len(benlai), 1)
+            self.assertTrue(shangyi[0]['name'].startswith('天津商翼_'))
+            self.assertTrue(benlai[0]['name'].startswith('本来人力_'))
+            self.assertEqual(shangyi[0]['delivery_group'], '天津商翼')
+            self.assertEqual(benlai[0]['delivery_group'], '本来人力')
+            book = load_workbook(root / shangyi[0]['relative_path'], read_only=True)
+            try:
+                self.assertIn('商翼绑定表', book.sheetnames)
+                self.assertNotIn('本来人力绑定表', book.sheetnames)
+                self.assertEqual([row[1] for row in list(book['城市汇总'].values)[1:]], ['上海', '合计'])
+            finally:
+                book.close()
+            book = load_workbook(root / benlai[0]['relative_path'], read_only=True)
+            try:
+                self.assertIn('本来人力绑定表', book.sheetnames)
+                self.assertNotIn('商翼绑定表', book.sheetnames)
+                self.assertEqual([row[1] for row in list(book['城市汇总'].values)[1:]], ['泉州', '合计'])
+            finally:
+                book.close()
+
+    def test_platform_summary_worker_runs_in_spawned_process(self):
+        import multiprocessing
+        from concurrent.futures import ProcessPoolExecutor
+        from binding_summary_worker import build_platform_summary
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            config = {**self.config(), 'archive_created_at': '2026-09-01T00:00:00+00:00'}
+            items = [{**item, 'status': 'success'} for item in _initial_items(config)]
+            files = [city_output(root, item) for item in items]
+            full = root / '商翼全量.xlsx'
+            book = Workbook(); sheet = book.active; sheet.title = '商翼绑定表'
+            sheet.append(['骑手姓名', '身份证'])
+            sheet.append(['全量甲', '110000000000000001'])
+            book.save(full); book.close()
+            spec = {'root': str(root), 'config': config, 'files': files, 'items': items,
+                    'platform': '商翼', 'summary_city': '天津商翼', 'shared_sheets': ('商翼绑定表',),
+                    'proof_suffix': '_天津商翼', 'shared_sources': {'商翼绑定表': str(full)},
+                    'cancel_file': str(root / 'cancel.flag')}
+            context = multiprocessing.get_context('spawn')
+            with ProcessPoolExecutor(max_workers=1, mp_context=context) as pool:
+                result = pool.submit(build_platform_summary, spec).result(timeout=120)
+            self.assertNotIn('error', result, result.get('error'))
+            self.assertEqual(len(result['files']), 1)
+            self.assertTrue((root / result['files'][0]['relative_path']).is_file())
+
+    def test_platform_summary_worker_honors_cancel_flag(self):
+        from binding_summary_worker import build_platform_summary
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            config = {**self.config(), 'archive_created_at': '2026-09-01T00:00:00+00:00'}
+            items = [{**item, 'status': 'success'} for item in _initial_items(config)]
+            files = [city_output(root, item) for item in items]
+            full = root / '商翼全量.xlsx'
+            book = Workbook(); sheet = book.active; sheet.title = '商翼绑定表'
+            sheet.append(['骑手姓名', '身份证'])
+            book.save(full); book.close()
+            flag = root / 'cancel.flag'; flag.write_text('1', encoding='utf-8')
+            result = build_platform_summary({
+                'root': str(root), 'config': config, 'files': files, 'items': items,
+                'platform': '商翼', 'summary_city': '天津商翼', 'shared_sheets': ('商翼绑定表',),
+                'proof_suffix': '_天津商翼', 'shared_sources': {'商翼绑定表': str(full)},
+                'cancel_file': str(flag)})
+            self.assertNotIn('error', result, result.get('error'))
+            self.assertEqual(result['files'], [])
+
+    def test_platform_summary_uses_unfiltered_shared_source(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory); config = self.config()
+            items = [{**item, 'status': 'success'} for item in _initial_items(config)]
+            files = [city_output(root, item) for item in items]
+            full = root / '原始资料' / '支付绑定平台表' / '商翼绑定表.xlsx'
+            full.parent.mkdir(parents=True)
+            book = Workbook(); sheet = book.active; sheet.title = '商翼绑定表'
+            sheet.append(['骑手姓名', '身份证'])
+            sheet.append(['全量甲', '110000000000000001'])
+            sheet.append(['全量乙', '110000000000000002'])
+            book.save(full); book.close()
+            summaries = build_binding_summaries(root, config, files, items, threading.Event(),
+                                                platform='商翼', summary_city='天津商翼',
+                                                shared_sheets=('商翼绑定表',), proof_suffix='_天津商翼',
+                                                shared_sources={'商翼绑定表': full})
+            self.assertEqual(len(summaries), 1)
+            book = load_workbook(root / summaries[0]['relative_path'], read_only=True)
+            try:
+                rows = list(book['商翼绑定表'].values)
+                self.assertEqual(rows[1:], [('全量甲', '110000000000000001'), ('全量乙', '110000000000000002')])
+                self.assertEqual([row[1] for row in list(book['城市汇总'].values)[1:]], ['上海', '合计'])
+            finally:
+                book.close()
 
     def test_failed_city_is_listed_but_excluded_and_changed_source_is_blocked(self):
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
@@ -173,7 +314,8 @@ class BindingSummaryTests(unittest.TestCase):
                 self.assertTrue(path.is_file())
                 # A city bundle contains only that city's file; all-city bundle includes the summary.
                 bundle = manager.get_bundle('test', run['id'])
-                with zipfile.ZipFile(bundle[0]) as archive: self.assertIn(summary['name'], archive.namelist())
+                delivered = summary['name'].replace('多城市汇总', '汇总_', 1)
+                with zipfile.ZipFile(bundle[0]) as archive: self.assertIn(delivered, archive.namelist())
                 with manager._connection() as connection:
                     _, state = manager._find(connection, 'test', run['id'])
                 state['files'] = []

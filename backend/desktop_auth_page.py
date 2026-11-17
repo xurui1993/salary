@@ -3,10 +3,13 @@ import hashlib
 import secrets
 import re
 import time
+import logging
 from urllib.parse import urlparse
 
+_log = logging.getLogger(__name__)
+
 ROOTS = {'lanorange': ('madouren.cdevelopment.cn', 'login.dingtalk.com'), 'baize': ('merchant.shangyiworker.com',),
-         'xiaoxiang': ('meituan.com', 'sankuai.com')}
+         'xiaoxiang': ('meituan.com', 'sankuai.com'), 'benlai': ('b.icp88.com',)}
 MODES = {'账号登录','扫码登录','短信登录','密码登录','二维码登录','验证码登录','手机验证码登录','手机号登录','短信验证码登录','手机动态码登录','动态码登录','账号密码登录','通过手机号登录','通过邮箱登录'}
 SUBMITS = {'登录', '登 录', '立即登录', '确认登录', '验证并登录','下一步','验证'}
 OTHER = {'获取验证码','发送验证码','获取短信验证码','发送短信验证码','获取动态码','发送动态码','获取手机动态码','发送手机动态码','刷新二维码','刷新','点击刷新'}
@@ -64,6 +67,8 @@ def field_role(source,kind,hint):
     if kind=='checkbox':return 'consent'
     if re.search(r'语音.{0,8}验证码|语音码|固定码',hint):return 'voice_code'
     if re.search(r'captcha|验证码|校验码|动态码|\bcode\b',hint,re.I):return 'math' if source=='baize' else 'sms_code'
+    # 本来人力的第一栏是商户号或手机号，可能同时带“手机”字样，不能按纯手机号处理。
+    if source=='benlai' and re.search(r'商户号|商户|账号|账户',hint):return 'username'
     if re.search(r'phone|mobile|tel|手机',hint,re.I):return 'phone'
     return 'username'
 
@@ -97,7 +102,7 @@ def inspect_login_page(source, page, previous=None):
         selector='button:visible, input[type=button]:visible, input[type=submit]:visible, [role=button]:visible, [role=tab]:visible, a:visible'
         # Do not walk unrelated decorative spans on each form poll; exact
         # named controls below still include span-based buttons and mode tabs.
-        candidates=frame.locator(selector+('' if source in ('baize','xiaoxiang') else ', span:visible')).all()[:160]
+        candidates=frame.locator(selector+('' if source in ('baize','xiaoxiang','benlai') else ', span:visible')).all()[:160]
         candidates+=frame.get_by_text(named).all()[:40]
         for index, element in enumerate(candidates):
             if time.perf_counter()>deadline:break
@@ -198,9 +203,16 @@ def inspect_login_page(source, page, previous=None):
         if refresh is not None:
             control_id=hashlib.sha256(('captcha:'+str((math_captcha or {}).get('id',''))).encode()).hexdigest()[:20]
             controls.append({'id':control_id,'label':'刷新算式','kind':'captcha_refresh','enabled':True,'retry_after':0});bindings[control_id]=refresh
-    signature = hashlib.sha256((page.url + repr([(f['id'], f['type']) for f in fields]) + repr([(c['id'],c['kind']) for c in controls])+str((math_captcha or {}).get('id',''))).encode()).hexdigest()
+    signature_parts = (page.url, repr([(f['id'], f['type']) for f in fields]),
+                       repr([(c['id'], c['kind']) for c in controls]), str((math_captcha or {}).get('id', '')))
+    signature = hashlib.sha256(''.join(signature_parts).encode()).hexdigest()
     version = previous['form_id'] if previous and previous.get('_signature') == signature else secrets.token_urlsafe(18)
+    if previous and previous.get('_signature') != signature and previous.get('_signature_parts'):
+        changed = [name for name, old, new in zip(('url', 'fields', 'controls', 'captcha'), previous['_signature_parts'], signature_parts) if old != new]
+        if changed:
+            _log.warning('登录表单结构变化 source=%s parts=%s url=%s', source, ','.join(changed), page.url)
     return {'fields': fields, 'controls': controls, 'math_captcha':math_captcha, 'regions': regions, 'form_id': version, '_signature': signature,
+            '_signature_parts': signature_parts,
             'qr_state': 'expired' if qr_expired else 'visible' if qr else 'not_detected', 'official_feedback': feedback, 'official_feedback_kind':feedback_kind, 'official_feedback_detail':detail,
             'challenge_id':challenge_id,'_challenge':challenge,'_qr_element':qr_element,
             'form_detection': 'fields_detected' if fields else 'qr_only' if qr else 'not_detected'}, bindings

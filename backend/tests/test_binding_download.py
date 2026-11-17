@@ -48,7 +48,7 @@ class BindingRuleTests(unittest.TestCase):
                                               'start': '2026-09-01', 'end': '2026-09-02'})
             config['resume_binding_materials'] = {'泉州|2026-09': materials}
             factory = Mock(side_effect=AssertionError('must not connect to platform'))
-            def generate(paths, employees, proxies, plan, raw, *args):
+            def generate(paths, employees, proxies, plan, raw, *args, benlai=None, **kwargs):
                 self.assertEqual(set(paths), {'rider_detail', 'receive_account', 'rider_info'})
                 file = Path(raw) / 'result.xlsx'; file.write_bytes(b'fixture'); return file, {}
             with patch('binding_sources_http.BindingSources') as sources, \
@@ -184,8 +184,11 @@ class BindingRuleTests(unittest.TestCase):
                 csv.DictWriter(stream, fieldnames=list(proxy())).writeheader()
             paths = {kind: results[0][0] / info['path'] for kind, info in results[0][1]['datasets'].items()}
             plan = SimpleNamespace(city='泉州', agency_id='31029436', **fixture.scope)
+            full = root / 'full'
             path, stats = generate_binding(paths, employees[0] / 'merchantFreelancer.xlsx', proxies,
-                                           plan, raw, lambda *_: None, threading.Event())
+                                           plan, raw, lambda *_: None, threading.Event(),
+                                           full_binding_dir=full, write_full_binding=True)
+            self.assertTrue((full / '商翼绑定表.xlsx').is_file())
             self.assertEqual(stats['overall']['total_riders'], 1)
             self.assertEqual(set(stats['cities']), {'泉州'})
             book = load_workbook(path)
@@ -214,12 +217,12 @@ class BindingRuleTests(unittest.TestCase):
         import download_service as service
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
             runner = download_fixtures.FakeRunner()
-            sources = Mock(); sources.employees.return_value = Path('employee.xlsx'); sources.proxies.return_value = Path('proxy.xlsx')
+            sources = Mock(); sources.benlai.return_value = None; sources.employees.return_value = Path('employee.xlsx'); sources.proxies.return_value = Path('proxy.xlsx')
             config = service.validate_request({'cities': ['泉州', '上海'], 'datasets': ['payment_binding'],
                 'start': '2026-09-20', 'end': '2026-10-10'})
             config['owner'] = 'test'
             updates = []
-            def generate(paths, employees, proxies, plan, raw, log, cancelled):
+            def generate(paths, employees, proxies, plan, raw, log, cancelled, benlai=None, **kwargs):
                 if plan.city == '泉州' and plan.month == '2026-09':
                     raise BillCollectionError('代领人冲突')
                 path = Path(raw) / 'generated.xlsx'; path.write_bytes(b'fixture')
@@ -241,7 +244,7 @@ class BindingRuleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
             root = Path(directory) / 'run'
             runner = download_fixtures.FakeRunner()
-            sources = Mock(); sources.employees.return_value = Path('employee.xlsx'); sources.proxies.return_value = Path('proxy.xlsx')
+            sources = Mock(); sources.benlai.return_value = None; sources.employees.return_value = Path('employee.xlsx'); sources.proxies.return_value = Path('proxy.xlsx')
             config = service.validate_request({'cities': ['泉州'], 'start': '2026-09-01', 'end': '2026-09-02',
                                                'datasets': ['payment_binding', 'rider_monthly', 'goods_rent',
                                                             'abnormal_followup', 'lanorange_part_price',
@@ -249,7 +252,7 @@ class BindingRuleTests(unittest.TestCase):
             config['owner'] = 'test'
             config['lanorange_full_delivery'] = False
             updates, seen = [], []
-            def generate(paths, employees, proxies, plan, raw, log, cancelled):
+            def generate(paths, employees, proxies, plan, raw, log, cancelled, benlai=None, **kwargs):
                 path = Path(raw) / 'generated.xlsx'; path.write_bytes(b'fixture')
                 return path, {}
             def blue_collect(kind, directory, log, cancelled, resume=None, **kwargs):

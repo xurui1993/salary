@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React, { useEffect, useRef, useState } from 'react';
-import { Compass, Layers, Radar, RefreshCw, UsersRound, X } from 'lucide-react';
+import { Building2, Compass, Layers, Radar, RefreshCw, UsersRound, X } from 'lucide-react';
 import {
   AUTH_PREFLIGHT_CANCEL_EVENT as PREFLIGHT_CANCELLED_EVENT,
   AUTH_PREFLIGHT_EVENT as PREFLIGHT_EVENT,
@@ -48,6 +48,7 @@ const PLATFORM_DEFS = [
   { key: 'lanorange', label: '蓝橙', icon: Layers },
   { key: 'baize', label: '商翼', icon: UsersRound },
   { key: 'xiaoxiang', label: '灯塔', icon: Radar },
+  { key: 'benlai', label: '本来人力', icon: Building2 },
 ] as const;
 
 export function SystemConnections({
@@ -223,7 +224,12 @@ export function SystemConnections({
   }, [statuses]);
 
   useEffect(() => {
-    if (activeSessionKey && statuses[activeSessionKey]?.state === 'ready' && !statuses[activeSessionKey]?.busy) {
+    if (
+      activeSessionKey &&
+      statuses[activeSessionKey]?.state === 'ready' &&
+      !statuses[activeSessionKey]?.busy &&
+      !statuses[activeSessionKey]?.credential_prompt
+    ) {
       setActiveSessionKey('');
     }
   }, [statuses, activeSessionKey]);
@@ -297,6 +303,24 @@ export function SystemConnections({
   const cluster = getPlatformStatusCluster(statuses, fengshenStatus);
   const activeDef = PLATFORM_DEFS.find(item => item.key === activeSessionKey);
   const activeStatus = statuses[activeSessionKey] || {};
+
+  async function handleCredential(action: 'save' | 'skip') {
+    const source = activeSessionKey;
+    if (!source || !acquireLock(source, 'credential')) return;
+    try {
+      const next = await fetchPlatformAuthJson(
+        apiFetch,
+        `/api/fengshen-downloads/source-auth/${source}/credentials`,
+        { action },
+        30000,
+      );
+      updateStatus(source, next);
+    } catch (err) {
+      recordError(source, err);
+    } finally {
+      releaseLock(source);
+    }
+  }
   const readyCount = PLATFORM_DEFS.filter(item => {
     const st = statuses[item.key] || (item.key === 'fengshen' && fengshenStatus) || {};
     return st.state === 'ready' && !st.offline;
@@ -509,6 +533,34 @@ export function SystemConnections({
             <p role="status" className="wb-muted">
               {activeStatus.message}
             </p>
+          )}
+          {activeStatus.credential_prompt && (
+            <section className="wb-auth-credential-prompt">
+              <p>
+                是否保存 {activeStatus.credential_account || '当前账号'} 的账号密码，以便下次自动登录？
+              </p>
+              <div className="wb-row">
+                <button
+                  type="button"
+                  className="wb-primary"
+                  disabled={!!pendingActions[activeDef.key]}
+                  onClick={() => void handleCredential('save')}
+                >
+                  保存
+                </button>
+                <button
+                  type="button"
+                  className="wb-button"
+                  disabled={!!pendingActions[activeDef.key]}
+                  onClick={() => void handleCredential('skip')}
+                >
+                  不保存
+                </button>
+              </div>
+              <p className="wb-muted">
+                密码仅使用 Windows DPAPI 加密保存在本机；退出登录或切换账号时会同步清除。
+              </p>
+            </section>
           )}
           {activeStatus.state === 'waiting_login' &&
             activeStatus.session_id &&

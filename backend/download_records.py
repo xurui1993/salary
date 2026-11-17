@@ -47,6 +47,8 @@ def group_records(runs):
                 effective[item_key(item)] = {**item, 'run_id': run['id']}
             scopes = {}
             for file in run.get('files', []):
+                if file.get('record_hidden'):
+                    continue
                 entry = {**file, 'run_id': run['id']}
                 if file.get('artifact_role') == 'summary':
                     summary_files.append((run, entry))

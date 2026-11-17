@@ -26,8 +26,9 @@ class PlatformMappingTests(unittest.TestCase):
             ('lanorange_part_price',): {'lanorange'},
             ('rider_daily',): {'xiaoxiang'},
             ('baize_employees',): {'baize'},
-            ('payment_binding',): {'fengshen', 'lanorange', 'baize'},
-            ('abnormal_followup',): {'fengshen', 'lanorange', 'baize'},
+            ('benlai_employees',): {'benlai'},
+            ('payment_binding',): {'fengshen', 'lanorange', 'baize', 'benlai'},
+            ('abnormal_followup',): {'fengshen', 'lanorange', 'baize', 'benlai'},
             ('abnormal_riders',): {'lanorange'},
             (): set(),
         }
@@ -48,9 +49,10 @@ class ProbeTests(unittest.TestCase):
             return {'fengshen': {'state': 'ready', 'message': 'ok'},
                     'lanorange': {'state': 'ready', 'message': 'ok'},
                     'baize': {'state': 'ready', 'message': 'ok'},
+                    'benlai': {'state': 'ready', 'message': 'ok'},
                     'xiaoxiang': {'state': 'partial', 'message': '看板未就绪'}}[source]
         with patch.object(platform_auth_control, 'check', side_effect=check):
-            entries = {entry['source']: entry for entry in probe({'fengshen', 'lanorange', 'baize', 'xiaoxiang'})}
+            entries = {entry['source']: entry for entry in probe({'fengshen', 'lanorange', 'baize', 'benlai', 'xiaoxiang'})}
         self.assertTrue(all(entry['ready'] for entry in entries.values()))
         self.assertEqual(entries['xiaoxiang']['state'], 'partial')
         self.assertEqual(set(entries), set(LABELS))

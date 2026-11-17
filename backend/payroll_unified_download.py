@@ -10,6 +10,7 @@ import time
 def merge_tables(paths, target):
     """Align source columns, without rejecting different schemas or deleting rows."""
     from deduction_confirmation import tables
+    from fengshen_bill import PLATFORM_SHEET_NAMES
     from openpyxl import Workbook, load_workbook
     paths=[Path(p) for p in paths];target=Path(target);target.parent.mkdir(parents=True,exist_ok=True)
     if target.suffix.lower()=='.csv':
@@ -48,7 +49,7 @@ def merge_tables(paths, target):
                         destination=sheets[sheet.title]
                         for row in iterator:
                             values=[row[i] if i is not None and i<len(row) else None for i in indices]
-                            if sheet.title=='商翼绑定表':
+                            if sheet.title in PLATFORM_SHEET_NAMES:
                                 identity=tuple(str(v) for v in values)
                                 if identity in shared:continue
                                 shared.add(identity)

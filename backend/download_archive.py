@@ -13,6 +13,7 @@ ARCHIVE_VERSION = 1
 LABELS = {
     'invitation_records':'邀请记录','invitation_summary':'邀请记录汇总','attendance_detail':'骑手出勤明细',
     'baize_employees': '白泽员工资料',
+    'benlai_employees': '本来人力灵工资料',
     'rider_daily': '日维度骑手分析',
     'detail_orders': '配送订单明细',
     'detail_kesu': '配送客诉明细',
@@ -35,7 +36,8 @@ WORKBOOK_TITLES = {"abnormal_followup": "异常骑手跟进明细表",
                    "abnormal_riders": "异常骑手整理明细表"}
 _MONTHLY_WORKBOOKS = MONTHLY | {"payment_binding"}
 _NO_PERIOD_WORKBOOKS = frozenset({"rider_info", "goods_rent", "invitation_records", "invitation_summary",
-                                   "lanorange_summary", "abnormal_riders", "baize_employees", "rider_archive"}) | frozenset(LANORANGE_DATASETS)
+                                   "lanorange_summary", "abnormal_riders", "baize_employees", "benlai_employees",
+                                   "rider_archive"}) | frozenset(LANORANGE_DATASETS)
 _DETAIL_WORKBOOKS = frozenset({"detail_orders", "detail_kesu", "detail_reviews"})
 _RANGE_WORKBOOKS = frozenset({"rider_order_detail", "xiaoxiang_attendance_detail"})
 _EXCEL_SUFFIXES = frozenset({".xlsx", ".xls"})
@@ -107,10 +109,11 @@ def delivery_folder_label(datasets, start, created_at):
 def task_archive_label(datasets):
     def dataset_group(key):
         if key == 'baize_employees': return 'baize'
+        if key == 'benlai_employees': return 'benlai'
         if key in ('rider_daily','detail_orders','detail_kesu','detail_reviews','rider_archive',
                    'rider_order_detail','xiaoxiang_attendance_detail'): return 'xiaoxiang'
         return 'lanorange' if key.startswith('lanorange_') or key == 'abnormal_riders' else 'fengshen'
-    platforms = {'fengshen':'风神', 'lanorange':'蓝橙', 'baize':'商翼', 'xiaoxiang':'灯塔'}
+    platforms = {'fengshen':'风神', 'lanorange':'蓝橙', 'baize':'商翼', 'benlai':'本来人力', 'xiaoxiang':'灯塔'}
     groups = list(dict.fromkeys(platforms[dataset_group(key)] for key in datasets))
     names = [LABELS.get(key, key).replace('蓝橙', '').replace('风神', '') for key in datasets[:2]]
     return archive_component(('_'.join(groups) + '_' + '、'.join(names) + ('等' if len(datasets)>2 else ''))[:65])
@@ -141,7 +144,8 @@ def write_task_checklist(directory, run):
 
 def artifact_scope(item):
     key = item.get('dataset', '')
-    if key in LANORANGE_DATASETS or key in ('lanorange_summary','abnormal_riders','baize_employees','invitation_records'):
+    if key in LANORANGE_DATASETS or key in ('lanorange_summary','abnormal_riders','baize_employees',
+                                            'benlai_employees','invitation_records'):
         return '全量', ''
     if key in ('rider_info','goods_rent','rider_archive'):
         return '当前快照', ''
@@ -336,7 +340,7 @@ def write_download_summary(run_dir, run):
         lines.append(line)
     if run.get("error"):
         lines.extend(["", "任务提示：" + _text(run["error"])])
-    files = run.get("files", [])
+    files = [entry for entry in run.get("files", []) if not entry.get("record_hidden")]
     lines.extend(["", f"已验证成品文件：{len(files)} 个"])
     for entry in files:
         lines.append(f"- {_text(entry.get('city'))} / {_text(entry.get('name'))}")

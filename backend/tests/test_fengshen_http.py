@@ -89,7 +89,8 @@ class HttpTests(unittest.TestCase):
 
     def test_city_switch_requires_authorization_and_readback(self):
         self.client.request_json = Mock(side_effect=[{"data": [{"agencyId": 2}]}, {"data": {"agencyId": 1}},
-                                                    {"code": 200}, {"data": {"agencyId": 2}}])
+                                                    {"code": 200}, {"data": {"agencyId": 2}},
+                                                    {"data": {"agencyId": 2}}])
         self.client.select_city("2")
         self.assertEqual(self.client.request_json.call_args_list[2].args, ("POST", SWITCH_URL))
         self.assertEqual(self.client.request_json.call_args_list[2].kwargs["body"], {"toAgencyId": 2})
@@ -101,8 +102,19 @@ class HttpTests(unittest.TestCase):
 
     def test_switch_response_alone_is_not_city_proof(self):
         self.client.request_json = Mock(side_effect=[{"data": [{"agencyId": 2}]}, {"data": {"agencyId": 1}},
-                                                    {"code": 200}, {"data": {"agencyId": 1}}])
+                                                    {"code": 200}] + [{"data": {"agencyId": 1}}] * 13)
+        self.client.cancelled.wait = Mock()
         with self.assertRaises(HttpTransportError): self.client.select_city("2")
+
+    def test_city_switch_settles_after_transient_readback(self):
+        self.client.request_json = Mock(side_effect=[{"data": [{"agencyId": 2}]}, {"data": {"agencyId": 1}},
+                                                    {"code": 200}, {"data": {"agencyId": 1}},
+                                                    {"data": {"agencyId": 2}}, {"data": {"agencyId": 2}}])
+        self.client.cancelled.wait = Mock()
+        self.client.select_city("2")
+        self.assertEqual(self.client.current_agency, "2")
+        posts = [call for call in self.client.request_json.call_args_list if call.args[0] == "POST"]
+        self.assertEqual(len(posts), 1)
 
     def test_unknown_submission_survives_timeout_and_blocks_retry(self):
         self.client.request_json = Mock(side_effect=requests.Timeout("secret"))
@@ -187,6 +199,22 @@ class HttpTests(unittest.TestCase):
         self.client.cancelled.wait.assert_any_call(2)
         self.client.cancelled.wait.assert_any_call(4)
         self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_download_retries_transient_http_status(self):
+        self.client.cancelled = Mock(is_set=Mock(return_value=False))
+        self.client.files_session.get.side_effect = [Response(status=503, body=b""), Response(body=b"file")]
+        target = self.root / "detail.csv"
+        self.assertEqual(self.client.download("https://file.ele.me/a", target), target)
+        self.assertEqual(target.read_bytes(), b"file")
+        self.assertEqual(self.client.files_session.get.call_count, 2)
+
+    def test_download_transient_status_reports_final_http_code(self):
+        self.client.cancelled = Mock(is_set=Mock(return_value=False))
+        self.client.files_session.get.return_value = Response(status=500, body=b"")
+        with self.assertRaises(HttpTransportError) as error:
+            self.client.download("https://file.ele.me/a", self.root / "detail.csv")
+        self.assertIn("HTTP 500", str(error.exception))
+        self.assertEqual(self.client.files_session.get.call_count, 3)
 
     def test_download_platform_rejection_is_never_retried(self):
         self.client.files_session.get.return_value = Response(status=404, body=b"")

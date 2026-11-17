@@ -6,21 +6,21 @@ the run directory for diagnostics. This service never invokes payroll code.
 from contextlib import contextmanager
 from functools import partial
 import datetime as dt
+import time
 import hashlib
 import hashlib_compat
 import json
 import os
 from pathlib import Path
 import re
-from generation_performance import profiled, transition, shared_cache, generation_context, TableExchange
+from generation_performance import profiled, transition, shared_cache, generation_context, TableExchange, stage
 import shutil
 from types import SimpleNamespace
 import uuid
 
 from collection_errors import CollectionFailure, collection_failure
 from download_archive import archive_component, archive_filename
-from download_rider_sources import (format_rider_detail_csv, merge_rider_detail_csv,
-                                    same_day_rider_info_snapshot)
+from download_rider_sources import format_rider_detail_csv, merge_rider_detail_csv
 import fengshen_city_catalog as city_catalog
 from fengshen_bill import (BILL_URL, RIDER_BILL_URL, WAYBILL_URL, BillCollectionError,
                            BillRequest, MonthlyBillRequest, BillPageCollector,
@@ -36,6 +36,7 @@ import rider_archive
 from fengshen_merchant_protocol import KINDS as MERCHANT_DATASETS,MERCHANT,INVITATIONS,ATTENDANCE,LABELS as MERCHANT_LABELS
 
 BAIZE_DATASET = "baize_employees"
+BENLAI_DATASET = "benlai_employees"
 RIDER_DAILY_DATASET = "rider_daily"
 DETAIL_ORDERS_DATASET = "detail_orders"
 DETAIL_KESU_DATASET = "detail_kesu"
@@ -50,6 +51,7 @@ XIAOXIANG_SELECTION = XIAOXIANG_DATASETS + (RIDER_ARCHIVE_DATASET,
 DATASETS = {
     **MERCHANT_LABELS,
     BAIZE_DATASET: "白泽员工资料（全量）",
+    BENLAI_DATASET: "本来人力灵工资料（全量）",
     RIDER_DAILY_DATASET: "日维度骑手分析（小象灯塔）",
     RIDER_ARCHIVE_DATASET: "骑手档案（小象灯塔）",
     RIDER_ORDER_DETAIL_DATASET: "骑手订单明细（小象灯塔）",
@@ -136,8 +138,8 @@ def get_options():
                        for name, code in snapshot["cities"].items()],
             "cities_source": snapshot["source"], "cities_updated_at": snapshot["updated_at"],
             "datasets": [{"id": key, "label": LANORANGE_DATASETS[key][0] if key in LANORANGE_DATASETS else label,
-                          "group": 'baize' if key == BAIZE_DATASET else 'xiaoxiang' if key in XIAOXIANG_SELECTION else 'lanorange' if key in LANORANGE_DATASETS or key == 'abnormal_riders' else 'fengshen',
-                          "scope": 'all' if key == BAIZE_DATASET or key in XIAOXIANG_SELECTION or key in LANORANGE_DATASETS or key == 'abnormal_riders' else 'city'}
+                          "group": 'baize' if key == BAIZE_DATASET else 'benlai' if key == BENLAI_DATASET else 'xiaoxiang' if key in XIAOXIANG_SELECTION else 'lanorange' if key in LANORANGE_DATASETS or key == 'abnormal_riders' else 'fengshen',
+                          "scope": 'all' if key in (BAIZE_DATASET, BENLAI_DATASET) or key in XIAOXIANG_SELECTION or key in LANORANGE_DATASETS or key == 'abnormal_riders' else 'city'}
                          for key, label in DATASETS.items()],
             "generators": generators(), "timezone": "Asia/Shanghai", "order_window_days": 60}
 
@@ -170,8 +172,6 @@ def validate_request(payload, today=None):
             payload = {**payload, "lanorange_months": clean_months(payload["lanorange_months"])}
         except ValueError as exc:
             raise ValidationError(str(exc)) from None
-    if "refresh_rider_info" in payload and type(payload["refresh_rider_info"]) is not bool:
-        raise ValidationError("骑手信息快照刷新选项必须为布尔值")
     selected_cities, selected = payload.get("cities"), payload.get("datasets")
     if payload.get("waybill_all_city_send") is True and not (
             isinstance(selected, list) and "delivery_waybill" in selected):
@@ -225,11 +225,11 @@ def validate_request(payload, today=None):
                 raise ValidationError('{}日期区间最长31天'.format(label))
         return {**task_intent, 'cities': [ALL_CITIES], 'datasets': keys,
                 'start': first.isoformat(), 'end': last.isoformat(), 'months': covered_months(first, last)}
-    if isinstance(selected, list) and BAIZE_DATASET in selected:
-        if selected != [BAIZE_DATASET] or task_intent.get('task_kind', 'download') != 'download':
-            raise ValidationError('白泽员工资料仅支持独立下载，请单独选择白泽资料')
+    if isinstance(selected, list) and (BAIZE_DATASET in selected or BENLAI_DATASET in selected):
+        if len(selected) != 1 or selected[0] not in (BAIZE_DATASET, BENLAI_DATASET) or task_intent.get('task_kind', 'download') != 'download':
+            raise ValidationError('全量员工资料仅支持独立下载，请单独选择白泽或本来人力资料')
         today = today or dt.datetime.now(SHANGHAI).date()
-        return {**task_intent, 'cities': [ALL_CITIES], 'datasets': [BAIZE_DATASET],
+        return {**task_intent, 'cities': [ALL_CITIES], 'datasets': [selected[0]],
                 'start': today.isoformat(), 'end': today.isoformat(), 'months': [today.strftime('%Y-%m')]}
     global_only = isinstance(selected, list) and bool(selected) and all(
         isinstance(key, str) and (key in LANORANGE_DATASETS or key == 'abnormal_riders') for key in selected)
@@ -305,8 +305,7 @@ def validate_request(payload, today=None):
             **({"exclude_separation": payload['exclude_separation']} if 'exclude_separation' in payload
                else {"include_separation": True} if payload.get("include_separation") else {}),
             **({"refresh_history": True} if payload.get("refresh_history") else {}),
-            **({"waybill_all_city_send": True} if payload.get("waybill_all_city_send") else {}),
-            **({"refresh_rider_info": True} if payload.get("refresh_rider_info") else {})}
+            **({"waybill_all_city_send": True} if payload.get("waybill_all_city_send") else {})}
 
 
 def _checkpoint(cancelled):
@@ -396,6 +395,7 @@ class BrowserRunner:
 
 @contextmanager
 def _open_runner(config, log, cancelled, notify):
+    import threading
     from fengshen_auth import BROKER
     from fengshen_http import FengshenHttpClient
     from fengshen_http_auth import HTTPAuth
@@ -420,62 +420,135 @@ def _open_runner(config, log, cancelled, notify):
                 waiting_logged = True
             cancelled.wait(0.25)
         with BROKER.operation(config["owner"], cancelled, notify, transport="http"):
-            client = None
+            clients = []
             try:
+                lane_local = threading.local()
+                def lane_log(message, *args, **kwargs):
+                    # 并行预取时按线程缓冲日志，主流程回放，避免并发改写任务状态。
+                    buffer = getattr(lane_local, "buffer", None)
+                    if buffer is None:
+                        log(message, *args, **kwargs)
+                    else:
+                        buffer.append((message, args, kwargs))
                 client = FengshenHttpClient(BROKER.vault.load(), cancelled=cancelled)
-                auth = HTTPAuth(client, BROKER, cancelled, log, wait_export_indefinitely=config.get('task_kind')=='payroll_source')
+                clients.append(client)
+                auth = HTTPAuth(client, BROKER, cancelled, lane_log,
+                                wait_export_indefinitely=config.get('task_kind') == 'payroll_source')
                 auth.ensure()
                 client.auth_handler = lambda: auth.ensure(force=True)
-                daily = DailyHttpCollector(client, log=log)
-                reports = ReportHttpCollector(client, log=log)
-                riders = RiderHttpCollector(client, log=log, cancelled=cancelled, auth=auth)
-                from fengshen_merchant_exports import MerchantCollector
-                merchant=MerchantCollector(client,log=log)
+                refresh_lock, export_lock = threading.Lock(), threading.Lock()
+                runners = []
+
+                def refresh_lane(target):
+                    # 多会话共享同一登录态；任一路刷新后同步 Cookie，避免重复登录。
+                    with refresh_lock:
+                        auth.ensure(force=True)
+                        state = client.storage_state()
+                        for item in clients:
+                            item.reload_state(state)
+                    if target.current_agency:
+                        target.select_city(target.current_agency)
+
+                class LockedAuth:
+                    def __init__(self, base):
+                        self.base = base
+
+                    def export_code(self, client=None):
+                        # 平台导出短信验证只有一条活动通道，多路导出必须串行确认。
+                        with export_lock:
+                            return self.base.export_code(client)
 
                 class HTTPRunner:
-                    def merchant_source(self,kind,raw,start,end,resume=None,**scope):return merchant.collect(kind,raw,start,end,resume,**scope)
+                    parallel_sources = True
+                    batch_sources = True
+                    generation_processes = True
+
+                    def __init__(self, client, auth):
+                        self.client = client
+                        self.log = lane_log
+                        self.auth = LockedAuth(auth)
+                        self._daily = DailyHttpCollector(client, log=lane_log)
+                        self._reports = ReportHttpCollector(client, log=lane_log)
+                        self._riders = RiderHttpCollector(client, log=lane_log, cancelled=cancelled, auth=self.auth)
+                        from fengshen_merchant_exports import MerchantCollector
+                        self._merchant = MerchantCollector(client, log=lane_log)
+
+                    def lanes(self, count):
+                        while len(runners) < count:
+                            extra = FengshenHttpClient(client.storage_state(), cancelled=cancelled)
+                            clients.append(extra)
+                            extra_auth = HTTPAuth(extra, BROKER, cancelled, lane_log,
+                                                  wait_export_indefinitely=config.get('task_kind') == 'payroll_source')
+                            extra.auth_handler = lambda extra=extra: refresh_lane(extra)
+                            runners.append(HTTPRunner(extra, extra_auth))
+                        return runners[:count]
+
+                    @contextmanager
+                    def capture(self):
+                        messages = []
+                        previous = getattr(lane_local, "buffer", None)
+                        lane_local.buffer = messages
+                        try:
+                            yield messages
+                        finally:
+                            lane_local.buffer = previous
+
+                    def batch_detail(self, plans, root, account_paths=None, rider_info_paths=None):
+                        from batch_detail import collect_batch_detail
+                        return collect_batch_detail(self.client, self._riders, plans, root, lane_log, cancelled,
+                                                    account_paths, rider_info_paths)
+
+                    def merchant_source(self,kind,raw,start,end,resume=None,**scope):return self._merchant.collect(kind,raw,start,end,resume,**scope)
                     def daily(self, plan, raw, selected):
-                        return daily.daily(plan, raw, selected)
+                        return self._daily.daily(plan, raw, selected)
 
                     def resume_daily(self, plan, raw, selected, source_dir):
-                        return daily.resume_daily(plan, raw, selected, source_dir)
+                        return self._daily.resume_daily(plan, raw, selected, source_dir)
 
                     def monthly(self, plan, raw):
-                        return reports.monthly(plan, raw)
+                        return self._reports.monthly(plan, raw)
 
                     def orders(self, plan, raw, selected):
-                        return reports.orders(plan, raw, selected)
+                        return self._reports.orders(plan, raw, selected)
 
                     def waybills_created(self, plan, raw, *, all_city_send=False):
-                        client.select_city(plan.agency_id)
-                        return reports.waybills_created(plan, raw, all_city_send=all_city_send)
+                        self.client.select_city(plan.agency_id)
+                        return self._reports.waybills_created(plan, raw, all_city_send=all_city_send)
 
                     def orders_batch(self, plan, raw, selected):
-                        return reports.orders(plan, raw, selected, allow_existing_batches=True)
+                        return self._reports.orders(plan, raw, selected, allow_existing_batches=True)
 
                     def resume_orders(self, plan, raw, selected, source_dir):
-                        return reports.resume_orders(plan, raw, selected, source_dir)
+                        return self._reports.resume_orders(plan, raw, selected, source_dir)
 
                     def rider_source(self, plan, raw, kind):
-                        client.select_city(plan.agency_id)
-                        return riders.rider_source(plan, raw, kind)
+                        self.client.select_city(plan.agency_id)
+                        return self._riders.rider_source(plan, raw, kind)
 
                     def goods_rent(self, plan, raw):
-                        client.select_city(plan.agency_id)
-                        return riders.goods_rent(plan, raw)
+                        self.client.select_city(plan.agency_id)
+                        return self._riders.goods_rent(plan, raw)
 
                     def resume_detail(self, plan, raw, source_dir):
-                        client.select_city(plan.agency_id)
-                        return riders.resume_detail(plan, raw, source_dir)
+                        self.client.select_city(plan.agency_id)
+                        return self._riders.resume_detail(plan, raw, source_dir)
 
-                yield HTTPRunner()
+                runner = HTTPRunner(client, auth)
+                runners.append(runner)
+                yield runner
             except Exception as exc:
                 failure = _failure(exc, "collect")
-                BROKER.update("signed_out" if cancelled.is_set() else "error", str(failure))
+                if cancelled.is_set():
+                    # 取消任务（含导出短信验证取消）不应把已保存的登录态标记为退出。
+                    saved = BROKER.vault.path.exists()
+                    BROKER.update("saved" if saved else "signed_out",
+                                  "下载任务已取消，已保存会话仍有效" if saved else str(failure))
+                else:
+                    BROKER.update("error", str(failure))
                 raise failure from None
             finally:
-                if client is not None:
-                    client.close()
+                for item in clients:
+                    item.close()
     finally:
         COLLECTION_LOCK.release()
 
@@ -583,11 +656,10 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
         return execute(config,run_dir,log,cancelled,update_item,runner_factory)
     root = Path(run_dir).resolve()
     root.mkdir(parents=True, exist_ok=True)
-    snapshot_roots = [path for path in dict.fromkeys((root.parent, root.parent.parent)) if path.is_dir()]
     config = dict(config)
     config['datasets'] = expand_followup_datasets(config.get('datasets', ()))
     selected = set(config['datasets'])
-    mapping = cities() if config.get('merchant_by_city') or any(kind not in LANORANGE_DATASETS and kind not in MERCHANT_DATASETS and kind not in ('abnormal_riders', BAIZE_DATASET, RIDER_DAILY_DATASET, RIDER_ARCHIVE_DATASET, RIDER_ORDER_DETAIL_DATASET, XIAOXIANG_ATTENDANCE_DATASET)
+    mapping = cities() if config.get('merchant_by_city') or any(kind not in LANORANGE_DATASETS and kind not in MERCHANT_DATASETS and kind not in ('abnormal_riders', BAIZE_DATASET, BENLAI_DATASET, RIDER_DAILY_DATASET, RIDER_ARCHIVE_DATASET, RIDER_ORDER_DETAIL_DATASET, XIAOXIANG_ATTENDANCE_DATASET)
                               for kind in selected) else {}
     requested = _requested_items(config)
     if config.get('payroll_agencies'):
@@ -605,6 +677,7 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                 raise ValidationError('取分离合作商不属于当前账号及本次城市')
             mapping[city] = str(agency)
     baize_only = selected == {BAIZE_DATASET}
+    benlai_only = selected == {BENLAI_DATASET}
     blue_only = all(value['dataset'] in LANORANGE_DATASETS or value['dataset'] == 'abnormal_riders'
                     for value in requested)
     requested_keys = {_item_key(value) for value in requested}
@@ -736,7 +809,7 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
             if isinstance(value, str) and value in allowed:
                 detail[field] = value
         raw = context.get("raw")
-        if isinstance(raw, Path) and context.get('kind') == BAIZE_DATASET:
+        if isinstance(raw, Path) and context.get('kind') in (BAIZE_DATASET, BENLAI_DATASET):
             receipt = raw / 'http_submission.json'
             if receipt.exists():
                 try:
@@ -968,7 +1041,7 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
 
     @contextmanager
     def managed_runner():
-        if baize_only:
+        if baize_only or benlai_only:
             yield None
             return
         if all(value['dataset'] in LANORANGE_DATASETS or value['dataset'] == 'abnormal_riders'
@@ -1007,6 +1080,23 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                     source = BindingSources(raw, progress_log, cancelled).employees()
                     return [publish(source, root, description)]
                 run_step([description], baize_download)
+        finally:
+            COLLECTION_LOCK.release()
+        return files
+
+    if benlai_only:
+        from benlai_sources import BenlaiSources
+        while not COLLECTION_LOCK.acquire(timeout=0.25):
+            _checkpoint(cancelled)
+            set_phase('waiting_collection')
+        try:
+            for description in requested:
+                def benlai_download(description=description):
+                    raw = root / 'benlai_source'
+                    context.update(raw=raw, kind=BENLAI_DATASET)
+                    source = BenlaiSources(raw, progress_log, cancelled).employees()
+                    return [publish(source, root, description)]
+                run_step([description], benlai_download)
         finally:
             COLLECTION_LOCK.release()
         return files
@@ -1180,32 +1270,128 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
         binding_jobs = []
         binding_tables = {}
         binding_pool = None
+        materials_pool = None
+        materials_future = None
         binding_count = sum(1 for value in requested if value['dataset'] == 'payment_binding')
-        if binding_count > 1:
+        if binding_count > 1 and getattr(runner, 'generation_processes', False) is True:
+            import multiprocessing
+            from concurrent.futures import ProcessPoolExecutor
+            # 生成是 CPU 密集且 GIL 限制线程扩展；每城独立进程并行，
+            # 采集仍串行共用风神会话。
+            try:
+                workers = max(1, int(config.get('binding_workers',
+                                                os.environ.get('PAYROLL_BINDING_WORKERS', '6'))))
+            except (TypeError, ValueError):
+                workers = 6
+            binding_pool = ProcessPoolExecutor(
+                max_workers=min(workers, binding_count),
+                mp_context=multiprocessing.get_context('spawn'))
+            binding_workers = min(workers, binding_count)
+        else:
+            binding_workers = 0
+        materials = config.get('resume_binding_materials', {})
+        fresh_binding = any(value['dataset'] == 'payment_binding'
+                            and not materials.get(value['city'] + '|' + value['start'][:7])
+                            for value in requested)
+        if fresh_binding and config.get('task_kind') != 'payroll_source':
             from concurrent.futures import ThreadPoolExecutor
-            # 生成阶段 CPU 密集且各城市互不依赖；采集仍串行共用风神会话。
-            binding_pool = ThreadPoolExecutor(max_workers=min(2, binding_count),
-                                              thread_name_prefix='binding-gen')
+            from binding_sources_http import BindingSources
+            def material_log(message, *args, **kwargs):
+                # 后台资料日志不得改变当前城市/子项的采集阶段。
+                progress_log('[资料] ' + str(message), *args, **kwargs)
+            binding_sources = BindingSources(root / '原始资料' / '支付绑定公共来源', material_log, cancelled)
+            months = sorted({value['start'][:7] for value in requested if value['dataset'] == 'payment_binding'})
+            materials_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='binding-materials')
+            def prefetch_materials():
+                # 三个独立系统互不依赖，并行拉取；统一缓存一次供所有城市复用。
+                with ThreadPoolExecutor(max_workers=3, thread_name_prefix='binding-source-prefetch') as pool:
+                    employees = pool.submit(binding_sources.employees)
+                    proxies = pool.submit(lambda: {month: binding_sources.proxies(month) for month in months})
+                    benlai = pool.submit(binding_sources.benlai)
+                    return employees.result(), proxies.result(), benlai.result()
+            materials_future = materials_pool.submit(prefetch_materials)
+        source_pool = None
+        source_lanes = []
+        if (fresh_binding and binding_count > 1
+                and config.get('source_lanes') == 2
+                and getattr(runner, 'parallel_sources', False) is True):
+            # 风神“切换城市”是账号级共享状态，跨城市并行会让另一路身份漂移；
+            # 因此只并行同城的不同资料，城市之间保持串行。
+            source_lanes = runner.lanes(3)[1:]
+            if len(source_lanes) > 1:
+                from concurrent.futures import ThreadPoolExecutor
+                from queue import Queue
+                source_pool = ThreadPoolExecutor(max_workers=len(source_lanes),
+                                                 thread_name_prefix='binding-source')
+                source_slots = Queue()
+                for index in range(len(source_lanes)):
+                    source_slots.put(index)
+                progress_log(f"[调度] 支付绑定源资料：同一城市内 {len(source_lanes)} 路并行导出，"
+                             "城市之间仍按顺序采集")
         try:
-            def local_binding(source_paths, employees, proxies, plan, directory, logger, event, cache, exchange):
+            batch_details = {}
+            batch_accounts = {}
+            batch_infos = {}
+            if (config.get('batch_detail', True) and fresh_binding and binding_count > 1
+                    and set(config['datasets']) == {'payment_binding'}
+                    and getattr(runner, 'batch_sources', False) is True):
+                fresh = [value for value in requested if value['dataset'] == 'payment_binding'
+                         and not materials.get(value['city'] + '|' + value['start'][:7])]
+                if fresh:
+                    groups = {}
+                    for value in fresh:
+                        groups.setdefault(value['start'][:7], []).append(value)
+                    try:
+                        for month, values in sorted(groups.items()):
+                            plans = [SimpleNamespace(city=value['city'], agency_id=mapping[value['city']],
+                                                     start=value['start'], end=value['end'],
+                                                     month=month) for value in values]
+                            batch_details.update(runner.batch_detail(plans, root, batch_accounts, batch_infos))
+                    except Exception as exc:
+                        message = str(_failure(exc, 'collect', 'rider_detail'))
+                        log(message)
+                        update(fresh, 'error', message, phase='failed', **failure_context(exc))
+                        checkpoint_manifest()
+                        return files
+            def local_binding(source_paths, employees, proxies, plan, directory, logger, event, cache, exchange, benlai=None,
+                              full_binding_dir=None, write_full_binding=False):
                 from binding_download import generate_binding
                 with generation_context(cache, exchange):
-                    return generate_binding(source_paths, employees, proxies, plan, directory, logger, event)
+                    return generate_binding(source_paths, employees, proxies, plan, directory, logger, event,
+                                            benlai=benlai, full_binding_dir=full_binding_dir,
+                                            write_full_binding=write_full_binding)
 
-            def finalize_binding_jobs(city=None, month=None):
+            def finalize_binding_jobs(city=None, month=None, ready_only=False):
                 jobs = [job for job in binding_jobs if city is None or (job['description']['city'] == city and job['description']['start'][:7] == month)]
+                if ready_only:
+                    jobs = [job for job in jobs if job.get('future') is None or job['future'].done()]
                 binding_jobs[:] = [job for job in binding_jobs if job not in jobs]
                 for job in jobs:
                     def finalize(job=job):
                         context.update(raw=job['directory'], kind='payment_binding')
                         # 先等待后台生成结束（此后日志不再追加），再按序回放缓冲日志。
                         set_phase('generating')
-                        file, _ = job['generate']()
-                        if job['logs'] is not None:
-                            for message, args, kwargs in job['logs']:
+                        result = job['generate']()
+                        if job.get('process'):
+                            file, stats, generated_logs, filter_seconds = result
+                            for message, args, kwargs in generated_logs:
                                 progress_log(message, *args, **kwargs)
-                            job['logs'].clear()
-                        return [publish(file, job['output'], job['description'])]
+                            if filter_seconds:
+                                from generation_performance import record
+                                record('source_row_filter', filter_seconds)
+                        else:
+                            file, stats = result
+                            if job['logs'] is not None:
+                                for message, args, kwargs in job['logs']:
+                                    progress_log(message, *args, **kwargs)
+                                job['logs'].clear()
+                        info = publish(file, job['output'], job['description'])
+                        city_stats = (stats or {}).get('cities', {}).get(job['description']['city'], {})
+                        platform = city_stats.get('bind_platform')
+                        if platform not in ('商翼', '本来人力'):
+                            platform = '商翼'
+                        info['delivery_group'] = '天津商翼' if platform == '商翼' else '本来人力'
+                        return [info]
                     run_step([job['description']], finalize)
             for city in config["cities"]:
                 _checkpoint(cancelled)
@@ -1216,7 +1402,7 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                 plan = SimpleNamespace(city=city, agency_id=mapping[city], start=config["start"], end=config["end"])
                 city_name = archive_component(city)
                 raw, output = root / "原始资料" / city_name, root
-                raw.mkdir(parents=True)
+                raw.mkdir(parents=True, exist_ok=True)
                 output.mkdir(exist_ok=True)
                 for kind in sorted(city_selected & MERCHANT_DATASETS):
                     description = item(city, kind)
@@ -1240,12 +1426,13 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                             continue
                         def prepare():
                             directory = raw / 'payment_binding' / month
-                            directory.mkdir(parents=True)
+                            directory.mkdir(parents=True, exist_ok=True)
                             context.update(raw=directory, kind='payment_binding')
                             binding_plan = SimpleNamespace(city=city, agency_id=plan.agency_id,
                                                            start=first, end=last, month=month)
                             # Authenticate external dependencies before submitting Fengshen exports.
                             materials = config.get('resume_binding_materials', {}).get(city + '|' + month)
+                            benlai = None
                             if materials:
                                 from binding_recovery import copy_materials
                                 source_paths = copy_materials(materials, directory / 'recovered')
@@ -1253,58 +1440,153 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                                 atomic_json(directory / 'recovery_proof.json', {'original_run': config.get('retry_of'),
                                             'materials': materials, 'exports_submitted': False})
                                 progress_log('[恢复] 五类原始资料完整性校验通过，仅恢复生成，不重新导出')
+                                progress_log('[提示] 恢复资料不含本来人力签约城市清单，本轮发薪平台绑定按商翼判定')
                             else:
                                 source_paths = {}
-                                if config.get('task_kind') != 'payroll_source':
+                                employees = proxies = benlai = None
+                            kinds = ('rider_info', 'rider_detail', 'receive_account') if config.get('task_kind') == 'payroll_source' else ('rider_detail', 'receive_account', 'rider_info')
+                            if not materials:
+                                plans = {}
+                                for kind in kinds:
+                                    if kind == 'receive_account':
+                                        calendar = MonthlyBillRequest(month)
+                                        plans[kind] = SimpleNamespace(city=city, agency_id=plan.agency_id, month=month,
+                                                                      start=calendar.start, end=calendar.end)
+                                    else:
+                                        plans[kind] = binding_plan
+                                if source_pool is not None and len(kinds) > 1:
+                                    def fetch(kind):
+                                        index = source_slots.get()
+                                        lane = source_lanes[index]
+                                        try:
+                                            with lane.capture() as messages:
+                                                try:
+                                                    source_raw = directory / kind
+                                                    if kind == 'receive_account' and (city, month) in batch_accounts:
+                                                        return {'path': batch_accounts[(city, month)],
+                                                                'logs': list(messages)}
+                                                    if kind == 'rider_info' and (city, month) in batch_infos:
+                                                        return {'path': batch_infos[(city, month)],
+                                                                'logs': list(messages)}
+                                                    info = lane.rider_source(plans[kind], source_raw, kind)
+                                                    path = _rider_source_file(info, source_raw, kind, plans[kind])
+                                                    return {'path': path, 'logs': list(messages)}
+                                                except Exception as exc:
+                                                    return {'error': exc, 'logs': list(messages)}
+                                        finally:
+                                            source_slots.put(index)
+                                    futures = {}
+                                    for kind in kinds:
+                                        _checkpoint(cancelled)
+                                        futures[kind] = source_pool.submit(fetch, kind)
+                                    results = {kind: futures[kind].result() for kind in kinds}
+                                    errors = []
+                                    for kind in kinds:
+                                        result = results[kind]
+                                        for message, args, kwargs in result.get('logs', ()):
+                                            progress_log(message, *args, **kwargs)
+                                        if 'error' in result:
+                                            errors.append(result['error'])
+                                        else:
+                                            source_paths[kind] = result['path']
+                                    if errors:
+                                        raise errors[0]
+                                else:
+                                    for kind in kinds:
+                                        _checkpoint(cancelled)
+                                        if kind == 'rider_detail' and (city, month) in batch_details:
+                                            source_paths[kind] = batch_details[(city, month)]
+                                            progress_log(f"[批量] {city} · {month} 骑手数据明细：使用全城市批量拆分结果")
+                                            continue
+                                        if kind == 'receive_account' and (city, month) in batch_accounts:
+                                            source_paths[kind] = batch_accounts[(city, month)]
+                                            progress_log(f"[批量] {city} · {month} 收薪账户：使用全城市分页查询结果")
+                                            continue
+                                        if kind == 'rider_info' and (city, month) in batch_infos:
+                                            source_paths[kind] = batch_infos[(city, month)]
+                                            progress_log(f"[批量] {city} · {month} 骑手信息：使用全城市批量拆分结果")
+                                            continue
+                                        source_raw = directory / kind
+                                        if kind == 'receive_account':
+                                            started = time.perf_counter()
+                                            with stage('receive_account_export'):
+                                                info = runner.rider_source(plans[kind], source_raw, kind)
+                                            elapsed = time.perf_counter() - started
+                                            if elapsed >= 8:
+                                                progress_log(f"[慢] {city} · {month} 收薪账户导出 {elapsed:.1f} 秒（平台响应）")
+                                        else:
+                                            info = runner.rider_source(plans[kind], source_raw, kind)
+                                        source_paths[kind] = _rider_source_file(info, source_raw, kind, plans[kind])
+                            _checkpoint(cancelled)
+                            if not materials and config.get('task_kind') != 'payroll_source':
+                                if materials_future is not None:
+                                    employees, proxies_by_month, benlai = materials_future.result()
+                                    proxies = proxies_by_month[month]
+                                else:
                                     employees = binding_sources.employees()
                                     proxies = binding_sources.proxies(month)
-                            kinds = ('rider_info', 'rider_detail', 'receive_account') if config.get('task_kind') == 'payroll_source' else ('rider_detail', 'receive_account', 'rider_info')
-                            for kind in (() if materials else kinds):
-                                _checkpoint(cancelled)
-                                if kind == 'receive_account':
-                                    calendar = MonthlyBillRequest(month)
-                                    source_plan = SimpleNamespace(city=city, agency_id=plan.agency_id, month=month,
-                                                                  start=calendar.start, end=calendar.end)
-                                else:
-                                    source_plan = binding_plan
-                                source_raw = directory / kind
-                                info = None
-                                if kind == 'rider_info' and not config.get('refresh_rider_info'):
-                                    info = same_day_rider_info_snapshot(
-                                        snapshot_roots, source_plan, source_raw, progress_log, exclude_dir=root)
-                                if info is None:
-                                    info = runner.rider_source(source_plan, source_raw, kind)
-                                source_paths[kind] = _rider_source_file(info, source_raw, kind, source_plan)
+                                    benlai = binding_sources.benlai()
                             if not materials and config.get('task_kind') == 'payroll_source':
                                 employees = binding_sources.employees()
                                 proxies = binding_sources.proxies(month)
+                                benlai = binding_sources.benlai()
+                            full_binding_dir = root / '原始资料' / '支付绑定平台表'
+                            benlai_keys = {re.sub(r'\s+', '', str(value)).removesuffix('市')
+                                           for value in ((benlai or (None, []))[1] or [])}
+                            city_key = re.sub(r'\s+', '', str(city)).removesuffix('市')
+                            city_platform = '本来人力' if city_key in benlai_keys else '商翼'
+                            first_city = next((value for value in config['cities']
+                                               if ('本来人力' if re.sub(r'\s+', '', str(value)).removesuffix('市') in benlai_keys
+                                                   else '商翼') == city_platform), city)
+                            first_month = min((value['start'][:7] for value in requested
+                                               if value['dataset'] == 'payment_binding'), default=month)
+                            write_full_binding = city == first_city and month == first_month
                             set_phase('validating')
                             # 与账单使用同一范围；全量模式不预先丢弃取分离骑手。
                             include = separation_filter.filter_direction(config)
-                            for kind in source_paths:
-                                if kind in separation_filter.COLUMNS and include is not None:
-                                    filtered, proof = separation_filter.filter_table(
-                                        source_paths[kind], kind, include, directory)
-                                    source_paths[kind] = filtered
-                                    progress_log(f"[过滤] {DATASETS.get(kind, kind)} 取分离站点过滤"
-                                                 f"（{'仅保留' if include else '排除'}）："
-                                                 f"{proof['rows_before']} → {proof['rows_after']} 行")
                             exchange = TableExchange(shared_cache()) if 'abnormal_followup' in city_selected else None
                             binding_tables[(city, month)] = exchange
-                            if binding_pool is None:
+                            if binding_pool is None or exchange is not None:
+                                for kind in source_paths:
+                                    if kind in separation_filter.COLUMNS and include is not None:
+                                        filtered, proof = separation_filter.filter_table(
+                                            source_paths[kind], kind, include, directory, skip_unchanged=True)
+                                        source_paths[kind] = filtered
+                                        progress_log(f"{city} · {month} {DATASETS.get(kind, kind)}：取分离过滤"
+                                                     f"（{'仅保留' if include else '排除'}）"
+                                                     f"{proof['rows_before']} → {proof['rows_after']} 行")
                                 generate = partial(local_binding, source_paths, employees, proxies, binding_plan,
-                                                   directory, progress_log, cancelled, shared_cache(), exchange)
-                                logs = None
+                                                   directory, progress_log, cancelled, shared_cache(), exchange, benlai,
+                                                   full_binding_dir, write_full_binding)
+                                logs, future, process_job = None, None, False
                             else:
-                                logs = []
-                                def buffered(message, *args, **kwargs):
-                                    logs.append((message, args, kwargs))
-                                future = binding_pool.submit(local_binding, source_paths, employees, proxies,
-                                                             binding_plan, directory, buffered, cancelled, shared_cache(), exchange)
-                                generate = future.result
+                                from binding_generation_worker import generate_binding_process
+                                spec = {
+                                    'paths': {kind: str(value) for kind, value in source_paths.items()},
+                                    'labels': {kind: DATASETS.get(kind, kind) for kind in source_paths},
+                                    'separation_include': include,
+                                    'employees': str(employees), 'proxies': str(proxies),
+                                    'plan': {'city': binding_plan.city, 'agency_id': binding_plan.agency_id,
+                                             'start': binding_plan.start, 'end': binding_plan.end,
+                                             'month': binding_plan.month},
+                                    'directory': str(directory),
+                                    'benlai': [str(benlai[0]), list(benlai[1])] if benlai else None,
+                                    'full_binding_dir': str(full_binding_dir),
+                                    'write_full_binding': write_full_binding,
+                                }
+                                future = binding_pool.submit(generate_binding_process, spec)
+                                def generate(future=future):
+                                    result = future.result()
+                                    if result.get('error'):
+                                        raise BillCollectionError(result['error'])
+                                    return (Path(result['file']), result['stats'], result['logs'],
+                                            result.get('filter_seconds', 0.0))
+                                logs, process_job = None, True
                             binding_jobs.append({'description': description, 'output': output, 'directory': directory,
-                                                 'generate': generate, 'logs': logs})
+                                                 'generate': generate, 'logs': logs,
+                                                 'future': future, 'process': process_job})
                         run_prepare([description], prepare)
+                        # 生成任务全部提交后再统一发布；此前逐城发布会在父进程串行阻塞提交。
                 daily_selected = [key for key in ("delivery_fee", "penalty") if key in city_selected]
                 if daily_selected:
                     def daily():
@@ -1455,12 +1737,7 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                     def rider_info():
                         directory = raw / "rider_info"
                         context.update(raw=directory, kind="rider_info")
-                        info = None
-                        if not config.get('refresh_rider_info'):
-                            info = same_day_rider_info_snapshot(
-                                snapshot_roots, info_plan, directory, progress_log, exclude_dir=root)
-                        if info is None:
-                            info = runner.rider_source(info_plan, directory, "rider_info")
+                        info = runner.rider_source(info_plan, directory, "rider_info")
                         set_phase("validating")
                         source = _rider_source_file(info, directory, "rider_info", info_plan)
                         return [publish(source, output, item(city, "rider_info"))]
@@ -1593,6 +1870,10 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                 merge_waybills()
             finalize_binding_jobs()
         finally:
+            if source_pool is not None:
+                source_pool.shutdown(wait=True, cancel_futures=True)
+            if materials_pool is not None:
+                materials_pool.shutdown(wait=True, cancel_futures=True)
             if binding_pool is not None:
                 binding_pool.shutdown(wait=True, cancel_futures=True)
             for exchange in binding_tables.values():

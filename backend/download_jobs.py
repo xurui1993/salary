@@ -156,7 +156,8 @@ def _refresh(run):
     success, errors = statuses.count("success"), statuses.count("error")
     completed = sum(status in FINAL_STATUSES for status in statuses)
     run["summary"] = {"total": len(statuses), "completed": completed, "success": success,
-                      "error": errors, "cancelled": statuses.count("cancelled"), "files": len(run["files"])}
+                      "error": errors, "cancelled": statuses.count("cancelled"),
+                      "files": sum(not file.get("record_hidden") for file in run.get("files", []))}
     progress = round(completed * 100 / len(statuses)) if statuses else 0
     # 资料项全部结束后仍需合并多城市汇总，不能提前显示 100%。
     detail = run.get("summary_progress")
@@ -241,6 +242,11 @@ def delivery_scope_error(info, config, suffix):
     summary_scope = (is_summary and info.get('city') == '多城市汇总' and info.get('dataset') == 'payment_binding'
                      and 'payment_binding' in config['datasets'] and len(config['cities']) > 1
                      and suffix == '.xlsx'
+                     and any(item['dataset'] == 'payment_binding' and item['start'] == info.get('start')
+                             and item['end'] == info.get('end') for item in _initial_items(config)))
+    summary_scope = summary_scope or (is_summary and info.get('city') in ('天津商翼', '本来人力')
+                     and info.get('dataset') == 'payment_binding'
+                     and 'payment_binding' in config['datasets'] and suffix == '.xlsx'
                      and any(item['dataset'] == 'payment_binding' and item['start'] == info.get('start')
                              and item['end'] == info.get('end') for item in _initial_items(config)))
     summary_scope = summary_scope or (is_summary and info.get('city') == '多城市汇总'
@@ -710,6 +716,19 @@ class DownloadManager:
         except (OSError,ValueError,TypeError):
             raise DownloadResumeError('蓝橙全量请求或分批回执未确认，不能自动重新提交') from None
 
+    def _binding_has_progress(self, run, item):
+        root = self._archive_directory(run)
+        month = item['start'][:7]
+        city_root = root / '原始资料' / item['city'] / 'payment_binding' / month
+        for kind in ('rider_detail', 'receive_account', 'rider_info'):
+            directory = city_root / kind
+            if directory.is_dir() and any((directory / name).exists() for name in (
+                    'source_receipt.json', 'source_http_submission.json',
+                    'detail_submission.json', 'detail_http_submission.json')):
+                return True
+        batch = root / '原始资料' / '支付绑定平台表' / '明细批量' / month
+        return (batch / 'batch_detail.json').exists()
+
     def _binding_materials(self, run, item):
         from binding_recovery import completed_materials
         root = self._archive_directory(run)
@@ -786,8 +805,12 @@ class DownloadManager:
                 self._binding_materials(run, item)
                 return {'mode': 'resume_existing', 'reason': '五类资料已完整校验，仅恢复本地生成，不重新提交平台导出'}
             except DownloadResumeError as exc:
+                if not self._binding_has_progress(run, item):
+                    return {'mode': 'retry_unsubmitted', 'reason': '未形成城市原始资料或平台任务，可重新执行本项'}
                 return {'mode': 'blocked', 'reason': str(exc)}
             except Exception:
+                if not self._binding_has_progress(run, item):
+                    return {'mode': 'retry_unsubmitted', 'reason': '未形成城市原始资料或平台任务，可重新执行本项'}
                 return {'mode': 'blocked', 'reason': '支付绑定资料暂不可访问'}
         if item["dataset"] == "rider_detail":
             try:
@@ -1210,6 +1233,15 @@ class DownloadManager:
                 raise DownloadSummaryPending('任务结束后发布结果')
             selected = [f for f in record['files'] if f.get('available',True) and
                         (record['kind'] != 'generate' or f['dataset'] in GENERATORS)]
+            known = {(f['run_id'], f['id']) for f in selected}
+            for member_id in record.get('member_ids', []):
+                member_owner = self.run_owner(member_id)
+                with self._lock, self._connection() as connection:
+                    _, member_run = self._find(connection, member_owner, member_id)
+                for file in member_run.get('files', []):
+                    if file.get('record_hidden') and (member_id, file['id']) not in known:
+                        selected.append({**file, 'run_id': member_id})
+                        known.add((member_id, file['id']))
             if not selected:
                 raise DownloadNotFound('暂无可发布结果')
             entries=[]
@@ -1421,7 +1453,9 @@ class DownloadManager:
                 "city": info["city"], "dataset": info["dataset"], "start": info.get("start", ""),
                 "end": info.get("end", ""), "bytes": path.stat().st_size,
                 **({'delivery_kind': info['delivery_kind']} if info.get('delivery_kind') in ('platform_original','system_merged') else {}),
-                **({'artifact_role': 'summary'} if is_summary else {})}
+                **({'delivery_group': info['delivery_group']} if info.get('delivery_group') in ('天津商翼','本来人力') else {}),
+                **({'artifact_role': 'summary'} if is_summary else {}),
+                **({'record_hidden': True} if info.get('record_hidden') is True else {})}
 
     def get_file(self, owner, run_id, file_id, verify_integrity=True):
         with self._lock, self._connection() as connection:
@@ -1554,6 +1588,7 @@ class DownloadManager:
         execution_started = time.perf_counter()
         queued_seconds = max(0, (dt.datetime.now(dt.timezone.utc) - dt.datetime.fromisoformat(run['created_at'])).total_seconds())
         summary_started = None
+        summary_metrics = {'platforms': 0}
         files, error = [], ""
         summary_reported = False
         summary_active = False
@@ -1617,30 +1652,90 @@ class DownloadManager:
                                  "summary_progress": {"stage": "merging", "current": current, "total": total,
                                                       "city": city, "month": month}})
                 summary_started = time.perf_counter()
+                summary_metrics = {'platforms': 0}
                 from workbook_policy import compression
                 with compression(6):
                     from binding_summary import build_binding_summaries
                     summary_active = 'payment_binding' in summary_config['datasets'] and len(summary_config['cities']) > 1
-                    for info in build_binding_summaries(run_dir, summary_config, files, current['items'], cancelled,
-                                                        report=log, progress=summary_progress):
-                        files.append(self._file_entry(run, info, config))
-                        log('[汇总] 多城市支付绑定已按月合并，成功城市明细与城市汇总已核对')
+                    groups = sorted({file.get('delivery_group') for file in files
+                                     if file.get('dataset') == 'payment_binding'
+                                     and file.get('delivery_group') in ('天津商翼', '本来人力')})
+                    platform_summaries = []
+                    if groups:
+                        platforms = {'天津商翼': ('商翼', '商翼绑定表'),
+                                     '本来人力': ('本来人力', '本来人力绑定表')}
+                        full_dir = run_dir / '原始资料' / '支付绑定平台表'
+                        import multiprocessing
+                        from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+                        from binding_summary_worker import build_platform_summary
+                        # 两个平台的汇总各自 CPU 密集且互不依赖；线程受 GIL 限制几乎串行，
+                        # 改为独立进程并行，避免汇总阶段吞掉数十秒。
+                        process_context = multiprocessing.get_context('spawn')
+                        cancel_fd, cancel_path = tempfile.mkstemp(prefix='summary-cancel-', suffix='.flag')
+                        os.close(cancel_fd)
+                        # 文件存在才表示取消；先删掉占位文件，否则子进程会误判为已取消。
+                        os.unlink(cancel_path)
+                        specs = []
+                        for group in groups:
+                            platform, sheet = platforms[group]
+                            source = full_dir / (sheet + '.xlsx')
+                            if not source.is_file():
+                                raise ValueError('缺少全量平台绑定表：' + sheet)
+                            specs.append({
+                                'root': str(run_dir), 'config': summary_config,
+                                'files': list(files), 'items': list(current['items']),
+                                'platform': platform, 'summary_city': group,
+                                'shared_sheets': (sheet,), 'proof_suffix': '_' + group,
+                                'shared_sources': {sheet: str(source)}, 'cancel_file': cancel_path})
+                        log(f'[汇总] 正在并行生成 {len(specs)} 个平台汇总：' + '、'.join(groups))
+                        try:
+                            with ProcessPoolExecutor(max_workers=min(2, len(specs)),
+                                                     mp_context=process_context) as pool:
+                                pending = {pool.submit(build_platform_summary, spec): spec['summary_city']
+                                           for spec in specs}
+                                while pending:
+                                    finished, _ = wait(list(pending), timeout=0.25,
+                                                       return_when=FIRST_COMPLETED)
+                                    if cancelled.is_set():
+                                        Path(cancel_path).touch(exist_ok=True)
+                                    for future in finished:
+                                        pending.pop(future)
+                                        result = future.result()
+                                        if result.get('error'):
+                                            raise ValueError(result['error'])
+                                        platform_summaries.extend(result['files'])
+                                        for info in result['files']:
+                                            log(f'[汇总] {info["start"][:7]} · {info["city"]}：平台汇总完成'
+                                                f'（{result.get("seconds", 0):.1f} 秒）')
+                        finally:
+                            Path(cancel_path).unlink(missing_ok=True)
+                        for info in platform_summaries:
+                            files.append(self._file_entry(run, info, config))
+                    else:
+                        for info in build_binding_summaries(run_dir, summary_config, files, current['items'], cancelled,
+                                                            report=log, progress=summary_progress):
+                            files.append(self._file_entry(run, info, config))
+                            log('[汇总] 多城市支付绑定已按月合并，成功城市明细与城市汇总已核对')
                     summary_active = False
+                    summary_metrics['platforms'] = len(platform_summaries)
                     if summary_reported:
                         update_item({"_run_event": True, "status": "running", "phase": "summarizing",
                                      "summary_progress": {"stage": "completed"}})
                     from abnormal_followup import build_followup_summaries
-                    log("[汇总] 正在合并异常骑手跟进成品")
-                    for info in build_followup_summaries(run_dir, summary_config, files, current['items'], cancelled):
-                        files.append(self._file_entry(run, info, config))
-                        log('[汇总] 多城市异常骑手跟进已按月合并')
+                    if ('abnormal_followup' in summary_config.get('datasets', ())
+                            and len(summary_config.get('cities', ())) > 1):
+                        log("[汇总] 正在合并异常骑手跟进成品")
+                        for info in build_followup_summaries(run_dir, summary_config, files, current['items'], cancelled):
+                            files.append(self._file_entry(run, info, config))
+                            log('[汇总] 多城市异常骑手跟进已按月合并')
                     from rider_monthly_summary import build_rider_monthly_summaries
-                    summary_active = 'rider_monthly' in summary_config['datasets'] and len(summary_config['cities']) > 1
-                    log("[汇总] 正在合并多城市风神骑手月度UB账单成品")
-                    for info in build_rider_monthly_summaries(run_dir, summary_config, files,
-                                                              current['items'], cancelled, report=log):
-                        files.append(self._file_entry(run, info, config))
-                        log('[汇总] 多城市风神骑手月度UB账单已按城市生成子表')
+                    if ('rider_monthly' in summary_config.get('datasets', ())
+                            and len(summary_config.get('cities', ())) > 1):
+                        log("[汇总] 正在合并多城市风神骑手月度UB账单成品")
+                        for info in build_rider_monthly_summaries(run_dir, summary_config, files,
+                                                                  current['items'], cancelled, report=log):
+                            files.append(self._file_entry(run, info, config))
+                            log('[汇总] 多城市风神骑手月度UB账单已按城市生成子表')
                     summary_active = False
         except Exception as exc:
             if summary_active:
@@ -1660,6 +1755,12 @@ class DownloadManager:
                     report.update(total_seconds=round(time.perf_counter() - execution_started, 6),
                                   queued_seconds=round(queued_seconds, 6),
                                   summary_seconds=round(time.perf_counter() - summary_started, 6) if summary_started else 0)
+                    from fast_xlsx import CalamineWorkbook
+                    report['summary'] = {
+                        'seconds': report['summary_seconds'],
+                        'platforms': summary_metrics.get('platforms', 0),
+                        'reader': 'calamine' if CalamineWorkbook is not None else 'openpyxl',
+                    }
                     from download_pipeline import pipeline_diagnostics
                     report['scheduler'] = pipeline_diagnostics()
                     run['performance'] = report

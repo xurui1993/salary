@@ -79,6 +79,10 @@ class PlatformRateLimited(HttpTransportError):
         super().__init__("平台请求频率受限，请稍后恢复原任务；无需因此重新登录")
 
 
+class HttpTransportRetryable(HttpTransportError):
+    """A transient file response that may be requested again without resubmitting a task."""
+
+
 class FengshenHttpClient:
     """One worker owns one client; use the application collection lock outside it."""
 
@@ -89,29 +93,39 @@ class FengshenHttpClient:
         self.cancelled = cancelled if cancelled is not None else threading.Event()
         self.auth_handler = None
         self.current_agency = None
+        self._agencies = None
         self.timeout = (10, 45)
         self.attempts = 4
         self.download_attempts = 3
+        self.rate_limited_count = 0
         self._refreshing_auth = False
         self._last_order_query = None
         self.origins = []
         if state is not None:
-            state = safe_state(state)
-            self.origins = state["origins"]
-            for cookie in state["cookies"]:
-                if not all(isinstance(cookie.get(k), str) for k in ("name", "value", "domain")):
-                    raise HttpTransportError("加密会话中的 Cookie 格式无效")
-                expiry = cookie.get("expires", -1)
-                if not isinstance(expiry, (int, float)) or isinstance(expiry, bool):
-                    raise HttpTransportError("加密会话中的有效期格式无效")
-                if expiry > 0 and expiry <= time.time():
-                    continue
-                self.session.cookies.set(
-                    cookie["name"], cookie["value"], domain=cookie["domain"],
-                    path=cookie.get("path", "/"), secure=True,
-                    expires=int(expiry) if expiry > 0 else None,
-                    rest={"HttpOnly": cookie.get("httpOnly", False), "SameSite": cookie.get("sameSite", "Lax")},
-                )
+            self.reload_state(state)
+
+    def reload_state(self, state):
+        state = safe_state(state)
+        self._agencies = None
+        values = []
+        for cookie in state["cookies"]:
+            if not all(isinstance(cookie.get(k), str) for k in ("name", "value", "domain")):
+                raise HttpTransportError("加密会话中的 Cookie 格式无效")
+            expiry = cookie.get("expires", -1)
+            if not isinstance(expiry, (int, float)) or isinstance(expiry, bool):
+                raise HttpTransportError("加密会话中的有效期格式无效")
+            if expiry > 0 and expiry <= time.time():
+                continue
+            values.append((cookie, expiry))
+        self.origins = state["origins"]
+        self.session.cookies.clear()
+        for cookie, expiry in values:
+            self.session.cookies.set(
+                cookie["name"], cookie["value"], domain=cookie["domain"],
+                path=cookie.get("path", "/"), secure=True,
+                expires=int(expiry) if expiry > 0 else None,
+                rest={"HttpOnly": cookie.get("httpOnly", False), "SameSite": cookie.get("sameSite", "Lax")},
+            )
 
     def close(self):
         self.session.close()
@@ -173,6 +187,7 @@ class FengshenHttpClient:
             except PlatformRateLimited:
                 # Only explicit rate rejection of a known read may be replayed.
                 # Exports, SMS and city-switch mutations never enter this retry.
+                self.rate_limited_count += 1
                 if url not in READ_ONLY_URLS or attempt == self.attempts - 1:
                     raise
                 self.cancelled.wait(2 ** (attempt + 1))
@@ -231,14 +246,25 @@ class FengshenHttpClient:
     def select_city(self, agency_id):
         if not isinstance(agency_id, str) or not re.fullmatch(r"\d{1,20}", agency_id):
             raise HttpTransportError("目标城市编号无效")
-        payload = self.request_json("GET", AGENCIES_URL)
-        agencies = payload.get("data")
-        if not isinstance(agencies, list) or not any(
-            isinstance(row, dict) and str(row.get("agencyId")) == agency_id for row in agencies
-        ):
+        if self._agencies is None:
+            payload = self.request_json("GET", AGENCIES_URL)
+            agencies = payload.get("data")
+            if not isinstance(agencies, list):
+                raise HttpTransportError("当前风神账号无所选城市访问权限")
+            self._agencies = agencies
+        else:
+            agencies = self._agencies
+        if not any(isinstance(row, dict) and str(row.get("agencyId")) == agency_id
+                   for row in agencies):
             raise HttpTransportError("当前风神账号无所选城市访问权限")
         if str(self.identity()["agencyId"]) != agency_id:
             self.request_json("POST", SWITCH_URL, body={"toAgencyId": int(agency_id)})
+            # 切换是账号级状态，平台回读偶尔滞后；只轮询读回，不重复提交切换。
+            for _ in range(12):
+                if str(self.identity()["agencyId"]) == agency_id:
+                    break
+                self.cancelled.wait(0.7)
+                self.checkpoint()
         self.assert_city(agency_id)
         self.current_agency = agency_id
 
@@ -284,8 +310,11 @@ class FengshenHttpClient:
         receipt_path, receipt = self._begin_submission(receipt_path, scope)
         try:
             result = self.download_request(method, url, target, params=params, body=body)
-        except Exception:
-            raise HttpTransportError("同步导出未完成，已保留提交记录，不会自动重发", "downloading", "unknown") from None
+        except Exception as exc:
+            detail = str(exc)
+            message = "同步导出未完成，已保留提交记录，不会自动重发"
+            raise HttpTransportError(f"{message}（{detail}）" if detail else message,
+                                     "downloading", "unknown") from None
         receipt.update(submission_state="submitted", finished_at=time.time())
         atomic_json(receipt_path, receipt)
         return result
@@ -336,6 +365,10 @@ class FengshenHttpClient:
             try:
                 return self._download_once(method, url, target, authenticated=authenticated,
                                            params=params, body=body)
+            except HttpTransportRetryable:
+                if attempt == self.download_attempts - 1:
+                    raise
+                continue
             except requests.RequestException:
                 continue
         raise HttpTransportError("文件连接中断；原导出任务保留，不会重新导出", "downloading", "submitted") from None
@@ -369,9 +402,13 @@ class FengshenHttpClient:
                         url, authenticated, method, params, body = next_url, False, "GET", None, None
                         continue
                     if response.status_code != 200:
-                        raise HttpTransportError("平台文件下载失败", "downloading", "submitted")
+                        message = f"平台文件下载失败（HTTP {response.status_code}）"
+                        if response.status_code in (408, 425, 429, 500, 502, 503, 504):
+                            raise HttpTransportRetryable(message, "downloading", "unknown")
+                        raise HttpTransportError(message, "downloading", "submitted")
                     if "json" in response.headers.get("Content-Type", "").lower():
-                        raise HttpTransportError("平台未返回文件，请检查导出权限或验证码", "downloading", "unknown")
+                        raise HttpTransportRetryable("平台未返回文件，请检查导出权限或验证码",
+                                                     "downloading", "unknown")
                     size = 0
                     with temporary.open("xb") as output:
                         for chunk in response.iter_content(65536):

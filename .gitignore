@@ -13,6 +13,9 @@ backend/.local_downloads/
 .env
 gateway/template.zip
 *.part
+.aistudio/artifacts/
+.tmp_benlai/
+salary_source_*.zip
 backend/tests/tmp*/
 /server.log
 /server-restart.log

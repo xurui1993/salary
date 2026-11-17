@@ -15,7 +15,7 @@ import weakref
 from fastapi import APIRouter, HTTPException, Request
 from parttime_source import (ROOT, SourceError, inspect_source, owned_upload, source_files,
                              clean_rider_bill)
-from fengshen_bill import atomic_json
+from fengshen_bill import atomic_json, PLATFORM_SHEET_NAMES
 
 router = APIRouter(prefix='/api/parttime/preparations')
 LABELS = {'delivery_fee': '配送费', 'penalty': '违规扣款', 'rider_monthly': '骑手账单',
@@ -465,7 +465,7 @@ def merge_scope_files(paths, target):
                         writer.writerows(iterator)
         elif target.suffix.lower() == '.xlsx':
             from openpyxl import Workbook, load_workbook
-            output = Workbook(write_only=True);sheets={};headers={};names=None;shared_hash=None
+            output = Workbook(write_only=True);sheets={};headers={};names=None;shared_hashes={}
             try:
                 for path in paths:
                     book = load_workbook(path, read_only=True, data_only=True)
@@ -475,13 +475,13 @@ def merge_scope_files(paths, target):
                         for sheet in book:
                             sheet.reset_dimensions();rows=iter(sheet.iter_rows(values_only=True));header=next(rows,None)
                             if header is None: raise SourceError('来源子表缺少表头')
-                            shared = sheet.title == '商翼绑定表' and sheet.title in sheets
+                            shared = sheet.title in PLATFORM_SHEET_NAMES and sheet.title in sheets
                             hasher = hashlib.sha256()
                             if sheet.title not in sheets:
                                 sheets[sheet.title]=output.create_sheet(sheet.title);headers[sheet.title]=header;sheets[sheet.title].append(header)
                             elif headers[sheet.title] != header: raise SourceError('来源子表表头不一致')
                             for row in rows:
-                                if sheet.title == '商翼绑定表': hasher.update(json.dumps(row,ensure_ascii=False,default=str).encode()+b'\n')
+                                if sheet.title in PLATFORM_SHEET_NAMES: hasher.update(json.dumps(row,ensure_ascii=False,default=str).encode()+b'\n')
                                 if shared: continue
                                 # Force original text to remain text, including formula-like identifiers.
                                 from openpyxl.cell import WriteOnlyCell
@@ -491,9 +491,9 @@ def merge_scope_files(paths, target):
                                     if isinstance(value,str):cell.data_type='s'
                                     values.append(cell)
                                 sheets[sheet.title].append(values)
-                            if sheet.title == '商翼绑定表':
-                                if shared and shared_hash != hasher.hexdigest(): raise SourceError('共享商翼资料在两组获取期间已变化，未混用版本')
-                                shared_hash = hasher.hexdigest()
+                            if sheet.title in PLATFORM_SHEET_NAMES:
+                                if shared and shared_hashes.get(sheet.title) != hasher.hexdigest(): raise SourceError('共享平台资料在两组获取期间已变化，未混用版本')
+                                shared_hashes[sheet.title] = hasher.hexdigest()
                     finally: book.close()
                 output.save(temporary)
             finally:

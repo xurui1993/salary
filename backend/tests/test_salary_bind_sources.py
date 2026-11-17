@@ -245,6 +245,59 @@ class BindingSourceTests(unittest.TestCase):
             finally:
                 book.close()
 
+    def test_benlai_signing_city_chooses_platform_without_merging(self):
+        from salary_bind_processor import run_salary_bind_gen
+        from benlai_sources import validate_employees as validate_benlai
+        results, employees = self.fixture()
+        for index, (directory, manifest) in enumerate(results):
+            info = manifest['datasets']['rider_info']
+            path = directory / info['path']
+            with path.open(encoding='utf-8-sig', newline='') as stream:
+                rows = list(csv.reader(stream))
+            rows[1][3] = str(index) * 17 + 'X'
+            with path.open('w', encoding='utf-8-sig', newline='') as stream:
+                csv.writer(stream).writerows(rows)
+            info['sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+        book = Workbook()
+        book.active.append(['姓名', '身份证号', '签约城市', '签约状态'])
+        book.active.append(['测试零', '0' * 17 + 'X', '泉州市', 2])
+        book.active.append(['测试一', '1' * 17 + 'X', '深圳市', '已签约'])
+        path = self.root / '本来人力灵工全量.xlsx'
+        book.save(path)
+        book.close()
+        proof = {**validate_benlai(path), 'benlai_cities': ['泉州']}
+        benlai = (self.root, {'status': 'success', 'scope': 'all',
+                              'datasets': {'benlai_employees': proof}})
+        inputs = self.root / 'inputs'
+        verified = sources.prepare_inputs(results, employees, inputs, self.scope, benlai)
+        self.assertEqual(verified['benlai_cities'], ['泉州'])
+        self.assertTrue((inputs / 'benlaiFreelancer_本来人力全量.xlsx').is_file())
+        with (inputs / '代领补充.csv').open('w', encoding='utf-8-sig', newline='') as stream:
+            csv.writer(stream).writerow(['骑手ID', '代领月份', '身份证'])
+        async def execute():
+            return [json.loads(event[6:]) async for event in run_salary_bind_gen(
+                str(inputs), str(self.root / 'output'), verified_scope=verified) if event.startswith('data: ')]
+        events = asyncio.run(execute())
+        finish = [event for event in events if event['type'] == 'finish'][-1]
+        self.assertEqual(finish['status'], 'success', finish)
+        summary = next((self.root / 'output').rglob('*骑手支付绑定汇总*.xlsx'))
+        book = load_workbook(summary)
+        try:
+            self.assertIn('本来人力绑定表', book.sheetnames)
+            self.assertIn('商翼绑定表', book.sheetnames)
+            header = [cell.value for cell in book['7月骑手绑定情况'][1]]
+            self.assertNotIn('发薪绑定平台', header)
+            city_column = header.index('城市')
+            paid_column = header.index('发薪平台绑定')
+            status_column = header.index('绑定情况')
+            rows = {row[city_column].value: row for row in book['7月骑手绑定情况'].iter_rows(min_row=2)}
+            self.assertEqual(rows['泉州'][paid_column].value, '已绑定')
+            self.assertEqual(rows['泉州'][status_column].value, '已绑定')
+            self.assertEqual(rows['深圳'][paid_column].value, '未绑定')
+            self.assertEqual(rows['深圳'][status_column].value, '天津商翼未绑定')
+        finally:
+            book.close()
+
 
 if __name__ == '__main__':
     unittest.main()

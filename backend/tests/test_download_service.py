@@ -152,6 +152,7 @@ class DownloadServiceTests(unittest.TestCase):
     def test_payroll_downloads_rider_info_before_any_other_binding_dependency(self):
         order=[]
         sources=Mock()
+        sources.benlai.return_value=None
         sources.employees.side_effect=lambda:order.append('employees') or Path('employee.xlsx')
         sources.proxies.side_effect=lambda month:order.append('proxies') or Path('proxy.xlsx')
         original=self.runner.rider_source
@@ -159,7 +160,7 @@ class DownloadServiceTests(unittest.TestCase):
             order.append(kind)
             return original(plan,raw,kind)
         self.runner.rider_source=rider_source
-        def generate(paths,employees,proxies,plan,raw,log,cancelled):
+        def generate(paths,employees,proxies,plan,raw,log,cancelled,benlai=None,**kwargs):
             target=Path(raw)/'generated.xlsx';target.write_bytes(b'fixture');return target,{}
         config=self.config(['payment_binding'],start='2026-09-01',end='2026-09-30')
         config['task_kind']='payroll_source'
@@ -168,77 +169,53 @@ class DownloadServiceTests(unittest.TestCase):
         self.assertEqual(order,['rider_info','rider_detail','receive_account','employees','proxies'])
         self.assertEqual(len(files),1)
 
-    def test_standalone_rider_info_reuses_same_day_snapshot(self):
+    def test_standalone_rider_info_always_exports_fresh(self):
         agency = service.cities()["泉州"]
         self.rider_info_snapshot("泉州", agency, "2026-09-01", "2026-09-30")
         config = self.config(["rider_info"], start="2026-09-20", end="2026-09-30")
-
-        def forbidden(plan, raw, kind):
-            raise AssertionError("当日快照应被复用，而不是重新导出")
-        self.runner.rider_source = forbidden
         files, _, logs = self.execute(config)
         self.assertTrue(files)
-        self.assertTrue(any("[复用]" in line for line in logs))
-        receipt = json.loads((self.root / "run" / "原始资料" / service.archive_component("泉州")
-                              / "rider_info" / "source_receipt.json").read_text(encoding="utf-8"))
-        self.assertEqual(receipt["start"], config["start"])
-        self.assertEqual(receipt["end"], config["end"])
-        self.assertIn("reused_from", receipt)
-        self.assertIn("snapshot_exported_at", receipt)
-
-    def test_refresh_rider_info_option_forces_new_export(self):
-        agency = service.cities()["泉州"]
-        self.rider_info_snapshot("泉州", agency, "2026-09-01", "2026-09-30")
-        config = self.config(["rider_info"], start="2026-09-20", end="2026-09-30",
-                             refresh_rider_info=True)
-        files, _, logs = self.execute(config)
-        self.assertTrue(files)
-        self.assertFalse(any("[复用]" in line for line in logs))
         self.assertIn(("泉州", "rider_info", config["start"], config["end"]), self.runner.calls)
-
-    def test_stale_snapshot_falls_back_to_export(self):
-        agency = service.cities()["泉州"]
-        self.rider_info_snapshot("泉州", agency, "2026-09-01", "2026-09-30",
-                                 mtime=dt.datetime(2026, 10, 15, 9, 0))
-        config = self.config(["rider_info"], start="2026-09-20", end="2026-09-30")
-        files, _, logs = self.execute(config)
-        self.assertTrue(files)
         self.assertFalse(any("[复用]" in line for line in logs))
-        self.assertIn(("泉州", "rider_info", config["start"], config["end"]), self.runner.calls)
 
-    def test_snapshot_with_broken_digest_falls_back_to_export(self):
-        agency = service.cities()["泉州"]
-        self.rider_info_snapshot("泉州", agency, "2026-09-01", "2026-09-30", sha="0" * 64)
-        config = self.config(["rider_info"], start="2026-09-20", end="2026-09-30")
-        files, _, logs = self.execute(config)
-        self.assertTrue(files)
-        self.assertFalse(any("[复用]" in line for line in logs))
-        self.assertIn(("泉州", "rider_info", config["start"], config["end"]), self.runner.calls)
-
-    def test_payroll_source_reuses_same_day_rider_info_snapshot(self):
+    def test_payroll_source_always_exports_fresh_rider_info(self):
         agency = service.cities()["泉州"]
         self.rider_info_snapshot("泉州", agency, "2026-09-01", "2026-09-30")
         order = []
         sources = Mock()
+        sources.benlai.return_value = None
         sources.employees.side_effect = lambda: order.append('employees') or Path('employee.xlsx')
         sources.proxies.side_effect = lambda month: order.append('proxies') or Path('proxy.xlsx')
         original = self.runner.rider_source
         def rider_source(plan, raw, kind):
             order.append(kind)
-            if kind == 'rider_info':
-                raise AssertionError("核算资料应复用当日骑手信息快照")
             return original(plan, raw, kind)
         self.runner.rider_source = rider_source
-        def generate(paths, employees, proxies, plan, raw, log, cancelled):
+        def generate(paths, employees, proxies, plan, raw, log, cancelled, benlai=None, **kwargs):
             target = Path(raw) / 'generated.xlsx'; target.write_bytes(b'fixture'); return target, {}
         config = self.config(['payment_binding'], start='2026-09-01', end='2026-09-30')
         config['task_kind'] = 'payroll_source'
-        with patch('binding_sources_http.BindingSources', return_value=sources), \
-                patch('binding_download.generate_binding', side_effect=generate):
+        with patch('binding_sources_http.BindingSources', return_value=sources),                 patch('binding_download.generate_binding', side_effect=generate):
             files, _, logs = self.execute(config)
-        self.assertEqual(order, ['rider_detail', 'receive_account', 'employees', 'proxies'])
+        self.assertEqual(order, ['rider_info', 'rider_detail', 'receive_account', 'employees', 'proxies'])
         self.assertEqual(len(files), 1)
-        self.assertTrue(any("[复用]" in line for line in logs))
+        self.assertFalse(any("[复用]" in line for line in logs))
+
+    def test_payment_binding_always_exports_fresh_rider_info(self):
+        agency = service.cities()["泉州"]
+        self.rider_info_snapshot("泉州", agency, "2026-09-01", "2026-09-30")
+        sources = Mock()
+        sources.benlai.return_value = None
+        sources.employees.return_value = Path('employees.xlsx')
+        sources.proxies.return_value = Path('proxies.xlsx')
+        def generate(paths, employees, proxies, plan, raw, log, cancelled, benlai=None, **kwargs):
+            target = Path(raw) / 'generated.xlsx'; target.write_bytes(b'fixture'); return target, {}
+        config = self.config(['payment_binding'], start='2026-09-01', end='2026-09-30')
+        with patch('binding_sources_http.BindingSources', return_value=sources),                 patch('binding_download.generate_binding', side_effect=generate):
+            files, _, logs = self.execute(config)
+        self.assertTrue(files)
+        self.assertIn(("泉州", "rider_info", config["start"], config["end"]), self.runner.calls)
+        self.assertFalse(any("[复用]" in line for line in logs))
 
     def test_rider_detail_published_file_matches_confirmed_layout(self):
         import csv
@@ -420,6 +397,107 @@ class DownloadServiceTests(unittest.TestCase):
             os.utime(path, (mtime.timestamp(), mtime.timestamp()))
         return directory
 
+    def test_batch_detail_is_wired_before_per_city_account_and_info(self):
+        from download_rider_sources import DETAIL_COLUMNS
+        calls = []
+        self.runner.batch_sources = True
+
+        def batch_detail(plans, root, account_paths=None, rider_info_paths=None, **kwargs):
+            result = {}
+            for plan in plans:
+                calls.append(plan.city)
+                directory = root / "原始资料" / plan.city / "payment_binding" / plan.month / "rider_detail"
+                directory.mkdir(parents=True)
+                row = {key: "" for key in DETAIL_COLUMNS}
+                row.update({"日期": plan.start, "骑手ID": "001", "团队ID": "1",
+                            "团队名称": "test", "最新入职时间": "2026-09-15", "有效完成单": 5})
+                path = directory / "rider_detail.csv"
+                write_csv(path, list(DETAIL_COLUMNS), [row])
+                result[(plan.city, plan.month)] = path
+            return result
+        self.runner.batch_detail = batch_detail
+
+        sources = Mock()
+        sources.benlai.return_value = None
+        sources.employees.return_value = Path('employees.xlsx')
+        sources.proxies.return_value = Path('proxies.xlsx')
+
+        def generate(paths, employees, proxies, plan, raw, log, cancelled, benlai=None, **kwargs):
+            target = Path(raw) / 'generated.xlsx'
+            target.write_bytes(b'fixture')
+            return target, {}
+
+        config = service.validate_request({"cities": ["泉州", "上海"], "datasets": ["payment_binding"],
+            "start": "2026-09-01", "end": "2026-09-30"}, today=TODAY)
+        updates, logs = [], []
+        with patch('binding_sources_http.BindingSources', return_value=sources), \
+                patch('binding_download.generate_binding', side_effect=generate):
+            files = service.execute_downloads({**config, "owner": "test"}, self.root / "run", logs.append,
+                threading.Event(), updates.append,
+                runner_factory=lambda *args: contextlib.nullcontext(self.runner))
+        self.assertEqual(calls, ["泉州", "上海"])
+        self.assertFalse([value for value in updates if value.get('status') == 'error'])
+        self.assertFalse([call for call in self.runner.calls if call[1] == "rider_detail"])
+        self.assertEqual({value['city'] for value in files if value.get('dataset') == 'payment_binding'}, {"泉州", "上海"})
+        self.assertTrue(any("[批量]" in line and "全城市批量拆分结果" in line for line in logs))
+
+    def test_same_city_sources_use_two_lanes_without_cross_city_switch(self):
+        import time
+        state = {'lock': threading.Lock(), 'active': []}
+
+        class LaneRunner:
+            parallel_sources = True
+
+            def __init__(self, parent):
+                self.parent = parent
+                self.lanes_used = 0
+                self.log = lambda *_: None
+
+            def lanes(self, count):
+                self.lanes_used = count
+                return [self] + [type(self)(self.parent) for _ in range(1, count)]
+
+            @contextlib.contextmanager
+            def capture(self):
+                yield []
+
+            def rider_source(self, plan, raw, kind):
+                with state['lock']:
+                    state['active'].append(plan.city)
+                    if len(set(state['active'])) > 1:
+                        raise AssertionError("同一时刻只能有一个城市处于导出状态")
+                try:
+                    time.sleep(0.02)
+                    return self.parent.rider_source(plan, raw, kind)
+                finally:
+                    with state['lock']:
+                        state['active'].remove(plan.city)
+
+        sources = Mock()
+        sources.benlai.return_value = None
+        sources.employees.return_value = Path('employees.xlsx')
+        sources.proxies.return_value = Path('proxies.xlsx')
+
+        def generate(paths, employees, proxies, plan, raw, log, cancelled, benlai=None, **kwargs):
+            target = Path(raw) / 'generated.xlsx'
+            target.write_bytes(b'fixture')
+            return target, {}
+
+        runner = LaneRunner(self.runner)
+        config = service.validate_request({"cities": ["泉州", "上海"], "datasets": ["payment_binding"],
+            "start": "2026-09-01", "end": "2026-09-30"}, today=TODAY)
+        config['source_lanes'] = 2
+        updates, logs = [], []
+        with patch('binding_sources_http.BindingSources', return_value=sources), \
+                patch('binding_download.generate_binding', side_effect=generate):
+            files = service.execute_downloads({**config, "owner": "test"}, self.root / "run", logs.append,
+                threading.Event(), updates.append,
+                runner_factory=lambda *args: contextlib.nullcontext(runner))
+        self.assertFalse([value for value in updates if value.get('status') == 'error'])
+        self.assertEqual({value['city'] for value in files if value.get('dataset') == 'payment_binding'}, {"泉州", "上海"})
+        self.assertEqual(runner.lanes_used, 3)
+        self.assertTrue(any(line.startswith('[调度] 支付绑定源资料') for line in logs))
+
     def test_new_result_layout_keeps_deliverables_under_city_directory(self):
         config = self.config(['delivery_fee'])
         files, _, _ = self.execute({**config, 'result_layout': 2})
@@ -447,11 +525,11 @@ class DownloadServiceTests(unittest.TestCase):
             with self.assertRaises(service.ValidationError):self.config(['delivery_fee','attendance_detail'],start=first,end=last)
 
     def test_flat_layout_moves_generated_artifact_and_retains_platform_sources(self):
-        sources=Mock();sources.employees.return_value=Path('employees.xlsx');sources.proxies.return_value=Path('proxies.xlsx')
+        sources=Mock();sources.benlai.return_value=None;sources.employees.return_value=Path('employees.xlsx');sources.proxies.return_value=Path('proxies.xlsx')
         config=self.config(['payment_binding'],start='2026-09-01',end='2026-09-30')
         config['result_layout']=3
         generated=[]
-        def generate(paths,employees,proxies,plan,raw,log,cancelled):
+        def generate(paths,employees,proxies,plan,raw,log,cancelled,benlai=None,**kwargs):
             path=Path(raw)/'generated.xlsx';path.write_bytes(b'generated fixture');generated.append(path);return path,{}
         with patch('binding_sources_http.BindingSources',return_value=sources),patch('binding_download.generate_binding',side_effect=generate):
             files,_,_=self.execute(config)
@@ -533,12 +611,12 @@ class DownloadServiceTests(unittest.TestCase):
 
     def test_binding_sources_exclude_separation_when_unchecked(self):
         import csv
-        sources = Mock(); sources.employees.return_value = Path('employee.xlsx'); sources.proxies.return_value = Path('proxy.xlsx')
+        sources = Mock(); sources.benlai.return_value = None; sources.employees.return_value = Path('employee.xlsx'); sources.proxies.return_value = Path('proxy.xlsx')
         config = service.validate_request({'cities': ['泉州'], 'datasets': ['payment_binding'],
                                            'start': '2026-09-20', 'end': '2026-09-30'})
         config['owner'] = 'test'
         captured = {}
-        def generate(paths, employees, proxies, plan, raw, log, cancelled):
+        def generate(paths, employees, proxies, plan, raw, log, cancelled, benlai=None, **kwargs):
             with open(paths['rider_detail'], encoding='utf-8-sig', newline='') as stream:
                 captured['teams'] = {row['团队名称'] for row in csv.DictReader(stream)}
             path = Path(raw) / 'generated.xlsx'; path.write_bytes(b'fixture')
@@ -554,13 +632,13 @@ class DownloadServiceTests(unittest.TestCase):
 
     def test_binding_sources_keep_only_separation_when_checked(self):
         import csv
-        sources = Mock(); sources.employees.return_value = Path('employee.xlsx'); sources.proxies.return_value = Path('proxy.xlsx')
+        sources = Mock(); sources.benlai.return_value = None; sources.employees.return_value = Path('employee.xlsx'); sources.proxies.return_value = Path('proxy.xlsx')
         config = service.validate_request({'cities': ['泉州'], 'datasets': ['payment_binding'],
                                            'start': '2026-09-20', 'end': '2026-09-30',
                                            'include_separation': True})
         config['owner'] = 'test'
         captured = {}
-        def generate(paths, employees, proxies, plan, raw, log, cancelled):
+        def generate(paths, employees, proxies, plan, raw, log, cancelled, benlai=None, **kwargs):
             with open(paths['rider_detail'], encoding='utf-8-sig', newline='') as stream:
                 captured['teams'] = {row['团队名称'] for row in csv.DictReader(stream)}
             path = Path(raw) / 'generated.xlsx'; path.write_bytes(b'fixture')
@@ -576,12 +654,12 @@ class DownloadServiceTests(unittest.TestCase):
 
     def test_new_exclusion_option_applies_same_scope_to_payment_binding_sources(self):
         import csv
-        sources=Mock();sources.employees.return_value=Path('employee.xlsx');sources.proxies.return_value=Path('proxy.xlsx')
+        sources=Mock();sources.benlai.return_value=None;sources.employees.return_value=Path('employee.xlsx');sources.proxies.return_value=Path('proxy.xlsx')
         for exclude in (False,True):
             captured={}
             config=service.validate_request({'cities':['泉州'],'datasets':['payment_binding'],'start':'2026-09-20','end':'2026-09-30','exclude_separation':exclude})
             config['owner']='test'
-            def generate(paths,employees,proxies,plan,raw,log,cancelled):
+            def generate(paths,employees,proxies,plan,raw,log,cancelled,benlai=None,**kwargs):
                 with open(paths['rider_detail'],encoding='utf-8-sig',newline='') as stream:captured['teams']={row['团队名称'] for row in csv.DictReader(stream)}
                 path=Path(raw)/'generated.xlsx';path.write_bytes(b'fixture');return path,{}
             with patch('binding_sources_http.BindingSources',return_value=sources),patch('binding_download.generate_binding',side_effect=generate):
@@ -604,8 +682,9 @@ class DownloadServiceTests(unittest.TestCase):
         entry = next(value for value in service.get_options()["datasets"] if value["id"] == "abnormal_riders")
         self.assertEqual((entry["group"], entry["scope"]), ("lanorange", "all"))
         self.assertEqual(options['baize_employees'], '白泽员工资料（全量）')
+        self.assertEqual(options['benlai_employees'], '本来人力灵工资料（全量）')
         self.assertEqual(options['delivery_waybill'], '运单数据')
-        self.assertEqual(len(options), 31)
+        self.assertEqual(len(options), 32)
         monthly = self.config(["receive_account"], end="2026-10-31")
         self.assertEqual(monthly["months"], ["2026-09", "2026-10"])
         for datasets in (["receive_account", "rider_detail"], ["rider_detail"]):
@@ -912,7 +991,7 @@ class DownloadServiceTests(unittest.TestCase):
         generated = ('payment_binding', 'abnormal_followup', 'abnormal_riders')
         original_datasets = [kind for kind in service.DATASETS
                              if kind not in generated and kind not in service.LANORANGE_DATASETS
-                             and kind not in (service.BAIZE_DATASET,)
+                             and kind not in (service.BAIZE_DATASET, service.BENLAI_DATASET)
                              and kind not in service.XIAOXIANG_SELECTION
                              and kind not in service.MERCHANT_DATASETS]
         files, updates, _ = self.execute(self.config(original_datasets))

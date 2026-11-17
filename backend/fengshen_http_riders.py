@@ -43,6 +43,20 @@ GOODS_RENT_HEADERS = ('站点名称', '站点id', '骑手姓名', '骑手id', '�
                       '物资大类', '物资类型', '租用数量', '租用时间', '登记人', '备注', '状态')
 
 
+def detail_coverage_gap(info, plan):
+    if not info.get("rows") or not info.get("date_max"):
+        return None
+    return max(0, (dt.date.fromisoformat(plan.end) - dt.date.fromisoformat(info["date_max"])).days)
+
+
+def detail_no_data_message(payload):
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if isinstance(data, dict) and data.get("code") == 2:
+        message = data.get("message")
+        return message if isinstance(message, str) and message else "没有搜索到任何数据"
+    return None
+
+
 def _fail(message, phase="preparing", submission="not_submitted"):
     return HttpTransportError(message, phase, submission)
 
@@ -220,7 +234,7 @@ class RiderHttpCollector:
                 break
         raise _fail("平台导出列表分页不完整，不能确认原任务", "waiting_export", "unknown")
 
-    def _finish(self, path, kind, plan, teams, agencies, *, total=None, task_id=None):
+    def _finish(self, path, kind, plan, teams, agencies, *, total=None, task_id=None, cross_city=False):
         path = Path(path)
         self._checkpoint()
         self.client.assert_city(plan.agency_id)
@@ -228,6 +242,14 @@ class RiderHttpCollector:
             path, info = unpack_detail_archive(path, plan, teams)
         else:
             info = validate_document(path, kind, plan, teams)
+        if kind == "rider_detail" and info["rows"]:
+            # 平台同步直出曾返回仅 2 天的“成功”文件；只校验日期在范围内
+            # 会把残缺文件继续用于支付绑定，因此必须核对尾部覆盖。
+            lag = detail_coverage_gap(info, plan)
+            if lag is not None and lag > 3:
+                raise _fail(f"骑手数据明细仅覆盖到 {info['date_max']}，未覆盖至 {plan.end}；"
+                            "平台导出不完整，已停止生成", "validating", "submitted")
+            info["date_lag_days"] = lag
         info.update(city=plan.city, agency_id=plan.agency_id, requested_start=plan.start,
                     requested_end=plan.end, requested_month=plan.month, all_target_teams=True,
                     scope="target_city", export_mode="daily" if kind == "rider_detail" else "original")
@@ -235,22 +257,30 @@ class RiderHttpCollector:
             if type(total) is not int or info["rows"] != total:
                 raise _fail("收薪账户原文件行数与所选月份查询总数不一致", "validating", "submitted")
             info.update(query_total=total, team_validation=False, snapshot_only=True)
+        elif cross_city:
+            # 跨城市批量舞台：单城市归属证明不适用；各城市文件由拆分阶段逐个严格校验。
+            info.update(all_available_teams=True, selected_team_ids=sorted(teams),
+                        team_agency_ids=agencies, scope="platform_batch")
+            if kind == "rider_info":
+                info.update(snapshot_only=True, time_basis="current_snapshot")
         else:
             info.update(all_available_teams=False, selected_team_ids=sorted(teams), team_agency_ids=agencies)
             if kind == "rider_info":
                 info.update(snapshot_only=True, time_basis="current_snapshot")
             else:
                 info["task_id"] = task_id
-        _checked_info(info, path.parent.resolve(), plan, kind)
+        if not cross_city:
+            _checked_info(info, path.parent.resolve(), plan, kind)
         result = {**info, "dataset": kind, "kind": kind, "start": plan.start, "end": plan.end,
                   "month": plan.month if kind == "receive_account" else None,
                   "target_city_only": True, "binding_generated": False, "payroll_executed": False,
                   "transport": "http"}
         atomic_json(path.parent / "source_receipt.json", result)
-        self.log(f'[完成] {NAMES[kind]}：{info["rows"]} 条；原文件已校验保存')
+        self.log(f'[完成] {plan.city} · {plan.start[:7]} {NAMES[kind]}：{info["rows"]} 条，原文件已校验保存')
         return result
 
-    def _download_sync(self, kind, plan, output, *, body=None, total=None, teams=None, agencies=None, receipt_path=None):
+    def _download_sync(self, kind, plan, output, *, body=None, total=None, teams=None, agencies=None,
+                       receipt_path=None, cross_city=False):
         self.client.assert_city(plan.agency_id)
         method, url, params, extension = "POST", INFO_EXPORT, None, ".xlsx"
         if kind == "receive_account":
@@ -264,7 +294,7 @@ class RiderHttpCollector:
                  "selected_team_ids": sorted(teams or {})}
         self.client.download_once(method, url, target, receipt_path or output / "source_http_submission.json", scope,
                                   params=params, body=body)
-        return self._finish(target, kind, plan, teams or {}, agencies or {}, total=total)
+        return self._finish(target, kind, plan, teams or {}, agencies or {}, total=total, cross_city=cross_city)
 
     def goods_rent(self, plan, raw):
         """物资租用登记：全历史快照；站点集合按「是否含取分离」过滤后一次导出。
@@ -316,7 +346,7 @@ class RiderHttpCollector:
                   "binding_generated": False, "payroll_executed": False, "transport": "http"}
         atomic_json(output / "source_receipt.json", result)
         scope = '全部站点' if include is None else '仅取分离站点' if include else '排除取分离站点'
-        self.log(f'[完成] 物资租用登记：{rows} 条（{scope}）；原文件已校验保存')
+        self.log(f'[完成] {plan.city} · {plan.start[:7]} 物资租用登记：{rows} 条（{scope}），原文件已校验保存')
         return result
 
     def _validate_goods_rent(self, path, selected):
@@ -344,6 +374,32 @@ class RiderHttpCollector:
             return count
         finally:
             book.close()
+
+    def rider_info_export(self, plan, raw, teams, agencies=None):
+        """Export rider info for an explicit department set (may span cities)."""
+        output = Path(raw).resolve()
+        output.mkdir(parents=True, exist_ok=True)
+        self._checkpoint()
+        self.client.assert_city(plan.agency_id)
+        agencies = agencies or {key: plan.agency_id for key in teams}
+        self.client.request_json("GET", QUERIES["rider_info"], params={"pageIndex": 1, "pageSize": 1})
+        check = self.client.request_json("GET", EXPORT_VERIFICATION_CHECK)
+        if not isinstance(check, dict) or type(check.get("data")) is not bool:
+            raise _fail("骑手信息导出验证状态无效；未发送验证码")
+        body = {"departmentIds": [int(key) for key in sorted(teams)]}
+        if check["data"]:
+            if not callable(getattr(self.auth, "export_code", None)):
+                raise _fail("骑手信息导出需要额外短信验证，请在系统中完成导出验证", "waiting_manual")
+            code = self.auth.export_code(self.client)
+            if not isinstance(code, str) or not re.fullmatch(r"\d{4,8}", code):
+                raise _fail("骑手信息导出验证码格式无效", "waiting_manual")
+            body["verifyCode"] = code
+        try:
+            return self._download_sync("rider_info", plan, output, body=body, teams=teams,
+                                       agencies=agencies,
+                                       cross_city=len(set(agencies.values())) > 1)
+        finally:
+            body.pop("verifyCode", None)
 
     def rider_source(self, plan, raw, kind):
         if kind not in _KINDS:
@@ -386,8 +442,14 @@ class RiderHttpCollector:
         # Existing receipts must be resolved before any second export call.
         if (output / "detail_submission.json").exists() or (output / "detail_http_submission.json").exists():
             raise _fail("已有骑手明细导出回执，请恢复原任务，不能重复导出", "waiting_export", "unknown")
-        self.client.request_json("GET", QUERIES["rider_detail"],
-                                 params={"startAt": plan.start, "endAt": plan.end, "pageNum": 1, "pageSize": 1})
+        query = self.client.request_json("GET", QUERIES["rider_detail"],
+                                         params={"teamId": "", "startAt": plan.start, "endAt": plan.end,
+                                                 "pageNum": 1, "pageSize": 1})
+        query_data = query.get("data") if isinstance(query, dict) else None
+        total = query_data.get("totalCount") if isinstance(query_data, dict) else None
+        if type(total) is int and total == 0:
+            raise _fail(f"平台在 {plan.start} 至 {plan.end} 没有骑手明细数据；"
+                        "未提交导出，请确认日期或等待平台数据恢复")
         fields = self._fields()
         body = {"teamIds": [int(value) for value in sorted(teams)], "startAt": plan.start,
                 "endAt": plan.end, "exportType": 2, "fields": fields}
@@ -397,6 +459,9 @@ class RiderHttpCollector:
         if not isinstance(switch, dict) or type(switch.get("data")) is not int or switch["data"] not in (0, 1):
             raise _fail("平台骑手明细导出方式未知，未提交导出")
         if switch["data"] == 0:
+            if not getattr(self, "direct_warned", False):
+                self.direct_warned = True
+                self.log("[导出] 平台当前为同步直出模式；将校验整段日期覆盖，残缺文件不会生成成品")
             return self._download_sync("rider_detail", plan, output, body=body, teams=teams, agencies=agencies)
         baseline = set(self._tasks())
         self.client.assert_city(plan.agency_id)
@@ -410,6 +475,10 @@ class RiderHttpCollector:
                                              {"kind": "rider_detail", "agency_id": plan.agency_id, "request": body})
         data = payload.get("data") if isinstance(payload, dict) else None
         code = data.get("code") if isinstance(data, dict) else None
+        no_data = detail_no_data_message(payload)
+        if no_data:
+            raise _fail(f"平台在 {plan.start} 至 {plan.end} 没有骑手明细数据：{no_data}；"
+                        "未生成文件，请确认日期或等待平台数据恢复", "preparing", "not_submitted")
         if code == 4 and type(code) is int:
             # The official UI explicitly routes this acknowledgement to its
             # synchronous endpoint. A network timeout never takes this branch.

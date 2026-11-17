@@ -14,7 +14,7 @@ from download_accounts import require_account, require_admin
 from fengshen_auth import BROKER
 import binding_source_auth as sources
 
-KEYS = ('fengshen', 'lanorange', 'baize', 'xiaoxiang')
+KEYS = ('fengshen', 'lanorange', 'baize', 'xiaoxiang', 'benlai')
 LOCKS = {key: threading.RLock() for key in KEYS}
 META = {}
 router = APIRouter(prefix='/api/fengshen-downloads/platform-auth')
@@ -140,6 +140,7 @@ def check(source, force=False, deep=False):
             return before
         started = time.monotonic()
         result = {'session_version': before['session_version'], 'checked_at': datetime.now(timezone.utc).isoformat(), '_clock': time.monotonic()}
+        recovered = False
         if not before['saved']:
             result.update(state='signed_out', message='尚未保存此平台会话，请点击登录')
         else:
@@ -149,7 +150,11 @@ def check(source, force=False, deep=False):
                     result.update(state='partial', message='灯塔会话有效；商配送看板下载权限尚未在本次检测中验证')
                 result['verified_at'] = result['checked_at']
             except (AuthenticationRequired, SessionExpired, sources.SourceAuthenticationRequired):
-                if source == 'xiaoxiang' and target(source).stages.get('board') == 'error':
+                if source in ('baize', 'benlai') and getattr(target(source), 'recover', None) and target(source).recover(source):
+                    recovered = True
+                    result.update(state='ready', message='会话已自动续期，下载使用 HTTP 接口',
+                                  verified_at=result['checked_at'], session_version=version(source))
+                elif source == 'xiaoxiang' and target(source).stages.get('board') == 'error':
                     result.update(state='partial', message='灯塔会话仍有效；知了看板登录已失效，仅在下载日维度骑手分析时需要重新扫码')
                 elif source == 'xiaoxiang':
                     message = ('灯塔会话仍有效；知了看板登录未完成，请点击登录继续（无需重新发送短信）'
@@ -170,7 +175,7 @@ def check(source, force=False, deep=False):
         if result['state'] not in ('ready', 'partial'):
             for key in ('account_label', 'organization', 'organization_reference', 'verified_at'):
                 if key in before: result[key] = before[key]
-        if version(source) != before['session_version']: raise HTTPException(409, '会话已变化，请重新检查')
+        if not recovered and version(source) != before['session_version']: raise HTTPException(409, '会话已变化，请重新检查')
         controller = BROKER if source == 'fengshen' else target(source)
         with controller.lock:
             if source == 'fengshen':
@@ -242,11 +247,15 @@ def disconnect(source, expected, *, guarded=False):
                 BROKER.saved_digest = None
                 BROKER.update('signed_out', '已退出本系统内的风神连接')
             else:
+                if source in ('baize', 'benlai'):
+                    sources.clear_credentials(source)
                 controller.epochs[source] = controller.epochs.get(source, 0) + 1
                 controller.states[source] = {'state': 'signed_out', 'message': (
                     '已退出灯塔登录；本机保留知了看板登录态，重新登录只需美团扫码' if source == 'xiaoxiang' and retained
                     else '已退出此平台的本地连接')}
                 for store in (controller.desktop, controller.form_bindings, controller.inputs): store.pop(source, None)
+                getattr(controller, 'pending_credentials', {}).pop(source, None)
+                getattr(controller, 'credential_prompt', {}).pop(source, None)
                 if source == 'xiaoxiang':
                     controller.resume_state = None
                     controller.stages = {'lighthouse': 'pending', 'board': 'pending'}

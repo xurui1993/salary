@@ -9,8 +9,9 @@ import uuid
 import xlsxwriter
 from openpyxl import load_workbook
 
-from fengshen_bill import BillCollectionError, atomic_json, column_width, display_width
-from download_archive import archive_filename
+from fengshen_bill import BillCollectionError, atomic_json, column_width, display_width, PLATFORM_SHEET_NAMES
+from download_archive import archive_filename, _generation_mmdd
+from fast_xlsx import open_values, sheet_names
 from workbook_policy import compression
 
 SUMMARY_CITY = '多城市汇总'
@@ -24,12 +25,14 @@ DATA_FORMAT = {'font_name': '微软雅黑', 'font_size': 10, 'align': 'center', 
 ID_FORMAT = {'font_name': '微软雅黑', 'font_size': 10, 'align': 'center', 'valign': 'vcenter', 'num_format': '0'}
 CITY_ID_FIELDS = ('骑手ID', '收款人ID')
 CITY_FIELD = ('城市', '城市名称')
-SHARED_PLATFORM_SHEET = '商翼绑定表'  # 平台全量导出，各城市成品一致，汇总仅取一份、不追加城市列
+SHARED_PLATFORM_SHEETS = PLATFORM_SHEET_NAMES  # 平台全量导出，各城市成品一致，汇总仅取一份、不追加城市列
 LAYOUT_FILE = 'binding_layout.json'
 
 
-def build_binding_summaries(root, config, files, items, cancelled, report=None, progress=None):
-    if 'payment_binding' not in config['datasets'] or len(config['cities']) < 2 or cancelled.is_set():
+def build_binding_summaries(root, config, files, items, cancelled, report=None, progress=None,
+                            platform=None, summary_city=SUMMARY_CITY, shared_sheets=SHARED_PLATFORM_SHEETS,
+                            proof_suffix='', shared_sources=None):
+    if 'payment_binding' not in config['datasets'] or (platform is None and len(config['cities']) < 2) or cancelled.is_set():
         return []
     report = report or (lambda _message: None)
     progress = progress or (lambda *_args: None)
@@ -38,6 +41,20 @@ def build_binding_summaries(root, config, files, items, cancelled, report=None, 
     results = []
     for month in sorted({value['start'][:7] for value in wanted}):
         selected = [value for value in wanted if value['start'][:7] == month]
+        if platform is not None:
+            scope = []
+            for value in selected:
+                stats_path = root / '原始资料' / value['city'] / 'payment_binding' / month / 'binding_stats.json'
+                try:
+                    stats = json.loads(stats_path.read_text(encoding='utf-8'))
+                    city_platform = stats['cities'][value['city']].get('bind_platform', '商翼')
+                except (OSError, ValueError, KeyError, TypeError):
+                    city_platform = '商翼'
+                if city_platform == platform:
+                    scope.append(value)
+            selected = scope
+        if not selected:
+            continue
         successful = {value['city'] for value in selected if value['status'] == 'success'}
         sources = [value for value in files if value['dataset'] == 'payment_binding'
                    and value.get('artifact_role') != 'summary' and value['start'][:7] == month
@@ -53,11 +70,25 @@ def build_binding_summaries(root, config, files, items, cancelled, report=None, 
         report(f'[汇总] 正在校验 {len(sources)} 个城市成品（{month}）')
         progress(0, len(successful), '', month)
         labels = [f'{int(month[5:])}月骑手绑定情况', f'{int(month[5:])}月未绑名单', f'{int(month[5:])}月黑户代领明细',
-                  '风神绑定表', '商翼绑定表', '骑手详情表', '骑手信息表']
+                  '风神绑定表', *shared_sheets, '骑手详情表', '骑手信息表']
         # 阶段一：核验各城市成品、读取统计，并取得各子表表头与列宽。
         # 列宽优先读生成时落下的 layout sidecar，避免为了量列宽而再整本扫描一遍源文件。
         included, overview_rows, totals = [], [], [0] * 6
-        first_scan, longest = None, {}
+        first_scan, longest = {}, {}
+        shared_paths = {}
+        for label, path in (shared_sources or {}).items():
+            if label not in labels:
+                continue
+            path = Path(path)
+            if not path.is_file():
+                raise BillCollectionError('全量平台绑定表不存在：' + label)
+            scan = scan_widths_fast(path, [label])
+            first_scan[label] = scan[label]
+            merged = longest.setdefault(label, {})
+            for field, width in scan[label][1].items():
+                if width > merged.get(field, 0):
+                    merged[field] = width
+            shared_paths[label] = path
         input_proof = []
         for item in selected:
             checkpoint(cancelled)
@@ -81,9 +112,23 @@ def build_binding_summaries(root, config, files, items, cancelled, report=None, 
                                                            'shangyi_bind_count', 'fully_bound_count', 'black_count')]
             if any(type(value) is not int or value < 0 for value in counts):
                 raise BillCollectionError('汇总城市人数或单量无效')
-            city_scan, layout_source = load_layout(root, city, month, source, labels, digest)
-            if first_scan is None:
-                first_scan = city_scan
+            probe_names = _sidecar_layout(root, city, month, digest)
+            if probe_names is not None:
+                names = set(probe_names)
+            else:
+                names = set(sheet_names(source))
+            missing = next((label for label in labels
+                            if label not in shared_sheets and label not in names), None)
+            if missing is not None:
+                raise BillCollectionError('城市成品缺少子表：' + missing)
+            city_labels = [label for label in labels if label in names and label not in shared_paths]
+            if probe_names is not None:
+                city_scan = {label: probe_names[label] for label in city_labels}
+                layout_source = 'sidecar'
+            else:
+                city_scan, layout_source = scan_widths(source, city_labels), 'scan'
+            for label, value in city_scan.items():
+                first_scan.setdefault(label, value)
             for label, (_, field_widths) in city_scan.items():
                 merged = longest.setdefault(label, {})
                 for field, width in field_widths.items():
@@ -93,9 +138,13 @@ def build_binding_summaries(root, config, files, items, cancelled, report=None, 
             overview_rows.append([month, city, '已纳入', f'{first} 至 {last}', *counts, ''])
             totals = [a + b for a, b in zip(totals, counts)]
             input_proof.append({'city': city, 'file': source.name, 'sha256': digest, 'layout': layout_source})
+        labels = [label for label in labels if label in first_scan]
         # 阶段二：先落列宽（xlsxwriter 必须在写行前确定），再单遍流式合并各城市记录。
-        name = archive_filename(SUMMARY_CITY, 'payment_binding', first, last, suffix='.xlsx',
-                                stamp=config.get('archive_created_at'))
+        if platform is not None:
+            name = f'{summary_city}_{int(month[5:])}月骑手支付绑定汇总{_generation_mmdd(config.get("archive_created_at"))}.xlsx'
+        else:
+            name = archive_filename(SUMMARY_CITY, 'payment_binding', first, last, suffix='.xlsx',
+                                    stamp=config.get('archive_created_at'))
         target = root / name
         if target.exists():
             raise BillCollectionError('汇总文件已存在，未覆盖')
@@ -127,7 +176,8 @@ def build_binding_summaries(root, config, files, items, cancelled, report=None, 
                 ['计数规则', '同一骑手跨城市分别保留，合计为各城市人数之和，不跨城市去重。'],
                 ['代领规则', '对应月份且启用；审核通过优先，其次审批中。同一优先级代领人冲突停止该城市生成。'],
                 ['原始资料', '本文件汇总绑定结果、未绑名单、代领明细；原始资料仍保存在各城市成品及任务目录中。'],
-                [SHARED_PLATFORM_SHEET, f'平台全量导出在各城市成品中一致，汇总仅保留一份（来源城市：{included[0][0]}），不追加城市列。'],
+                *[[label, '平台全量导出在相关城市成品中一致，汇总仅保留一份，不追加城市列。']
+                  for label in shared_sheets if label in labels],
             ]
             notes_header = ['项目', '说明']
             _set_widths(notes, _content_lengths([notes_header] + notes_rows), data_format)
@@ -138,24 +188,29 @@ def build_binding_summaries(root, config, files, items, cancelled, report=None, 
             for index, label in enumerate(labels):
                 sheets[index].freeze_panes(1, 0)
                 header, _ = first_scan[label]
-                append_city = label != SHARED_PLATFORM_SHEET and '城市' not in header
-                _set_widths(sheets[index], _summary_lengths(label, first_scan, longest, included), data_format,
+                append_city = label not in shared_sheets and '城市' not in header
+                _set_widths(sheets[index], _summary_lengths(label, first_scan, longest, included, shared_sheets), data_format,
                             id_format, header + (['城市'] if append_city else []))
             headers = [None] * len(labels)
             id_columns = [()] * len(labels)
             row_numbers = [1] * len(labels)
-            shared_city = None
+            shared_cities = {}
             for position, (city, source) in enumerate(included, 1):
                 report(f'[汇总] 正在合并 {city}（{position}/{len(included)}）')
                 progress(position, len(included), city, month)
-                original = load_workbook(source, read_only=True, data_only=True)
                 main_rows, orders = 0, 0
-                try:
+                with open_values(source) as original:
                     for index, label in enumerate(labels):
-                        shared = label == SHARED_PLATFORM_SHEET
-                        if shared and shared_city is not None:
+                        shared = label in shared_sheets
+                        if label in shared_paths:
                             continue
-                        iterator = original[label].iter_rows(values_only=True)
+                        if label not in original.sheetnames:
+                            if shared:
+                                continue
+                            raise BillCollectionError('城市成品缺少子表：' + label)
+                        if shared and label in shared_cities:
+                            continue
+                        iterator = original.rows(label)
                         raw_header = list(next(iterator))
                         add_city = not shared and '城市' not in raw_header
                         header = raw_header + (['城市'] if add_city else [])
@@ -172,16 +227,22 @@ def build_binding_summaries(root, config, files, items, cancelled, report=None, 
                         if city_column is None and not add_city and not shared:
                             raise BillCollectionError('汇总成品缺少城市字段')
                         source_columns = {value: number for number, value in enumerate(raw_header)}
+                        positions = [source_columns[value]
+                                     for value in (headers[index][:-1] if add_city else headers[index])]
+                        pending = 0
                         for row in iterator:
                             if not any(value is not None for value in row):
                                 continue
-                            checkpoint(cancelled)
-                            if city_column is not None and str(row[city_column]).removesuffix('市') != city:
+                            # 逐行 stat 取消标志会让百万行汇总被文件系统拖慢；批量抽查足够及时。
+                            pending += 1
+                            if pending >= 512:
+                                pending = 0
+                                checkpoint(cancelled)
+                            if not shared and city_column is not None and str(row[city_column]).removesuffix('市') != city:
                                 raise BillCollectionError('汇总成品包含其他城市记录')
+                            values = [row[number] for number in positions]
                             if add_city:
-                                values = [row[source_columns[value]] for value in headers[index][:-1]] + [city]
-                            else:
-                                values = [row[source_columns[value]] for value in headers[index]]
+                                values.append(city)
                             _write_data_row(sheets[index], row_numbers[index], values, data_format,
                                             id_format, id_columns[index])
                             row_numbers[index] += 1
@@ -189,11 +250,38 @@ def build_binding_summaries(root, config, files, items, cancelled, report=None, 
                                 main_rows += 1
                                 orders += int(row[source_columns['单量汇总']])
                         if shared:
-                            shared_city = city
-                finally:
-                    original.close()
+                            shared_cities[label] = city
                 if (main_rows, orders) != tuple(_overview_counts(overview_rows, city)[:2]):
                     raise BillCollectionError('汇总明细人数或单量与城市统计不一致')
+            for label, path in shared_paths.items():
+                index = labels.index(label)
+                with open_values(path) as source:
+                    iterator = source.rows(label)
+                    raw_header = list(next(iterator))
+                    if len(set(raw_header)) != len(raw_header) or any(not value for value in raw_header):
+                        raise BillCollectionError('全量平台绑定表表头为空或重复')
+                    if headers[index] is None:
+                        headers[index] = raw_header
+                        id_columns[index] = tuple(number for number, value in enumerate(raw_header)
+                                                  if value in CITY_ID_FIELDS)
+                        sheets[index].write_row(0, 0, raw_header, header_format)
+                    elif set(headers[index]) != set(raw_header):
+                        raise BillCollectionError('全量平台绑定表表头与城市成品不一致')
+                    source_columns = {value: number for number, value in enumerate(raw_header)}
+                    positions = [source_columns[value] for value in headers[index]]
+                    pending = 0
+                    for row in iterator:
+                        if not any(value is not None for value in row):
+                            continue
+                        pending += 1
+                        if pending >= 512:
+                            pending = 0
+                            checkpoint(cancelled)
+                        values = [row[number] for number in positions]
+                        _write_data_row(sheets[index], row_numbers[index], values, data_format,
+                                        id_format, id_columns[index])
+                        row_numbers[index] += 1
+                shared_cities[label] = '平台全量'
             with compression(6):
                 book.close()
             closed = True
@@ -201,13 +289,15 @@ def build_binding_summaries(root, config, files, items, cancelled, report=None, 
             os.replace(temporary, target)
             with target.open('rb') as stream:
                 digest = hashlib.file_digest(stream, 'sha256').hexdigest()
-            entry = {'city': SUMMARY_CITY, 'dataset': 'payment_binding', 'artifact_role': 'summary',
+            entry = {'city': summary_city, 'dataset': 'payment_binding', 'artifact_role': 'summary',
                      'start': first, 'end': last, 'name': name, 'relative_path': name,
                      'bytes': target.stat().st_size, 'sha256': digest}
-            atomic_json(root / ('binding_summary_' + month + '.json'), {'file': entry, 'sources': input_proof,
-                        'included_cities': sorted(successful), 'excluded_cities': sorted(set(config['cities']) - successful),
+            if platform is not None:
+                entry['delivery_group'] = summary_city
+            atomic_json(root / ('binding_summary_' + month + proof_suffix + '.json'), {'file': entry, 'sources': input_proof,
+                        'included_cities': sorted(successful), 'excluded_cities': sorted({value['city'] for value in selected} - successful),
                         'totals': totals, 'payroll_executed': False,
-                        'shared_sheet_source': {'sheet': SHARED_PLATFORM_SHEET, 'city': shared_city}})
+                        'shared_sheet_source': {label: city for label, city in shared_cities.items()}})
             results.append(entry)
         finally:
             if not closed:
@@ -219,17 +309,18 @@ def build_binding_summaries(root, config, files, items, cancelled, report=None, 
     return results
 
 
-def load_layout(root, city, month, source, labels, digest):
-    """读取生成时落下的表头/列宽 sidecar；缺失、过期或不完整时回退整本扫描。"""
+def _sidecar_layout(root, city, month, digest):
+    """生成时落下的表头与列宽；哈希不一致或结构无效时返回 None。"""
     try:
         payload = json.loads((root / '原始资料' / city / 'payment_binding' / month
                               / LAYOUT_FILE).read_text(encoding='utf-8'))
         if not isinstance(payload, dict) or payload.get('sha256') != digest:
-            raise ValueError('layout 与成品不一致')
+            return None
         sheets = payload['sheets']
+        if not isinstance(sheets, dict) or not sheets:
+            return None
         layout = {}
-        for label in labels:
-            entry = sheets[label]
+        for label, entry in sheets.items():
             header = entry['header']
             widths = entry['widths']
             if not isinstance(header, list) or not header or not all(isinstance(value, str) and value for value in header):
@@ -244,9 +335,17 @@ def load_layout(root, city, month, source, labels, digest):
                     raise ValueError('layout 列宽无效')
                 merged[value] = int(width)
             layout[label] = (header, merged)
-        return layout, 'sidecar'
+        return layout
     except (OSError, ValueError, KeyError, TypeError):
-        return scan_widths(source, labels), 'scan'
+        return None
+
+
+def load_layout(root, city, month, source, labels, digest):
+    """读取生成时落下的表头/列宽 sidecar；缺失、过期或不完整时回退整本扫描。"""
+    layout = _sidecar_layout(root, city, month, digest)
+    if layout is not None and all(label in layout for label in labels):
+        return {label: layout[label] for label in labels}, 'sidecar'
+    return scan_widths(source, labels), 'scan'
 
 
 def _overview_counts(overview_rows, city):
@@ -256,10 +355,10 @@ def _overview_counts(overview_rows, city):
     raise BillCollectionError('汇总城市统计缺失：' + city)
 
 
-def _summary_lengths(label, first_scan, longest, included):
+def _summary_lengths(label, first_scan, longest, included, shared_sheets=SHARED_PLATFORM_SHEETS):
     header, _ = first_scan[label]
     lengths = [longest[label].get(value, 0) for value in header]
-    if label != SHARED_PLATFORM_SHEET and '城市' not in header:
+    if label not in shared_sheets and '城市' not in header:
         lengths.append(max((display_width(city) for city, _ in included), default=0))
     return lengths
 
@@ -284,14 +383,29 @@ def _set_widths(sheet, lengths, data_format, id_format=None, header=()):
 
 
 def _write_data_row(sheet, row_number, values, data_format, id_format, id_columns):
-    start = 0
-    for column in id_columns:
-        if column > start:
-            sheet.write_row(row_number, start, values[start:column], data_format)
-        sheet.write(row_number, column, values[column], id_format)
-        start = column + 1
-    if start < len(values):
-        sheet.write_row(row_number, start, values[start:], data_format)
+    sheet.write_row(row_number, 0, values)
+
+
+def scan_widths_fast(path, labels, sample=800):
+    """全量平台表的头部/列宽，只抽样内容，避免为量宽度整表解析。"""
+    with open_values(path) as book:
+        scanned = {}
+        for label in labels:
+            if label not in book.sheetnames:
+                raise BillCollectionError('全量平台绑定表缺少子表：' + label)
+            rows = book.rows(label)
+            header = list(next(rows))
+            widths = {value: display_width(value) for value in header}
+            for number, row in enumerate(rows):
+                if number >= sample:
+                    break
+                for name, value in zip(header, row):
+                    if value is not None:
+                        width = display_width(value)
+                        if width > widths[name]:
+                            widths[name] = width
+            scanned[label] = (header, widths)
+        return scanned
 
 
 def scan_widths(path, labels):

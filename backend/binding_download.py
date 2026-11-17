@@ -87,7 +87,8 @@ def eligible_details(frame, plan):
 
 
 @profiled('payment_binding', 4, 'raw')
-def generate_binding(paths, employees, proxies, plan, raw, log, cancelled):
+def generate_binding(paths, employees, proxies, plan, raw, log, cancelled, benlai=None,
+                     full_binding_dir=None, write_full_binding=False):
     from salary_bind_processor import _read_file_fast, run_salary_bind_gen
     raw = Path(raw)
     inputs, outputs = raw / 'inputs', raw / 'generated'
@@ -104,14 +105,20 @@ def generate_binding(paths, employees, proxies, plan, raw, log, cancelled):
                     '薪资代领.csv': selected_proxies.fillna('').astype(str).copy()}
         sources = [(paths['rider_info'], '骑手信息.csv'), (paths['receive_account'], '收薪账户.csv'),
                    (employees, 'merchantFreelancer_白泽全量.csv')]
-        with ThreadPoolExecutor(max_workers=3) as readers:
+        benlai_cities = []
+        if benlai is not None:
+            benlai_file, benlai_cities = benlai
+            sources.append((benlai_file, 'benlaiFreelancer_本来人力全量.xlsx'))
+        with ThreadPoolExecutor(max_workers=4) as readers:
             futures = [(name, readers.submit(copy_context().run, read_frame, source, _read_file_fast))
                        for source, name in sources]
             for name, future in futures:
                 prepared[name] = future.result()
         atomic_json(inputs / 'input_manifest.json', {'mode': 'verified_in_memory',
                     'source_files_retained': True, 'detail_rows': len(details), 'proxy_rows': len(selected_proxies)})
-    scope = {'month': plan.month, 'start': plan.start, 'end': plan.end,
+    scope = {'month': plan.month, 'start': plan.start, 'end': plan.end, 'benlai_cities': list(benlai_cities),
+             'full_binding_dir': str(full_binding_dir) if full_binding_dir else '',
+             'write_full_binding': bool(write_full_binding),
              'team_cities': {re.sub(r'[\s\u200b\u200c\u200d\u2060\ufeff]+', '', str(team)).replace('（', '(').replace('）', ')'):
                              plan.city for team in details['团队名称'].unique()}}
     final = {}
@@ -137,6 +144,10 @@ def generate_binding(paths, employees, proxies, plan, raw, log, cancelled):
         zero.update(fengshen_bind_rate='0.00%', shangyi_bind_rate='0.00%', stations=[])
         stats = {'overall': {key: value for key, value in zero.items() if key != 'stations'},
                  'cities': {plan.city: dict(zero)}}
+    city_stats = stats['cities'][plan.city]
+    if city_stats.get('bind_platform') not in ('商翼', '本来人力'):
+        benlai_keys = {re.sub(r'\s+', '', str(value)).removesuffix('市') for value in benlai_cities}
+        city_stats['bind_platform'] = '本来人力' if re.sub(r'\s+', '', plan.city).removesuffix('市') in benlai_keys else '商翼'
     for field in ('fengshen_bind_count', 'shangyi_bind_count'):
         stats['cities'][plan.city][field] = stats['overall'][field]
     stats.update(month=f'{plan.month[:4]}年{plan.month[5:]}月',
@@ -154,7 +165,7 @@ def generate_binding(paths, employees, proxies, plan, raw, log, cancelled):
                 'pending_enabled_proxy_rows': int(selected_proxies['流程状态'].eq('审批中').sum()),
                 'proxy_rule_version': 2, 'status': 'success',
                 'latest_sources': True, 'payroll_executed': False})
-    log('[完成] 骑手支付绑定已沿用现有生成器生成并核对人数')
+    log(f'[完成] {plan.city} · {plan.month} 支付绑定：已核对人数并生成成品')
     return Path(file), stats
 
 

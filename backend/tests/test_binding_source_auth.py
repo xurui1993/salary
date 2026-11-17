@@ -160,6 +160,17 @@ class BrowserAuthTests(unittest.TestCase):
         with self.assertRaises(BillCollectionError):
             auth.load_state('lanorange')
 
+    def test_baize_probe_reuses_browser_antibot_cookies(self):
+        state = {'cookies': [
+            {'name': 'acw_tc', 'value': 'synthetic-antibot', 'domain': HOST, 'path': '/'},
+            {'name': 'acw_tc', 'value': 'foreign', 'domain': 'other.example', 'path': '/'},
+        ], 'origins': []}
+        session = auth.client('baize', 'synthetic-token-value', state)
+        self.assertEqual([c.value for c in session.cookies if c.name == 'acw_tc'], ['synthetic-antibot'])
+        auth.save_state('baize', storage_state())
+        session = auth.client('baize', 'synthetic-token-value')
+        self.assertIn('Yunke-Mer-Token', {c.name for c in session.cookies})
+
     def test_silent_refresh_replays_saved_session_without_a_login_window(self):
         auth.save_token('baize', 'old-token-value')
         auth.save_state('baize', storage_state())

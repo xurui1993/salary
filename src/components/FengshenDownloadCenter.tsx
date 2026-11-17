@@ -2,7 +2,7 @@ import {useStationDirectory} from '../lib/useStationDirectory';
 import {CityStationCount} from './CityStationCount';
 import { recoverySummary } from '../lib/downloadCenterLogic';
 import { readDownloadResponse, saveDownloadBlob, downloadOutput, downloadErrorMessage } from '../lib/outputDownload';
-import { isBaize, isXiaoxiang, isRiderArchive, isGlobalDataset, datasetGroup,isMerchant,isMerchantSnapshot,toggleDownloadDataset } from '../lib/downloadCenterLogic';
+import { isBaize, isBenlai, isXiaoxiang, isRiderArchive, isGlobalDataset, datasetGroup,isMerchant,isMerchantSnapshot,toggleDownloadDataset } from '../lib/downloadCenterLogic';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2, CloudDownload, Download, KeyRound, Loader2, Plus, RefreshCw, Square, X, XCircle, FileSpreadsheet, Calculator, Pencil, Trash2, LayoutGrid, List, AlertTriangle } from 'lucide-react';
 import { DownloadAccountPanel } from './DownloadAccountPanel';
@@ -150,7 +150,7 @@ const LANORANGE_CITIES = ['保定','北京','潮州','大连','东莞','广州',
 // 预设配置现已全面切换为用户自定义，支持增删改与持久化存储
 
 const DATASET_LABELS: Record<string, string> = {
-  invitation_records:'邀请记录（全量）',attendance_detail:'骑手出勤明细',baize_employees: '商翼员工资料（全量）', rider_daily: '日维度骑手分析（灯塔）', rider_archive: '骑手档案（灯塔）', detail_orders: '配送订单明细（灯塔）', detail_kesu: '配送客诉明细（灯塔）', detail_reviews: '配送评价明细（灯塔）', rider_order_detail: '骑手订单明细（灯塔）', xiaoxiang_attendance_detail: '骑手出勤明细合并（灯塔）', delivery_fee: '配送费', penalty: '违规扣款', rider_monthly: '风神骑手月度 UB 账单',
+  invitation_records:'邀请记录（全量）',attendance_detail:'骑手出勤明细',baize_employees: '商翼员工资料（全量）', benlai_employees: '本来人力灵工资料（全量）', rider_daily: '日维度骑手分析（灯塔）', rider_archive: '骑手档案（灯塔）', detail_orders: '配送订单明细（灯塔）', detail_kesu: '配送客诉明细（灯塔）', detail_reviews: '配送评价明细（灯塔）', rider_order_detail: '骑手订单明细（灯塔）', xiaoxiang_attendance_detail: '骑手出勤明细合并（灯塔）', delivery_fee: '配送费', penalty: '违规扣款', rider_monthly: '风神骑手月度 UB 账单',
   receive_account: '骑手风神绑定', rider_detail: '骑手数据明细', rider_info: '骑手信息导出', fraud: '欺诈单', problem: '问题单',
   payment_binding: '骑手支付绑定（生成表）', goods_rent: '物资租用登记',
   abnormal_followup: '异常骑手跟进（生成表）',
@@ -369,7 +369,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     if (category === 'personnel') {
       return [
         'invitation_records', 'delivery_waybill', 'rider_daily_summary', 'rider_info',
-        'goods_rent', 'baize_employees', 'rider_daily', 'rider_archive', 'detail_orders',
+        'goods_rent', 'baize_employees', 'benlai_employees', 'rider_daily', 'rider_archive', 'detail_orders',
         'detail_kesu', 'detail_reviews', 'lanorange_rider_profile', 'lanorange_monthly_insurance',
         'lanorange_batch_quit', 'abnormal_riders', 'shangyi_employees'
       ].includes(id);
@@ -377,7 +377,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     return true;
   };
 
-  const [systemFilter, setSystemFilter] = useState<'all' | 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang'>('all');
+  const [systemFilter, setSystemFilter] = useState<'all' | 'fengshen' | 'lanorange' | 'baize' | 'benlai' | 'xiaoxiang'>('all');
   const [historyFocusId,setHistoryFocusId]=useState('');
   const [submittedTaskInfo, setSubmittedTaskInfo] = useState<{ id: string; name: string } | null>(null);
 
@@ -567,15 +567,16 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const generationRange = reportRange(selectedReport, start, end, shanghaiToday());
   const generationAll = taskKind === 'generate' && selectedReport?.scope === 'all';
   const baizeOnly: boolean = platform === 'baize' || (datasets.length > 0 && datasets.every(isBaize));
+  const benlaiOnly: boolean = platform === 'benlai' || (datasets.length > 0 && datasets.every(isBenlai));
   const xiaoxiangOnly: boolean = taskKind === 'download' && (platform ? platform === 'xiaoxiang' : datasets.length > 0 && datasets.every(isXiaoxiang));
   const archiveOnly: boolean = xiaoxiangOnly && datasets.length > 0 && datasets.every(isRiderArchive);
   const xiaoxiangDated: boolean = xiaoxiangOnly && !archiveOnly;
   const yesterday = new Date(shanghaiToday() + 'T00:00:00Z'); yesterday.setUTCDate(yesterday.getUTCDate() - 1);
   const dailyDate = yesterday.toISOString().slice(0, 10);
-  const blueOnly: boolean = platform === 'lanorange' || (!baizeOnly && !xiaoxiangOnly && datasets.length > 0 && datasets.every(isGlobalDataset));
+  const blueOnly: boolean = platform === 'lanorange' || (!baizeOnly && !benlaiOnly && !xiaoxiangOnly && datasets.length > 0 && datasets.every(isGlobalDataset));
   const merchantOnly: boolean = datasets.length > 0 && datasets.every(isMerchant), merchantSnapshotOnly: boolean = merchantOnly && !datasets.includes('attendance_detail');
   const hasAttendance=datasets.includes('attendance_detail');
-  const noCity=blueOnly||baizeOnly,noDate=baizeOnly;
+  const noCity=blueOnly||baizeOnly||benlaiOnly,noDate=baizeOnly||benlaiOnly;
   const attendanceDateMax=new Date(shanghaiToday()+'T00:00:00Z');attendanceDateMax.setUTCDate(attendanceDateMax.getUTCDate()-1);const attendanceLast=attendanceDateMax.toISOString().slice(0,10);
   const attendanceDateMin=new Date(shanghaiToday()+'T00:00:00Z');attendanceDateMin.setUTCDate(attendanceDateMin.getUTCDate()-90);const attendanceFirst=attendanceDateMin.toISOString().slice(0,10);
   const xiaoxiangDateMin=new Date(`${shanghaiToday()}T00:00:00Z`);xiaoxiangDateMin.setUTCDate(xiaoxiangDateMin.getUTCDate()-365);const xiaoxiangFirst=xiaoxiangDateMin.toISOString().slice(0,10);
@@ -606,6 +607,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   },[xiaoxiangOnly,dailyDate]);
   const merchantDateValid=merchantSnapshotOnly||(validDates&&start>=attendanceFirst&&end<=attendanceLast);
   const invalidBaizeMix = datasets.some(isBaize) && !baizeOnly;
+  const invalidBenlaiMix = datasets.some(isBenlai) && !benlaiOnly;
   const invalidXiaoxiangMix = datasets.some(isXiaoxiang) && !xiaoxiangOnly;
   const displayedCities = React.useMemo(() => {
     const baseCities = options?.cities ?? [];
@@ -625,7 +627,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   }, [options?.cities, platform, xiaoxiangOnly, stationDirectory.data?.cities]);
   const selectableCities = displayedCities.filter(city => !city.disabled);
   const invalidMerchantMix=hasAttendance&&!merchantDateValid;
-  const canSubmit = taskKind === 'generate' ? datasets.length === 1 && !!selectedReport && !!generationRange && (generationAll || cities.length > 0) : datasets.every(moduleDataset) && !invalidBaizeMix && !invalidXiaoxiangMix && !invalidMerchantMix && datasets.length > 0 && (merchantOnly?(cities.length>0&&merchantDateValid):(archiveOnly || blueOnly || baizeOnly || (xiaoxiangDated && xiaoxiangDateValid) || (cities.length > 0 && validDates)));
+  const canSubmit = taskKind === 'generate' ? datasets.length === 1 && !!selectedReport && !!generationRange && (generationAll || cities.length > 0) : datasets.every(moduleDataset) && !invalidBaizeMix && !invalidBenlaiMix && !invalidXiaoxiangMix && !invalidMerchantMix && datasets.length > 0 && (merchantOnly?(cities.length>0&&merchantDateValid):(archiveOnly || blueOnly || baizeOnly || benlaiOnly || (xiaoxiangDated && xiaoxiangDateValid) || (cities.length > 0 && validDates)));
   const monthlyDatasets = datasets.filter(dataset => MONTHLY_DATASETS.has(dataset));
   const periodDatasets = datasets.filter(dataset => !isLanorange(dataset) && !MONTHLY_DATASETS.has(dataset) && !SNAPSHOT_DATASETS.has(dataset) && !['payment_binding', 'abnormal_followup'].includes(dataset));
   const followupDatasets = ['payment_binding', 'abnormal_followup'].filter(id => datasets.includes(id));
@@ -643,8 +645,8 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     end: generationAll ? shanghaiToday() : generationRange?.end || end,
     ...(datasets.some(isLanorange) ? {lanorange_full_delivery:true} : {}),
     ...(selectedReport?.station_rule === 'separation' && !generationAll && includeSeparation ? {include_separation:true} : {}),
-  } : { task_kind: taskKind, cities: blueOnly ? (blueCities.length && !datasets.includes('abnormal_riders') ? blueCities : ['全部城市']) : baizeOnly ? ['全部城市'] : xiaoxiangOnly ? (cities.length > 0 ? cities : ['全部城市']) : cities, datasets, ...(datasets.some(isLanorange) || blueOnly ? {lanorange_full_delivery:true} : {}),
-    start: archiveOnly ? shanghaiToday() : xiaoxiangDated ? start : blueOnly||baizeOnly||merchantSnapshotOnly ? shanghaiToday() : start, end: archiveOnly ? shanghaiToday() : xiaoxiangDated ? end : blueOnly||baizeOnly||merchantSnapshotOnly ? shanghaiToday() : end,
+  } : { task_kind: taskKind, cities: blueOnly ? (blueCities.length && !datasets.includes('abnormal_riders') ? blueCities : ['全部城市']) : baizeOnly ? ['全部城市'] : benlaiOnly ? ['全部城市'] : xiaoxiangOnly ? (cities.length > 0 ? cities : ['全部城市']) : cities, datasets, ...(datasets.some(isLanorange) || blueOnly ? {lanorange_full_delivery:true} : {}),
+    start: archiveOnly ? shanghaiToday() : xiaoxiangDated ? start : blueOnly||baizeOnly||benlaiOnly||merchantSnapshotOnly ? shanghaiToday() : start, end: archiveOnly ? shanghaiToday() : xiaoxiangDated ? end : blueOnly||baizeOnly||benlaiOnly||merchantSnapshotOnly ? shanghaiToday() : end,
     ...(refreshHistory && datasets.some(dataset => ['fraud', 'problem'].includes(dataset)) ? { refresh_history: true } : {}),
     ...(waybillAllCitySend && datasets.includes('delivery_waybill') ? { waybill_all_city_send: true } : {}),
     ...(blueOnly && datasets.includes('lanorange_part_price') ? { lanorange_months: validDates ? coveredMonths(start, end) : [...lanorangeMonths].sort() } : {}),
@@ -920,12 +922,13 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const waitingLogin = selectedRun && (selectedRun.phase === 'waiting_login' || ['waiting_login', 'waiting_for_login', 'login_required', 'waiting_auth'].includes(selectedRun.status.toLowerCase()));
   const selectedRecoverable = selectedRun?.items?.filter(recoverable) || [];
   const blueCityScoped = blueOnly && !datasets.includes('abnormal_riders');
-  const subitemCount = merchantOnly?cities.length*datasets.length:baizeOnly ? 1 : xiaoxiangOnly ? datasets.length : blueOnly ? (datasets.filter(value => isLanorange(value) && value !== 'abnormal_riders').length * Math.max(1, blueCityScoped ? blueCities.length : 1)) + (datasets.includes('abnormal_riders') ? 1 : 0) : datasets.filter(isLanorange).length + cities.length * (periodDatasets.length + followupDatasets.length * monthPreview.length + datasets.filter(value => SNAPSHOT_DATASETS.has(value)).length + monthlyDatasets.length * monthPreview.length);
+  const subitemCount = merchantOnly?cities.length*datasets.length:baizeOnly ? 1 : benlaiOnly ? 1 : xiaoxiangOnly ? datasets.length : blueOnly ? (datasets.filter(value => isLanorange(value) && value !== 'abnormal_riders').length * Math.max(1, blueCityScoped ? blueCities.length : 1)) + (datasets.includes('abnormal_riders') ? 1 : 0) : datasets.filter(isLanorange).length + cities.length * (periodDatasets.length + followupDatasets.length * monthPreview.length + datasets.filter(value => SNAPSHOT_DATASETS.has(value)).length + monthlyDatasets.length * monthPreview.length);
   const submitHint = taskKind === 'generate'
     ? datasets[0] === 'abnormal_riders' ? '全部城市 · 全量资料 · 生成一份整理表'
       : !cities.length ? '请选择生成范围的城市' : !validDates ? '请选择有效日期' : `${cities.length} 个城市 · 按 ${monthPreview.length} 个月份生成`
     : merchantOnly?merchantSnapshotOnly?'所选城市全部邀请记录 · 按城市分别保存 · 不筛选日期':merchantDateValid?'所选城市全部站点 · 出勤按城市和日期采集后分别领取':'出勤明细请选择最近90天内、早于今天的起止日期'
     : baizeOnly ? '商翼全量员工原表 · 一份文件 · 不参与兼职自动补齐'
+    : benlaiOnly ? '本来人力全量灵工原表 · 一份文件 · 签约城市实时读取'
     : xiaoxiangOnly ? (archiveOnly ? `灯塔骑手档案 · ${datasets.length} 类资料 · 快照` : start===end ? `灯塔资料 · ${datasets.length} 类 · ${start} 单日` : `灯塔资料 · ${datasets.length} 类 · ${start} 至 ${end}，共 ${xiaoxiangSpanDays} 天`)
     : blueOnly
     ? `蓝橙全量 · ${datasets.length} 类资料，每类一个文件` + (blueCityScoped && blueCities.length ? ` · ${blueCities.length} 个城市按城市分别导出` : '，无需选择城市和日期') + (datasets.includes('lanorange_part_price') && lanorangeMonths.length ? ` · 价格档案按 ${lanorangeMonths.length} 个月份筛选` : '')
@@ -936,7 +939,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const submitReady = !!uncertainCreate || canSubmit;
   const railSummary = buildExecutionRailSummary({
     datasetsCount: datasets.length,
-    cities: baizeOnly ? [] : blueOnly ? (datasets.includes('abnormal_riders') ? [] : blueCities) : cities,
+    cities: baizeOnly || benlaiOnly ? [] : blueOnly ? (datasets.includes('abnormal_riders') ? [] : blueCities) : cities,
     start,
     end,
     noCity,
@@ -946,6 +949,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     xiaoxiangOnly,
     blueOnly,
     baizeOnly,
+    benlaiOnly,
     merchantOnly,
     merchantSnapshotOnly,
     merchantDateValid,
@@ -994,7 +998,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       {pollError && <p role="status" className="text-xs text-amber-700">{pollError}。连接恢复后自动更新。</p>}
       {uncertainRetry && <div role="status" className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800"><p>上次失败项处理结果尚未确认，请先确认原请求。</p><button type="button" className={`${smallButton} mt-2`} disabled={retryPending} onClick={() => void retrySelected()}>{retryPending ? '正在确认…' : '重新确认原分项请求'}</button></div>}
 
-      {runs.some(run => ['waiting_login', 'waiting_manual'].includes(run.phase || '')) && <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800"><span>有任务正在等待登录或人工验证。</span><button type="button" className={smallButton} onClick={() => selectRun(runs.find(run => ['waiting_login', 'waiting_manual'].includes(run.phase || ''))!)}>查看并处理</button></div>}
+      {runs.some(run => ['waiting_login', 'waiting_manual'].includes(run.phase || '')) && <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800"><span>有任务正在等待短信验证，请打开验证窗口输入验证码。</span><button type="button" className={smallButton} onClick={() => { selectRun(runs.find(run => ['waiting_login', 'waiting_manual'].includes(run.phase || ''))!); window.dispatchEvent(new CustomEvent('workbench:fengshen-verification')); }}>输入验证码</button></div>}
       {uncertainCreate && view === 'history' && <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800"><span>原下载请求仍待确认，请先完成确认。</span><button type="button" className={smallButton} onClick={() => setView('create')}>返回确认原请求</button></div>}
 
       {(() => {
@@ -1041,7 +1045,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                       全部系统
                     </button>
                     {SYSTEM_META.map(sys => {
-                      const isSelectableGroup = sys.key === 'fengshen' || sys.key === 'lanorange' || sys.key === 'baize' || sys.key === 'xiaoxiang';
+                      const isSelectableGroup = sys.key === 'fengshen' || sys.key === 'lanorange' || sys.key === 'baize' || sys.key === 'benlai' || sys.key === 'xiaoxiang';
                       const count = isSelectableGroup
                         ? datasets.filter(id => datasetGroup(id) === sys.key).length
                         : 0;
@@ -1052,7 +1056,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                             type="button"
                             aria-pressed={systemFilter === sys.key}
                             title={`${sys.label}（${sys.businessLine}）：${sys.description}`}
-                            onClick={() => setSystemFilter(prev => prev === sys.key ? 'all' : sys.key as 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang')}
+                            onClick={() => setSystemFilter(prev => prev === sys.key ? 'all' : sys.key as 'fengshen' | 'lanorange' | 'baize' | 'benlai' | 'xiaoxiang')}
                             className={`wb-system-filter-btn ${systemFilter === sys.key ? 'is-active' : ''}`}
                           >
                             <span>{sys.label}</span>
@@ -1079,7 +1083,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                     <div className="wb-step-badge">
                       <span className="wb-step-number">01</span>
                       <span id="download-cities-label" className="wb-step-title">处理城市</span>
-                      {baizeOnly ? (
+                      {baizeOnly || benlaiOnly ? (
                         <span className="wb-step-count-pill">全站全量 · 免选城市</span>
                       ) : blueOnly ? (
                         <span className="wb-step-count-pill tabular-nums">
@@ -1102,7 +1106,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                     </div>
 
                     <div className="wb-inline-city-toolbar flex-wrap">
-                      {baizeOnly ? null : blueOnly ? (
+                      {baizeOnly || benlaiOnly ? null : blueOnly ? (
                         <>
                           <button
                             type="button"
@@ -1312,7 +1316,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                               type="button"
                               className="wb-city-preset-btn"
                               disabled={formLocked || !selectableCities.length}
-                              title="全选城市、仅勾选骑手信息、日期设为今天。一次任务导出全部城市快照（约25分钟验证窗口跨城市生效，全程只需一条验证码）；当天各时段、各城市的兼职核算会自动复用这些快照，不再触发导出和验证码。"
+                              title="全选城市、仅勾选骑手信息、日期设为今天，一次导出全部城市当前骑手信息快照（不会复用历史数据）。"
                               onClick={() => {
                                 setCities(selectableCities.map(c => c.name));
                                 setDatasets(['rider_info']);
@@ -1329,14 +1333,16 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                     </div>
                   </div>
 
-                  {baizeOnly ? (
+                  {baizeOnly || benlaiOnly ? (
                     <div className="wb-baize-inline-banner" role="group" aria-label="处理城市列表">
                       <div className="wb-baize-banner-pill">
                         <span className="wb-city-check-box shrink-0" aria-hidden="true">✓</span>
-                        <span className="wb-baize-banner-title">全部授权站点</span>
+                        <span className="wb-baize-banner-title">{benlaiOnly ? '全部授权城市' : '全部授权站点'}</span>
                       </div>
                       <span className="wb-baize-banner-desc">
-                        自动覆盖当前商翼账号权限下全部合作城市与站点，单次任务全站合并导出，无需分城市逐个筛选。
+                        {benlaiOnly
+                          ? '自动覆盖当前本来人力账号权限下全部灵工档案与实时签约城市；同一任务内一次导出，无需分城市筛选。'
+                          : '自动覆盖当前商翼账号权限下全部合作城市与站点，单次任务全站合并导出，无需分城市逐个筛选。'}
                       </span>
                     </div>
                   ) : blueOnly ? (
@@ -1427,7 +1433,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                           <p id="download-dates-label" className="wb-step-title m-0">
                             处理月份
                           </p>
-                          {baizeOnly ? (
+                          {baizeOnly || benlaiOnly ? (
                             <span className="wb-step-count-pill">全量实时快照 · 免选账期</span>
                           ) : blueOnly && validDates ? (
                             <span className="wb-step-count-pill tabular-nums">
@@ -1441,7 +1447,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                             </span>
                           ) : null}
                         </div>
-                        {!baizeOnly && !blueOnly && (
+                        {!baizeOnly && !benlaiOnly && !blueOnly && (
                           <div className="wb-city-preset-group">
                             <WorkbenchDatePicker
                               mode="range"
@@ -1476,14 +1482,16 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                       </div>
                     );
                   })()}
-                  {baizeOnly ? (
+                  {baizeOnly || benlaiOnly ? (
                     <div className="wb-baize-inline-banner" role="group" aria-label="处理月份列表">
                       <div className="wb-baize-banner-pill">
                         <span className="wb-city-check-box shrink-0" aria-hidden="true">✓</span>
                         <span className="wb-baize-banner-title">不限账期（实时快照）</span>
                       </div>
                       <span className="wb-baize-banner-desc">
-                        按导出时刻直接拉取商翼系统最新全量在职与离职员工档案，不受自然月份或日期区间限制。
+                        {benlaiOnly
+                          ? '按导出时刻直接拉取本来人力最新全量灵工档案与签约状态，不受自然月份或日期区间限制。'
+                          : '按导出时刻直接拉取商翼系统最新全量在职与离职员工档案，不受自然月份或日期区间限制。'}
                       </span>
                     </div>
                   ) : (
@@ -1725,7 +1733,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                     </div>
                   </div>
 
-                  {(['fengshen', 'lanorange', 'baize', 'xiaoxiang'] as const).filter(group => platform?group===platform:systemFilter === 'all' || systemFilter === group).map(group => {
+                  {(['fengshen', 'lanorange', 'baize', 'benlai', 'xiaoxiang'] as const).filter(group => platform?group===platform:systemFilter === 'all' || systemFilter === group).map(group => {
                     const groupDatasets = visibleDatasets.filter(value => !isGenerator(value.id) && datasetGroup(value.id) === group);
                     const filteredDatasets = groupDatasets.filter(value => matchDatasetCategory(value.id, datasetCategory));
                     if (datasetCategory !== 'all' && filteredDatasets.length === 0) return null;
@@ -1737,13 +1745,13 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                         <div className={platform ? 'wb-step-card-header' : 'wb-source-header'}>
                           <div className={platform ? 'wb-step-badge' : 'wb-source-title'}>
                             {platform && <span className="wb-step-number">03</span>}
-                            <span className={`wb-sys-badge is-${group}`}>{group === 'baize' ? '商翼' : group === 'xiaoxiang' ? '灯塔' : group === 'lanorange' ? '蓝橙' : '风神'}</span>
+                            <span className={`wb-sys-badge is-${group}`}>{group === 'baize' ? '商翼' : group === 'benlai' ? '本来人力' : group === 'xiaoxiang' ? '灯塔' : group === 'lanorange' ? '蓝橙' : '风神'}</span>
                             <span id={platform ? 'download-datasets-label' : undefined} className={platform ? 'wb-step-title' : ''}>
-                              {group === 'baize' ? '选择资料 · 商翼员工资料' : group === 'xiaoxiang' ? '选择资料 · 灯塔资料' : group === 'lanorange' ? '选择资料 · 蓝橙资料' : '选择资料 · 风神资料'}
+                              {group === 'baize' ? '选择资料 · 商翼员工资料' : group === 'benlai' ? '选择资料 · 本来人力灵工资料' : group === 'xiaoxiang' ? '选择资料 · 灯塔资料' : group === 'lanorange' ? '选择资料 · 蓝橙资料' : '选择资料 · 风神资料'}
                             </span>
                             <span className="wb-step-count-pill tabular-nums">已选 {selectedCount} / {filteredDatasets.length}</span>
                           </div>
-                          {group !== 'baize' && (
+                          {group !== 'baize' && group !== 'benlai' && (
                             <button
                               type="button"
                               disabled={formLocked}
@@ -1757,7 +1765,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                             </button>
                           )}
                         </div>
-                        <div className={datasetViewMode === 'compact' ? 'wb-dataset-grid-compact' : (group === 'baize' ? 'wb-baize-single-grid gap-2.5' : 'grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3')}>
+                        <div className={datasetViewMode === 'compact' ? 'wb-dataset-grid-compact' : (group === 'baize' || group === 'benlai' ? 'wb-baize-single-grid gap-2.5' : 'grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3')}>
                           {filteredDatasets.map(dataset => {
                             const selected = datasets.includes(dataset.id);
                             const cardMeta = getDatasetCardMeta(dataset.id, dataset.label);
@@ -1776,7 +1784,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                 <label
                                   key={dataset.id}
                                   className={`wb-dataset-compact-card ${selected ? 'is-selected' : ''} ${formLocked ? 'is-disabled' : ''}`}
-                                  title={group === 'baize' ? '含员工工号、姓名、身份证号、所属站点、入离职日期及当前在职状态' : cardMeta.desc}
+                                  title={group === 'baize' ? '含员工工号、姓名、身份证号、所属站点、入离职日期及当前在职状态' : group === 'benlai' ? '含姓名、证件号、手机号、城市与签约状态；签约城市实时读取，用于支付绑定判定' : cardMeta.desc}
                                 >
                                   <input
                                     type="checkbox"
@@ -1814,7 +1822,9 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                   <span className="wb-dataset-desc">
                                     {group === 'baize'
                                       ? '含员工工号、姓名、身份证号、所属站点、入离职日期及当前在职状态，导出全站原始档案并独立归档'
-                                      : cardMeta.desc}
+                                      : group === 'benlai'
+                                        ? '含姓名、证件号、手机号、城市与签约状态；导出全站原始档案，签约城市在每次任务开始时实时读取'
+                                        : cardMeta.desc}
                                   </span>
                                 </div>
                               </label>
@@ -1838,7 +1848,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                         {datasets.length > 0 ? `已选 ${datasets.length} 项` : '0 项'}
                       </span>
                     </div>
-                    {datasets.length > 0 && !baizeOnly && (
+                    {datasets.length > 0 && !baizeOnly && !benlaiOnly && (
                       <button
                         type="button"
                         className="wb-compact-clear-btn"
@@ -1874,7 +1884,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                     )}
                                   </div>
                                 </div>
-                                {!baizeOnly && (
+                                {!baizeOnly && !benlaiOnly && (
                                   <button
                                     type="button"
                                     className="wb-compact-item-remove"
@@ -1949,7 +1959,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                       </span>
                     </button>
                     {!canSubmit && !uncertainCreate && !creating ? (
-                      !baizeOnly && (blueOnly ? blueCities.length === 0 : cities.length === 0) ? (
+                      !baizeOnly && !benlaiOnly && (blueOnly ? blueCities.length === 0 : cities.length === 0) ? (
                         <button
                           type="button"
                           className="wb-execution-prompt-btn"
@@ -2046,7 +2056,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
 {selectedRun && <div className={`${panel} wb-task-detail min-w-0 space-y-4 p-4 sm:p-5`}>
 
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div><h3 className="flex flex-wrap items-center gap-2 text-base font-semibold text-slate-900">{selectedRun.datasets.every(isBaize) ? '商翼全量员工资料' : selectedRun.datasets.every(isLanorange) ? (selectedRun.lanorange_by_city ? `蓝橙 ${selectedRun.cities.join('、')}` : '蓝橙全量') : selectedRun.cities.length > 2 ? `${selectedRun.cities.length} 个城市` : selectedRun.cities.join('、')}的下载任务 <span className={`rounded-md px-2 py-1 text-xs font-normal ${statusInfo(selectedRun.status).color}`}>{runStatusLabel}</span></h3><p className="mt-2 text-xs text-slate-500">{selectedRun.datasets.every(isLanorange) ? (selectedRun.lanorange_by_city ? '所选城市、全部状态、不按日期筛选' : '全部城市、全部状态、不按日期筛选') : `${selectedRun.start} 至 ${selectedRun.end}`} · {selectedRun.datasets.length} 类资料</p></div>
+                <div><h3 className="flex flex-wrap items-center gap-2 text-base font-semibold text-slate-900">{selectedRun.datasets.every(isBaize) ? '商翼全量员工资料' : selectedRun.datasets.every(isBenlai) ? '本来人力全量灵工资料' : selectedRun.datasets.every(isLanorange) ? (selectedRun.lanorange_by_city ? `蓝橙 ${selectedRun.cities.join('、')}` : '蓝橙全量') : selectedRun.cities.length > 2 ? `${selectedRun.cities.length} 个城市` : selectedRun.cities.join('、')}的下载任务 <span className={`rounded-md px-2 py-1 text-xs font-normal ${statusInfo(selectedRun.status).color}`}>{runStatusLabel}</span></h3><p className="mt-2 text-xs text-slate-500">{selectedRun.datasets.every(isLanorange) ? (selectedRun.lanorange_by_city ? '所选城市、全部状态、不按日期筛选' : '全部城市、全部状态、不按日期筛选') : `${selectedRun.start} 至 ${selectedRun.end}`} · {selectedRun.datasets.length} 类资料</p></div>
                 {!activeRun && <details><summary className="wb-link">需要重新采集？</summary><p className="text-xs">先处理下方可恢复项。新任务不会继续原导出；结果未知时请先核对原回执。</p><button type="button" className={smallButton} disabled={selectedRun.items?.some(item => item.submission_state === 'unknown')} onClick={() => prefillFromRun(selectedRun)}>重新采集并创建新任务</button></details>}
                 {activeRun && <button type="button" className={smallButton} disabled={cancelling || ['cancelling', 'canceling'].includes(selectedRun.status)} onClick={() => void cancelDownload()}>{cancelling ? <Loader2 size={13} /> : <Square size={13} />}停止任务</button>}
               </div>
@@ -2059,7 +2069,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                 {typeof selectedRun.summary === 'string' && <p className="text-xs text-slate-500">{selectedRun.summary}</p>}
                 {selectedRun.order_progress && <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs text-slate-700 space-y-1" aria-label="运单分批处理进度"><p>{({ collecting: '采集资料与后台处理并行中', processing: '本地校验处理中', merging: '合并并生成成品', completed: '分批处理完成' } as Record<string, string>)[selectedRun.order_progress.stage || ''] || '运单处理中'} · 批次 {selectedRun.order_progress.batch || 0}/{selectedRun.order_progress.batches || 0}</p><p>已获取 {selectedRun.order_progress.obtained || 0} 批 · 已校验 {selectedRun.order_progress.processed || 0} 批 · 已处理 {(selectedRun.order_progress.processed_rows || 0).toLocaleString()} 条运单</p><p>复用历史 {selectedRun.order_progress.cached_days || 0} 天 · 本次下载 {formatSize(selectedRun.order_progress.download_bytes || 0)} · 已用 {Math.round(selectedRun.order_progress.elapsed_seconds || 0)} 秒</p></div>}
               </div>
-              {waitingLogin && <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">{selectedRun.datasets.some(id => isLanorange(id) || isBaize(id) || isXiaoxiang(id)) ? <><p>此任务需要来源认证。</p><button className={`${smallButton} mt-2`} onClick={() => window.dispatchEvent(new CustomEvent('workbench:connections', { detail: selectedRun.datasets.some(isBaize) ? 'baize' : selectedRun.datasets.some(isXiaoxiang) ? 'xiaoxiang' : 'lanorange' }))}>完成验证</button></> : <><p>完成风神登录后，任务会继续。</p>{onOpenFengshenLogin ? <button type="button" onClick={() => onOpenFengshenLogin(user.id)} className={`${smallButton} mt-2`}><KeyRound size={14} />打开风神登录</button> : <p>请在运行系统的电脑上完成风神登录。</p>}</>}</div>}
+              {waitingLogin && <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">{selectedRun.datasets.some(id => isLanorange(id) || isBaize(id) || isBenlai(id) || isXiaoxiang(id)) ? <><p>此任务需要来源认证。</p><button className={`${smallButton} mt-2`} onClick={() => window.dispatchEvent(new CustomEvent('workbench:connections', { detail: selectedRun.datasets.some(isBaize) ? 'baize' : selectedRun.datasets.some(isBenlai) ? 'benlai' : selectedRun.datasets.some(isXiaoxiang) ? 'xiaoxiang' : 'lanorange' }))}>完成验证</button></> : <><p>完成风神登录后，任务会继续。</p>{onOpenFengshenLogin ? <button type="button" onClick={() => onOpenFengshenLogin(user.id)} className={`${smallButton} mt-2`}><KeyRound size={14} />打开风神登录</button> : <p>请在运行系统的电脑上完成风神登录。</p>}</>}</div>}
               {selectedRun.phase === 'waiting_manual' && <p role="status" className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">平台要求额外验证，当前任务已暂停。请打开风神验证窗口查看具体原因。</p>}
               {selectedRun.error && <p role="alert" className="rounded-lg bg-rose-50 border border-rose-200 p-3 text-xs text-rose-700 break-words">{selectedRun.error}</p>}
 
@@ -2137,7 +2147,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                             </span>
                           </div>
                         </div>
-                    <p className="mt-1.5 text-slate-500">{isBaize(item.dataset) ? '商翼全量员工原表 · 不按城市或日期筛选' : isRiderArchive(item.dataset) ? '小象灯塔骑手档案 · 全部站点当前快照 · 手机号/身份证为明文 · 照片以链接提供' : item.dataset === 'rider_order_detail' || item.dataset === 'xiaoxiang_attendance_detail' ? `灯塔通知附件合并 · ${item.start} 至 ${item.end} · 按附件数据日期筛选` : isXiaoxiang(item.dataset) ? (item.start===item.end ? `小象灯塔商配送看板 · ${item.start} 单日 · 全部站点一份工作簿` : `小象灯塔商配送看板 · ${item.start} 至 ${item.end} 区间合并 · 全部站点一份工作簿${item.dataset === 'rider_daily' ? ' · 按附件20列格式' : ''}`) : item.dataset === 'abnormal_riders' ? '生成表 · 由本任务的 5 类蓝橙成品整理生成（全部城市一份）' : isLanorange(item.dataset) ? (item.city === '全部城市' ? selectedRun.lanorange_full_delivery ? '全量统一交付 · 全部状态、无日期筛选；缺失批次不计为完成' : '全量原始表 · 全部城市、全部状态、无业务筛选' : item.dataset === 'lanorange_batch_quit' ? '平台城市批次原表 · 汇总按骑手城市归属筛选' : '城市原始表 · 全部状态、不按日期筛选') : item.dataset === 'rider_info' ? '当前快照' : `${item.start} 至 ${item.end}`}{item.phase && !['completed', 'failed', 'cancelled', 'interrupted'].includes(item.phase) ? ` · ${phaseLabel(item.phase)}` : ''}</p>
+                    <p className="mt-1.5 text-slate-500">{isBaize(item.dataset) ? '商翼全量员工原表 · 不按城市或日期筛选' : isBenlai(item.dataset) ? '本来人力全量灵工原表 · 不按城市或日期筛选 · 签约城市实时读取' : isRiderArchive(item.dataset) ? '小象灯塔骑手档案 · 全部站点当前快照 · 手机号/身份证为明文 · 照片以链接提供' : item.dataset === 'rider_order_detail' || item.dataset === 'xiaoxiang_attendance_detail' ? `灯塔通知附件合并 · ${item.start} 至 ${item.end} · 按附件数据日期筛选` : isXiaoxiang(item.dataset) ? (item.start===item.end ? `小象灯塔商配送看板 · ${item.start} 单日 · 全部站点一份工作簿` : `小象灯塔商配送看板 · ${item.start} 至 ${item.end} 区间合并 · 全部站点一份工作簿${item.dataset === 'rider_daily' ? ' · 按附件20列格式' : ''}`) : item.dataset === 'abnormal_riders' ? '生成表 · 由本任务的 5 类蓝橙成品整理生成（全部城市一份）' : isLanorange(item.dataset) ? (item.city === '全部城市' ? selectedRun.lanorange_full_delivery ? '全量统一交付 · 全部状态、无日期筛选；缺失批次不计为完成' : '全量原始表 · 全部城市、全部状态、无业务筛选' : item.dataset === 'lanorange_batch_quit' ? '平台城市批次原表 · 汇总按骑手城市归属筛选' : '城市原始表 · 全部状态、不按日期筛选') : item.dataset === 'rider_info' ? '当前快照' : `${item.start} 至 ${item.end}`}{item.phase && !['completed', 'failed', 'cancelled', 'interrupted'].includes(item.phase) ? ` · ${phaseLabel(item.phase)}` : ''}</p>
                     {item.error && <p className="mt-2 break-words text-rose-700">{item.error}</p>}
                     {!activeRun && item.status !== 'success' && item.recovery && <div className="mt-2"><p className={item.recovery.mode === 'blocked' ? 'text-amber-800' : 'text-sky-800'}>{!recoverable(item) ? '需人工核对后处理' : item.recovery.mode === 'resume_existing' ? '复用已有资料，继续处理' : '尚未提交，可重新执行'}</p><details open className="mt-1 text-slate-500"><summary className="cursor-pointer">原因与处理说明</summary><p className="mt-2 leading-relaxed">{item.recovery.reason}</p>{item.failure_phase && <p className="mt-1">失败阶段：{phaseLabel(item.failure_phase)}</p>}</details>{recoverable(item) && <button type="button" className="wb-button wb-item-recovery" disabled={retryPending || uncertainRetry} onClick={() => void retrySelected(item)}>{item.recovery.mode === 'resume_existing' ? '继续此项已有资料' : '仅重试此未提交项'}</button>}</div>}
                   </div>))}</div>

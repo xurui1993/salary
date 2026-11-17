@@ -875,7 +875,7 @@ class RiderSourceCollector(BillPageCollector):
                 info.update(scope='target_city', all_available_teams=False, selected_team_ids=sorted(teams),
                             team_agency_ids={tid: agencies[tid] for tid in teams}, snapshot_only=True,
                             time_basis='current_snapshot')
-            self.log(f'[完成] {NAMES[kind]}：{info["rows"]} 条；原文件已校验保存')
+            self.log(f'[完成] {self.plan.city} · {NAMES[kind]}：{info["rows"]} 条，原文件已校验保存')
             if info['non_rider_rows']:
                 self.log(f'[提示] 原文件保留 {info["non_rider_rows"]} 条无骑手ID的站长/副站长/队长记录；不会当作骑手绑定')
             if info['identity_masked'] or info['identity_blank']:

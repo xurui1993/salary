@@ -36,11 +36,11 @@ export function connectionSummary(systems: {state?: string; offline?: boolean}[]
   return '需连接';
 }
 
-export type SystemKey = 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang' | 'dengta';
+export type SystemKey = 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang' | 'benlai' | 'dengta';
 
 export interface SystemMetaItem {
   key: SystemKey;
-  label: '风神' | '蓝橙' | '商翼' | '小象灯塔' | '灯塔';
+  label: '风神' | '蓝橙' | '商翼' | '小象灯塔' | '灯塔' | '本来人力';
   businessLine: string;
   description: string;
   planned?: boolean;
@@ -51,6 +51,7 @@ export const SYSTEM_META: SystemMetaItem[] = [
   { key: 'lanorange', label: '蓝橙', businessLine: '原雷神', description: '原雷神 · 骑手人事档案、兼职价格档案、离职/批量离职、请假等内部人事数据源。' },
   { key: 'baize', label: '商翼', businessLine: '商翼系统', description: '商翼全部员工原表独立下载；不随兼职核算自动补齐。' },
   { key: 'xiaoxiang', label: '灯塔', businessLine: '美团灯塔系统', description: '商配送骑手订单明细与日维度骑手分析，独立下载。' },
+  { key: 'benlai', label: '本来人力', businessLine: '本来人力商户端', description: '企业全量灵工档案与签约状态；签约城市用于发薪平台绑定判定。' },
   { key: 'dengta', label: '灯塔', businessLine: '美团灯塔系统', description: '灯塔薪资申请表与配送资料手动上传核算。' },
 ];
 
@@ -209,10 +210,11 @@ export const BUILTIN_DOWNLOAD_SCENARIOS: BuiltinScenarioPreset[] = [
   },
 ];
 
-export function inferDatasetSystemTag(datasetId: string, mode?: string): '风神' | '蓝橙' | '商翼' | '小象灯塔' | '灯塔' {
+export function inferDatasetSystemTag(datasetId: string, mode?: string): '风神' | '蓝橙' | '商翼' | '小象灯塔' | '灯塔' | '本来人力' {
   if (mode === 'xiaoxiang') return '灯塔';
   const normalized = (datasetId || '').toLowerCase();
   if (normalized === 'rider_daily' || normalized === 'rider_archive' || normalized === 'detail_orders' || normalized === 'detail_kesu' || normalized === 'detail_reviews' || normalized === 'rider_order_detail' || normalized === 'xiaoxiang_attendance_detail') return '灯塔';
+  if (normalized.includes('benlai')) return '本来人力';
   if (normalized.includes('shangyi') || normalized.includes('baize')) return '商翼';
   if (normalized.startsWith('lanorange') || normalized === 'abnormal_riders' || normalized === 'part_price' || normalized === 'rider_profile') {
     return '蓝橙';
@@ -380,6 +382,7 @@ export interface SidebarNavItemSpec {
     | 'layers'
     | 'users-round'
     | 'radar'
+    | 'building-2'
     | 'bar-chart-3'
     | 'wallet-cards'
     | 'badge-dollar-sign'
@@ -403,6 +406,7 @@ export const SIDEBAR_NAV_GROUPS: SidebarNavGroupSpec[] = [
       { id: 'lanorange', label: '蓝橙数据', iconKey: 'layers' },
       { id: 'baize', label: '白泽商翼', iconKey: 'users-round' },
       { id: 'xiaoxiang', label: '小象灯塔', iconKey: 'radar' },
+      { id: 'benlai', label: '本来人力', iconKey: 'building-2' },
     ],
   },
   {
@@ -435,7 +439,7 @@ export interface HeaderModuleContext {
 export function getHeaderModuleContext(
   workspaceView: 'create' | 'history' | 'approval' | 'price-export',
   taskKind: 'download' | 'generate' | 'payroll',
-  downloadPlatform: 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang',
+  downloadPlatform: 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang' | 'benlai',
   historyAll: boolean,
 ): HeaderModuleContext {
   if (workspaceView === 'approval' || workspaceView === 'price-export') {
@@ -496,6 +500,14 @@ export function getHeaderModuleContext(
       iconKey: 'radar',
     };
   }
+  if (downloadPlatform === 'benlai') {
+    return {
+      groupLabel: '数据采集',
+      title: '本来人力',
+      subtitle: '本来人力商户端灵工档案与签约状态导出，用于支付绑定判定',
+      iconKey: 'building-2',
+    };
+  }
   return {
     groupLabel: '数据采集',
     title: '风神数据',
@@ -513,7 +525,7 @@ export interface StageHeaderMeta {
 
 export function getStageHeaderMeta(
   taskKind: 'download' | 'generate',
-  platform?: 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang',
+  platform?: 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang' | 'benlai',
   view: 'create' | 'history' = 'create',
 ): StageHeaderMeta {
   if (taskKind === 'generate') {
@@ -527,11 +539,12 @@ export function getStageHeaderMeta(
           : '选择目标表，系统自动关联来源资料。',
     };
   }
-  const titleMap: Record<'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang', string> = {
+  const titleMap: Record<'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang' | 'benlai', string> = {
     fengshen: '风神下载',
     lanorange: '蓝橙下载',
     baize: '商翼下载',
     xiaoxiang: '灯塔下载',
+    benlai: '本来人力下载',
   };
   const title = platform ? titleMap[platform] : '资料下载';
   return {
@@ -549,8 +562,8 @@ export function getStageHeaderMeta(
 export type PlatformDotTone = 'ready' | 'warn' | 'busy' | 'idle';
 
 export interface PlatformStatusChip {
-  key: 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang';
-  shortLabel: '风神' | '蓝橙' | '商翼' | '灯塔';
+  key: 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang' | 'benlai';
+  shortLabel: '风神' | '蓝橙' | '商翼' | '灯塔' | '本来';
   tone: PlatformDotTone;
   statusText: string;
 }
@@ -564,6 +577,7 @@ export function getPlatformStatusCluster(
     { key: 'lanorange', shortLabel: '蓝橙' },
     { key: 'baize', shortLabel: '商翼' },
     { key: 'xiaoxiang', shortLabel: '灯塔' },
+    { key: 'benlai', shortLabel: '本来' },
   ];
   return defs.map(({ key, shortLabel }) => {
     const raw = states[key] || (key === 'fengshen' ? fengshenFallback || {} : {});
@@ -625,7 +639,7 @@ export interface NotificationTaskItem {
   title: string;
   scopeText: string;
   periodText?: string;
-  systemTag: '风神' | '蓝橙' | '商翼' | '小象灯塔' | '灯塔';
+  systemTag: '风神' | '蓝橙' | '商翼' | '小象灯塔' | '灯塔' | '本来人力';
   kind: 'download' | 'generate' | 'payroll' | 'approval' | 'price-export';
   status: 'running' | 'blocked' | 'completed' | 'failed';
   progress?: number;
@@ -636,7 +650,7 @@ export interface NotificationTaskItem {
   batchId?: string;
   outputPath?: string;
   actionRunId?: string;
-  platformKey?: 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang';
+  platformKey?: 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang' | 'benlai';
   files?: NotificationTaskFile[];
 }
 
@@ -1354,6 +1368,7 @@ export interface ExecutionRailSummaryInput {
   xiaoxiangOnly: boolean;
   blueOnly: boolean;
   baizeOnly: boolean;
+  benlaiOnly?: boolean;
   merchantOnly: boolean;
   merchantSnapshotOnly: boolean;
   merchantDateValid: boolean;
@@ -1387,6 +1402,7 @@ export function buildExecutionRailSummary(input: ExecutionRailSummaryInput): Exe
     xiaoxiangOnly,
     blueOnly,
     baizeOnly,
+    benlaiOnly,
     merchantOnly,
     merchantSnapshotOnly,
     merchantDateValid,
@@ -1405,7 +1421,9 @@ export function buildExecutionRailSummary(input: ExecutionRailSummaryInput): Exe
         ? '可访问全部城市'
         : baizeOnly
           ? '全部站点（商翼全量）'
-          : blueOnly
+          : benlaiOnly
+            ? '全部站点（本来人力全量）'
+            : blueOnly
             ? '全部城市（全量）'
             : '未选择城市';
 
@@ -1439,7 +1457,7 @@ export function buildExecutionRailSummary(input: ExecutionRailSummaryInput): Exe
     thirdRowValue = merchantOnly ? '全部站点' : excludeSeparation !== undefined ? (excludeSeparation ? '排除取分离' : '全部站点（含取分离）') : includeSeparation ? '仅取分离' : '排除取分离';
   } else {
     thirdRowLabel = '交付规格';
-    thirdRowValue = baizeOnly
+    thirdRowValue = baizeOnly || benlaiOnly
       ? '单份全量原表'
       : blueOnly
         ? `每类 1 份汇总表`
@@ -1452,6 +1470,8 @@ export function buildExecutionRailSummary(input: ExecutionRailSummaryInput): Exe
   if (datasetsCount > 0) {
     if (baizeOnly) {
       listFooterText = '商翼全量员工档案 · 独立归档';
+    } else if (benlaiOnly) {
+      listFooterText = '本来人力全量灵工档案 · 签约城市实时读取';
     } else if (xiaoxiangOnly) {
       listFooterText = cities.length > 0
         ? `已选 ${datasetsCount} 类灯塔资料 · 已选 ${cities.length} 城`

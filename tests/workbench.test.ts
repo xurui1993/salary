@@ -74,7 +74,7 @@ test('workbench writes preserve browser origin through the authenticated proxy',
 test('source metadata separates Xiaoxiang online download from manual payroll and keeps Baize standalone', () => {
   assert.deepEqual(
     SYSTEM_META.map(item => item.label),
-    ['风神', '蓝橙', '商翼', '灯塔', '灯塔'],
+    ['风神', '蓝橙', '商翼', '灯塔', '本来人力', '灯塔'],
   );
   assert.equal(SYSTEM_META.find(item => item.key === 'lanorange')?.businessLine, '原雷神');
   assert.match(SYSTEM_META.find(item => item.key === 'dengta')!.description, /手动上传/);
@@ -234,12 +234,12 @@ test('sidebar navigation converges into 3 groups with concise 4-character labels
   );
   assert.deepEqual(
     DOWNLOAD_PLATFORMS.map(platform => platform.navLabel),
-    ['风神数据', '蓝橙数据', '白泽商翼', '小象灯塔'],
+    ['风神数据', '蓝橙数据', '白泽商翼', '小象灯塔', '本来人力'],
   );
   const allItems = SIDEBAR_NAV_GROUPS.flatMap(group => group.items);
   assert.deepEqual(
     allItems.map(item => item.label),
-    ['风神数据', '蓝橙数据', '白泽商翼', '小象灯塔', '专项报表', '薪资核算', '价格审批', '任务中心', '扣款规则', '模板中心'],
+    ['风神数据', '蓝橙数据', '白泽商翼', '小象灯塔', '本来人力', '专项报表', '薪资核算', '价格审批', '任务中心', '扣款规则', '模板中心'],
   );
   assert.ok(allItems.every(item => item.label.length === 4), 'Every sidebar item label should be exactly 4 Chinese characters');
   const iconSet = new Set(allItems.map(item => item.iconKey));
@@ -273,6 +273,7 @@ test('Scheme B header context and multi-platform status cluster map module group
       ['蓝橙', 'warn', '需要验证'],
       ['商翼', 'busy', '连接中'],
       ['灯塔', 'idle', '未连接'],
+      ['本来', 'idle', '未连接'],
     ],
   );
 });
@@ -472,6 +473,33 @@ test('buildExecutionRailSummary formats scope rows without duplicate date hints 
   assert.equal(xiaoxiangReady.thirdRowLabel, '交付规格');
   assert.equal(xiaoxiangReady.thirdRowValue, '按账期合并导出');
   assert.equal(xiaoxiangReady.blockerHint, '');
+
+  const benlaiSnapshot = buildExecutionRailSummary({
+    datasetsCount: 1,
+    cities: [],
+    start: '2026-11-15',
+    end: '2026-11-15',
+    noCity: true,
+    noDate: true,
+    archiveOnly: false,
+    xiaoxiangDated: false,
+    xiaoxiangOnly: false,
+    blueOnly: false,
+    baizeOnly: false,
+    benlaiOnly: true,
+    merchantOnly: false,
+    merchantSnapshotOnly: false,
+    merchantDateValid: true,
+    validDates: true,
+    includeSeparation: false,
+    subitemCount: 1,
+    submitReady: true,
+  });
+  assert.equal(benlaiSnapshot.cityLabel, '全部站点（本来人力全量）');
+  assert.equal(benlaiSnapshot.periodText, '全量实时快照');
+  assert.equal(benlaiSnapshot.thirdRowLabel, '交付规格');
+  assert.equal(benlaiSnapshot.thirdRowValue, '单份全量原表');
+  assert.equal(benlaiSnapshot.listFooterText, '本来人力全量灵工档案 · 签约城市实时读取');
 
   const fengshenMulti = buildExecutionRailSummary({
     datasetsCount: 9,

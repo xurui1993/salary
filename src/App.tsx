@@ -6,7 +6,7 @@ import { THEMES } from "./constants";
 import { LogEntry, AppConfig, TaskHistoryRecord } from "./types";
 import { FengshenLoginModal, FengshenAuthStatus } from "./components/FengshenLoginModal";
 import { CorePage, TaskItem } from "./components/CorePage";
-import { X, SlidersHorizontal, Calculator, FileSpreadsheet, Compass, Layers, UsersRound, Radar, BarChart3, WalletCards, BadgeDollarSign, FolderCheck, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { X, SlidersHorizontal, Calculator, FileSpreadsheet, Compass, Layers, UsersRound, Radar, BarChart3, WalletCards, BadgeDollarSign, FolderCheck, PanelLeftClose, PanelLeftOpen, Building2 } from "lucide-react";
 import { UploadProgressOverlay } from "./components/UploadProgressOverlay";
 import type { PayrollPreparationState } from './components/PayrollPreparation';
 import type { RunResult } from './components/RunResultCard';
@@ -1035,7 +1035,9 @@ export default function App() {
                       ? Layers
                       : platform.id === 'baize'
                         ? UsersRound
-                        : Radar;
+                        : platform.id === 'benlai'
+                          ? Building2
+                          : Radar;
                 return (
                   <button
                     key={platform.id}
@@ -1160,7 +1162,7 @@ export default function App() {
                 <button
                   type="button"
                   className="wb-sidebar-mini-dots-grid"
-                  title="平台连接健康状态（风神、蓝橙、商翼、灯塔），点击管理登录"
+                  title="平台连接健康状态（风神、蓝橙、商翼、灯塔、本来人力），点击管理登录"
                   onClick={() => window.dispatchEvent(new CustomEvent('workbench:connections'))}
                 >
                   <span className="wb-mini-dot-cell ready" />
@@ -1224,7 +1226,9 @@ export default function App() {
                   ? Layers
                   : headerCtx.iconKey === 'users-round'
                     ? UsersRound
-                    : headerCtx.iconKey === 'radar'
+                    : headerCtx.iconKey === 'building-2'
+                      ? Building2
+                      : headerCtx.iconKey === 'radar'
                       ? Radar
                       : headerCtx.iconKey === 'bar-chart-3'
                         ? BarChart3

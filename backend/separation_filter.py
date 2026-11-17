@@ -40,7 +40,7 @@ def kept(value, include):
 
 
 @measured('source_row_filter')
-def filter_table(path, dataset, include, output_dir):
+def filter_table(path, dataset, include, output_dir, skip_unchanged=False):
     """按站点列过滤成品；返回 (过滤副本路径, {'column','rows_before','rows_after'})。"""
     path, output_dir = Path(path), Path(output_dir)
     column = COLUMNS.get(dataset)
@@ -48,10 +48,33 @@ def filter_table(path, dataset, include, output_dir):
         raise BillCollectionError('资料类型不支持取分离过滤：' + str(dataset))
     suffix = path.suffix.lower()
     if suffix == '.csv':
+        if skip_unchanged:
+            before, dropped = _csv_scan(path, column, include)
+            if dropped == 0:
+                return path, {'column': column, 'rows_before': before, 'rows_after': before}
         return _filter_csv(path, column, include, output_dir)
     if suffix == '.xlsx':
+        if skip_unchanged:
+            return _filter_xlsx_loaded(path, column, include, output_dir)
         return _filter_xlsx(path, column, include, output_dir)
     raise BillCollectionError('取分离过滤仅支持 CSV/XLSX 成品：' + path.name)
+
+
+def _csv_scan(path, column, include):
+    with path.open(encoding='utf-8-sig', newline='') as stream:
+        rows = csv.reader(stream)
+        header = next(rows, None)
+        if header is None:
+            raise BillCollectionError('成品为空，无法执行取分离过滤：' + path.name)
+        if column not in header:
+            raise _missing(path, column)
+        position = header.index(column)
+        before = dropped = 0
+        for row in rows:
+            before += 1
+            if not (position < len(row) and kept(row[position], include)):
+                dropped += 1
+    return before, dropped
 
 
 def _text_cell(sheet, value):
@@ -147,6 +170,63 @@ def _filter_xlsx(path, column, include, output_dir):
         return _stream_filter_xlsx(path, column, include, output_dir)
     except _WideDataRow:
         return _legacy_filter_xlsx(path, column, include, output_dir)
+
+
+def _filter_xlsx_loaded(path, column, include, output_dir):
+    """单次解析：未丢弃行时直接复用原文件，确有过滤时再用同一份数据写入。"""
+    from fast_xlsx import open_values
+    with open_values(path) as book:
+        if len(book.sheetnames) != 1:
+            raise BillCollectionError('成品子表数量变化，无法执行取分离过滤：' + path.name)
+        loaded = list(book.rows(book.sheetnames[0]))
+    header_index = None
+    for offset, row in enumerate(loaded[:10]):
+        if column in [str(value) if value is not None else '' for value in row]:
+            header_index = offset
+            break
+    if header_index is None:
+        raise _missing(path, column)
+    header = list(loaded[header_index])
+    position = header.index(column)
+    data = loaded[header_index + 1:]
+    before = dropped = 0
+    for row in data:
+        values = list(row)
+        if len(values) > len(header) and any(value is not None for value in values[len(header):]):
+            return _legacy_filter_xlsx(path, column, include, output_dir)
+        if not any(value is not None and str(value).strip() for value in values):
+            continue
+        before += 1
+        padded = values + [None] * max(0, len(header) - len(values))
+        if not kept(padded[position], include):
+            dropped += 1
+    proof = {'column': column, 'rows_before': before, 'rows_after': before - dropped}
+    if dropped == 0:
+        return path, proof
+    output = output_dir / ('.取分离_' + uuid.uuid4().hex + '.xlsx')
+    target = Workbook(write_only=True)
+    try:
+        sheet = target.create_sheet()
+        for row in loaded[:header_index]:
+            sheet.append([_text_cell(sheet, value) for value in row])
+        sheet.append([_text_cell(sheet, value) for value in header])
+        for row in data:
+            values = list(row)
+            if not any(value is not None and str(value).strip() for value in values):
+                continue
+            padded = values + [None] * max(0, len(header) - len(values))
+            if kept(padded[position], include):
+                sheet.append([_text_cell(sheet, value) for value in padded[:len(header)]])
+        with compression(6):
+            target.save(output)
+        return output, proof
+    except Exception:
+        try:
+            target.save(output)
+        except Exception:
+            pass
+        output.unlink(missing_ok=True)
+        raise
 
 
 def _stream_filter_xlsx(path, column, include, output_dir):

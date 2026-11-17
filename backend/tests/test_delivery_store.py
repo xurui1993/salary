@@ -29,6 +29,20 @@ class DeliveryTests(unittest.TestCase):
     def entry(self,path,run='run',file='file',**extra):
         return dict(run_id=run,id=file,path=str(path),city='泉州',**extra)
 
+    def test_delivery_group_places_files_in_platform_subdirectory(self):
+        shangyi=self.source('上海.xlsx',b'sy')
+        benlai=self.source('泉州.xlsx',b'bl')
+        folder=self.publish([
+            self.entry(shangyi,run='run-sy',file='file-sy',name='泉州商翼绑定.xlsx',
+                       delivery_group='天津商翼'),
+            self.entry(benlai,run='run-bl',file='file-bl',name='泉州本来人力绑定.xlsx',
+                       delivery_group='本来人力'),
+        ])
+        self.assertEqual((folder/'天津商翼'/'泉州商翼绑定.xlsx').read_bytes(),b'sy')
+        self.assertEqual((folder/'本来人力'/'泉州本来人力绑定.xlsx').read_bytes(),b'bl')
+        self.assertEqual(self.store.location('run-sy','file-sy'),folder/'天津商翼'/'泉州商翼绑定.xlsx')
+        self.assertEqual(self.store.location('run-bl','file-bl'),folder/'本来人力'/'泉州本来人力绑定.xlsx')
+
     def test_new_payroll_publishes_only_two_workbooks_and_keeps_legacy_deliveries(self):
         from openpyxl import Workbook
         import payroll_inputs as payroll

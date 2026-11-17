@@ -1233,5 +1233,16 @@ class ManagerTests(unittest.TestCase):
         self.assertEqual(content.exception.status_code, 415)
 
 
+class SummaryScopeTests(unittest.TestCase):
+    def test_platform_payment_summary_scope_accepts_platform_city_labels(self):
+        config = {'cities': ['上海', '泉州'], 'datasets': ['payment_binding'],
+                  'start': '2026-10-01', 'end': '2026-10-31', 'months': ['2026-10']}
+        for city in ('天津商翼', '本来人力'):
+            entry = {'city': city, 'dataset': 'payment_binding', 'start': '2026-10-01',
+                     'end': '2026-10-31', 'artifact_role': 'summary'}
+            self.assertIsNone(jobs.delivery_scope_error(entry, config, '.xlsx'))
+            self.assertIsNotNone(jobs.delivery_scope_error({**entry, 'start': '2026-09-01'}, config, '.xlsx'))
+
+
 if __name__ == "__main__":
     unittest.main()

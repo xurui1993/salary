@@ -7,11 +7,12 @@ from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import HTTPException
 
-LABELS = {'fengshen': '风神', 'lanorange': '蓝橙', 'baize': '商翼', 'xiaoxiang': '灯塔'}
+LABELS = {'fengshen': '风神', 'lanorange': '蓝橙', 'baize': '商翼', 'benlai': '本来人力',
+          'xiaoxiang': '灯塔'}
 
 
 def platforms_for_datasets(datasets):
-    from download_service import expand_followup_datasets, XIAOXIANG_SELECTION, BAIZE_DATASET
+    from download_service import expand_followup_datasets, XIAOXIANG_SELECTION, BAIZE_DATASET, BENLAI_DATASET
     from lanorange_catalog import DATASETS as lanorange
     platforms = set()
     for kind in expand_followup_datasets(datasets or ()):
@@ -21,8 +22,10 @@ def platforms_for_datasets(datasets):
             platforms.add('xiaoxiang')
         elif kind == BAIZE_DATASET:
             platforms.add('baize')
+        elif kind == BENLAI_DATASET:
+            platforms.add('benlai')
         elif kind == 'payment_binding':
-            platforms.update(('fengshen', 'lanorange', 'baize'))
+            platforms.update(('fengshen', 'lanorange', 'baize', 'benlai'))
         elif kind == 'abnormal_riders':
             # 仅读取蓝橙成品生成，依赖项已在 expand 中覆盖。
             continue

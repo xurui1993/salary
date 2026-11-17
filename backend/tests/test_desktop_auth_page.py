@@ -102,8 +102,58 @@ class DesktopAuthTests(unittest.TestCase):
         button.click.assert_called_once()
         self.assertNotIn('synthetic-password',str(auth.status('baize')))
         self.assertNotIn('baize',auth.inputs)
+        # 官方刷新验证码会更换表单版本；输入项仍属于当前表单时按当前页面执行。
         command['form_id']='stale'
+        self.assertTrue(auth.interact('baize',command)['accepted'])
+        command['values']=[{'id':'unknown-field','text':'synthetic-password'}]
         with self.assertRaises(HTTPException):auth.interact('baize',command)
+
+    def _submit_fixture(self):
+        fields=[{'id':'acct','type':'text','role':'username','label':'企业账号','filled':True},
+                {'id':'pwd','type':'password','role':'password','label':'密码','filled':False},
+                {'id':'math','type':'text','role':'math','label':'算式答案','filled':False}]
+        desktop={'fields':fields,'controls':[{'id':'submit','kind':'submit','label':'登录','enabled':True}],
+                 'math_captcha':None,'regions':{},'form_id':'form-1','_signature':'sig-login',
+                 '_signature_parts':('https://merchant.shangyiworker.com/login',repr([(f['id'],f['type']) for f in fields]),'',''),
+                 'official_feedback':'','form_detection':'fields_detected'}
+        auth=SourceAuth();auth.states['baize']={'state':'waiting_login','session_id':'sid'}
+        auth.desktop['baize']=desktop;auth.form_bindings['baize']={name:Mock() for name in ('acct','pwd','math','submit')}
+        command={'action':'fill_fields','session_id':'sid','form_id':'form-1','submit_id':'submit',
+                 'values':[{'id':'acct','text':'17673422807'},{'id':'pwd','text':'synthetic-password'},{'id':'math','text':'15'}]}
+        auth.interact('baize',command)
+        return auth,desktop,command
+
+    def test_submit_shows_transition_then_compact_retry_without_exposing_credentials(self):
+        auth,desktop,_=self._submit_fixture()
+        status=auth.status('baize')
+        self.assertTrue(status['transitioning']);self.assertEqual(status['submitted'],{'account':'176****2807'})
+        self.assertNotIn('synthetic-password',str(status));self.assertNotIn('17673422807',str(status))
+        page=SimpleNamespace(url='https://merchant.shangyiworker.com/login')
+        with patch('desktop_auth_page.inspect_login_page',return_value=(dict(desktop),{})):
+            auth._capture_desktop('baize',page)
+            self.assertTrue(auth.status('baize')['transitioning'])
+            auth.transitions['baize']['started']-=10
+            auth._capture_desktop('baize',page)
+            retry=auth.status('baize')
+        self.assertFalse(retry.get('transitioning'));self.assertTrue(retry.get('retry'))
+        self.assertEqual(retry['submitted'],{'account':'176****2807'})
+        with patch('desktop_auth_page.inspect_login_page',return_value=(dict(desktop),{})):
+            auth._capture_desktop('baize',page)
+        self.assertTrue(auth.status('baize')['retry'])
+
+    def test_submit_publishes_next_step_only_after_signature_settles(self):
+        auth,desktop,_=self._submit_fixture()
+        page=SimpleNamespace(url='https://merchant.shangyiworker.com/login')
+        sms=[{'id':'otp','type':'text','role':'sms_code','label':'短信验证码','filled':False}]
+        nxt=dict(desktop,fields=sms,_signature='sig-sms',form_id='form-2',
+                 _signature_parts=('https://merchant.shangyiworker.com/second',repr([(f['id'],f['type']) for f in sms]),'',''))
+        with patch('desktop_auth_page.inspect_login_page',return_value=(nxt,{})) as inspect:
+            auth._capture_desktop('baize',page)
+            self.assertTrue(auth.status('baize')['transitioning'])
+            auth._capture_desktop('baize',page)
+            settled=auth.status('baize')
+        self.assertFalse(settled.get('transitioning'));self.assertNotIn('retry',settled)
+        self.assertEqual([f['id'] for f in settled['fields']],['otp'])
 
     def test_redirect_prevents_queued_credential_fill(self):
         page,field,_=self.page();metadata,bindings=inspect_login_page('baize',page)

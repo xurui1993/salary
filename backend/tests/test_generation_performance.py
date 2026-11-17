@@ -186,7 +186,8 @@ class PerformanceTests(unittest.TestCase):
         config.update(owner='synthetic', lanorange_full_delivery=False)
         sources = Mock(); sources.employees.return_value = Path('employee.xlsx')
         sources.proxies.return_value = Path('proxy.xlsx')
-        def binding(paths, employees, proxies, plan, raw, logger, cancelled):
+        sources.benlai.return_value = None
+        def binding(paths, employees, proxies, plan, raw, logger, cancelled, benlai=None, **kwargs):
             if plan.month == '2026-10' and not release.wait(5):
                 raise RuntimeError('unrelated month blocked earlier follow-up')
             file = Path(raw) / 'generated.xlsx'; file.write_bytes(b'synthetic')

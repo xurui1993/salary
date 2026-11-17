@@ -47,6 +47,14 @@ def _warm_city_catalog():
         pass
 
 
+def _warm_download_manager():
+    try:
+        from download_jobs import get_manager
+        get_manager()
+    except Exception:
+        pass
+
+
 @asynccontextmanager
 async def lifespan(app):
     from download_path_registry import refresh_protected_roots
@@ -59,6 +67,7 @@ async def lifespan(app):
         from xiaoxiang_source_auth import AUTH as xiang_auth
         xiang_auth.start_keepalive()
         threading.Thread(target=_warm_city_catalog, daemon=True).start()
+        threading.Thread(target=_warm_download_manager, daemon=True).start()
     try:
         yield
     finally:

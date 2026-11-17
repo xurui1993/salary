@@ -9,7 +9,7 @@ from urllib.parse import urlencode
 
 import requests
 
-from binding_source_auth import AUTH, SOURCES, client, identity, SourceAuthenticationRequired, SourceProbeUnavailable
+from binding_source_auth import AUTH, SOURCES, client, identity, SourceAuthenticationRequired, SourceProbeUnavailable, _response_json
 from fengshen_bill import BillCollectionError, atomic_json
 from shangyi_sources import validate_employees
 
@@ -62,7 +62,7 @@ def query(session, source, path, params=None):
     url = 'https://' + SOURCES[source]['host'] + '/prod-api/' + path
     try:
         response = session.get(url, params=params, timeout=40, allow_redirects=False)
-        payload = response.json()
+        payload = _response_json(response)
         if response.status_code != 200 or payload.get('code') != 200:
             raise ValueError()
         return payload
@@ -171,6 +171,15 @@ class BindingSources:
             atomic_json(file.parent / 'manifest.json', {'status': 'success', 'scope': 'all', 'transport': 'http', **proof})
             self.results['baize'] = file
             return file
+
+    def benlai(self):
+        """全量本来人力灵工资料与实时签约城市；按运行缓存，避免逐城市重复导出。"""
+        if 'benlai' in self.results: return self.results['benlai']
+        from benlai_sources import BenlaiSources
+        file = BenlaiSources(self.root / 'benlai', self.log, self.cancelled).employees()
+        cities = json.loads((Path(file).parent / 'signing_cities.json').read_text(encoding='utf-8'))['cities']
+        self.results['benlai'] = (file, cities)
+        return self.results['benlai']
 
     def proxies(self, month):
         key = 'lanorange:' + month

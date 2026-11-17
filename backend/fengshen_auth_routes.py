@@ -110,6 +110,8 @@ def status(request: Request):
     # operation's real transport rather than mislabelling a legacy challenge.
     if not result.get("busy"):
         result = {**result, "transport": "http"}
+        if result.get("state") == "ready":
+            result["message"] = "风神已登录，本机会话已加密保存"
     return result
 
 

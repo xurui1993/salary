@@ -17,6 +17,21 @@ _ocr_pending = set()
 _ocr_results = {}
 _ocr_queue = queue.Queue(maxsize=2)
 _ocr_worker = None
+_captcha_pngs = {}
+
+
+def _captcha_png(key, image):
+    """Same captcha source must keep one screenshot: animated frames jitter.
+    A changing screenshot hash would clear the answer the user is typing."""
+    cached = _captcha_pngs.get(key)
+    if isinstance(cached, bytes):
+        return cached
+    screenshot = image.screenshot(type='png', timeout=1000)
+    if isinstance(screenshot, bytes) and screenshot:
+        _captcha_pngs[key] = screenshot
+        while len(_captcha_pngs) > 8:
+            _captcha_pngs.pop(next(iter(_captcha_pngs)))
+    return screenshot
 
 
 def _run_ocr():
@@ -84,6 +99,20 @@ def recognize_image(image):
     except (OSError,subprocess.TimeoutExpired,ValueError,TypeError):return None
 
 
+def _captcha_identity(image):
+    """Prefer the image source: it is stable between polls and changes on refresh,
+    unlike a screenshot of an animated captcha."""
+    try:
+        src = image.get_attribute('src', timeout=500) or ''
+    except Exception:
+        src = ''
+    if isinstance(src, str) and src.strip():
+        key = hashlib.sha256(src.encode()).hexdigest()
+        return key, _captcha_png(key, image)
+    data = image.screenshot(type='png', timeout=1000)
+    return (hashlib.sha256(data).hexdigest() if isinstance(data, bytes) and data else None), data
+
+
 def inspect_captcha(page,fields,bindings,*,deferred=False):
     target=next((field for field in fields if field.get('role')=='math'),None)
     if not target:return None
@@ -100,13 +129,13 @@ def inspect_captcha(page,fields,bindings,*,deferred=False):
             try:
                 loaded=image.evaluate("e=>e.tagName!=='IMG'||e.naturalWidth>0",timeout=500)
                 if loaded is False:return {'field_id':target['id'],'state':'unavailable','id':hashlib.sha256(hint.encode()).hexdigest(),'_refresh':image}
-                data=image.screenshot(type='png',timeout=1000)
+                identity,data=_captcha_identity(image)
             except Exception:continue
-            if not isinstance(data,bytes) or len(data)>262144:continue
+            if not identity or not isinstance(data,bytes) or len(data)>262144:continue
             direct=next((value for key in ('alt','title') if (value:=solve_expression(image.get_attribute(key,timeout=500)))),None)
             state, answer = ('solved',direct) if direct else deferred_answer(data) if deferred else ('manual',recognize_image(data))
             if answer:state='solved'
-            return {'field_id':target['id'],'id':hashlib.sha256(data).hexdigest(),
+            return {'field_id':target['id'],'id':identity,
                     'image':'data:image/png;base64,'+base64.b64encode(data).decode(),
                     'state':state,'_refresh':image,**(answer or {})}
     return {'field_id':target['id'],'state':'unavailable'}

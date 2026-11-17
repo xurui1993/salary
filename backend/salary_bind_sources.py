@@ -17,6 +17,8 @@ from fengshen_bill import atomic_json, BillCollectionError, safe_operation_failu
 from parttime_source import COLLECTION_LOCK, SourceError, TemplatePlan, label, owned_upload, parse_date, source_files
 from rider_sources import DOWNLOAD_ORDER, HEADERS, NAMES, PAGES, RiderSourceCollector, source_profile
 from shangyi_sources import download_employees_http, validate_employees, workspace_directory
+from benlai_sources import download_employees_http as download_benlai_http
+from benlai_sources import validate_employees as validate_benlai_employees
 
 BINDING_LOCK = threading.Lock()
 
@@ -145,7 +147,7 @@ def rows_from(path):
     return headers, records
 
 
-def prepare_inputs(results, employees, inputs, scope):
+def prepare_inputs(results, employees, inputs, scope, benlai=None):
     all_rows = {kind: [] for kind in NAMES}
     fields, team_cities, identities = {}, {}, {}
     agencies = set()
@@ -226,7 +228,20 @@ def prepare_inputs(results, employees, inputs, scope):
     if checked['rows'] != info['rows']:
         raise SourceError('白泽记录数变化')
     shutil.copy2(path, inputs / 'merchantFreelancer_白泽全量.xlsx')
-    return {**scope, 'team_cities': team_cities, 'agency_count': len(agencies)}
+    benlai_cities = []
+    if benlai is not None:
+        directory, manifest = benlai
+        if manifest.get('status') != 'success' or manifest.get('scope') != 'all':
+            raise SourceError('本来人力全量资料未完成校验')
+        info = manifest['datasets']['benlai_employees']
+        path = verified_file(directory, info)
+        checked = validate_benlai_employees(path)
+        if checked['rows'] != info['rows']:
+            raise SourceError('本来人力记录数变化')
+        benlai_cities = list(info.get('benlai_cities') or [])
+        shutil.copy2(path, inputs / 'benlaiFreelancer_本来人力全量.xlsx')
+    return {**scope, 'team_cities': team_cities, 'agency_count': len(agencies),
+            'benlai_cities': benlai_cities}
 
 
 def prepare(config, workspace, log, cancelled, notify):
@@ -259,17 +274,21 @@ def prepare(config, workspace, log, cancelled, notify):
         atomic_json(run / 'manifest.json', manifest)
         employees = download_employees_http(workspace, log, cancelled)
         manifest['baize_sources'] = str(employees[0])
+        manifest['stage'] = 'benlai'
+        atomic_json(run / 'manifest.json', manifest)
+        benlai = download_benlai_http(workspace, log, cancelled)
+        manifest['benlai_sources'] = str(benlai[0])
         manifest['stage'] = 'prepare'
         atomic_json(run / 'manifest.json', manifest)
         if cancelled.is_set():
             raise SourceError('任务已取消')
         inputs = run / 'inputs'
-        verified = prepare_inputs(results, employees, inputs, scope)
+        verified = prepare_inputs(results, employees, inputs, scope, benlai)
         for index, path in enumerate(supplements):
             shutil.copy2(path, inputs / f'代领补充_{index}{path.suffix.lower()}')
         manifest.update(status='ready', stage='generate', verified_scope=verified, input_path=str(inputs))
         atomic_json(run / 'manifest.json', manifest)
-        log('[校验] 全部城市及白泽全量资料已通过；开始生成支付绑定，未执行薪资核算或发薪')
+        log('[校验] 全部城市及白泽、本来人力全量资料已通过；开始生成支付绑定，未执行薪资核算或发薪')
         return run, inputs, verified
     except Exception as exc:
         message = str(exc) if isinstance(exc, BillCollectionError) else '支付绑定自动下载未完成，请检查诊断清单'

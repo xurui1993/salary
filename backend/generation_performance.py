@@ -290,6 +290,13 @@ def stage(name):
             value.add(name, time.perf_counter() - start)
 
 
+def record(name, seconds):
+    """Attribute work completed elsewhere (e.g. a spawned worker) to a stage."""
+    value = _profile.get()
+    if value and seconds > 0:
+        value.add(name, seconds)
+
+
 def measured(name):
     def decorate(function):
         @wraps(function)
@@ -313,7 +320,8 @@ def profiled(name, output_index, output_name):
             cache_token = _cache.set(active_cache)
             failed = True
             try:
-                with (_slots if name != 'download_task' else nullcontext()), compression(9 if name == 'download_task' else int(os.environ.get('PAYROLL_GENERATION_COMPRESSION', '6'))):
+                level = int(os.environ.get('PAYROLL_GENERATION_COMPRESSION', '3'))
+                with (_slots if name != 'download_task' else nullcontext()), compression(level):
                     result = function(*args, **kwargs)
                     failed = False
                     return result

@@ -1,4 +1,5 @@
 """Shared, reversible task-list organization. Never removes jobs or artifacts."""
+import copy
 import datetime as dt
 from contextlib import contextmanager
 import json
@@ -7,6 +8,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import threading
+import time
 import zipfile
 
 from fastapi import APIRouter, HTTPException, Request
@@ -17,6 +19,9 @@ from parttime_source import ROOT
 
 router = APIRouter(prefix='/api/workbench/task-center')
 LOCK = threading.RLock()
+COLLECT_TTL = 3.0
+_COLLECT_CACHE = {}
+_REFRESHING = set()
 ENDED = {'success', 'partial', 'error', 'cancelled', 'interrupted'}
 ACTIVE = {'queued', 'running', 'waiting_login', 'waiting_manual', 'cancelling', 'preparing', 'stopping'}
 ATTENTION = {'waiting_login', 'waiting_manual', 'waiting_materials', 'pending_download', 'ready', 'partial', 'error', 'interrupted', 'needs_review'}
@@ -41,7 +46,7 @@ def database():
         db.close()
 
 
-def collect(request):
+def _collect_records(request):
     from workbench import task_records
     from lanorange_approvals import get_manager as approvals, scope
     from lanorange_price_export import manager as exports, owner
@@ -63,6 +68,46 @@ def collect(request):
         except (HTTPException, sqlite3.Error, OSError):
             warnings.append('价格审批记录暂不可读' if kind == 'approval' else '每日价格记录暂不可读')
     return records, warnings
+
+
+def _refresh_cache(key, request):
+    try:
+        value = _collect_records(request)
+        with LOCK:
+            _COLLECT_CACHE[key] = (time.monotonic(), copy.deepcopy(value))
+            if len(_COLLECT_CACHE) > 8:
+                oldest = min(_COLLECT_CACHE, key=lambda item: _COLLECT_CACHE[item][0])
+                _COLLECT_CACHE.pop(oldest, None)
+        return value
+    finally:
+        with LOCK:
+            _REFRESHING.discard(key)
+
+
+def _refresh_quiet(key, request):
+    try:
+        _refresh_cache(key, request)
+    except Exception:
+        pass
+
+
+def collect(request):
+    key = (request.headers.get('x-workspace-id', ''), request.headers.get('x-download-account', ''))
+    now = time.monotonic()
+    with LOCK:
+        hit = _COLLECT_CACHE.get(key)
+        if hit and now - hit[0] < COLLECT_TTL:
+            return copy.deepcopy(hit[1])
+        stale = copy.deepcopy(hit[1]) if hit else None
+        start = stale is not None and key not in _REFRESHING
+        if start:
+            _REFRESHING.add(key)
+    if stale is not None and start:
+        # 页面轮询直接返回上一次结果，慢扫描在后台完成，避免列表反复等待。
+        threading.Thread(target=_refresh_quiet, args=(key, request), daemon=True,
+                         name='task-center-refresh').start()
+        return stale
+    return _refresh_cache(key, request)
 
 
 def price_summaries(manager, scope, kind):

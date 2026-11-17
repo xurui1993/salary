@@ -8,6 +8,8 @@ import time
 import json
 import asyncio
 import calendar
+from pathlib import Path
+import uuid
 import pandas as pd
 from datetime import datetime
 import openpyxl
@@ -45,6 +47,30 @@ def _standardize_columns(df):
     if rename_dict:
         df = df.rename(columns=rename_dict)
     return df
+
+def _platform_city_key(value):
+    text = re.sub(r'[\s\u200b\u200c\u200d\u2060\ufeff]+', '', str(value or ''))
+    return text[:-1] if text.endswith('市') else text
+
+
+def _signed_identity_set(frame, strict=False):
+    """身份证 → 已签约集合；strict 时缺状态列视为无法确认而不是全部签约。"""
+    status_col = None
+    for col in frame.columns:
+        col_clean = str(col).strip().replace(" ", "").replace("\t", "").replace("\r", "").replace("\n", "")
+        if col_clean in ["状态", "绑定状态", "签约状态", "状态列", "status"]:
+            status_col = col
+            break
+    if status_col is None:
+        return set() if strict else None
+    filtered = frame[(frame[status_col].astype(str).str.strip() == "已签约")
+                     | (pd.to_numeric(frame[status_col], errors="coerce") == 2)]
+    id_col = next((col for col in ["身份证", "身份证号", "身份证号码", "证件号码", "证件号"]
+                   if col in filtered.columns), None)
+    if id_col is None:
+        return set()
+    return set(filtered[id_col].dropna().astype(str).str.strip().str.upper())
+
 
 def _clean_nan_strings(df):
     if df is None or df.empty:
@@ -303,6 +329,29 @@ def _to_num_safe(val):
     except Exception:
         return val
 
+def _write_full_binding_workbook(path, sheet_name, frame):
+    """任务级全量平台绑定表，供平台汇总使用，不随城市文件重复。"""
+    import xlsxwriter
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name('.' + path.stem + '_' + uuid.uuid4().hex + '.tmp.xlsx')
+    book = xlsxwriter.Workbook(str(temporary), {'constant_memory': True,
+                                                'strings_to_formulas': False,
+                                                'strings_to_urls': False})
+    try:
+        sheet = book.add_worksheet(sheet_name)
+        headers = [str(value) for value in frame.columns]
+        sheet.write_row(0, 0, headers)
+        cells = frame.astype(object).where(frame.notna(), None).values.tolist()
+        for number, row in enumerate(cells, 1):
+            sheet.write_row(number, 0, [None if value is None else str(value) for value in row])
+        book.close()
+        os.replace(temporary, path)
+        return {'path': path.name, 'rows': len(frame)}
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def _fast_write_df_helper(writer, sheet_name, df_obj, header_format, cell_format, id_num_format, apply_style,
                           footer_format=None):
     workbook = writer.book
@@ -313,12 +362,12 @@ def _fast_write_df_helper(writer, sheet_name, df_obj, header_format, cell_format
     headers = df_obj.columns.tolist()
     widths = []
     
-    # Set column width and style（自适应：按表头与全部内容的最长显示宽度）
-    # widths 保存的是「显示宽度」，与多城市汇总的合并口径一致；写盘时再换算 Excel 列宽。
+    # 列宽只抽样估算；内容完整写入，宽度仅影响显示。
+    sample = df_obj.head(800)
     if apply_style and cell_format:
         for col_num, col_name in enumerate(headers):
             longest = display_width(col_name)
-            for value in df_obj.iloc[:, col_num]:
+            for value in sample.iloc[:, col_num]:
                 width = display_width(value)
                 if width > longest:
                     longest = width
@@ -334,10 +383,10 @@ def _fast_write_df_helper(writer, sheet_name, df_obj, header_format, cell_format
         for col_num, header in enumerate(headers):
             worksheet.write(0, col_num, header)
             
-    # Convert dataframe to a list of lists for extreme speed
-    values = df_obj.values.tolist()
+    # Write whole rows via write_row; column formats (ID '0', fonts) apply on export.
+    values = df_obj.astype(object).where(df_obj.notna(), None).values.tolist()
     
-    # Pre-identify columns that must be written as string to avoid scientific notation
+    # Pre-convert columns that need text/number normalisation.
     str_cols = set()
     num_cols = set()
     for col_num, col_name in enumerate(headers):
@@ -345,26 +394,21 @@ def _fast_write_df_helper(writer, sheet_name, df_obj, header_format, cell_format
             str_cols.add(col_num)
         elif col_name in ["骑手ID", "收款人ID"]:
             num_cols.add(col_num)
-            
-    # Write values row by row
+    for col_num in str_cols:
+        column = df_obj.iloc[:, col_num].tolist()
+        for row_num, value in enumerate(column):
+            if pd.notna(value):
+                values[row_num][col_num] = str(value)
+    for col_num in num_cols:
+        column = df_obj.iloc[:, col_num].tolist()
+        for row_num, value in enumerate(column):
+            values[row_num][col_num] = _to_num_safe(value)
+
+    footer_index = len(values) - 1 if footer_format is not None and values else None
     for row_num, row_data in enumerate(values, start=1):
-        footer = footer_format is not None and row_num == len(values)
-        row_format = footer_format if footer else (cell_format if apply_style else None)
-        for col_num, val in enumerate(row_data):
-            if pd.isna(val) or val is None or val == "":
-                worksheet.write_blank(row_num, col_num, None, row_format)
-            else:
-                if col_num in str_cols:
-                    worksheet.write_string(row_num, col_num, str(val), row_format)
-                elif col_num in num_cols:
-                    val_num = _to_num_safe(val)
-                    if val_num is None:
-                        worksheet.write_blank(row_num, col_num, None, row_format)
-                    else:
-                        fmt = row_format if footer else (id_num_format if (apply_style and id_num_format) else row_format)
-                        worksheet.write(row_num, col_num, val_num, fmt)
-                else:
-                    worksheet.write(row_num, col_num, val, row_format)
+        worksheet.write_row(row_num, 0, row_data)
+    if footer_index is not None:
+        worksheet.write_row(footer_index + 1, 0, values[footer_index], footer_format)
 
     return {'header': [str(header) for header in headers], 'widths': widths}
 
@@ -673,6 +717,7 @@ async def run_salary_bind_gen(source_path, target_path=None, base_path=None, ded
         df_detail_list = []
         df_info_list = []
         df_shangyi_list = []
+        df_benlai_list = []
         df_fengshen_list = []
         df_dailing_list = []
         
@@ -709,6 +754,9 @@ async def run_salary_bind_gen(source_path, target_path=None, base_path=None, ded
             
             if "骑手绑定" in fname_lower or "收薪账户" in fname_lower:
                 df_fengshen_list.append(_standardize_columns(df))
+                matched = True
+            elif "benlaifreelancer" in fname_lower or "本来人力灵工" in fname:
+                df_benlai_list.append(_standardize_columns(df))
                 matched = True
             elif "merchantfreelancer" in fname_lower:
                 df_shangyi_list.append(_standardize_columns(df))
@@ -755,6 +803,8 @@ async def run_salary_bind_gen(source_path, target_path=None, base_path=None, ded
             df_detail = df_info.copy()
 
         df_shangyi = pd.concat(df_shangyi_list, ignore_index=True) if df_shangyi_list else pd.DataFrame()
+        df_benlai = pd.concat(df_benlai_list, ignore_index=True) if df_benlai_list else pd.DataFrame(
+            columns=["骑手姓名", "身份证", "签约城市", "签约状态"])
         df_fengshen = pd.concat(df_fengshen_list, ignore_index=True) if df_fengshen_list else pd.DataFrame()
         df_dailing = pd.concat(df_dailing_list, ignore_index=True) if df_dailing_list else pd.DataFrame()
 
@@ -864,6 +914,7 @@ async def run_salary_bind_gen(source_path, target_path=None, base_path=None, ded
         output_file = os.path.join(output_dir, f"{extracted_month}骑手支付绑定汇总{today_str}.xlsx")
         sht1_name = f"{month_only}骑手绑定情况"
         sht2_name = f"{month_only}未绑名单"
+        include_shangyi_sheet, include_benlai_sheet = True, False
         
         if not df_sht1.empty:
             # 填充单量汇总
@@ -989,32 +1040,29 @@ async def run_salary_bind_gen(source_path, target_path=None, base_path=None, ded
 
             sy_bound_set = set()
             if not df_shangyi.empty:
-                # Find the status column
-                status_col = None
-                for col in df_shangyi.columns:
-                    col_clean = str(col).strip().replace(" ", "").replace("\t", "").replace("\r", "").replace("\n", "")
-                    if col_clean in ["状态", "绑定状态", "签约状态", "状态列", "status"]:
-                        status_col = col
-                        break
-                
-                # Filter by status if status column exists
-                if status_col is not None:
-                    # Precise matching for '已签约'
-                    df_shangyi_filtered = df_shangyi[df_shangyi[status_col].astype(str).str.strip() == "已签约"]
-                else:
-                    df_shangyi_filtered = df_shangyi
-                
-                # Find ID card column
-                id_col = None
-                for col in ["身份证", "身份证号", "身份证号码", "证件号码", "证件号"]:
-                    if col in df_shangyi_filtered.columns:
-                        id_col = col
-                        break
-                
-                if id_col is not None:
-                    sy_bound_set = set(df_shangyi_filtered[id_col].dropna().astype(str).str.strip().str.upper())
-                    if verified_scope:
-                        sy_bound_set = {value for value in sy_bound_set if re.fullmatch(r'\d{17}[\dX]', value)}
+                sy_bound_set = _signed_identity_set(df_shangyi)
+                if sy_bound_set is None:
+                    id_col = next((col for col in ["身份证", "身份证号", "身份证号码", "证件号码", "证件号"]
+                                   if col in df_shangyi.columns), None)
+                    sy_bound_set = (set(df_shangyi[id_col].dropna().astype(str).str.strip().str.upper())
+                                    if id_col is not None else set())
+                if verified_scope:
+                    sy_bound_set = {value for value in sy_bound_set if re.fullmatch(r'\d{17}[\dX]', value)}
+
+            benlai_cities = {_platform_city_key(value)
+                             for value in (verified_scope or {}).get('benlai_cities', [])
+                             if _platform_city_key(value)}
+            bl_bound_set = set()
+            if not df_benlai.empty:
+                bl_bound_set = _signed_identity_set(df_benlai, strict=True)
+                if verified_scope:
+                    bl_bound_set = {value for value in bl_bound_set if re.fullmatch(r'\d{17}[\dX]', value)}
+                yield create_log_event(
+                    f"[{time.time()-start_time:.2f}s] 💡 本来人力签约城市 {len(benlai_cities)} 个："
+                    + ("、".join(sorted(benlai_cities)) if benlai_cities else "无（全部城市按商翼判定）")
+                    + f"；已签约身份证 {len(bl_bound_set)} 个", "INFO")
+            elif benlai_cities:
+                raise ValueError('已读取本来人力签约城市但缺少本来人力灵工资料，不能确定绑定平台')
 
             fs_bound_set = set()
             if not df_fengshen.empty:
@@ -1213,24 +1261,21 @@ async def run_salary_bind_gen(source_path, target_path=None, base_path=None, ded
             df_sht1.loc[df_sht1["骑手ID"] == "", "风神绑定"] = "未绑定"
             
             upper_idcard = df_sht1["骑手身份证"].str.strip().str.upper()
-            df_sht1["发薪平台绑定"] = upper_idcard.isin(sy_bound_set).map({True: "已绑定", False: "未绑定"})
+            df_sht1["发薪绑定平台"] = df_sht1["城市"].map(
+                lambda value: "本来人力" if _platform_city_key(value) in benlai_cities else "商翼")
+            bl_bind = (df_sht1["发薪绑定平台"] == "本来人力") & upper_idcard.isin(bl_bound_set)
+            sy_bind_rows = (df_sht1["发薪绑定平台"] == "商翼") & upper_idcard.isin(sy_bound_set)
+            df_sht1["发薪平台绑定"] = (bl_bind | sy_bind_rows).map({True: "已绑定", False: "未绑定"})
             df_sht1.loc[df_sht1["骑手身份证"] == "", "发薪平台绑定"] = "未绑定"
             
-            # 绑定情况 (通过 numpy 极其高能的向量化条件选择)
-            import numpy as np
+            # 绑定情况按城市使用的发薪平台分别表述。
+            platform_label = df_sht1["发薪绑定平台"].map({"商翼": "天津商翼", "本来人力": "本来人力"})
             fs_bind = df_sht1["风神绑定"] == "已绑定"
             sy_bind = df_sht1["发薪平台绑定"] == "已绑定"
-            conds = [
-                fs_bind & sy_bind,
-                fs_bind & (~sy_bind),
-                (~fs_bind) & sy_bind
-            ]
-            choices = [
-                "已绑定",
-                "天津商翼未绑定",
-                "风神未绑定"
-            ]
-            df_sht1["绑定情况"] = np.select(conds, choices, default="风神，天津商翼均未绑定")
+            df_sht1["绑定情况"] = "风神、" + platform_label + "均未绑定"
+            df_sht1.loc[fs_bind & (~sy_bind), "绑定情况"] = platform_label + "未绑定"
+            df_sht1.loc[(~fs_bind) & sy_bind, "绑定情况"] = "风神未绑定"
+            df_sht1.loc[fs_bind & sy_bind, "绑定情况"] = "已绑定"
             
             # 是否黑户
             df_sht1["是否黑户"] = upper_idcard.isin(dailing_rid_set).map({True: "是", False: "否"})
@@ -1330,7 +1375,10 @@ async def run_salary_bind_gen(source_path, target_path=None, base_path=None, ded
             
             # 列顺序重新定义确保字段无缝对齐
             cols = ["城市", "团队名称", "骑手ID", "骑手姓名", "骑手身份证", "骑手手机号", "风神绑定", "发薪平台绑定", "绑定情况", "收款人ID", "收款人姓名", "收款人身份证号码", "收款人手机号码", "单量汇总", "是否黑户"]
-            df_sht1 = df_sht1.reindex(columns=cols)
+            df_sht1 = df_sht1.reindex(columns=cols + ["发薪绑定平台"])
+            platforms = set(df_sht1["发薪绑定平台"].dropna().astype(str))
+            include_shangyi_sheet = platforms != {"本来人力"}
+            include_benlai_sheet = platforms == {"本来人力"} or len(platforms) > 1
         else:
             df_sht1 = pd.DataFrame(columns=["城市", "团队名称", "骑手ID", "骑手姓名", "骑手身份证", "骑手手机号", "风神绑定", "发薪平台绑定", "绑定情况", "收款人ID", "收款人姓名", "收款人身份证号码", "收款人手机号码", "单量汇总", "是否黑户"])
             
@@ -1338,7 +1386,7 @@ async def run_salary_bind_gen(source_path, target_path=None, base_path=None, ded
         if not df_sht1.empty:
             df_sht2 = df_sht1[(df_sht1["绑定情况"] != "已绑定") & (pd.to_numeric(df_sht1["单量汇总"], errors="coerce").fillna(0) > 0)].copy()
         else:
-            df_sht2 = pd.DataFrame()
+            df_sht2 = pd.DataFrame(columns=cols)
 
         # Build rider to city mapping for filtering raw sheets
         rider_id_to_city = {}
@@ -1352,7 +1400,7 @@ async def run_salary_bind_gen(source_path, target_path=None, base_path=None, ded
             idcard_to_city = dict(zip(df_sht1_clean["_idcard_str"], df_sht1_clean["城市"]))
  
         # 在进入写盘操作前，在内存中提前进行所有必要的数据格式化和类型转换，避免在 IO 块中消耗 CPU
-        dfs_to_clean = [df_sht1, df_sht2, df_fengshen, df_shangyi, df_info, df_detail, df_dailing]
+        dfs_to_clean = [df_sht1, df_sht2, df_fengshen, df_shangyi, df_benlai, df_info, df_detail, df_dailing]
         for c_df in dfs_to_clean:
             if c_df is not None and not c_df.empty:
                 _clean_nan_strings(c_df)
@@ -1384,6 +1432,32 @@ async def run_salary_bind_gen(source_path, target_path=None, base_path=None, ded
         scope_cities = {str(value).strip() for value in (verified_scope or {}).get('team_cities', {}).values()
                         if str(value).strip()}
         single_scope_city = next(iter(scope_cities)) if len(scope_cities) == 1 else None
+
+        city_idcards = set()
+        if single_scope_city is not None and not df_sht1.empty:
+            city_idcards = {str(value).strip().upper() for value in df_sht1["骑手身份证"].dropna()}
+            city_idcards.discard('')
+        shangyi_id_col = next((col for col in ["身份证", "身份证号", "身份证号码", "证件号码", "证件号"]
+                               if col in df_shangyi.columns), None)
+        if single_scope_city is not None and shangyi_id_col is not None:
+            shangyi_sheet_df = df_shangyi[
+                df_shangyi[shangyi_id_col].astype(str).str.strip().str.upper().isin(city_idcards)].copy()
+        else:
+            shangyi_sheet_df = df_shangyi
+        benlai_city_col = next((col for col in ["城市", "城市名称"] if col in df_benlai.columns), None)
+        if single_scope_city is not None and benlai_city_col is not None:
+            target_key = _platform_city_key(single_scope_city)
+            benlai_sheet_df = df_benlai[
+                df_benlai[benlai_city_col].map(_platform_city_key) == target_key].copy()
+        else:
+            benlai_sheet_df = df_benlai
+
+        full_binding_dir = (verified_scope or {}).get('full_binding_dir')
+        if full_binding_dir and (verified_scope or {}).get('write_full_binding') and single_scope_city:
+            if include_shangyi_sheet:
+                _write_full_binding_workbook(Path(full_binding_dir) / '商翼绑定表.xlsx', '商翼绑定表', df_shangyi)
+            if include_benlai_sheet:
+                _write_full_binding_workbook(Path(full_binding_dir) / '本来人力绑定表.xlsx', '本来人力绑定表', df_benlai)
 
         def _write_main_wb():
             # 智能内存管理：如果总数据行数适中，不开启 constant_memory（row-by-row flush），
@@ -1421,12 +1495,17 @@ async def run_salary_bind_gen(source_path, target_path=None, base_path=None, ded
                 })
                 
                 # 全部子表统一套用城市版式（微软雅黑10号居中、表头淡橙、ID 列 '0'、列宽自适应）
+                platform_sheets = []
+                if include_shangyi_sheet:
+                    platform_sheets.append(("商翼绑定表", shangyi_sheet_df))
+                if include_benlai_sheet:
+                    platform_sheets.append(("本来人力绑定表", benlai_sheet_df))
                 sheets_to_write = [
-                    (sht1_name, df_sht1, True),
-                    (sht2_name, df_sht2, True),
+                    (sht1_name, df_sht1[cols], True),
+                    (sht2_name, df_sht2[cols], True),
                     (f"{month_only}黑户代领明细", df_dailing, True),
                     ("风神绑定表", df_fengshen, True),
-                    ("商翼绑定表", df_shangyi, True),
+                    *[(label, frame, True) for label, frame in platform_sheets],
                     ("骑手详情表", df_detail, True),
                     ("骑手信息表", df_info, True)
                 ]
@@ -1528,6 +1607,8 @@ async def run_salary_bind_gen(source_path, target_path=None, base_path=None, ded
                 "total_orders": int(pd.to_numeric(df_stats_base["单量汇总"], errors='coerce').fillna(0).sum()),
                 "fengshen_bind_count": len(df_stats_base[df_stats_base["风神绑定"] == "已绑定"]),
                 "shangyi_bind_count": len(df_stats_base[df_stats_base["发薪平台绑定"] == "已绑定"]),
+                "benlai_bind_count": int(((df_stats_base["发薪绑定平台"] == "本来人力")
+                                          & (df_stats_base["发薪平台绑定"] == "已绑定")).sum()),
                 "fully_bound_count": len(df_stats_base[df_stats_base["绑定情况"] == "已绑定"]),
                 "black_count": len(df_stats_base[df_stats_base["是否黑户"] == "是"])
             }
@@ -1588,6 +1669,9 @@ async def run_salary_bind_gen(source_path, target_path=None, base_path=None, ded
                     "total_orders": c_orders,
                     "fengshen_bind_count": c_fs,
                     "shangyi_bind_count": c_sy,
+                    "benlai_bind_count": int(((city_df["发薪绑定平台"] == "本来人力")
+                                              & (city_df["发薪平台绑定"] == "已绑定")).sum()),
+                    "bind_platform": "本来人力" if _platform_city_key(temp_city) in benlai_cities else "商翼",
                     "fengshen_bind_rate": f"{(c_fs / c_total * 100):.2f}%" if c_total > 0 else "0.00%",
                     "shangyi_bind_rate": f"{(c_sy / c_total * 100):.2f}%" if c_total > 0 else "0.00%",
                     "fully_bound_count": c_fully,

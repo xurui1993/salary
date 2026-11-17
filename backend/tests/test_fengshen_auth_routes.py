@@ -64,6 +64,13 @@ class AuthRouteTests(unittest.TestCase):
         self.assertEqual(result.exception.status_code, status)
         return result.exception.detail
 
+    def test_idle_ready_status_resets_stale_export_message(self):
+        self.broker.status.return_value = {"state": "ready", "message": "已接收导出验证码，正在提交原导出任务",
+                                           "saved": True, "busy": False, "challenge_id": None,
+                                           "can_send": False, "can_verify": False, "can_recheck": False}
+        response = routes.status(request())
+        self.assertEqual(response["message"], "风神已登录，本机会话已加密保存")
+
     def test_lan_get_status_without_origin_is_allowed(self):
         response = routes.status(request())
         self.assertEqual(response["state"], "signed_out")

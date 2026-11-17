@@ -87,6 +87,28 @@ class SeparationFilterTests(unittest.TestCase):
         self.assertEqual(rows[4][1], '深圳麻豆人-同泰站_新专送')
         output.unlink()
 
+    def test_unchanged_file_reuses_original_without_rewrite(self):
+        path = self.csv_file('same.csv', ['团队名称', '骑手ID'],
+                             [['普通站A', 1], ['普通站B', 2]])
+        before = sorted(p.name for p in self.root.iterdir())
+        output, proof = filter_table(path, 'delivery_fee', False, self.root, skip_unchanged=True)
+        self.assertEqual(output, path)
+        self.assertEqual((proof['rows_before'], proof['rows_after']), (2, 2))
+        self.assertEqual(sorted(p.name for p in self.root.iterdir()), before)
+
+    def test_unchanged_xlsx_reuses_original_without_rewrite(self):
+        path = self.root / 'same.xlsx'
+        book = Workbook(write_only=True)
+        sheet = book.create_sheet()
+        sheet.append(['骑手ID', '姓名', '部门'])
+        sheet.append(['1', '张三', '普通站'])
+        sheet.append(['2', '李四', '普通站'])
+        book.save(path)
+        book.close()
+        output, proof = filter_table(path, 'rider_info', False, self.root, skip_unchanged=True)
+        self.assertEqual(output, path)
+        self.assertEqual((proof['rows_before'], proof['rows_after']), (2, 2))
+
     def test_missing_column_and_dataset_stop(self):
         path = self.csv_file('a.csv', ['城市', '骑手ID'], [['泉州', 1]])
         with self.assertRaises(BillCollectionError):
