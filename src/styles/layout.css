@@ -308,7 +308,7 @@
   box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.2);
 }
 
-/* 侧栏底部工作区轻量状态栏（移除重复的 5 平台入口，清爽无遮挡） */
+/* 侧栏底部：CPU 及内存资源占用分析卡片 */
 .wbx-sidebar__footer {
   margin-top: auto;
   padding: 10px 12px;
@@ -319,28 +319,111 @@
   gap: 6px;
 }
 
-.wbx-sidebar-engine-pill {
+.wbx-sidebar-resource-card {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 11px;
-  border-radius: 9px;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 11px;
+  border-radius: 10px;
   background: #ffffff;
   border: 1px solid var(--wbx-border);
-  font-size: 11.5px;
-  font-weight: 600;
-  color: #334155;
   box-shadow: var(--wbx-shadow-xs);
 }
 
-.wbx-sidebar-engine-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: #10b981;
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.16);
+.wbx-sidebar-resource__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.wbx-sidebar-resource__title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+}
+
+.wbx-sidebar-resource__status {
+  font-size: 10.5px;
+  font-weight: 700;
+  white-space: nowrap;
   flex-shrink: 0;
+}
+
+.wbx-sidebar-resource__status.is-normal {
+  color: #15803d;
+}
+
+.wbx-sidebar-resource__status.is-warn {
+  color: #b45309;
+}
+
+.wbx-sidebar-resource__status.is-high {
+  color: #b91c1c;
+}
+
+.wbx-sidebar-resource__row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.wbx-sidebar-resource__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  color: #475569;
+}
+
+.wbx-sidebar-resource__meta strong {
+  font-size: 11px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.wbx-sidebar-resource__bar {
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.wbx-sidebar-resource__fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 200ms ease;
+}
+
+.wbx-sidebar-resource__fill.is-cpu {
+  background: #0284c7;
+}
+
+.wbx-sidebar-resource__fill.is-mem {
+  background: #0d9488;
+}
+
+.wbx-sidebar-resource-card.is-warn .wbx-sidebar-resource__fill {
+  background: #d97706;
+}
+
+.wbx-sidebar-resource-card.is-high .wbx-sidebar-resource__fill {
+  background: #dc2626;
+}
+
+.wbx-sidebar-resource__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-top: 5px;
+  border-top: 1px dashed #e2e8f0;
+  font-size: 10.5px;
+  color: #64748b;
 }
 
 /* 折叠态隐藏文案，图标与展开按钮上下堆叠居中，彻底消除横向挤压裁切 */

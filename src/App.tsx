@@ -26,12 +26,14 @@ import { SystemTemplatesPanel } from "./components/SystemTemplatesPanel";
 import { initialTaskKind, TASK_KIND_LABELS, type TaskKind } from "./lib/taskCatalog";
 import {
   COLLECTION_SUB_VIEWS,
+  formatSystemResourceStats,
   getHeaderModuleContext,
   getPayrollSidebarBadge,
   getPrimaryHeaderContext,
   PAYROLL_SUB_VIEWS,
   PRIMARY_NAV_ITEMS,
   type PayrollSubView,
+  type SystemResourceStatsInput,
 } from "./lib/workbench";
 import { DOWNLOAD_PLATFORMS,type DownloadPlatform } from './lib/downloadModules';
 import { PlatformDock } from './components/PlatformDock';
@@ -194,12 +196,34 @@ export default function App() {
   const [approvalActiveCount,setApprovalActiveCount]=useState(0);
   const [priceExportActiveCount,setPriceExportActiveCount]=useState(0);
   const [priceRecordId,setPriceRecordId]=useState<string|undefined>();
+  const [systemStats, setSystemStats] = useState<SystemResourceStatsInput | null>(null);
   useEffect(()=>{
     let disposed=false;const controller=new AbortController();
     const read=()=>Promise.all([['lanorange-approvals',setApprovalActiveCount],['lanorange-prices',setPriceExportActiveCount]].map(([path,setter])=>fetchWithAuth(`/api/fengshen-downloads/${path}/activity`,{signal:controller.signal}).then(r=>r.ok?r.json():null).then(value=>{if(!disposed && value)(setter as (count:number)=>void)(value.active?1:0);}).catch(()=>{})));
     void read();const timer=setInterval(read,10000);
     return()=>{disposed=true;controller.abort();clearInterval(timer);};
   },[workspaceId]);
+  useEffect(() => {
+    let disposed = false;
+    const controller = new AbortController();
+    const readStats = () => {
+      fetch('/api/system/stats', { signal: controller.signal })
+        .then(r => (r.ok ? r.json() : null))
+        .then(data => {
+          if (!disposed && data?.success) {
+            setSystemStats(data);
+          }
+        })
+        .catch(() => {});
+    };
+    readStats();
+    const timer = setInterval(readStats, 6000);
+    return () => {
+      disposed = true;
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, []);
   const [taskKind, setTaskKind] = useState<TaskKind>(() => {
     const initial = initialTaskKind();
     return initial === 'generate' ? 'download' : initial;
@@ -1286,13 +1310,50 @@ export default function App() {
             </nav>
 
             <div className="wbx-sidebar__footer">
-              <div className="wbx-sidebar-engine-pill" title="本地自动化采集与薪资核算引擎已就绪">
-                <span className="inline-flex items-center gap-2 min-w-0">
-                  <span className="wbx-sidebar-engine-dot" aria-hidden="true" />
-                  <span className="truncate">本地直采与核算引擎</span>
-                </span>
-                <span className="text-[11px] font-bold text-emerald-700 shrink-0">运行就绪</span>
-              </div>
+              {(() => {
+                const resView = formatSystemResourceStats(systemStats);
+                return (
+                  <div
+                    className={`wbx-sidebar-resource-card is-${resView.level}`}
+                    aria-label="CPU及内存资源占用分析"
+                  >
+                    <div className="wbx-sidebar-resource__head">
+                      <span className="wbx-sidebar-resource__title">CPU 及内存资源分析</span>
+                      <span className={`wbx-sidebar-resource__status is-${resView.level}`}>
+                        {resView.statusText}
+                      </span>
+                    </div>
+                    <div className="wbx-sidebar-resource__row">
+                      <div className="wbx-sidebar-resource__meta tabular-nums">
+                        <span>CPU ({resView.cpuCores}核)</span>
+                        <strong>{resView.cpuText}</strong>
+                      </div>
+                      <div className="wbx-sidebar-resource__bar" aria-hidden="true">
+                        <span
+                          className="wbx-sidebar-resource__fill is-cpu"
+                          style={{ width: `${Math.max(4, resView.cpuPercent)}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="wbx-sidebar-resource__row">
+                      <div className="wbx-sidebar-resource__meta tabular-nums">
+                        <span>内存 ({resView.memDetailText})</span>
+                        <strong>{resView.memText}</strong>
+                      </div>
+                      <div className="wbx-sidebar-resource__bar" aria-hidden="true">
+                        <span
+                          className="wbx-sidebar-resource__fill is-mem"
+                          style={{ width: `${Math.max(4, resView.memPercent)}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="wbx-sidebar-resource__foot tabular-nums">
+                      <span>引擎进程内存</span>
+                      <span>{resView.procMemMb} MB</span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </aside>

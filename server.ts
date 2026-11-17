@@ -1302,15 +1302,20 @@ async function startServer() {
     }
     const totalTime = totalUser + totalSys + totalIdle;
     const sysCpu = totalTime > 0 ? ((totalUser + totalSys) / totalTime) * 100 : 0;
-    const sysMemRatio = ((os.totalmem() - os.freemem()) / os.totalmem()) * 100;
+    const totalMemBytes = os.totalmem();
+    const usedMemBytes = totalMemBytes - os.freemem();
+    const sysMemRatio = totalMemBytes > 0 ? (usedMemBytes / totalMemBytes) * 100 : 0;
     const procMem = process.memoryUsage().rss / (1024 * 1024);
-    
+
     res.json({
       success: true,
       sysCpu: sysCpu,
       sysMemRatio: sysMemRatio,
       procCpu: 0,
-      procMem: procMem
+      procMem: procMem,
+      cpuCores: cpus?.length || 1,
+      usedMemGb: Number((usedMemBytes / (1024 ** 3)).toFixed(1)),
+      totalMemGb: Number((totalMemBytes / (1024 ** 3)).toFixed(1)),
     });
   });
 

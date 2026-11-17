@@ -448,3 +448,37 @@ test('toggleGridCityExpansion and resolveCityChipAction handle collapsed-all and
   assert.equal(reclickSameCity.nextCityFilter, '');
   assert.equal(reclickSameCity.nextExpandedCities.size, 0);
 });
+
+import { formatSystemResourceStats } from '../src/lib/workbench';
+
+test('formatSystemResourceStats normalizes CPU and memory usage telemetry and load levels', () => {
+  const fallback = formatSystemResourceStats(null);
+  assert.equal(fallback.level, 'normal');
+  assert.equal(fallback.statusText, '负载正常');
+  assert.match(fallback.cpuText, /%/);
+  assert.match(fallback.memText, /%/);
+
+  const warn = formatSystemResourceStats({
+    sysCpu: 72.4,
+    sysMemRatio: 58.1,
+    procMem: 214.6,
+    cpuCores: 8,
+    usedMemGb: 9.3,
+    totalMemGb: 16,
+  });
+  assert.equal(warn.level, 'warn');
+  assert.equal(warn.statusText, '负载偏高');
+  assert.equal(warn.cpuText, '72.4%');
+  assert.equal(warn.procMemMb, 215);
+  assert.equal(warn.cpuCores, 8);
+  assert.equal(warn.memDetailText, '9.3/16 GB');
+
+  const high = formatSystemResourceStats({
+    sysCpu: 89.2,
+    sysMemRatio: 91.5,
+    procMem: 512,
+  });
+  assert.equal(high.level, 'high');
+  assert.equal(high.statusText, '高负载');
+});
+

@@ -92,69 +92,78 @@ export function CityStationAccordionCard({
         aria-expanded={expanded}
         onClick={() => onToggleCity(summary.cityId)}
       >
-        <div className="wbx-city-accordion__lead">
-          <span className="wbx-city-accordion__chevron" aria-hidden="true">
-            {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-          </span>
-          <div className="wbx-city-accordion__titles">
-            <div className="wbx-city-accordion__title-row">
-              <strong>{summary.cityName}</strong>
-              <span className="wbx-deduction-meta-sep" aria-hidden="true">·</span>
-              <span className="wbx-city-accordion__count tabular-nums">
-                {summary.totalStations} 个站点
-              </span>
-              {summary.overrideStations > 0 && (
-                <>
-                  <span className="wbx-deduction-meta-sep" aria-hidden="true">·</span>
-                  <span className="wbx-city-accordion__override tabular-nums">
-                    {summary.overrideStations} 站例外
-                  </span>
-                </>
-              )}
-              <span className="wbx-deduction-meta-sep" aria-hidden="true">·</span>
-              <span
-                className={`wbx-city-accordion__default-tag ${
-                  summary.cityDefaultEdited
-                    ? 'is-edited'
-                    : summary.cityDefaultConfigured
-                      ? 'is-ready'
-                      : 'is-pending'
-                }`}
-              >
-                {summary.cityDefaultEdited
-                  ? '城市默认已调整'
-                  : summary.cityDefaultConfigured
-                    ? '城市默认已设'
-                    : '待设城市默认'}
-              </span>
-              {totalKeywordRules > 0 && (
-                <span className="wbx-city-accordion__kw-tag tabular-nums">
-                  关键词规则 {totalKeywordRules} 条
-                </span>
-              )}
-            </div>
-            <p className="wbx-city-accordion__preview tabular-nums">
-              统一口径：{citySummaryText}
-            </p>
+        <div className="wbx-city-card__top">
+          <div className="wbx-city-card__identity">
+            <strong>{summary.cityName}</strong>
+            <span className="wbx-city-accordion__count tabular-nums">
+              {summary.totalStations} 个站点
+            </span>
           </div>
+          <span className="wbx-city-accordion__action-hint">
+            <span>{expanded ? '收起明细' : '查看扣款'}</span>
+            <span className="wbx-city-accordion__chevron" aria-hidden="true">
+              {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </span>
+          </span>
+        </div>
+
+        <div className="wbx-city-accordion__title-row">
+          <span
+            className={`wbx-city-accordion__default-tag ${
+              summary.cityDefaultEdited
+                ? 'is-edited'
+                : summary.cityDefaultConfigured
+                  ? 'is-ready'
+                  : 'is-pending'
+            }`}
+          >
+            {summary.cityDefaultEdited
+              ? '城市默认已调整'
+              : summary.cityDefaultConfigured
+                ? '城市默认已设'
+                : '待设城市默认'}
+          </span>
+          <span className="wbx-deduction-meta-sep" aria-hidden="true">·</span>
+          {summary.overrideStations > 0 ? (
+            <span className="wbx-city-accordion__override tabular-nums">
+              {summary.overrideStations} 站例外
+            </span>
+          ) : (
+            <span className="wbx-city-accordion__count">全站统一口径</span>
+          )}
+          <span className="wbx-deduction-meta-sep" aria-hidden="true">·</span>
+          {totalKeywordRules > 0 ? (
+            <span className="wbx-city-accordion__kw-tag tabular-nums">
+              关键词规则 {totalKeywordRules} 条
+            </span>
+          ) : (
+            <span className="wbx-city-accordion__count">无关键词规则</span>
+          )}
+        </div>
+
+        <div className="wbx-city-card__summary-box">
+          <span className="wbx-city-card__summary-label">默认扣款口径</span>
+          <p className="wbx-city-accordion__preview tabular-nums">
+            {citySummaryText}
+          </p>
         </div>
 
         <div className="wbx-city-accordion__progress-wrap">
-          <div className="wbx-city-accordion__progress-meta tabular-nums">
-            <span className={allDone ? 'is-ready' : 'is-pending'}>
-              {total === 0
-                ? '目录同步中'
-                : allDone
-                  ? `全部已配 (${summary.configuredStations}/${total})`
-                  : `已配 ${summary.configuredStations}/${total} · 待配 ${summary.pendingStations}`}
-            </span>
+          <div className="wbx-city-card__progress-row tabular-nums">
+            <div className="wbx-city-accordion__progress-meta">
+              <span className={allDone ? 'is-ready' : 'is-pending'}>
+                {total === 0
+                  ? '目录同步中'
+                  : allDone
+                    ? `全部已配 (${summary.configuredStations}/${total})`
+                    : `已配 ${summary.configuredStations}/${total} · 待配 ${summary.pendingStations}`}
+              </span>
+            </div>
+            <span className="wbx-city-card__pct">{pct}%</span>
           </div>
           <div className="wbx-city-accordion__bar" aria-hidden="true">
             <span style={{ width: `${pct}%` }} />
           </div>
-          <span className="wbx-city-accordion__action-hint">
-            {expanded ? '收起' : '展开'}
-          </span>
         </div>
       </button>
 
