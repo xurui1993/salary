@@ -16,7 +16,7 @@
   grid-column: 1 / 2;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   min-width: 0;
   width: 100%;
 }
@@ -42,7 +42,7 @@
 .wbx-steps2 {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
+  gap: 14px;
   min-width: 0;
 }
 
@@ -53,13 +53,13 @@
   }
 }
 
-/* 3. Step 卡片容器与头部 */
+/* 3. Step 卡片容器与头部（紧凑高对比，确保 Step 01 + Step 02 首屏同屏可见） */
 .wbx-step {
   margin: 0;
   border: 1px solid var(--wbx-border);
   border-radius: var(--wbx-r-lg);
   background: var(--wbx-surface);
-  padding: 18px 20px;
+  padding: 14px 18px;
   box-shadow: var(--wbx-shadow-sm);
   min-width: 0;
   transition: border-color var(--wbx-dur-fast) var(--wbx-ease),
@@ -75,10 +75,17 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 10px 14px;
-  padding-bottom: 12px;
-  margin-bottom: 14px;
-  border-bottom: 1px solid #f1f5f9;
+  gap: 8px 12px;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.wbx-step-header-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
 .wb-step-badge {
@@ -106,10 +113,10 @@
 }
 
 .wb-step-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--wbx-text);
-  letter-spacing: -0.01em;
+  font-size: 15.5px;
+  font-weight: 800;
+  color: #0b1324;
+  letter-spacing: -0.015em;
 }
 
 .wb-step-count-pill {
@@ -117,11 +124,11 @@
   align-items: center;
   padding: 2px 9px;
   border-radius: 999px;
-  background: #f0f9ff;
-  border: 1px solid #bae6fd;
+  background: #e0f2fe;
+  border: 1px solid #7dd3fc;
   color: #0369a1;
   font-size: 11.5px;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .wbx-toolbar-sep {
@@ -144,27 +151,30 @@
   font-size: var(--wbx-fs-caption);
 }
 
-/* 4. Step 01 分类切换 + 场景包一体化工具栏 */
+/* 4. Step 01 分类切换单行工具栏（不再被场景包挤压换行） */
 .wbx-datasetbar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: space-between;
-  gap: 6px 10px;
-  padding: 5px 8px;
+  gap: 8px;
+  padding: 4px 6px;
   margin-bottom: 10px;
   border-radius: 10px;
   background: #f8fafc;
   border: 1px solid var(--wbx-border);
+  overflow-x: auto;
 }
 
 .wbx-dataset-only-selected {
   color: var(--wbx-primary);
+  font-weight: 700;
 }
 
-/* 5. Step 01 资料卡片紧凑高密度布局（让 Step 02 首屏可见） */
-.wb-dataset-grid {
-  gap: 8px;
+/* 5. Step 01 资料卡片紧凑高对比度布局（让 Step 02 首屏同屏可见） */
+.wb-dataset-grid,
+.wbx-dataset-grid {
+  gap: 7px;
 }
 
 .wb-dataset-card {
@@ -172,7 +182,7 @@
   border-radius: 10px;
   border: 1px solid var(--wbx-border);
   background: #ffffff;
-  padding: 8px 11px;
+  padding: 7px 10px;
   transition: border-color var(--wbx-dur-fast) var(--wbx-ease),
               background-color var(--wbx-dur-fast) var(--wbx-ease),
               box-shadow var(--wbx-dur-fast) var(--wbx-ease),
@@ -180,29 +190,31 @@
 }
 
 .wb-dataset-card:hover {
-  border-color: #93c5fd;
+  border-color: #7dd3fc;
   background: #f8fbff;
-  box-shadow: 0 3px 8px -2px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 3px 8px -2px rgba(15, 23, 42, 0.07);
   transform: translateY(-1px);
 }
 
 .wb-dataset-card.is-selected {
   border-color: #0284c7;
   background: linear-gradient(180deg, #f0f9ff 0%, #f8fbff 100%);
-  box-shadow: 0 0 0 1px rgba(2, 132, 199, 0.16), 0 3px 8px -2px rgba(2, 132, 199, 0.1);
+  box-shadow: 0 0 0 1px rgba(2, 132, 199, 0.2), 0 3px 8px -2px rgba(2, 132, 199, 0.12);
 }
 
 .wb-dataset-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #0f172a;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0b1324;
+  letter-spacing: -0.01em;
 }
 
 .wb-dataset-desc {
-  margin-top: 3px;
+  margin-top: 2px;
   font-size: 11.5px;
-  line-height: 1.35;
-  color: var(--wbx-text-muted);
+  font-weight: 450;
+  line-height: 1.32;
+  color: #475569;
   display: -webkit-box;
   -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
@@ -211,7 +223,11 @@
 
 .wb-dataset-card.is-selected .wb-dataset-title {
   color: #0369a1;
-  font-weight: 700;
+  font-weight: 800;
+}
+
+.wb-dataset-card.is-selected .wb-dataset-desc {
+  color: #334155;
 }
 
 .wb-dataset-tag {
@@ -220,13 +236,14 @@
   padding: 1.5px 7px;
   border-radius: 6px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   background: #f1f5f9;
-  color: #475569;
-  border: 1px solid #e2e8f0;
+  color: #334155;
+  border: 1px solid #cbd5e1;
 }
 
-.wb-dataset-tag.is-global {
+.wb-dataset-tag.is-global,
+.wb-dataset-tag.is-city {
   background: #eff6ff;
   color: #1d4ed8;
   border-color: #bfdbfe;
@@ -238,13 +255,15 @@
   border-color: #a7f3d0;
 }
 
-.wb-dataset-tag.is-month {
+.wb-dataset-tag.is-month,
+.wb-dataset-tag.is-monthly {
   background: #fffbeb;
   color: #b45309;
   border-color: #fde68a;
 }
 
-.wb-dataset-tag.is-generate {
+.wb-dataset-tag.is-generate,
+.wb-dataset-tag.is-full {
   background: #f5f3ff;
   color: #6d28d9;
   border-color: #ddd6fe;
@@ -254,8 +273,8 @@
 .wbx-rail__card {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 18px;
+  gap: 13px;
+  padding: 16px 18px;
   background: var(--wbx-surface);
   border: 1px solid var(--wbx-border-strong);
   border-top: 3px solid var(--wbx-primary);
@@ -268,7 +287,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--wbx-s2);
-  padding-bottom: 12px;
+  padding-bottom: 11px;
   border-bottom: 1px solid var(--wbx-border);
 }
 
@@ -281,9 +300,9 @@
 
 .wbx-rail__title {
   margin: 0;
-  font-size: 14.5px;
-  font-weight: 700;
-  color: var(--wbx-text);
+  font-size: 15px;
+  font-weight: 800;
+  color: #0b1324;
 }
 
 .wbx-rail__facts {
@@ -300,20 +319,20 @@
 .wbx-rail__fact {
   display: grid;
   grid-template-columns: 74px minmax(0, 1fr);
-  align-items: baseline;
+  align-items: center;
   gap: var(--wbx-s2);
   font-size: var(--wbx-fs-caption);
 }
 
 .wbx-rail__fact dt {
-  color: var(--wbx-text-muted);
-  font-weight: 500;
+  color: #475569;
+  font-weight: 600;
 }
 
 .wbx-rail__fact dd {
   margin: 0;
-  color: var(--wbx-text);
-  font-weight: 600;
+  color: #0b1324;
+  font-weight: 650;
   text-align: right;
   display: inline-flex;
   flex-wrap: wrap;
@@ -325,9 +344,31 @@
   text-overflow: ellipsis;
 }
 
+.wbx-rail__missing-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #b45309;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--wbx-dur-fast) var(--wbx-ease);
+}
+
+.wbx-rail__missing-chip:hover {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #92400e;
+  transform: translateY(-0.5px);
+}
+
 .wbx-rail__fact-strong {
   color: var(--wbx-primary-hover);
-  font-weight: 700;
+  font-weight: 800;
   font-size: 13.5px;
 }
 

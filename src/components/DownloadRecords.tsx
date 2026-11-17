@@ -1,13 +1,14 @@
 import { taskGuidance, taskHandoffs } from '../lib/taskGuidance';
 import { TaskOutcome } from './TaskOutcome';
 import React, { useEffect, useRef, useState } from 'react';
-import { Download, FolderOpen, RefreshCw, Search, ChevronDown, Archive } from 'lucide-react';
+import { Download, FolderOpen, RefreshCw, Search, ChevronDown, Archive, Inbox, RotateCcw } from 'lucide-react';
 import { readDownloadResponse, saveDownloadBlob, downloadErrorMessage } from '../lib/outputDownload';
 import { datasetGroup, isGlobalDataset, type DownloadFetch } from '../lib/downloadCenterLogic';
 import type { RecordModule } from '../lib/downloadModules';
 import { WorkbenchDrawer } from './WorkbenchDrawer';
 import { WorkbenchDatePicker } from './WorkbenchDatePicker';
 import { SkeletonRows } from './SkeletonRows';
+import { EmptyState } from './EmptyState';
 import { taskTone, toneClass } from '../lib/statusSemantics';
 
 interface File { id:string; run_id:string; name:string; city:string; bytes:number; available:boolean; unavailable_reason?:string }
@@ -169,7 +170,55 @@ export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttemp
       </table>
     </div>
     {/* @wbx:tc-table-end */}
-    {!records.length&&(loading?<div className="wbx-taskcenter__skeleton"><SkeletonRows rows={5} columns={6} label="任务列表加载中"/></div>:<div className="tc-empty">{pollError?'正在连接后台，稍后自动刷新。':archived?'暂无已移出的任务。':'没有符合条件的任务。'}</div>)}
+    {!records.length && (
+      loading ? (
+        <div className="wbx-taskcenter__skeleton">
+          <SkeletonRows rows={5} columns={6} label="任务列表加载中" />
+        </div>
+      ) : (
+        <EmptyState
+          icon={Inbox}
+          title={pollError ? '正在连接后台服务' : archived ? '暂无已移出的归档任务' : '当前条件下暂无匹配任务'}
+          description={
+            pollError
+              ? '正在同步最新任务记录，请稍候自动刷新或手动点击刷新。'
+              : archived
+                ? '被移出列表的历史任务会保存在此处，文件与处理记录均完整保留。'
+                : (search || status || system || kind || from || to)
+                  ? '可尝试清空搜索词或筛选条件，恢复查看全部采集、报表与核算任务。'
+                  : '在「新建采集」或「薪资核算」提交任务后，可在此实时追踪进度并一键领取结果文件。'
+          }
+          actions={
+            (search || status || system || kind || from || to)
+              ? [
+                  {
+                    label: '重置筛选条件',
+                    tone: 'primary',
+                    icon: RotateCcw,
+                    onClick: () => {
+                      setSearch('');
+                      setQuery('');
+                      setStatus('');
+                      setSystem('');
+                      setKind('');
+                      setFrom('');
+                      setTo('');
+                      reset();
+                    },
+                  },
+                ]
+              : [
+                  {
+                    label: '刷新任务列表',
+                    tone: 'secondary',
+                    icon: RefreshCw,
+                    onClick: () => setVersion(v => v + 1),
+                  },
+                ]
+          }
+        />
+      )
+    )}
     <footer className="tc-pagination"><span>共 {total} 条 · 每页 20 条</span><div><button className="wb-button" disabled={page<=1||loading} onClick={()=>{setPage(p=>p-1);setSelected([]);}}>上一页</button><span>{page} / {pages}</span><button className="wb-button" disabled={page>=pages||loading} onClick={()=>{setPage(p=>p+1);setSelected([]);}}>下一页</button></div></footer>
     {focused&&<WorkbenchDrawer title="任务详情" wide onClose={()=>setFocused(null)} bodyClassName="tc-detail"><div className="tc-detail-title"><h3>{title(focused)}</h3><span className={`tc-status is-${focused.status}`}>{statusLabel(focused.status)}</span></div><p className="wb-muted">{platform(focused)} · {focused.cities.join('、')} · {scope(focused)}</p><p className="wb-muted">{stamp(focused.created_at)} · 编号 {focused.id.slice(-8).toUpperCase()}</p>
       <TaskOutcome task={context(focused)}/>

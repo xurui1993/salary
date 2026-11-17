@@ -889,7 +889,7 @@
 
 .wb-shell:has(.wb-sidebar.is-collapsed),
 .wb-shell.has-collapsed-sidebar {
-  grid-template-columns: 64px minmax(0, 1fr) !important;
+  grid-template-columns: var(--wbx-sidebar-w-collapsed, 68px) minmax(0, 1fr) !important;
 }
 
 .wb-sidebar {
@@ -910,30 +910,31 @@
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: 6px;
-  background: transparent;
-  border: 1px solid transparent;
-  color: #64748b;
+  border-radius: 7px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #475569;
   cursor: pointer;
   transition: all 0.15s ease;
   flex-shrink: 0;
 }
 
 .wb-sidebar-toggle-btn:hover {
-  background: #f1f5f9;
+  background: #e0f2fe;
   color: #0369a1;
-  border-color: #e2e8f0;
+  border-color: #7dd3fc;
 }
 
 .wb-sidebar.is-collapsed {
-  width: 64px !important;
-  min-width: 64px !important;
+  width: var(--wbx-sidebar-w-collapsed, 68px) !important;
+  min-width: var(--wbx-sidebar-w-collapsed, 68px) !important;
 }
 
 .wb-sidebar.is-collapsed .wb-sidebar-brand {
-  justify-content: center;
-  padding-left: 0 !important;
-  padding-right: 0 !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  padding: 10px 6px !important;
 }
 
 .wb-sidebar.is-collapsed .wb-sidebar-brand-text,

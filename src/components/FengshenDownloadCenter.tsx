@@ -282,8 +282,13 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     xiaoxiang: ['rider_daily'],
   });
   const [fengshenCategory, setFengshenCategory] = useState<FengshenDatasetCategoryId>('all');
-  /** 「只看已选」独立开关（P0-3）：与分类互不叠加语义，点击仅过滤已勾选资料。 */
+  /** 「只看已选」独立开关（P0-3）：与分类互不叠加语义，点击仅过滤已勾选资料；无已选资料时自动恢复全览。 */
   const [onlySelectedShown, setOnlySelectedShown] = useState(false);
+  useEffect(() => {
+    if (datasets.length === 0 && onlySelectedShown) {
+      setOnlySelectedShown(false);
+    }
+  }, [datasets.length, onlySelectedShown]);
   const [payoutAuthStatuses, setPayoutAuthStatuses] = useState<Record<string, any>>({});
   const selectionScope = platform || 'download';
   const previousKind = useRef(selectionScope);
@@ -1839,29 +1844,109 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                               <span className="wb-step-count-pill tabular-nums">已选 {selectedCount} / {filteredDatasets.length}</span>
                             </div>
                             {group !== 'baize' && group !== 'benlai' && (
-                              <button
-                                type="button"
-                                disabled={formLocked || !ids.length}
-                                className="wb-city-preset-btn"
-                                onClick={() => {
-                                  setDatasets(
-                                    allSelected
-                                      ? datasets.filter(id => !ids.includes(id))
-                                      : platform
-                                        ? [...new Set([...datasets, ...ids])]
-                                        : group === 'xiaoxiang'
-                                          ? ids
-                                          : [...new Set([...datasets.filter(id => !isPayoutPlatform(id) && !isXiaoxiang(id)), ...ids])],
-                                  );
-                                  if (!allSelected && ids.includes('attendance_detail')) {
-                                    if (end > attendanceLast) setEnd(attendanceLast);
-                                    if (start > attendanceLast) setStart(attendanceLast);
-                                    if (start < attendanceFirst) setStart(attendanceFirst);
-                                  }
-                                }}
-                              >
-                                {group === 'fengshen' ? (allSelected ? '清空所显资料' : '全选所显资料') : (allSelected ? '清空本组' : '全选本组')}
-                              </button>
+                              <div className="wbx-step-header-actions">
+                                {group === 'fengshen' && (!platform || platform === 'fengshen') && (
+                                  <div className="wb-category-scenario-actions" role="toolbar" aria-label="常用业务场景推荐包">
+                                    {scenarioPresets.map(bundle => {
+                                      const allBundleSelected = bundle.datasets.length > 0 && bundle.datasets.every(id => datasets.includes(id));
+                                      return (
+                                        <div key={bundle.id} className="wb-preset-pill-item">
+                                          <button
+                                            type="button"
+                                            className={`wb-scenario-btn ${allBundleSelected ? 'is-active' : ''}`}
+                                            disabled={formLocked}
+                                            title={bundle.title || bundle.label}
+                                            onClick={() => {
+                                              if (allBundleSelected) {
+                                                setDatasets(datasets.filter(id => !bundle.datasets.includes(id)));
+                                              } else {
+                                                setDatasets(
+                                                  platform
+                                                    ? [...new Set([...datasets, ...bundle.datasets])]
+                                                    : [...new Set([...datasets.filter(id => !isPayoutPlatform(id) && !isXiaoxiang(id)), ...bundle.datasets])],
+                                                );
+                                              }
+                                            }}
+                                          >
+                                            <span>{bundle.label}</span>
+                                          </button>
+                                          <div className="wb-preset-actions">
+                                            <button
+                                              type="button"
+                                              className="wb-preset-edit-btn"
+                                              title={`修改场景包「${bundle.label}」`}
+                                              onClick={e => {
+                                                e.stopPropagation();
+                                                setPresetModal({
+                                                  mode: 'edit',
+                                                  type: 'scenario',
+                                                  id: bundle.id,
+                                                  label: bundle.label,
+                                                  datasets: [...bundle.datasets],
+                                                  syncWithCurrentSelection: false,
+                                                });
+                                              }}
+                                            >
+                                              <Pencil size={11} />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              className="wb-preset-remove-btn"
+                                              title={`删除场景包「${bundle.label}」`}
+                                              onClick={e => {
+                                                e.stopPropagation();
+                                                saveScenarioPresetsToStorage(scenarioPresets.filter(s => s.id !== bundle.id));
+                                              }}
+                                            >
+                                              <X size={11} />
+                                            </button>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                    <button
+                                      type="button"
+                                      className="wb-scenario-btn wbx-preset-trigger"
+                                      disabled={formLocked || !activeDatasets.length}
+                                      title={activeDatasets.length ? `将当前已勾选的 ${activeDatasets.length} 类资料保存为常用场景包` : '请先勾选资料再保存为新场景包'}
+                                      onClick={() => {
+                                        setPresetModal({
+                                          mode: 'create',
+                                          type: 'scenario',
+                                          label: '',
+                                          datasets: [...activeDatasets],
+                                        });
+                                      }}
+                                    >
+                                      <Plus size={12} />
+                                      <span>存为场景包</span>
+                                    </button>
+                                  </div>
+                                )}
+                                <button
+                                  type="button"
+                                  disabled={formLocked || !ids.length}
+                                  className="wb-city-preset-btn"
+                                  onClick={() => {
+                                    setDatasets(
+                                      allSelected
+                                        ? datasets.filter(id => !ids.includes(id))
+                                        : platform
+                                          ? [...new Set([...datasets, ...ids])]
+                                          : group === 'xiaoxiang'
+                                            ? ids
+                                            : [...new Set([...datasets.filter(id => !isPayoutPlatform(id) && !isXiaoxiang(id)), ...ids])],
+                                    );
+                                    if (!allSelected && ids.includes('attendance_detail')) {
+                                      if (end > attendanceLast) setEnd(attendanceLast);
+                                      if (start > attendanceLast) setStart(attendanceLast);
+                                      if (start < attendanceFirst) setStart(attendanceFirst);
+                                    }
+                                  }}
+                                >
+                                  {group === 'fengshen' ? (allSelected ? '清空所显资料' : '全选所显资料') : (allSelected ? '清空本组' : '全选本组')}
+                                </button>
+                              </div>
                             )}
                           </div>
                           {group === 'fengshen' && (
@@ -1869,7 +1954,6 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                               <div className="wb-dataset-cat-tabs">
                                 {FENGSHEN_DATASET_CATEGORIES.map(cat => {
                                   const catCount = countFengshenDatasetsByCategory(filteredDatasets, cat.id);
-                                  const selectedInCat = filterFengshenDatasetsByCategory(filteredDatasets, cat.id).filter(item => datasets.includes(item.id)).length;
                                   const active = fengshenCategory === cat.id;
                                   return (
                                     <button
@@ -1883,106 +1967,39 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                     >
                                       <span>{cat.label}</span>
                                       <span className="wb-dataset-cat-count tabular-nums">{catCount}</span>
-
                                     </button>
                                   );
                                 })}
-                                {datasets.length > 0 && (
+                                {(datasets.length > 0 || onlySelectedShown) && (
                                   <button
                                     type="button"
                                     aria-pressed={onlySelectedShown}
                                     disabled={formLocked}
-                                    title={onlySelectedShown ? '点击恢复显示全部分类' : '点击只显示已勾选的资料'}
+                                    title={onlySelectedShown ? '点击关闭「只看已选」恢复显示全部资料' : '点击只显示已勾选的资料'}
                                     onClick={() => setOnlySelectedShown(value => !value)}
                                     className={`wb-dataset-cat-btn wbx-dataset-only-selected ${onlySelectedShown ? 'is-active' : ''}`}
                                   >
-                                    <span>只看已选</span>
+                                    <span>{onlySelectedShown ? '只看已选 ×' : '只看已选'}</span>
                                     <span className="wb-dataset-cat-count tabular-nums">{datasets.length}</span>
                                   </button>
                                 )}
                               </div>
-                              {(!platform || platform === 'fengshen') && (
-                                <div className="wb-category-scenario-actions" role="toolbar" aria-label="常用业务场景推荐包">
-                                  {scenarioPresets.map(bundle => {
-                                    const allBundleSelected = bundle.datasets.length > 0 && bundle.datasets.every(id => datasets.includes(id));
-                                    return (
-                                      <div key={bundle.id} className="wb-preset-pill-item">
-                                        <button
-                                          type="button"
-                                          className={`wb-scenario-btn ${allBundleSelected ? 'is-active' : ''}`}
-                                          disabled={formLocked}
-                                          title={bundle.title || bundle.label}
-                                          onClick={() => {
-                                            if (allBundleSelected) {
-                                              setDatasets(datasets.filter(id => !bundle.datasets.includes(id)));
-                                            } else {
-                                              setDatasets(
-                                                platform
-                                                  ? [...new Set([...datasets, ...bundle.datasets])]
-                                                  : [...new Set([...datasets.filter(id => !isPayoutPlatform(id) && !isXiaoxiang(id)), ...bundle.datasets])],
-                                              );
-                                            }
-                                          }}
-                                        >
-                                          <span>{bundle.label}</span>
-                                        </button>
-                                        <div className="wb-preset-actions">
-                                          <button
-                                            type="button"
-                                            className="wb-preset-edit-btn"
-                                            title={`修改场景包「${bundle.label}」`}
-                                            onClick={e => {
-                                              e.stopPropagation();
-                                              setPresetModal({
-                                                mode: 'edit',
-                                                type: 'scenario',
-                                                id: bundle.id,
-                                                label: bundle.label,
-                                                datasets: [...bundle.datasets],
-                                                syncWithCurrentSelection: false,
-                                              });
-                                            }}
-                                          >
-                                            <Pencil size={11} />
-                                          </button>
-                                          <button
-                                            type="button"
-                                            className="wb-preset-remove-btn"
-                                            title={`删除场景包「${bundle.label}」`}
-                                            onClick={e => {
-                                              e.stopPropagation();
-                                              saveScenarioPresetsToStorage(scenarioPresets.filter(s => s.id !== bundle.id));
-                                            }}
-                                          >
-                                            <X size={11} />
-                                          </button>
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                  <button
-                                    type="button"
-                                    className="wb-scenario-btn wbx-preset-trigger"
-                                    disabled={formLocked || !activeDatasets.length}
-                                    title={activeDatasets.length ? `将当前已勾选的 ${activeDatasets.length} 类资料保存为常用场景包` : '请先勾选资料再保存为新场景包'}
-                                    onClick={() => {
-                                      setPresetModal({
-                                        mode: 'create',
-                                        type: 'scenario',
-                                        label: '',
-                                        datasets: [...activeDatasets],
-                                      });
-                                    }}
-                                  >
-                                    <Plus size={12} />
-                                    <span>存为场景包</span>
-                                  </button>
-                                </div>
-                              )}
                             </div>
                           )}
                           <div className={group === 'baize' || group === 'benlai' ? 'wb-baize-single-grid gap-2.5' : 'wbx-dataset-grid grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3'}>
-                            {displayedDatasets.length === 0 && onlySelectedShown && <p className="wbx-hint">没有已勾选的资料；关闭「只看已选」可恢复全览。</p>}
+                            {displayedDatasets.length === 0 && onlySelectedShown && (
+                              <div className="col-span-full flex items-center justify-between gap-3 rounded-lg border border-sky-200 bg-sky-50/70 px-3.5 py-2.5 text-xs text-slate-700">
+                                <span>当前分类下没有已勾选的资料。</span>
+                                <button
+                                  type="button"
+                                  className="wbx-btn wbx-btn--secondary wbx-btn--sm"
+                                  onClick={() => setOnlySelectedShown(false)}
+                                >
+                                  <X size={12} />
+                                  <span>关闭「只看已选」恢复全览</span>
+                                </button>
+                              </div>
+                            )}
 
                             {displayedDatasets.map(dataset => {
                               const selected = datasets.includes(dataset.id);
@@ -2713,7 +2730,22 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                     )}
                     <div className="wbx-rail__fact">
                       <dt>处理城市</dt>
-                      <dd title={(blueOnly ? blueCities : cities).join('、')}>{railSummary.cityLabel}</dd>
+                      <dd title={(blueOnly ? blueCities : cities).join('、')}>
+                        {railSummary.cityLabel === '未选择城市' ? (
+                          <button
+                            type="button"
+                            className="wbx-rail__missing-chip"
+                            onClick={() => {
+                              setPulsingStep('cities');
+                              document.getElementById('step-01-cities')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }}
+                          >
+                            <span>未选择城市 · 去勾选 →</span>
+                          </button>
+                        ) : (
+                          railSummary.cityLabel
+                        )}
+                      </dd>
                     </div>
                     <div className="wbx-rail__fact">
                       <dt>业务账期</dt>
@@ -2734,7 +2766,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                     </div>
                   </dl>
 
-                  <details className="wbx-rail__selected">
+                  <details className="wbx-rail__selected" open={datasets.length > 0 && datasets.length <= 6}>
                     <summary>查看已选资料（{datasets.length}）</summary>
                     {datasets.length > 0 ? (
                       <ul className="wbx-rail__list">

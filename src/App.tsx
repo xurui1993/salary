@@ -171,9 +171,8 @@ export default function App() {
       if (frame) cancelAnimationFrame(frame);
     };
   }, []);
-  // <768 走抽屉（抽屉内始终展开）；769–1280 强制 64px 图标栏；>1280 由用户偏好决定
   const isDrawerMode = viewportWidth <= BP.sm;
-  const sidebarIsCollapsed = !isDrawerMode && (sidebarCollapsed || viewportWidth <= BP.lg);
+  const sidebarIsCollapsed = false;
   useEffect(() => {
     if (!isDrawerMode) setMobileNavOpen(false);
   }, [isDrawerMode]);
@@ -1075,28 +1074,34 @@ export default function App() {
           aria-label="工作台侧栏"
         >
           <div className="wb-sidebar-brand wbx-sidebar__brand">
-            <span className="wb-sidebar-logo wbx-sidebar__logo" title={SIDEBAR_BRAND}>
-              <Calculator size={18} />
+            <span className="wb-sidebar-logo wbx-sidebar__logo" title={SIDEBAR_BRAND} aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path
+                  d="M12 2.25L20.25 6.75V17.25L12 21.75L3.75 17.25V6.75L12 2.25Z"
+                  fill="rgba(255,255,255,0.16)"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M7.75 10.25H16.25M7.75 13.75H13.25"
+                  stroke="currentColor"
+                  strokeWidth="1.9"
+                  strokeLinecap="round"
+                />
+                <circle cx="15.75" cy="13.75" r="1.35" fill="#7DD3FC" />
+                <path
+                  d="M12 5.75V7.5"
+                  stroke="#BAE6FD"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                />
+              </svg>
             </span>
             <div className="wb-sidebar-brand-text wbx-sidebar__brand-copy">
               <strong className="wbx-sidebar__brand-title" title={SIDEBAR_BRAND}>{SIDEBAR_BRAND}</strong>
               <small className="wbx-sidebar__brand-sub" title={SIDEBAR_BRAND_HINT}>{SIDEBAR_BRAND_HINT}</small>
             </div>
-            <button
-              type="button"
-              className="wb-sidebar-toggle-btn wbx-brand__toggle"
-              title={sidebarIsCollapsed ? "展开侧栏" : "收起侧栏"}
-              aria-label={sidebarIsCollapsed ? "展开侧栏" : "收起侧栏"}
-              onClick={() => {
-                setSidebarCollapsed(prev => {
-                  const next = !prev;
-                  try { localStorage.setItem('sidebar_collapsed', String(next)); } catch {}
-                  return next;
-                });
-              }}
-            >
-              {sidebarIsCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-            </button>
           </div>
           <div className="wb-sidebar-scroll flex-1 flex flex-col min-h-0">
             <nav className="wb-sidebar-flat-nav wbx-sidebar__nav" aria-label="主业务导航">
@@ -1122,7 +1127,7 @@ export default function App() {
                   <div key={item.id} className="wbx-nav-group-block">
                     <button
                       type="button"
-                      title={`${item.label}：${item.subLabel}`}
+                      title={item.label}
                       disabled={taskFormLocked}
                       aria-pressed={isActive}
                       onClick={() => {
@@ -1147,7 +1152,6 @@ export default function App() {
                       </span>
                       <span className="wb-sidebar-text wbx-nav-item__body">
                         <span className="wbx-nav-item__label">{item.label}</span>
-                        <span className="wbx-nav-item__desc">{item.subLabel}</span>
                       </span>
                       {item.id === 'collection' && activeDownloadCount > 0 && (
                         <span className="wb-sidebar-badge wbx-nav-item__badge tabular-nums">{activeDownloadCount}</span>
@@ -1273,30 +1277,12 @@ export default function App() {
             </nav>
 
             <div className="wbx-sidebar__footer">
-              <div className="wbx-sidebar-status-card">
-                <div className="wbx-sidebar-status-head">
-                  <span>数据源连接中心</span>
-                  <button
-                    type="button"
-                    className="wbx-sidebar-status-Action"
-                    onClick={() => setDockOpen(true)}
-                  >
-                    管理连接
-                  </button>
-                </div>
-                <div className="wbx-sidebar-plat-pills">
-                  {(['风神', '蓝橙', '商翼', '灯塔', '本来'] as const).map(shortName => (
-                    <button
-                      key={shortName}
-                      type="button"
-                      className="wbx-sidebar-plat-chip"
-                      title={`点击管理${shortName}平台登录状态`}
-                      onClick={() => setDockOpen(true)}
-                    >
-                      <span>{shortName}</span>
-                    </button>
-                  ))}
-                </div>
+              <div className="wbx-sidebar-engine-pill" title="本地自动化采集与薪资核算引擎已就绪">
+                <span className="inline-flex items-center gap-2 min-w-0">
+                  <span className="wbx-sidebar-engine-dot" aria-hidden="true" />
+                  <span className="truncate">本地直采与核算引擎</span>
+                </span>
+                <span className="text-[11px] font-bold text-emerald-700 shrink-0">运行就绪</span>
               </div>
             </div>
           </div>
@@ -1359,9 +1345,9 @@ export default function App() {
                         {headerCtx.title}
                       </h1>
                     </div>
-                    {headerCtx.description && (
-                      <p className="wbx-header__subtitle" title={headerCtx.description}>
-                        {headerCtx.description}
+                    {(headerCtx.description || headerCtx.subtitle) && (
+                      <p className="wbx-header__subtitle" title={headerCtx.description || headerCtx.subtitle}>
+                        {headerCtx.description || headerCtx.subtitle}
                       </p>
                     )}
                   </div>
