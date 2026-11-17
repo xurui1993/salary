@@ -1,95 +1,136 @@
-import React, {useEffect, useRef, useState} from 'react';
-import {connectionChips, type ConnectionChip} from '../lib/platformCatalog';
-import {connectionTone, toneClass, type Tone} from '../lib/statusSemantics';
+import React, { useEffect, useRef, useState } from 'react';
+import { ShieldCheck, ChevronDown, X } from 'lucide-react';
+import { getPlatformStatusCluster, type PlatformStatusMap } from '../lib/workbench';
 
-/** `workbench:platform-statuses` 事件的载荷（由 `SystemConnections` 广播）。 */
-type PlatformStatusMap = Record<string, {state?: string; offline?: boolean; busy?: boolean} | undefined>;
+const dotClass = (tone: 'ready' | 'busy' | 'warn' | 'idle') =>
+  tone === 'ready'
+    ? 'wb-dot ready'
+    : tone === 'busy'
+      ? 'wb-dot busy'
+      : tone === 'warn'
+        ? 'wb-dot offline'
+        : 'wb-dot';
 
-/**
- * 头部平台入口组件的 props。
- */
-export interface PlatformDockProps {
-  /** 面板是否展开（受控）。 */
-  open: boolean;
-  /** 触发键回调（展开 / 收起）。 */
-  onToggle: () => void;
-  /** 请求收起（点击外部 / Esc）。 */
+export function PlatformDock({
+  open: controlledOpen,
+  onToggle,
+  onClose,
+  children,
+}: {
+  open?: boolean;
+  onToggle?: () => void;
   onClose?: () => void;
-  /** 需要处理的事项数，>0 时在触发键上显示强调点。 */
-  attentionCount?: number;
-  /** 面板宿主：由调用方注入受控的连接面板（避免出现第二个入口）。 */
   children?: React.ReactNode;
-}
-
-/** tone → 状态文案（与架构 §7.2 的 5 个语义一一对应）。 */
-const TONE_TEXT: Record<Tone, string> = {
-  success: '已连接',
-  warn: '需验证',
-  danger: '连接异常',
-  progress: '连接中',
-  neutral: '未连接',
-};
-
-/**
- * 头部「平台登录」单一入口：触发键 + 5 个平台状态灯 + 受控面板宿主。
- *
- * 数据来源（禁止在本组件内硬编码平台名）：
- * - 平台集合与短名：`platformCatalog.connectionChips()`（5 项，`dengta` 不进入）
- * - 实时状态：`workbench:platform-statuses` 事件（`SystemConnections` 轮询结果）
- * - 色调归一：`statusSemantics.connectionTone()` / `toneClass()`
- *
- * @param props 见 {@link PlatformDockProps}。
- * @returns 头部平台入口。
- */
-export function PlatformDock({open, onToggle, onClose, attentionCount = 0, children}: PlatformDockProps) {
+}) {
+  const [internalOpen, setInternalOpen] = useState(false);
   const [statuses, setStatuses] = useState<PlatformStatusMap>({});
-  const containerRef = useRef<HTMLDivElement>(null);
-  const chips: ConnectionChip[] = connectionChips();
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const isOpen = typeof controlledOpen === 'boolean' ? controlledOpen : internalOpen;
+  const handleToggle = () => {
+    if (onToggle) onToggle();
+    else setInternalOpen(v => !v);
+  };
+  const handleClose = () => {
+    if (onClose) onClose();
+    else setInternalOpen(false);
+  };
 
   useEffect(() => {
     const onStatuses = (event: Event) => {
-      const detail = (event as CustomEvent<PlatformStatusMap>).detail;
-      setStatuses(detail && typeof detail === 'object' ? detail : {});
+      const detail = (event as CustomEvent).detail;
+      if (detail && typeof detail === 'object') {
+        setStatuses(detail as PlatformStatusMap);
+      }
     };
-    window.addEventListener('workbench:platform-statuses', onStatuses as EventListener);
-    return () => window.removeEventListener('workbench:platform-statuses', onStatuses as EventListener);
+    window.addEventListener('workbench:platform-statuses', onStatuses);
+    return () => window.removeEventListener('workbench:platform-statuses', onStatuses);
   }, []);
 
   useEffect(() => {
-    if (!open) return undefined;
-    const close = () => (onClose ? onClose() : onToggle());
-    const onPointerDown = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) close();
-    };
+    if (!isOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') close();
+      if (event.key === 'Escape') handleClose();
     };
-    document.addEventListener('mousedown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
+    const onMouseDown = (event: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) {
+        handleClose();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('mousedown', onMouseDown);
     return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('mousedown', onMouseDown);
     };
-  }, [open, onClose, onToggle]);
+  }, [isOpen]);
 
-  const readyCount = chips.filter(chip => connectionTone(statuses[chip.key]) === 'success').length;
+  const cluster = getPlatformStatusCluster(statuses);
+  const readyCount = cluster.filter(item => item.tone === 'ready').length;
+  const busyCount = cluster.filter(item => item.tone === 'busy').length;
 
   return (
-    <div className="wbx-dock" ref={containerRef} data-open={open ? 'true' : 'false'}>
+    <div className="wbx-popover-wrap" ref={wrapRef}>
       <button
         type="button"
-        className="wbx-dock__trigger"
-        aria-expanded={open}
+        className={`wbx-plat-dock-trigger${isOpen ? ' is-open' : ''}`}
+        aria-expanded={isOpen}
         aria-haspopup="dialog"
-        aria-label={`平台登录：${readyCount} / ${chips.length} 已就绪${attentionCount > 0 ? `，${attentionCount} 项待处理` : ''}`}
-        onClick={onToggle}
+        aria-label="打开平台登录状态与连接管理"
+        onClick={handleToggle}
       >
-        <span className="wbx-dock__title">平台登录</span>
-        {attentionCount > 0 && <span className="wbx-dot is-warn" aria-hidden="true" />}
+        <ShieldCheck size={15} className="text-sky-600 shrink-0" />
+        <span>平台登录</span>
+        <span className="wbx-plat-dock-dots" aria-hidden="true">
+          {cluster.map(item => (
+            <span key={item.key} className="wbx-plat-mini-item" title={`${item.shortLabel}：${item.statusText}`}>
+              <span className={dotClass(item.tone)} />
+              <span className="hidden xl:inline">{item.shortLabel}</span>
+            </span>
+          ))}
+        </span>
+        <span
+          className={`wbx-pill ${
+            readyCount === cluster.length
+              ? 'wbx-pill--success'
+              : busyCount > 0
+                ? 'wbx-pill--progress'
+                : readyCount > 0
+                  ? 'wbx-pill--neutral'
+                  : 'wbx-pill--warn'
+          } tabular-nums`}
+        >
+          {readyCount}/{cluster.length} 就绪
+        </span>
+        <ChevronDown size={13} className={`text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
-      {children}
+
+      {isOpen && (
+        <div
+          className="wbx-popover"
+          role="dialog"
+          aria-modal="false"
+          aria-label="平台登录与连接状态"
+        >
+          <div className="wbx-popover__head">
+            <div>
+              <span className="wbx-popover__title">五大业务平台连接中心</span>
+              <p className="text-xs text-slate-500 mt-0.5">
+                已就绪 {readyCount} / {cluster.length} 个数据源通道 · 支持扫码或账号直连
+              </p>
+            </div>
+            <button
+              type="button"
+              className="wbx-btn wbx-btn--ghost wbx-btn--sm"
+              aria-label="关闭平台登录弹窗"
+              onClick={handleClose}
+            >
+              <X size={15} />
+            </button>
+          </div>
+          {children}
+        </div>
+      )}
     </div>
   );
 }
-
-export default PlatformDock;

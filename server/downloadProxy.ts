@@ -15,11 +15,21 @@ export function isDownloadProxyPath(pathname: string): boolean {
   }
 }
 
+const AISTUDIO_HOST_RE = /^ais-(?:dev|pre)-[a-z0-9-]+-\d+\.[a-z0-9-]+\.run\.app(?::\d+)?$/i;
+
 export function protectProxyHeaders(proxyReq: ClientRequest, req: IncomingMessage, secret?: string) {
   for (const name of proxyReq.getHeaderNames()) {
     if (name === "forwarded" || name.startsWith("x-forwarded-") || name.startsWith("x-download-proxy-")
         || name === "x-download-client-address") {
       proxyReq.removeHeader(name);
+    }
+  }
+  const rawHost = String(req.headers.host || "").trim();
+  if (AISTUDIO_HOST_RE.test(rawHost)) {
+    proxyReq.setHeader("host", "localhost:3000");
+    const rawOrigin = String(req.headers.origin || "").trim();
+    if (rawOrigin === `https://${rawHost}` || rawOrigin === `http://${rawHost}`) {
+      proxyReq.setHeader("origin", "http://localhost:3000");
     }
   }
   if (secret) {

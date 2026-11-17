@@ -180,12 +180,37 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
     if(files.length)void upload(files);
   };
   return <div className={`pq-workbench wbx-payroll${isEmpty?' is-empty':''}`}>
-    <div className="pq-mode-bar wbx-payroll__modebar">
+    <div className="pq-mode-bar wbx-payroll__bar">
       <div className="pq-mode-left">
-        <div className="wbx-tabs pq-mode-tabs" role="tablist" aria-label="核算方式">{([['fengshen','闪购自动'],['manual','闪购手动'],['xiaoxiang','小象超市']] as const).map(([key,label])=><button key={key} type="button" role="tab" aria-selected={mode===key} className="wbx-tabs__tab" disabled={uploading} onClick={()=>{if(mode!==key)onOtherMode(key);}}>{label}</button>)}</div>
+        <div className="wb-subview-segmented pq-mode-tabs" role="tablist" aria-label="核算方式">
+          {([
+            ['fengshen', '闪购自动'],
+            ['manual', '闪购手动'],
+            ['xiaoxiang', '小象超市'],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={mode === key}
+              className={`wb-subview-tab wbx-tabs__tab ${mode === key ? 'is-active' : ''}`}
+              disabled={uploading}
+              onClick={() => {
+                if (mode !== key) onOtherMode(key);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <span className="wbx-payroll__mode-hint">
+          {mode === 'fengshen'
+            ? '闪购自动：上传申请表后自动拉取风神/蓝橙云端资料并执行核算'
+            : mode === 'xiaoxiang'
+              ? '小象超市：上传申请表后自动匹配灯塔日数据与考勤执行核算'
+              : '闪购手动：按批次手动准备与上传齐套来源表后执行核算'}
+        </span>
       </div>
-      {/* 提示独立成行右侧，不再与 tab 同排（避免被读成第 4 个 tab） */}
-      <span className="pq-mode-hint wbx-hint">{mode==='fengshen'||mode==='xiaoxiang'?'上传后自动执行':'按任务准备资料并核算'}</span>
     </div>
     {(() => {
       const waiting = visible.find(task => task.preparation?.execution?.waiting_verification);
@@ -196,7 +221,7 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
     {!isEmpty&&<section className="pq-intake" aria-label="添加核算任务"><ControlPanel payrollSourceMode={mode} onUploadFiles={upload} onOpenTemplates={()=>setTemplates(true)} isRunning={uploading||(mode==='xiaoxiang'&&isRunning)} separationOption={mode==='fengshen'?<label className="pq-intake-option" title="取消勾选则下载全部站点，范围在任务建立时固定。"><input type="checkbox" aria-label="排除取分离站点" checked={excludeSeparation} disabled={uploading} onChange={event=>onConfigChange({payrollExcludeSeparation:event.target.checked})}/><span>排除取分离站点</span></label>:undefined}/></section>}
     {error&&<p className="pq-message is-error" role="alert">{error}</p>}
     {loadError&&<p className="pq-message" role="status">{loadError}；现有记录保留，系统会继续更新。</p>}
-    {isEmpty&&<div className="wbx-payroll__vacant">
+    {isEmpty&&<div className="wbx-payroll__vacant wbx-payroll__empty">
       <input
         ref={emptyUploadRef}
         type="file"
@@ -209,12 +234,21 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
       <EmptyState
         icon={FileSpreadsheet}
         title="还没有核算批次"
-        description="上传标准模板即可开始第一份核算。"
+        description="上传标准薪资申请表模板即可启动第一份自动化薪资核算。"
         hint={(
-          <ol>
-            <li>上传标准薪资申请表（.xlsx，可一次选多份，每份生成一个独立批次）</li>
-            <li>核对自动继承的城市 / 站点扣款规则，仅需处理例外</li>
-            <li>完成后在任务队列下载结果；模板可先存到模板中心，下次直接复用</li>
+          <ol className="wbx-payroll__steps">
+            <li>
+              <strong>01 · 上传标准薪资申请表</strong>
+              <span>支持一次选择多份 .xlsx 模板，每份自动生成独立核算批次</span>
+            </li>
+            <li>
+              <strong>02 · 自动继承扣款与齐套核验</strong>
+              <span>自动匹配城市与站点默认扣款规则，仅需对特殊站点做例外调整</span>
+            </li>
+            <li>
+              <strong>03 · 复核明细并一键导出成品</strong>
+              <span>核算完成后在队列中核对复核摘要，直接打包下载全套核算结果</span>
+            </li>
           </ol>
         )}
         actions={[

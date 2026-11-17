@@ -1,69 +1,174 @@
 /*
- * L5 页面层 · 价格审批（架构 §4.7 P1-1 / T5）
+ * 价格审批（LanorangeApprovals / LanorangePriceExports）页级样式
  *
- * 契约：0 个 important；颜色/间距一律引用 --wbx-*。
- * 结构约定：整页只有一张面板（.wbx-approvals），内部「待审批 / 审批结果」是同权重分区，
- * 用标题 + 分割线分开，不再并列两张卡片。
+ * 约束：本文件禁止出现 important 强制标记。
  */
 
-/* 整页唯一面板 */
-.wbx-approvals {
+.wbx-approval {
   display: flex;
   flex-direction: column;
+  gap: var(--wbx-s4);
   min-width: 0;
-  padding: var(--wbx-s4) var(--wbx-s5) var(--wbx-s5);
-  background: var(--wbx-surface);
-  border-radius: var(--wbx-r-md);
-  box-shadow: var(--wbx-sh-1);
 }
 
-/* 分区：标题 + 分割线，不再各自成卡 */
-.wbx-section { display: flex; flex-direction: column; gap: var(--wbx-s3); min-width: 0; padding-top: var(--wbx-s4); border-top: 1px solid var(--wbx-border); }
-.wbx-section:first-of-type { padding-top: 0; border-top: 0; }
-.wbx-approvals > .wbx-section:first-of-type { padding-top: 0; border-top: 0; }
-.wbx-section__head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wbx-s2); }
-.wbx-section__title {
-  flex: 1 1 auto;
-  margin: 0;
-  color: var(--wbx-text);
-  font-size: var(--wbx-fs-section);
-  font-weight: var(--wbx-fw-section);
+.wbx-approval__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wbx-s3);
+  padding-bottom: var(--wbx-s3);
+  border-bottom: 1px solid var(--wbx-border);
 }
-.wbx-section__head > .wb-button, .wbx-section__head > button { margin-left: auto; text-align: left;  }
-.wbx-section__head > .wbx-pill { flex: 0 0 auto; }
 
-/* 空态：卡高受控（基线 393px 结束后 500px 纯白） */
-.wbx-approvals .wbx-empty { max-width: none; max-height: 260px; padding: var(--wbx-s5) var(--wbx-s4); }
-
-/* 表格滚动区：桌面端限高 + 操作列右侧吸附 */
-.wbx-approvals__scroll { max-height: calc(100dvh - var(--wbx-header-h) - 380px); }
-.wbx-approvals__table { min-width: 860px; }
-.wbx-approvals .wbx-table__actions {
-  background: var(--wbx-surface);
-  box-shadow: -8px 0 8px -8px var(--wbx-border-strong);
+.wbx-approval__workflow-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
-.wbx-approvals .wbx-table tbody tr:hover .wbx-table__actions { background: var(--wbx-surface-sunken); }
 
-/* 遗留工具条：只留节奏，不再自带描边 */
-.wbx-approvals .wb-approval-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wbx-s2); }
-.wbx-approvals .wb-approval-toolbar .wb-row { gap: var(--wbx-s2); }
-.wbx-approvals .wb-approval-history { display: inline-flex; align-items: center; gap: var(--wbx-s2); color: var(--wbx-text-muted); font-size: var(--wbx-fs-meta); }
-.wbx-approvals .wb-approval-notice {
+.wbx-approval__workflow-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #b45309;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.wbx-approval__workflow-desc {
+  font-size: 12.5px;
+  color: var(--wbx-text-muted);
+}
+
+.wbx-approval__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--wbx-s2);
-  padding: var(--wbx-s2) var(--wbx-s3);
-  color: var(--wbx-warn);
-  background: var(--wbx-warn-soft);
-  border-radius: var(--wbx-r-sm);
-  font-size: var(--wbx-fs-meta);
+  margin-left: auto;
 }
-.wbx-approvals .wb-approval-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--wbx-s2); color: var(--wbx-text-muted); font-size: var(--wbx-fs-meta); }
 
-/* 窄屏：表格容器内横向滚动，操作列不吸附 */
-@media (max-width: 768px) {
-  .wbx-approvals { padding: var(--wbx-s3); }
-  .wbx-approvals__scroll { max-height: none; }
-  .wbx-approvals .wbx-table__actions { position: static; box-shadow: none; }
+.wbx-approval__filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--wbx-s3);
+  align-items: end;
+  padding: 14px 16px;
+  background: #f8fafc;
+  border: 1px solid var(--wbx-border);
+  border-radius: var(--wbx-r-md);
+}
+
+.wbx-approval__filters > label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: var(--wbx-fs-caption);
+  font-weight: 600;
+  color: var(--wbx-text-secondary);
+  min-width: 0;
+}
+
+.wbx-approval__query {
+  display: flex;
+  align-items: flex-end;
+}
+
+.wbx-approval__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wbx-s3);
+  padding: 10px 14px;
+  border-radius: var(--wbx-r-md);
+  background: #f8fafc;
+  border: 1px solid var(--wbx-border);
+}
+
+.wbx-approval__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wbx-s2);
+  min-width: 0;
+}
+
+/* 修复带操作按钮的警告/错误横幅（如未登录蓝橙时） */
+.wb-error.wb-error-with-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 11px 16px;
+  border-radius: 10px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.wb-inline-login-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 7px;
+  background: #d97706;
+  border: 1px solid #b45309;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--wbx-dur-fast) var(--wbx-ease);
+}
+
+.wb-inline-login-action:hover {
+  background: #b45309;
+}
+
+/* 审批确认弹窗 */
+.wbx-modal {
+  width: min(560px, 92vw);
+  max-height: 86dvh;
+  overflow-y: auto;
+  padding: var(--wbx-s5);
+  background: var(--wbx-surface);
+  border: 1px solid var(--wbx-border);
+  border-radius: var(--wbx-r-lg);
+  box-shadow: var(--wbx-shadow-pop);
+  display: flex;
+  flex-direction: column;
+  gap: var(--wbx-s3);
+}
+
+.wbx-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wbx-s2);
+  padding-bottom: var(--wbx-s2);
+  border-bottom: 1px solid var(--wbx-border);
+}
+
+.wbx-modal__head h3 {
+  font-size: var(--wbx-fs-section);
+  font-weight: 700;
+}
+
+.wbx-modal__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--wbx-s2);
+  padding-top: var(--wbx-s3);
+  border-top: 1px solid var(--wbx-border);
 }

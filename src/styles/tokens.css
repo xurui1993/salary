@@ -1,117 +1,129 @@
 /*
- * L1 令牌层 —— 全站唯一设计变量来源（架构 §4.8 / §7.1）
+ * L1 设计令牌层 —— Precision Operations Console 视觉系统
  *
- * 契约（禁止违反）：
- *  1. 本文件只允许两类内容：`:root{}` 变量集合、`.workbench-app{}` 旧变量桥接。
- *  2. 禁止出现组件选择器规则，禁止出现媒体查询，禁止出现 important 强制标记。
- *  3. 颜色/圆角/阴影/间距/字号不得在其它文件写裸值，必须引用 `--wbx-*`。
- *
- * 级联位置：由 `main.tsx → index.css` 的 `@import` 顺序决定，晚于 `workbench.css`，
- * 因此桥接块中同名 `--wb-*` 变量必然覆盖 L0 兼容层。
+ * 约束：本文件只放 CSS 自定义属性，不写任何选择器规则，且禁止出现 important 强制标记。
  */
-
 :root {
-  /* ── 底色与表面 ───────────────────────────────── */
-  --wbx-bg: #f6f7f9;
+  /* 表面与背景：冷灰蓝工作台底色 + 纯白高对比卡片 + 微光层次 */
+  --wbx-bg: #f1f5f9;
+  --wbx-bg-subtle: #f8fafc;
   --wbx-surface: #ffffff;
-  --wbx-surface-sunken: #fafbfc;
-  --wbx-border: #e3e6eb;
-  --wbx-border-strong: #cfd4dc;
+  --wbx-surface-muted: #f8fafc;
+  --wbx-surface-hover: #f1f5f9;
+  --wbx-surface-active: #eff6ff;
 
-  /* ── 文字 ────────────────────────────────────── */
-  --wbx-text: #1b2430;
-  --wbx-text-muted: #5b6573;
-  --wbx-text-inverse: #ffffff;
+  /* 文本色阶 */
+  --wbx-text: #0f172a;
+  --wbx-text-secondary: #334155;
+  --wbx-text-muted: #64748b;
+  --wbx-text-subtle: #94a3b8;
 
-  /* ── 主色（唯一） ─────────────────────────────── */
-  --wbx-primary: #0f6e8c;
-  --wbx-primary-hover: #0c5c75;
-  --wbx-primary-soft: #e8f2f6;
+  /* 边框与分割线 */
+  --wbx-border: #e2e8f0;
+  --wbx-border-strong: #cbd5e1;
+  --wbx-border-focus: #0284c7;
 
-  /* ── 状态色：5 个 tone，浅底 + 深字 ──────────────── */
-  --wbx-success: #1f8a5b;
-  --wbx-success-soft: #e7f4ed;
-  --wbx-warn: #b7791f;
-  --wbx-warn-soft: #fbf1e0;
-  --wbx-danger: #c0392b;
-  --wbx-danger-soft: #fbeae7;
-  --wbx-progress: #0f6e8c;
-  --wbx-progress-soft: #e8f2f6;
-  --wbx-neutral: #5b6573;
-  --wbx-neutral-soft: #eef0f3;
+  /* 品牌主色：深海蔚蓝（沉稳、高辨识度、强交互反馈） */
+  --wbx-primary: #0284c7;
+  --wbx-primary-hover: #0369a1;
+  --wbx-primary-soft: #f0f9ff;
+  --wbx-primary-border: #7dd3fc;
 
-  /* ── 焦点环 ──────────────────────────────────── */
-  --wbx-focus: 0 0 0 3px rgba(15, 110, 140, 0.25);
+  /* 四大平台专属语义色 */
+  --wbx-plat-fengshen: #0284c7;
+  --wbx-plat-fengshen-soft: #f0f9ff;
+  --wbx-plat-fengshen-border: #bae6fd;
 
-  /* ── 圆角 ────────────────────────────────────── */
-  --wbx-r-sm: 8px;
-  --wbx-r-md: 12px;
-  --wbx-r-lg: 16px;
-  --wbx-r-pill: 999px;
+  --wbx-plat-lanorange: #d97706;
+  --wbx-plat-lanorange-soft: #fffbeb;
+  --wbx-plat-lanorange-border: #fde68a;
 
-  /* ── 阴影：卡片只许 sh-1 ───────────────────────── */
-  --wbx-sh-1: 0 1px 2px rgba(16, 24, 40, 0.06);
-  --wbx-sh-2: 0 8px 24px rgba(16, 24, 40, 0.12);
+  --wbx-plat-payout: #059669;
+  --wbx-plat-payout-soft: #ecfdf5;
+  --wbx-plat-payout-border: #a7f3d0;
 
-  /* ── 间距：唯一刻度（无 6/10/14/20/28） ─────────── */
+  --wbx-plat-xiaoxiang: #7c3aed;
+  --wbx-plat-xiaoxiang-soft: #f5f3ff;
+  --wbx-plat-xiaoxiang-border: #ddd6fe;
+
+  /* 语义状态五元组 */
+  --wbx-success: #059669;
+  --wbx-success-soft: #ecfdf5;
+  --wbx-success-border: #a7f3d0;
+
+  --wbx-warn: #d97706;
+  --wbx-warn-soft: #fffbeb;
+  --wbx-warn-border: #fde68a;
+
+  --wbx-danger: #dc2626;
+  --wbx-danger-soft: #fef2f2;
+  --wbx-danger-border: #fecaca;
+
+  --wbx-progress: #0284c7;
+  --wbx-progress-soft: #f0f9ff;
+  --wbx-progress-border: #bae6fd;
+
+  --wbx-neutral: #475569;
+  --wbx-neutral-soft: #f1f5f9;
+  --wbx-neutral-border: #cbd5e1;
+
+  /* 字体族与字号阶梯 */
+  --wbx-font: "Inter", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --wbx-font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  --wbx-fs-page: 18px;
+  --wbx-fs-section: 15px;
+  --wbx-fs-card: 14px;
+  --wbx-fs-body: 13.5px;
+  --wbx-fs-caption: 12px;
+  --wbx-fs-num: 20px;
+
+  --wbx-fw-page: 700;
+  --wbx-fw-section: 600;
+  --wbx-fw-card: 600;
+  --wbx-fw-body: 400;
+  --wbx-fw-caption: 500;
+  --wbx-fw-num: 700;
+  --wbx-lh: 1.5;
+
+  /* 8pt 间距阶梯 */
   --wbx-s1: 4px;
   --wbx-s2: 8px;
   --wbx-s3: 12px;
   --wbx-s4: 16px;
-  --wbx-s5: 24px;
-  --wbx-s6: 32px;
-  --wbx-s7: 48px;
-  --wbx-s8: 64px;
+  --wbx-s5: 20px;
+  --wbx-s6: 24px;
+  --wbx-s8: 32px;
 
-  /* ── 字号与行高 ───────────────────────────────── */
-  --wbx-fs-page: 16px;
-  --wbx-fw-page: 600;
-  --wbx-fs-section: 13px;
-  --wbx-fw-section: 600;
-  --wbx-fs-body: 13px;
-  --wbx-fs-meta: 12px;
-  --wbx-fs-num: 13px;
-  --wbx-fw-num: 500;
-  --wbx-lh: 1.55;
-  --wbx-font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei",
-    "PingFang SC", "Hiragino Sans GB", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* 圆角与立体阴影 */
+  --wbx-r-sm: 8px;
+  --wbx-r-md: 10px;
+  --wbx-r-lg: 14px;
+  --wbx-r-pill: 999px;
 
-  /* ── 尺寸 ────────────────────────────────────── */
-  --wbx-sidebar-w: 240px;
-  --wbx-sidebar-collapsed: 64px;
-  --wbx-rail-w: 320px;
-  --wbx-header-h: 56px;
-  --wbx-pad-page: 24px;
-  --wbx-content-max: 1600px;
+  --wbx-shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --wbx-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px -1px rgba(15, 23, 42, 0.04);
+  --wbx-shadow-md: 0 10px 24px -6px rgba(15, 23, 42, 0.08), 0 4px 10px -4px rgba(15, 23, 42, 0.04);
+  --wbx-shadow-pop: 0 20px 38px -10px rgba(15, 23, 42, 0.16), 0 8px 16px -6px rgba(15, 23, 42, 0.08);
+  --wbx-focus: 0 0 0 3px rgba(2, 132, 199, 0.22);
 
-  /* ── 层级 ────────────────────────────────────── */
-  --wbx-z-header: 30;
-  --wbx-z-sidebar: 40;
-  --wbx-z-popover: 1000;
-  --wbx-z-drawer: 1100;
+  /* 交互动效时长 */
+  --wbx-dur-fast: 140ms;
+  --wbx-dur: 180ms;
+  --wbx-dur-spin: 900ms;
+  --wbx-ease: cubic-bezier(0.22, 1, 0.36, 1);
 
-  /* ── 动效 ────────────────────────────────────── */
-  --wbx-dur-spin: 1000ms;
-  --wbx-dur-fast: 120ms;
-  --wbx-dur-base: 180ms;
-  --wbx-ease: cubic-bezier(0.2, 0.7, 0.3, 1);
-}
+  /* 应用壳尺寸令牌 */
+  --wbx-sidebar-w: 236px;
+  --wbx-sidebar-w-collapsed: 64px;
+  --wbx-header-h: 64px;
+  --wbx-rail-w: 328px;
+  --wbx-drawer-w: 440px;
+  --wbx-drawer-w-lg: 580px;
+  --wbx-main-max: 1640px;
 
-/*
- * 旧变量桥接：`workbench.css`（L0）的 1572 条规则大量消费 `--wb-*`。
- * 本块后加载，同名变量必然覆盖 L0 定义，使旧规则自动跟随新令牌。
- */
-.workbench-app {
-  --wb-bg: var(--wbx-bg);
-  --wb-panel: var(--wbx-surface);
-  --wb-text: var(--wbx-text);
-  --wb-text-secondary: #334155;
-  --wb-muted: var(--wbx-text-muted);
-  --wb-border: var(--wbx-border);
-  --wb-border-subtle: #eff1f4;
-  --wb-soft: #f3f5f8;
-  --wb-accent: var(--wbx-primary);
-  --wb-accent-hover: var(--wbx-primary-hover);
-  --wb-shadow: var(--wbx-sh-1);
-  --wb-shadow-md: var(--wbx-sh-2);
+  /* 兼容别名 */
+  --wbx-bg-muted: var(--wbx-surface-muted);
+  --wbx-bg-elevated: var(--wbx-surface);
+  --wbx-r-xs: 6px;
+  --wbx-r-card: var(--wbx-r-lg);
 }

@@ -1074,13 +1074,13 @@ export default function App() {
           data-collapsed={sidebarIsCollapsed ? 'true' : 'false'}
           aria-label="工作台侧栏"
         >
-          <div className="wb-sidebar-brand wbx-brand">
-            <span className="wb-sidebar-logo wbx-brand__logo" title={SIDEBAR_BRAND}>
-              <Calculator size={20} />
+          <div className="wb-sidebar-brand wbx-sidebar__brand">
+            <span className="wb-sidebar-logo wbx-sidebar__logo" title={SIDEBAR_BRAND}>
+              <Calculator size={18} />
             </span>
-            <div className="wb-sidebar-brand-text wbx-brand__text">
-              <strong className="wbx-brand__name" title={SIDEBAR_BRAND}>{SIDEBAR_BRAND}</strong>
-              <small className="wbx-brand__hint" title={SIDEBAR_BRAND_HINT}>{SIDEBAR_BRAND_HINT}</small>
+            <div className="wb-sidebar-brand-text wbx-sidebar__brand-copy">
+              <strong className="wbx-sidebar__brand-title" title={SIDEBAR_BRAND}>{SIDEBAR_BRAND}</strong>
+              <small className="wbx-sidebar__brand-sub" title={SIDEBAR_BRAND_HINT}>{SIDEBAR_BRAND_HINT}</small>
             </div>
             <button
               type="button"
@@ -1098,8 +1098,9 @@ export default function App() {
               {sidebarIsCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
             </button>
           </div>
-          <div className="wb-sidebar-scroll">
-            <nav className="wb-sidebar-flat-nav wbx-nav" aria-label="主业务导航">
+          <div className="wb-sidebar-scroll flex-1 flex flex-col min-h-0">
+            <nav className="wb-sidebar-flat-nav wbx-sidebar__nav" aria-label="主业务导航">
+              <span className="wbx-sidebar__section-label">核心业务模块</span>
               {PRIMARY_NAV_ITEMS.map(item => {
                 const isCollectionActive =
                   item.id === 'collection' &&
@@ -1118,49 +1119,189 @@ export default function App() {
                       : BadgeDollarSign;
 
                 return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    title={item.label}
-                    disabled={taskFormLocked}
-                    aria-pressed={isActive}
-                    onClick={() => {
-                      if (item.id === 'collection') {
-                        setHistoryAll(false);
-                        setTaskKind('download');
-                        navigateWorkspace('create');
-                      } else if (item.id === 'payroll') {
-                        setPayrollSubView('batches');
-                        setTaskKind('payroll');
-                        navigateWorkspace('create');
-                      } else {
-                        setPriceRecordId(undefined);
-                        navigateWorkspace('approval');
-                      }
-                      setMobileNavOpen(false);
-                    }}
-                    className="wb-sidebar-item wbx-nav__item"
-                  >
-                    <span className="wb-sidebar-icon wbx-nav__icon" aria-hidden="true">
-                      <NavIcon size={16} />
-                    </span>
-                    <span className="wb-sidebar-text wbx-nav__label">{item.label}</span>
-                    {item.id === 'collection' && activeDownloadCount > 0 && (
-                      <span className="wb-sidebar-badge wbx-nav__badge is-active tabular-nums">{activeDownloadCount} 进行中</span>
+                  <div key={item.id} className="wbx-nav-group-block">
+                    <button
+                      type="button"
+                      title={`${item.label}：${item.subLabel}`}
+                      disabled={taskFormLocked}
+                      aria-pressed={isActive}
+                      onClick={() => {
+                        if (item.id === 'collection') {
+                          setHistoryAll(false);
+                          setTaskKind('download');
+                          navigateWorkspace('create');
+                        } else if (item.id === 'payroll') {
+                          setPayrollSubView('batches');
+                          setTaskKind('payroll');
+                          navigateWorkspace('create');
+                        } else {
+                          setPriceRecordId(undefined);
+                          navigateWorkspace('approval');
+                        }
+                        setMobileNavOpen(false);
+                      }}
+                      className={`wb-sidebar-item wbx-nav-item ${isActive ? 'is-active' : ''}`}
+                    >
+                      <span className="wb-sidebar-icon wbx-nav-item__icon" aria-hidden="true">
+                        <NavIcon size={16} />
+                      </span>
+                      <span className="wb-sidebar-text wbx-nav-item__body">
+                        <span className="wbx-nav-item__label">{item.label}</span>
+                        <span className="wbx-nav-item__desc">{item.subLabel}</span>
+                      </span>
+                      {item.id === 'collection' && activeDownloadCount > 0 && (
+                        <span className="wb-sidebar-badge wbx-nav-item__badge tabular-nums">{activeDownloadCount}</span>
+                      )}
+                      {item.id === 'payroll' && payrollBadge && (
+                        <span className={`wb-sidebar-badge wbx-nav-item__badge is-${payrollBadge.tone}`}>{payrollBadge.label}</span>
+                      )}
+                      {item.id === 'approval' && approvalActiveCount + priceExportActiveCount > 0 && (
+                        <span className="wb-sidebar-badge wbx-nav-item__badge">进行中</span>
+                      )}
+                    </button>
+
+                    {item.id === 'collection' && (
+                      <div className="wbx-subnav-tree" role="group" aria-label="数据采集快捷直达">
+                        {DOWNLOAD_PLATFORMS.map(plat => {
+                          const platSelected = isCollectionActive && workspaceView === 'create' && downloadPlatform === plat.id;
+                          return (
+                            <button
+                              key={plat.id}
+                              type="button"
+                              disabled={taskFormLocked}
+                              onClick={() => {
+                                openDownloadModule(plat.id);
+                                setMobileNavOpen(false);
+                              }}
+                              className={`wbx-subnav-link ${platSelected ? 'is-active' : ''}`}
+                            >
+                              <span className="inline-flex items-center gap-2 min-w-0">
+                                <span className="wbx-subnav-dot" />
+                                <span className="truncate">{plat.navLabel}</span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                        <button
+                          type="button"
+                          disabled={taskFormLocked}
+                          onClick={() => {
+                            setHistoryAll(true);
+                            setTaskKind('download');
+                            navigateWorkspace('history');
+                            setMobileNavOpen(false);
+                          }}
+                          className={`wbx-subnav-link ${workspaceView === 'history' ? 'is-active' : ''}`}
+                        >
+                          <span className="inline-flex items-center gap-2 min-w-0">
+                            <span className="wbx-subnav-dot" />
+                            <span className="truncate">任务中心</span>
+                          </span>
+                          {(activeDownloadCount > 0 || isRunning) && (
+                            <span className="text-[11px] font-bold text-sky-600 tabular-nums">
+                              {activeDownloadCount + (isRunning ? 1 : 0)}
+                            </span>
+                          )}
+                        </button>
+                      </div>
                     )}
-                    {item.id === 'payroll' && payrollBadge && (
-                      <span className={`wb-sidebar-badge wbx-nav__badge is-${payrollBadge.tone}`}>{payrollBadge.label}</span>
+
+                    {item.id === 'payroll' && (
+                      <div className="wbx-subnav-tree" role="group" aria-label="薪资核算快捷直达">
+                        {PAYROLL_SUB_VIEWS.map(sub => {
+                          const subActive = isPayrollActive && payrollSubView === sub.id;
+                          return (
+                            <button
+                              key={sub.id}
+                              type="button"
+                              disabled={taskFormLocked}
+                              onClick={() => {
+                                setPayrollSubView(sub.id);
+                                setTaskKind('payroll');
+                                navigateWorkspace('create');
+                                setMobileNavOpen(false);
+                              }}
+                              className={`wbx-subnav-link ${subActive ? 'is-active' : ''}`}
+                            >
+                              <span className="inline-flex items-center gap-2 min-w-0">
+                                <span className="wbx-subnav-dot" />
+                                <span className="truncate">{sub.label}</span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     )}
-                    {item.id === 'approval' && approvalActiveCount + priceExportActiveCount > 0 && (
-                      <span className="wb-sidebar-badge wbx-nav__badge is-active">进行中</span>
+
+                    {item.id === 'approval' && (
+                      <div className="wbx-subnav-tree" role="group" aria-label="价格审批快捷直达">
+                        <button
+                          type="button"
+                          disabled={taskFormLocked}
+                          onClick={() => {
+                            setPriceRecordId(undefined);
+                            navigateWorkspace('approval');
+                            setMobileNavOpen(false);
+                          }}
+                          className={`wbx-subnav-link ${workspaceView === 'approval' ? 'is-active' : ''}`}
+                        >
+                          <span className="inline-flex items-center gap-2 min-w-0">
+                            <span className="wbx-subnav-dot" />
+                            <span className="truncate">批量审批</span>
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={taskFormLocked}
+                          onClick={() => {
+                            setPriceRecordId(undefined);
+                            navigateWorkspace('price-export');
+                            setMobileNavOpen(false);
+                          }}
+                          className={`wbx-subnav-link ${workspaceView === 'price-export' ? 'is-active' : ''}`}
+                        >
+                          <span className="inline-flex items-center gap-2 min-w-0">
+                            <span className="wbx-subnav-dot" />
+                            <span className="truncate">待审每日价格导出</span>
+                          </span>
+                        </button>
+                      </div>
                     )}
-                  </button>
+                  </div>
                 );
               })}
             </nav>
+
+            <div className="wbx-sidebar__footer">
+              <div className="wbx-sidebar-status-card">
+                <div className="wbx-sidebar-status-head">
+                  <span>数据源连接中心</span>
+                  <button
+                    type="button"
+                    className="wbx-sidebar-status-Action"
+                    onClick={() => setDockOpen(true)}
+                  >
+                    管理连接
+                  </button>
+                </div>
+                <div className="wbx-sidebar-plat-pills">
+                  {(['风神', '蓝橙', '商翼', '灯塔', '本来'] as const).map(shortName => (
+                    <button
+                      key={shortName}
+                      type="button"
+                      className="wbx-sidebar-plat-chip"
+                      title={`点击管理${shortName}平台登录状态`}
+                      onClick={() => setDockOpen(true)}
+                    >
+                      <span>{shortName}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </aside>
-        <div className="wb-viewport wbx-viewport">
+        <div className="wb-viewport wbx-workspace">
           {(() => {
             const headerCtx = getPrimaryHeaderContext({
               workspaceView,
@@ -1189,6 +1330,11 @@ export default function App() {
             const isPriceModule = workspaceView === 'approval' || workspaceView === 'price-export';
             const isPayrollModule = workspaceView === 'create' && taskKind === 'payroll';
             const isCollectionModule = !isPriceModule && !isPayrollModule;
+            const moduleBadgeText = isPriceModule
+              ? '价格审批'
+              : isPayrollModule
+                ? '薪资核算'
+                : '数据采集';
 
             return (
               <header className="wb-header wbx-header">
@@ -1202,12 +1348,25 @@ export default function App() {
                   >
                     <Menu size={18} />
                   </button>
-                  <span className="wb-header-module-icon" aria-hidden="true">
-                    <HeaderModuleIcon size={15} />
-                  </span>
-                  <h1 className="wb-breadcrumb-current wbx-header__title" title={headerCtx.title}>
-                    {headerCtx.title}
-                  </h1>
+
+                  <div className="wbx-header__title-group">
+                    <div className="wbx-header__title-row">
+                      <span className="wbx-header__module-badge">
+                        <HeaderModuleIcon size={12} className="mr-1" />
+                        {moduleBadgeText}
+                      </span>
+                      <h1 className="wb-breadcrumb-current wbx-header__title" title={headerCtx.title}>
+                        {headerCtx.title}
+                      </h1>
+                    </div>
+                    {headerCtx.description && (
+                      <p className="wbx-header__subtitle" title={headerCtx.description}>
+                        {headerCtx.description}
+                      </p>
+                    )}
+                  </div>
+
+                  <span className="wbx-header__sep hidden md:inline-block" aria-hidden="true" />
 
                   {isCollectionModule && (
                     <div className="wb-subview-segmented wbx-tabs" role="tablist" aria-label="数据采集子视图切换">
@@ -1305,8 +1464,8 @@ export default function App() {
                   )}
                 </div>
 
-                <div className="wb-header-actions wbx-header__actions">
-                  <div className="wb-global-dock wbx-dock" role="group" aria-label="全局平台连接与任务通知">
+                <div className="wb-header-actions wbx-header__tools">
+                  <div className="wb-global-dock wbx-dock flex items-center gap-2.5" role="group" aria-label="全局平台连接与任务通知">
                     <PlatformDock open={dockOpen} onToggle={() => setDockOpen(value => !value)} onClose={() => setDockOpen(false)}>
                       <SystemConnections
                         apiFetch={fetchWithAuth}
@@ -1319,6 +1478,7 @@ export default function App() {
                     </PlatformDock>
                     <HeaderDownloadCenter
                       apiFetch={fetchWithAuth}
+                      activeCount={activeDownloadCount}
                       runningTask={runningTask}
                       progress={progress}
                       progressText={progressText}

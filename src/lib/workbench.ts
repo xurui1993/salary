@@ -445,6 +445,7 @@ export function getPayrollSidebarBadge(
 export interface SidebarNavItemSpec {
   id: string;
   label: string;
+  subLabel?: string;
   iconKey:
     | 'compass'
     | 'layers'
@@ -518,6 +519,7 @@ export interface HeaderModuleContext {
   groupLabel: '数据采集' | '核算与业务' | '任务记录' | '薪资核算' | '价格审批';
   title: string;
   subtitle: string;
+  description?: string;
   iconKey: SidebarNavItemSpec['iconKey'];
 }
 
@@ -707,6 +709,8 @@ export function getStageHeaderMeta(
 
 
 export type PlatformDotTone = 'ready' | 'warn' | 'busy' | 'idle';
+
+export type PlatformStatusMap = Record<string, { state?: string; busy?: boolean; offline?: boolean } | undefined>;
 
 export interface PlatformStatusChip {
   key: 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang' | 'benlai';

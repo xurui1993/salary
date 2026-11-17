@@ -102,26 +102,32 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
     const response=await fetchRef.current(`${BASE}/batches/${batch.id}/result.csv`);if(!response.ok)throw new Error('结果下载失败，请稍后重试');
     const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=url;link.download=`蓝橙价格审批结果_${batch.id.slice(0,8)}.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   });}
-  return <div className="wb-approvals">
-    {onSwitchView && (
-      <div className="pq-mode-bar">
-        <div className="pq-mode-left">
-          <div className="wb-segment pq-mode-tabs" role="tablist" aria-label="蓝橙价格管理功能">
-            <button type="button" role="tab" aria-selected={true} className="is-active" onClick={() => onSwitchView('approval')}>批量审批</button>
-            <button type="button" role="tab" aria-selected={false} onClick={() => onSwitchView('price-export')}>待审每日价格导出</button>
-          </div>
-          <span className="pq-mode-hint">筛选并勾选本人待办，预览后统一同意当前节点</span>
+  return <div className="wb-approvals wbx-approval">
+    <section className="wb-approval-card wbx-section wbx-approvals__pending">
+      <div className="wbx-approval__head">
+        <div className="wbx-approval__workflow-banner">
+          <span className="wbx-approval__workflow-badge">蓝橙官方工作流</span>
+          <h2 className="wbx-section__title m-0">本人待办批量审批</h2>
+          <span className="wbx-approval__workflow-desc">筛选并勾选本人待办，预览核对后统一同意当前节点（单批上限 200 条）</span>
+        </div>
+        <div className="wbx-approval__actions">
+          <button
+            type="button"
+            className="wbx-btn wbx-btn--sm"
+            disabled={listBusy || !!command}
+            onClick={() => { setPage(1); setRefresh(v => v + 1); }}
+          >
+            <RefreshCw size={13} className={listBusy ? 'wbx-spin' : ''} />
+            <span>同步待办</span>
+          </button>
         </div>
       </div>
-    )}
-    <section className="wbx-section wbx-approvals__pending">
-      <div className="wbx-section__head"><h2 className="wbx-section__title">待审批</h2></div>
       <ApprovalScopeFilters rows={allRows} cities={scopeCities} months={scopeMonths} site={scopeSite} busy={listBusy||!!command} onChange={(cities,months,site)=>{setScopeCities(cities);setScopeMonths(months);setScopeSite(site);setPage(1);setSelection({});setPreview(null);}} onRefresh={()=>{setPage(1);setRefresh(v=>v+1);}}/>
       {error && (
         <div className="wb-error wb-error-with-action" role="alert">
           <span>{error}</span>
           {error.includes('登录') && (
-            <button type="button" className="wb-button wb-error-login-btn" onClick={() => window.dispatchEvent(new CustomEvent('workbench:connections'))}>
+            <button type="button" className="wb-inline-login-action" onClick={() => window.dispatchEvent(new CustomEvent('workbench:connections', { detail: 'lanorange' }))}>
               立即登录蓝橙
             </button>
           )}

@@ -1007,6 +1007,11 @@
   display: inline-block;
 }
 
+.wbx-popover .wb-connection-dropdown {
+  display: block;
+  width: 100%;
+}
+
 .wb-connection-popover {
   position: absolute;
   top: calc(100% + 8px);
@@ -1020,6 +1025,23 @@
   z-index: 1000;
   padding: 14px 16px;
   animation: wb-popover-in 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.wbx-popover .wb-connection-popover {
+  position: static;
+  width: 100%;
+  max-width: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  animation: none;
+}
+
+.wbx-popover .wb-popover-header,
+.wbx-popover .wb-platform-overview-bar {
+  display: none;
 }
 
 @keyframes wb-popover-in {
@@ -1767,33 +1789,73 @@
 .wb-platform-switcher-bar {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 2px;
+  gap: 12px;
+  margin-bottom: 4px;
 }
 
 .wb-platform-switch-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 5px;
-  padding: 11px 14px;
+  gap: 6px;
+  padding: 13px 16px;
   background: #ffffff;
   border: 1px solid #e2e8f0;
-  border-radius: 11px;
+  border-top: 3px solid #cbd5e1;
+  border-radius: 12px;
   cursor: pointer;
   text-align: left;
-  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  transition: border-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+              background-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 160ms cubic-bezier(0.22, 1, 0.36, 1),
+              transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.wb-platform-switch-card:hover {
-  border-color: #cbd5e1;
+.wb-platform-switch-card:hover:not(:disabled) {
+  border-color: #94a3b8;
   background: #f8fafc;
+  transform: translateY(-1.5px);
+  box-shadow: 0 6px 14px -4px rgba(15, 23, 42, 0.08);
+}
+
+.wb-platform-switch-card.is-fengshen {
+  border-top-color: #0284c7;
+}
+.wb-platform-switch-card.is-lanorange {
+  border-top-color: #d97706;
+}
+.wb-platform-switch-card.is-payout {
+  border-top-color: #059669;
+}
+.wb-platform-switch-card.is-xiaoxiang {
+  border-top-color: #7c3aed;
 }
 
 .wb-platform-switch-card.is-active {
-  background: #f0f9ff;
+  background: linear-gradient(180deg, #f0f9ff 0%, #ffffff 100%);
   border-color: #0284c7;
-  box-shadow: 0 0 0 1px rgba(2, 132, 199, 0.14), 0 2px 6px rgba(2, 132, 199, 0.07);
+  border-top-width: 3px;
+  box-shadow: 0 0 0 1px rgba(2, 132, 199, 0.16), 0 6px 16px -4px rgba(2, 132, 199, 0.14);
+}
+
+.wb-platform-switch-card.is-lanorange.is-active {
+  background: linear-gradient(180deg, #fffbeb 0%, #ffffff 100%);
+  border-color: #d97706;
+  box-shadow: 0 0 0 1px rgba(217, 119, 6, 0.18), 0 6px 16px -4px rgba(217, 119, 6, 0.12);
+}
+
+.wb-platform-switch-card.is-payout.is-active {
+  background: linear-gradient(180deg, #ecfdf5 0%, #ffffff 100%);
+  border-color: #059669;
+  box-shadow: 0 0 0 1px rgba(5, 150, 105, 0.18), 0 6px 16px -4px rgba(5, 150, 105, 0.12);
+}
+
+.wb-platform-switch-card.is-xiaoxiang.is-active {
+  background: linear-gradient(180deg, #f5f3ff 0%, #ffffff 100%);
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.18), 0 6px 16px -4px rgba(124, 58, 237, 0.12);
 }
 
 .wb-platform-switch-top {
@@ -1801,40 +1863,67 @@
   align-items: center;
   justify-content: flex-start;
   width: 100%;
-  gap: 8px;
+  gap: 9px;
 }
 
 .wb-platform-switch-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   background: #f1f5f9;
   border: 1px solid #e2e8f0;
   color: #475569;
   flex-shrink: 0;
+  transition: all 150ms ease;
 }
 
-.wb-platform-switch-card.is-active .wb-platform-switch-icon {
+.wb-platform-switch-card.is-fengshen .wb-platform-switch-icon {
+  color: #0284c7;
+  background: #f0f9ff;
+  border-color: #bae6fd;
+}
+.wb-platform-switch-card.is-lanorange .wb-platform-switch-icon {
+  color: #d97706;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+.wb-platform-switch-card.is-payout .wb-platform-switch-icon {
+  color: #059669;
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+}
+.wb-platform-switch-card.is-xiaoxiang .wb-platform-switch-icon {
+  color: #7c3aed;
+  background: #f5f3ff;
+  border-color: #ddd6fe;
+}
+
+.wb-platform-switch-card.is-fengshen.is-active .wb-platform-switch-icon {
   background: #0284c7;
   border-color: #0284c7;
   color: #ffffff;
 }
-
-/* migrated -> src/styles/pages/*.css  (dead selector: .wb-platform-switch-title-wrap) */
-
-/* migrated -> src/styles/pages/*.css  (dead selector: .wb-platform-switch-badge) */
-
-.wb-platform-switch-card.is-active .wb-platform-switch-badge {
-  background: #0284c7;
+.wb-platform-switch-card.is-lanorange.is-active .wb-platform-switch-icon {
+  background: #d97706;
+  border-color: #d97706;
   color: #ffffff;
-  border-color: #0284c7;
+}
+.wb-platform-switch-card.is-payout.is-active .wb-platform-switch-icon {
+  background: #059669;
+  border-color: #059669;
+  color: #ffffff;
+}
+.wb-platform-switch-card.is-xiaoxiang.is-active .wb-platform-switch-icon {
+  background: #7c3aed;
+  border-color: #7c3aed;
+  color: #ffffff;
 }
 
 .wb-platform-switch-name {
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 700;
   color: #0f172a;
   white-space: nowrap;
@@ -1842,17 +1931,26 @@
   text-overflow: ellipsis;
 }
 
-.wb-platform-switch-card.is-active .wb-platform-switch-name {
+.wb-platform-switch-card.is-fengshen.is-active .wb-platform-switch-name {
   color: #0369a1;
+}
+.wb-platform-switch-card.is-lanorange.is-active .wb-platform-switch-name {
+  color: #b45309;
+}
+.wb-platform-switch-card.is-payout.is-active .wb-platform-switch-name {
+  color: #047857;
+}
+.wb-platform-switch-card.is-xiaoxiang.is-active .wb-platform-switch-name {
+  color: #6d28d9;
 }
 
 .wb-platform-switch-count {
   display: inline-flex;
   align-items: center;
   margin-left: auto;
-  padding: 1px 7px;
+  padding: 1.5px 8px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   border-radius: 999px;
   background: #e0f2fe;
@@ -1864,8 +1962,8 @@
 .wb-platform-switch-sub {
   font-size: 11.5px;
   color: #64748b;
-  line-height: 1.35;
-  padding-left: 34px;
+  line-height: 1.4;
+  padding-left: 37px;
   display: -webkit-box;
   -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;

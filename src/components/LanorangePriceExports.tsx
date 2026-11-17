@@ -33,29 +33,25 @@ export function LanorangePriceExports({apiFetch,workspaceId,onActiveCount,onSwit
   async function find(){await perform('find',async()=>{const result=await request<{exports:Export[]}>('/exports');const found=result.exports.find(j=>j.request_id===attempt?.request_id);if(!found)throw Error('尚未找到本次提交，可使用原标识再次发起导出；不会创建重复任务。');setHistory(result.exports);setJob(found);save(null);});}
   async function download(){if(!job)return;await perform('download',async()=>{const response=await fetchRef.current(BASE+`/exports/${job.id}/result.xlsx`);if(!response.ok){const value=await response.json();throw Error(value.detail||'文件未就绪或校验失败');}const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=url;link.download=`${job.query.month}_蓝橙待审每日价格${job.status==='partial'?'_部分':''}.xlsx`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});}
   const active=history.some(j=>ACTIVE.has(j.status));
-  return <div className="wb-approvals">
-    {onSwitchView && (
-      <div className="pq-mode-bar">
-        <div className="pq-mode-left">
-          <div className="wb-segment pq-mode-tabs" role="tablist" aria-label="蓝橙价格管理功能">
-            <button type="button" role="tab" aria-selected={false} onClick={() => onSwitchView('approval')}>批量审批</button>
-            <button type="button" role="tab" aria-selected={true} className="is-active" onClick={() => onSwitchView('price-export')}>待审每日价格导出</button>
-          </div>
-          <span className="pq-mode-hint">读取蓝橙有权限站点，按“骑手 × 日期”纵向生成 Excel</span>
+  return <div className="wb-approvals wbx-approval">
+    <section className="wb-approval-card">
+      <div className="wbx-approval__head mb-3">
+        <div className="wbx-approval__workflow-banner">
+          <span className="wbx-approval__workflow-badge">蓝橙价格核对</span>
+          <h2 className="wbx-section__title m-0">待审每日价格纵向导出</h2>
+          <span className="wbx-approval__workflow-desc">读取蓝橙有权限站点，按“骑手 × 日期”纵向汇总导出 Excel（含审批中与待审核最新版本）</span>
         </div>
       </div>
-    )}
-    <section className="wb-approval-card">
     <form onSubmit={start}>
       <div className="wb-approval-filters"><LanorangePriceFilters apiFetch={apiFetch} workspaceId={workspaceId} city={query.city} station={query.station} month={query.month} requiredMonth disabled={!!attempt || !!busy} onChange={value=>setQuery({...query,...value})}/></div>
       <details className="wb-price-date-filter"><summary>限定导出日期（可选）</summary><div className="wb-approval-filters"><div className="wb-approval-filter-item"><span>开始日期</span><WorkbenchDatePicker ariaLabel="限定导出开始日期" value={query.date_from} rangeRole="start" rangeStart={query.date_from} rangeEnd={query.date_to} allowClear disabled={!!attempt} onChange={v=>setQuery({...query,date_from:v})}/></div><div className="wb-approval-filter-item"><span>结束日期</span><WorkbenchDatePicker ariaLabel="限定导出结束日期" value={query.date_to} rangeRole="end" rangeStart={query.date_from} rangeEnd={query.date_to} allowClear disabled={!!attempt} onChange={v=>setQuery({...query,date_to:v})}/></div></div></details>
-      <div className="wb-approval-toolbar"><span>状态：审批中、待审核；仅取最新版本。0保留，空价格留空。</span><button className="wb-primary" disabled={!!busy || active || (!attempt && !query.month)}>{busy==='start'?'正在创建导出…':attempt?'使用原标识再次发起':'开始导出'}</button></div>
+      <div className="wb-approval-toolbar"><span>状态范围：审批中、待审核（仅取最新版本，0 保留，空价格留空）</span><button className="wbx-btn wbx-btn--primary" disabled={!!busy || active || (!attempt && !query.month)}>{busy==='start'?'正在创建导出…':attempt?'使用原标识再次发起':'开始导出 Excel'}</button></div>
     </form>
     {error && (
-      <div className="wb-error wb-error-with-action" role="alert">
+      <div className="wb-error wb-error-with-action mt-3" role="alert">
         <span>{error}</span>
         {error.includes('登录') && (
-          <button type="button" className="wb-button wb-error-login-btn" onClick={() => window.dispatchEvent(new CustomEvent('workbench:connections'))}>
+          <button type="button" className="wb-inline-login-action" onClick={() => window.dispatchEvent(new CustomEvent('workbench:connections', { detail: 'lanorange' }))}>
             立即登录蓝橙
           </button>
         )}
