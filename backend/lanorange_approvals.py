@@ -243,14 +243,6 @@ class ApprovalManager:
                 db.execute('UPDATE batches SET status=?,finished=? WHERE id=?',(state,time.time(),batch_id))
             if acquired:COLLECTION_LOCK.release()
             with self.lock:self.workers.pop(batch_id,None)
-            if self.path.resolve()==ROOT.resolve():
-                try:
-                    from delivery_store import approval_delivery
-                    with self.connection() as db:owner=db.execute('SELECT scope FROM batches WHERE id=?',(batch_id,)).fetchone()['scope']
-                    approval_delivery(self,owner,batch_id)
-                except Exception:
-                    import logging
-                    logging.getLogger(__name__).warning('审批回执目录发布未完成，领取时重试；审批记录已保留')
 
     def batch(self,scope,key):
         with self.connection() as db:
@@ -290,13 +282,6 @@ class ApprovalManager:
         with self.connection() as db:
             states=[r['status'] for r in db.execute('SELECT status FROM items WHERE batch_id=?',(key,))]
             db.execute('UPDATE batches SET status=? WHERE id=?',('needs_review' if 'uncertain' in states else 'completed' if all(s=='success' for s in states) else 'partial',key))
-        if self.path.resolve()==ROOT.resolve():
-            try:
-                from delivery_store import approval_delivery
-                approval_delivery(self,scope,key)
-            except Exception:
-                import logging
-                logging.getLogger(__name__).warning('已保存核实结果，回执目录将在领取时重新发布')
         return self.batch(scope,key)
 
     def export(self,scope,key):

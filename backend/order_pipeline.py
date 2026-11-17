@@ -19,14 +19,15 @@ from types import SimpleNamespace
 import pandas as pd
 
 from fengshen_bill import BillCollectionError, atomic_json
-from fengshen_orders import SHANGHAI
+from fengshen_orders import SHANGHAI, ORDER_BATCH_SPAN
 from order_metrics import measured, measurements, worker_measurements
 from order_dates import natural_dates
 from order_sources import (prepare_order_slice, validate_slice, WAYBILL_COLUMNS,
-                           VIOLATION_COLUMNS, file_hash, merge_slices)
+                           VIOLATION_COLUMNS, file_hash, merge_slices, polars_frame_to_pandas)
 
 SCHEMA_VERSION = "orders-source-v2"
 CACHE_SECONDS = 24 * 60 * 60
+CACHE_BATCH_BYTES = 48 * 1024 * 1024
 
 
 def _json_default(value):
@@ -130,14 +131,54 @@ class PreparedSlices:
             frames.clear()
 
 
+def _pandas_to_polars(frame):
+    import polars as pl
+    if frame.empty:
+        return pl.DataFrame(schema={str(column): pl.Utf8 for column in frame.columns})
+    data = {}
+    for column in frame.columns:
+        values = []
+        for value in frame[column].tolist():
+            if (value is None or value is pd.NA or value is pd.NaT
+                    or (isinstance(value, float) and value != value)):
+                values.append(None)
+            else:
+                values.append(value)
+        data[str(column)] = values
+    return pl.DataFrame(data, strict=False)
+
+
 @measured("spool_write_seconds")
 def dump_frame(frame, path):
+    path = Path(path)
+    if path.suffix.lower() == ".parquet":
+        try:
+            import polars as pl
+            _pandas_to_polars(frame).write_parquet(path, compression="zstd")
+            return
+        except Exception:
+            # Keep the old transport when arbitrary Python objects cannot be
+            # represented without pyarrow; load_frame detects the gzip magic.
+            with gzip.open(path, "wb", compresslevel=1) as stream:
+                _write_frame(frame, stream)
+            return
     with gzip.open(path, "wb", compresslevel=1) as stream:
         _write_frame(frame, stream)
 
 
 @measured("spool_read_seconds")
 def load_frame(path, *, checkpoint=None):
+    path = Path(path)
+    with path.open("rb") as probe:
+        magic = probe.read(4)
+    if magic == b"PAR1":
+        import polars as pl
+        if checkpoint is not None:
+            checkpoint()
+        frame = polars_frame_to_pandas(pl.read_parquet(path))
+        if checkpoint is not None:
+            checkpoint()
+        return frame
     with gzip.open(path, "rb") as stream:
         return _read_frame(stream, checkpoint=checkpoint)
 
@@ -234,18 +275,22 @@ def _worker_prepare(download, raw, plan_data, include_violations, spool, cache_p
     source_dir = Path(raw) / "issue_orders" / (download["start"] + "_" + download["end"])
     captured = min((source_dir / name).stat().st_mtime for name in download["files"].values())
     source = {"task_id": download.get("task_id"), "file_checks": download["file_checks"]}
+    source_bytes = sum(int(value.get("bytes") or 0) for value in download["file_checks"].values()
+                       if isinstance(value, dict))
+    cache_enabled = source_bytes <= CACHE_BATCH_BYTES
     files = {}
     for kind in (("waybills", "violations") if include_violations else ("waybills",)):
         if Path(cancel_path).exists():
             raise BillCollectionError("任务已取消")
         frame = prepared[kind]
-        date_values = natural_dates(frame["运单完成时间" if kind == "waybills" else "违规时间"])
-        for day in _days(download["start"], download["end"]):
-            selected = date_values.eq(day)
-            cache.put(plan.agency_id, day, kind, frame.loc[selected], captured,
-                      {**source, "batch": download["start"] + "_" + download["end"],
-                       "positions": [int(index) for index in frame.index[selected]]})
-        path = Path(spool) / (download["start"] + "_" + download["end"] + "_" + kind + ".json.gz")
+        if cache_enabled:
+            date_values = natural_dates(frame["运单完成时间" if kind == "waybills" else "违规时间"])
+            for day in _days(download["start"], download["end"]):
+                selected = date_values.eq(day)
+                cache.put(plan.agency_id, day, kind, frame.loc[selected], captured,
+                          {**source, "batch": download["start"] + "_" + download["end"],
+                           "positions": [int(index) for index in frame.index[selected]]})
+        path = Path(spool) / (download["start"] + "_" + download["end"] + "_" + kind + ".parquet")
         dump_frame(frame, path)
         files[kind] = str(path)
     return {"files": files, "hashes": {kind: file_hash(path) for kind, path in files.items()},
@@ -274,7 +319,7 @@ def _cached_prepare(cache_path, today, plan_data, include_violations, spool):
         frame = pd.concat(ordered, ignore_index=True).sort_values(["__source_batch", "__source_position"], kind="stable")
         frame = frame.drop(columns=["__source_batch", "__source_position"]).reset_index(drop=True)
         frame = merge_slices([frame], "运单id" if kind == "waybills" else "违规编号")
-        path = Path(spool) / (plan.start + "_" + plan.end + "_" + kind + ".json.gz")
+        path = Path(spool) / (plan.start + "_" + plan.end + "_" + kind + ".parquet")
         dump_frame(frame, path)
         frames[kind] = str(path)
     return {"files": frames, "hashes": {kind: file_hash(path) for kind, path in frames.items()},
@@ -310,7 +355,7 @@ class OrderPipeline:
         segments = []
         for day in _days(self.plan.start, self.plan.end):
             cached = not self.refresh and self.cache.available(self.plan.agency_id, day, self.include_violations)
-            if segments and segments[-1][2] == cached and len(_days(segments[-1][0], day)) <= 5:
+            if segments and segments[-1][2] == cached and len(_days(segments[-1][0], day)) <= ORDER_BATCH_SPAN:
                 segments[-1] = (segments[-1][0], day, cached)
             else:
                 segments.append((day, day, cached))
@@ -330,6 +375,7 @@ class OrderPipeline:
         segments = self.segments()
         self.metrics["batches"] = len(segments)
         executor = ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn"))
+        platform = []
         try:
             for number, (first, last, cached) in enumerate(segments, 1):
                 if self.cancelled.is_set():
@@ -340,7 +386,6 @@ class OrderPipeline:
                 self.metrics["batch"] = number
                 self.emit("collecting")  # Also surfaces a completed worker failure before another export.
                 plan = SimpleNamespace(**{**vars(self.plan), "start": first, "end": last})
-                reference = None
                 if cached:
                     cache_started = time.perf_counter()
                     future = executor.submit(_cached_prepare, str(self.cache.path), self.cache.today,
@@ -363,22 +408,58 @@ class OrderPipeline:
                     ready_future = Future()
                     ready_future.set_result(reference)
                     self.futures.append(ready_future)
+                    self.downloads.append(manifest)
+                    self.metrics["obtained"] += 1
+                    self.emit()
                 else:
+                    platform.append((number, first, last))
+            stream = getattr(runner, "orders_stream", None)
+            if platform and stream is not None:
+                iterator = stream(self.plan, self.raw / "issue_orders", self.selected,
+                                  [(first, last) for _, first, last in platform])
+                try:
+                    with measurements(self.metrics.setdefault("timings", {})):
+                        while True:
+                            if self.cancelled.is_set():
+                                raise BillCollectionError("任务已取消")
+                            pending = [future for future in self.futures if not future.done()]
+                            if len(pending) >= 2:
+                                self._wait(pending[0])
+                            self.metrics["batch"] = min(len(segments), self.metrics["obtained"] + 1)
+                            started = time.perf_counter()
+                            try:
+                                manifest = next(iterator)
+                            except StopIteration:
+                                break
+                            self.metrics["collection_seconds"] += time.perf_counter() - started
+                            self._queue_stream(manifest, executor)
+                            self.emit()
+                finally:
+                    try:
+                        iterator.close()
+                    except Exception:
+                        pass
+            elif platform:
+                for number, first, last in platform:
+                    if self.cancelled.is_set():
+                        raise BillCollectionError("任务已取消")
+                    pending = [future for future in self.futures if not future.done()]
+                    if len(pending) >= 2:
+                        self._wait(pending[0])
+                    self.metrics["batch"] = number
+                    plan = SimpleNamespace(**{**vars(self.plan), "start": first, "end": last})
+                    self.emit("collecting")
                     collection_started = time.perf_counter()
                     with measurements(self.metrics.setdefault("timings", {})):
                         manifests = runner.orders_batch(plan, self.raw / "issue_orders", self.selected)
                     self.metrics["collection_seconds"] += time.perf_counter() - collection_started
                     if len(manifests) != 1:
                         raise BillCollectionError("流水处理批次与平台下载不一致")
-                    manifest = manifests[0]
-                    self.metrics["downloaded"] += 1
-                    self.metrics["download_bytes"] += sum(x["bytes"] for x in manifest["file_checks"].values())
-                    self.futures.append(executor.submit(_worker_prepare, manifest, str(self.raw), vars(plan),
-                        self.include_violations, str(self.spool), str(self.cache.path), self.cache.today, str(self.cancel_path)))
-                self.downloads.append(manifest)
-                self.metrics["obtained"] += 1
-                self.emit()
+                    self._queue_stream(manifests[0], executor)
+                    self.emit()
             self.references = [self._wait(future) for future in self.futures]
+            self.downloads.sort(key=lambda value: value["start"])
+            self.references.sort(key=lambda value: value["proof"]["start"])
         finally:
             if self.cancelled.is_set():
                 self.cancel_path.touch()
@@ -389,6 +470,15 @@ class OrderPipeline:
         self.metrics["receipt_check_seconds"] = time.perf_counter() - load_started
         self.finalize_started = time.perf_counter()
         return self.downloads, prepared, [(value["start"], value["end"]) for value in self.downloads]
+
+    def _queue_stream(self, manifest, executor):
+        self.downloads.append(manifest)
+        self.metrics["downloaded"] += 1
+        self.metrics["download_bytes"] += sum(value["bytes"] for value in manifest["file_checks"].values())
+        self.metrics["obtained"] += 1
+        plan = SimpleNamespace(**{**vars(self.plan), "start": manifest["start"], "end": manifest["end"]})
+        self.futures.append(executor.submit(_worker_prepare, manifest, str(self.raw), vars(plan),
+            self.include_violations, str(self.spool), str(self.cache.path), self.cache.today, str(self.cancel_path)))
 
     def load_prepared(self):
         # Validate all receipts now; validate each file again at its actual use.

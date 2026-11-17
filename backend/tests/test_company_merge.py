@@ -171,12 +171,11 @@ class CompanyMergeTests(unittest.TestCase):
         source = self.uploaded_fixture()
         _, _, mode = payroll_business.inspect_payroll(source, 'manual')
         self.assertEqual(mode, 'xiaoxiang')
-        with self.assertRaisesRegex(payroll_inputs.SourceError, '仅支持独立手动'):
+        with self.assertRaisesRegex(payroll_inputs.SourceError, '仅支持独立'):
             payroll_inputs.create(str(source), 'company_test', 'fengshen', 'download_shared')
         for file in source.glob('2026-*.xlsx'):
             file.unlink()
-        with self.assertRaisesRegex(payroll_inputs.SourceError, '日期命名'):
-            payroll_business.inspect_payroll(source, 'xiaoxiang')
+        self.assertEqual(payroll_business.inspect_payroll(source, 'xiaoxiang')[2], 'xiaoxiang')
 
     def test_ordinary_dispatch_uses_new_engine(self):
         source = self.root / 'ordinary'

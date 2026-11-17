@@ -1,0 +1,165 @@
+/*
+* L5 页面层 · 薪资核算（架构 §4.4 P0-4 核算批次 / §4.5 P0-5 扣款规则）
+*
+* 契约：0 个 important；颜色/间距/圆角/阴影一律引用 --wbx-*；
+* 只为「本页才成立」的组合规则服务，原语仍在 L4 components.css。
+* 覆盖遗留 `pq-*` / `wb-deduction-*` 时统一加页面作用域（.wbx-payroll / .wbx-deduction），
+* 且桌面端规则一律写在 ≥769 的媒体查询里，避免破坏 .pq-table 的窄屏卡片式重排。
+*/
+/* ══ 一、核算批次 ══════════════════════════════════════════ */
+.wbx-payroll { min-width: 0; }
+.wbx-payroll.is-empty { padding-bottom: 0; }
+/* 空态：单卡 + 垂直居中，卡高吃掉视口剩余高度，底部不留大片死白 */
+.wbx-payroll__vacant { display: flex; align-items: stretch; justify-content: center; min-width: 0; min-height: calc(100dvh - var(--wbx-header-h) - 284px); }
+/* A2：空态卡三段式——顶部图标/标题/说明，中部三步引导，底部主操作。
+卡高仍铺满可用区（保证卡外留白 <200），卡内改为顶部对齐 + 底部锚定动作，
+上下留白由 padding 统一为 32px（差 = 0），不再出现"内容只占 27% 的居中孤岛"。 */
+.wbx-payroll__vacant > .wbx-empty { flex: 1 1 auto; width: 100%; max-width: 720px; justify-content: flex-start; gap: 0; padding: var(--wbx-s6) var(--wbx-s5); }
+.wbx-payroll__vacant .wbx-empty__icon { margin-bottom: var(--wbx-s3); }
+.wbx-payroll__vacant .wbx-empty__title { margin-bottom: var(--wbx-s2); }
+.wbx-payroll__vacant .wbx-empty__reason { margin-bottom: var(--wbx-s4); }
+.wbx-payroll__vacant .wbx-empty__hint { width: 100%; max-width: 34em; margin: auto 0; color: var(--wbx-text-muted); font-size: var(--wbx-fs-meta); line-height: 1.7; text-align: left; }
+.wbx-payroll__vacant .wbx-empty__hint ol { display: flex; flex-direction: column; gap: var(--wbx-s1); margin: 0; padding: 0; list-style: none; counter-reset: vacant-step; }
+.wbx-payroll__vacant .wbx-empty__hint li { display: flex; align-items: baseline; gap: var(--wbx-s2); counter-increment: vacant-step; }
+.wbx-payroll__vacant .wbx-empty__hint li::before { content: counter(vacant-step) "."; flex-shrink: 0; color: var(--wbx-primary); font-weight: 600; }
+.wbx-payroll__vacant .wbx-empty__actions { margin-top: auto; padding-top: var(--wbx-s5); }
+.wbx-payroll__vacant-options { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wbx-s2); padding: var(--wbx-s2) 0; color: var(--wbx-text-muted); font-size: var(--wbx-fs-meta); }
+.wbx-payroll__vacant-options label { display: inline-flex; align-items: center; gap: var(--wbx-s2); color: var(--wbx-text); font-size: var(--wbx-fs-body); white-space: nowrap; cursor: pointer; }
+.wbx-payroll__vacant-options input { flex-shrink: 0; width: 15px; height: 15px; accent-color: var(--wbx-primary); }
+/* 状态药丸里的小圆点跟随当前文字色，不再借用旧 .pq-state i */
+.wbx-payroll .wbx-pill .wbx-dot { background: currentColor; opacity: 0.75; }
+.wbx-payroll .wbx-pill svg { flex-shrink: 0; }
+/* 队列表格：桌面端收紧行高 + 操作列右侧吸附 */
+@media (min-width: 769px) {
+  .wbx-payroll .pq-table th,
+  .wbx-payroll .pq-table td { padding: 9px var(--wbx-s3); }
+  .wbx-payroll .pq-table thead { display: table-header-group; }
+  .wbx-payroll .pq-ops-cell { position: sticky; right: 0; background: var(--wbx-surface); border-left: 1px solid var(--wbx-border); }
+  .wbx-payroll .pq-table tbody tr:hover .pq-ops-cell { background: var(--wbx-surface-sunken); }
+  .wbx-payroll .pq-table tbody tr.is-selected .pq-ops-cell { background: var(--wbx-primary-soft); }
+  .wbx-payroll .pq-table tbody tr.is-selected .pq-ops-cell:first-child { background: var(--wbx-primary-soft); }
+  .wbx-payroll .pq-table { border-collapse: separate; border-spacing: 0; }
+  .wbx-payroll .pq-table tbody tr { cursor: pointer; }
+  .wbx-payroll .pq-table tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 var(--wbx-primary); }
+  .wbx-payroll__scroll { max-height: calc(100dvh - var(--wbx-header-h) - 330px); }
+  .wbx-payroll .pq-row-actions { min-width: 120px; gap: var(--wbx-s1); }
+}
+/* 空态与队列的垂直留白 */
+.wbx-payroll .pq-queue { margin-top: var(--wbx-s4); }
+/* ══ 二、扣款规则 ══════════════════════════════════════════ */
+.wbx-subview { display: flex; flex-direction: column; gap: var(--wbx-s3); min-width: 0; }
+@media (min-width: 1024px) {
+  /* 单卡铺满可视区：底部不再出现半屏空白 */
+  .wbx-deduction { min-height: calc(100dvh - var(--wbx-header-h) - 148px); }
+}
+/* 头部工具条：标题（左） + 警示（中） + 保存（右）同一水平带 */
+.wbx-deduction-head { flex-wrap: wrap; align-items: flex-start; gap: var(--wbx-s2) var(--wbx-s3); padding-bottom: var(--wbx-s2); border-bottom: 1px solid var(--wbx-border); }
+.wbx-deduction-head__lead { flex: 1 1 320px; min-width: 0; }
+.wbx-deduction-head__title { margin: 0; color: var(--wbx-text); font-size: var(--wbx-fs-section); font-weight: var(--wbx-fw-section); }
+.wbx-deduction-head__alert { flex: 0 1 auto; min-width: 0; max-width: 46ch; padding: 2px var(--wbx-s2); border-radius: var(--wbx-r-sm); background: var(--wbx-danger-soft); }
+.wbx-deduction-head__alert-text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* 筛选带：去掉遗留的描边面板，只留一条浅底 */
+.wbx-deduction-filters.wb-deduction-filter-bar { border: 0; border-radius: var(--wbx-r-sm); background: var(--wbx-surface-sunken); padding: var(--wbx-s2) var(--wbx-s3); }
+.wbx-deduction .wb-deduction-filter-field > span { color: var(--wbx-text-muted); font-weight: 500; }
+.wbx-deduction-filters, .wbx-deduction .wb-deduction-filter-left, .wbx-deduction .wb-deduction-filter-right { min-width: 0; }
+.wbx-deduction-stat { flex-wrap: wrap; gap: 2px var(--wbx-s2); cursor: pointer; white-space: normal; text-align: left; }
+.wbx-deduction-stat__now { opacity: 0.8; font-weight: 600; }
+.wbx-deduction-updated { white-space: nowrap; }
+/* 城市默认金额面板：无边框、软底，作为卡内分区而不是第二张卡 */
+.wbx-panel { display: flex; flex-direction: column; gap: var(--wbx-s2); min-width: 0; padding: var(--wbx-s3); border-radius: var(--wbx-r-md); background: var(--wbx-surface-sunken); }
+.wbx-panel h3 { margin: 0; color: var(--wbx-text); font-size: var(--wbx-fs-section); font-weight: var(--wbx-fw-section); }
+/* 例外配置折叠区 */
+.wbx-disclosure { min-width: 0; border-top: 1px solid var(--wbx-border); }
+.wbx-disclosure > summary { padding: var(--wbx-s2) 0; color: var(--wbx-text); font-size: var(--wbx-fs-body); font-weight: 600; cursor: pointer; }
+.wbx-disclosure[open] > summary { color: var(--wbx-primary); }
+/* 表格滚动区：sticky 表头 + 高度上限，展开后也不把页面撑长 */
+/* A1：滚动区只保留滚动能力，去掉 border/radius/background —— 否则
+「行内按钮 → 滚动区 → 外层卡」构成 3 层描边（QA 实测 200 个 ≥3 层文本节点） */
+.wbx-deduction-exceptions .wb-deduction-scroll { max-height: calc(100dvh - var(--wbx-header-h) - 300px); margin: var(--wbx-s2) 0 0; overflow: auto; border: 0; border-radius: 0; background: transparent; }
+.wbx-deduction-exceptions .wb-deduction-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--wbx-fs-body); }
+.wbx-deduction-exceptions .wb-deduction-table thead th { position: sticky; top: 0; z-index: 1; padding: var(--wbx-s2) var(--wbx-s3); color: var(--wbx-text-muted); font-size: var(--wbx-fs-meta); font-weight: 600; white-space: nowrap; background: var(--wbx-surface-sunken); border-bottom: 1px solid var(--wbx-border); }
+.wbx-deduction-exceptions .wb-deduction-table tbody td,
+.wbx-deduction-exceptions .wb-deduction-table tbody th { padding: var(--wbx-s2) var(--wbx-s3); vertical-align: middle; border-bottom: 1px solid var(--wbx-border); }
+.wbx-deduction-exceptions .wb-deduction-table tbody tr:hover > * { background: var(--wbx-surface-sunken); }
+.wbx-deduction-exceptions .wb-deduction-table .wb-input { min-height: 28px; }
+/* 窄屏：表格改为容器内横向滚动，表头不再吸附 */
+@media (max-width: 768px) {
+  /* 表格仍在容器内滚动：展开 100 行也不会把页面拉到 10 屏 */
+  .wbx-deduction-exceptions .wb-deduction-scroll { max-height: 55vh; }
+  .wbx-deduction-exceptions .wb-deduction-table { min-width: 700px; }
+  .wbx-deduction-exceptions .wb-deduction-table thead th { position: static; }
+  .wbx-deduction-head__lead { flex-basis: 100%; }
+  .wbx-deduction-head__alert { max-width: 100%; }
+  .wbx-deduction-head__alert-text { white-space: normal; }
+  .wbx-payroll__vacant { min-height: 0; padding: var(--wbx-s4) 0; }
+}
+/* P0-1：扣款规则两栏（外壳退位为容器，两栏各自一张卡） */
+.wbx-subview.wbx-deduction { padding: 0 var(--wbx-s5) var(--wbx-s5); background: transparent; box-shadow: none; border-radius: 0; }
+.wbx-deduction-columns { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--wbx-s3); min-width: 0; align-items: start; margin-top: var(--wbx-s3); }
+.wbx-deduction-city, .wbx-deduction-exceptions { min-width: 0; }
+@media (min-width: 1280px) {
+  .wbx-deduction-columns { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
+}
+@media (max-width: 1279px) {
+  .wbx-subview.wbx-deduction { padding: 0 var(--wbx-s3) var(--wbx-s3); }
+}
+/* ══ T6-1：核算批次页结构合并与视觉控件 ═════════════════════════════ */
+/* 旧层 workbench.css @media (width<=1100px) 把 .pq-mode-hint / .pq-applicants 整个隐藏：
+与本批目标（A1 提示要可见可读、B3 申请人数列 90px）冲突，这里在新层恢复（0 个 important）。 */
+.wbx-payroll .pq-mode-hint { display: inline-flex; }
+.wbx-payroll .pq-applicants { display: table-cell; }
+/* A1：核算方式 tab 与辅助提示彻底分行（提示在行尾，矩形不相交） */
+.wbx-payroll__modebar { flex-wrap: wrap; }
+.wbx-payroll__modebar .pq-mode-hint { margin-left: auto; }
+/* A4：tab 外观与头部 .wbx-tabs 一致；未选中用次级文字色（不灰到像禁用） */
+.wbx-payroll .pq-mode-tabs .wbx-tabs__tab { color: var(--wbx-text-secondary); }
+.wbx-payroll .pq-mode-tabs .wbx-tabs__tab[aria-selected="true"] { color: var(--wbx-primary); }
+.wbx-payroll .pq-mode-hint { color: var(--wbx-text-muted); background: none; border: 0; }
+/* B3：表格列宽固定（模板任务 320 / 城市与周期 140 / 申请人数 90 / 当前进度 200 / 操作 120） */
+.wbx-payroll .wbx-payroll__table { table-layout: fixed; width: 914px; }
+.wbx-payroll .wbx-payroll__table th:nth-child(1) { width: 44px; }
+.wbx-payroll .wbx-payroll__table th:nth-child(2) { width: 320px; }
+.wbx-payroll .wbx-payroll__table th:nth-child(3) { width: 140px; }
+.wbx-payroll .wbx-payroll__table th:nth-child(4) { width: 90px; }
+.wbx-payroll .wbx-payroll__table th:nth-child(5) { width: 200px; }
+.wbx-payroll .wbx-payroll__table th:nth-child(6) { width: 120px; }
+.wbx-payroll .wbx-payroll__table .pq-task-cell { min-width: 0; }
+.wbx-payroll .wbx-payroll__table .pq-task-name span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.wbx-payroll .wbx-payroll__table .pq-scope-cell strong,
+.wbx-payroll .wbx-payroll__table .pq-scope-cell small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* C1：进度列文案不外溢（pill 只放状态 label，动作与耗时合并为第二行） */
+.wbx-payroll .pq-progress-cell { min-width: 0; max-width: none; }
+.wbx-payroll .pq-progress-cell .wbx-pill { max-width: 100%; overflow: hidden; white-space: nowrap; }
+.wbx-payroll .pq-progress-desc { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wbx-text-muted); font-size: 11.5px; }
+/* C3：操作列图标按钮组在 120px 列内紧凑排布（3 个按钮 + 22px 右内边距不溢出列宽） */
+.wbx-payroll .pq-ops-cell .pq-row-actions { gap: 4px; min-width: 0; }
+.wbx-payroll .pq-ops-cell .pq-icon-button { width: 26px; height: 26px; }
+/* C2：内容侧对齐 —— 旧层 .pq-row-actions-heading 有 padding-right:22px(!important)，
+让操作列内容同样留 22px，表头与按钮组右边缘一致（不需要在新层写 important） */
+.wbx-payroll .pq-table td.pq-ops-cell { padding-right: 22px; }
+/* C4：解除旧层 @media (width<=1100px) 的列 min-width，固定列宽在所有视口生效 */
+.wbx-payroll .pq-task-cell,
+.wbx-payroll .pq-scope-cell,
+.wbx-payroll .pq-progress-cell { min-width: 0; }
+/* A2：行首展开指示 + 行内详情行 */
+.wbx-payroll .pq-expand-toggle { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 22px; height: 22px; margin-right: 4px; color: var(--wbx-text-muted); background: transparent; border: 0; border-radius: var(--wbx-r-sm); cursor: pointer; transition: transform var(--wbx-dur-fast) var(--wbx-ease), color var(--wbx-dur-fast) var(--wbx-ease); }
+.wbx-payroll .pq-expand-toggle:hover { color: var(--wbx-text); background: var(--wbx-surface-sunken); }
+.wbx-payroll .pq-expand-toggle[aria-expanded="true"] { color: var(--wbx-primary); transform: rotate(180deg); }
+.wbx-payroll .pq-task-cell { display: flex; align-items: center; gap: 2px; }
+.wbx-payroll .pq-task-cell .pq-task-name { flex: 1 1 auto; min-width: 0; }
+.wbx-payroll .pq-task-cell > small { flex: 0 0 auto; }
+.wbx-payroll .pq-row-detail > td { padding: 0; background: var(--wbx-surface-sunken); }
+.wbx-payroll .pq-row-detail__inner { display: flex; flex-direction: column; gap: var(--wbx-s2); padding: var(--wbx-s3) var(--wbx-s4) var(--wbx-s3) var(--wbx-s5); border-left: 3px solid var(--wbx-primary); }
+.wbx-payroll__detail { display: flex; flex-direction: column; gap: var(--wbx-s2); min-width: 0; }
+.wbx-payroll__detail-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wbx-s2); }
+.wbx-payroll__global-logs { margin-top: var(--wbx-s3); }
+.wbx-payroll__review { margin-top: var(--wbx-s3); }
+/* B1：模板条（工具条形态，右侧控件成组右对齐） */
+.wbx-payroll .pq-upload.wbx-toolbar { gap: var(--wbx-s3); min-height: 0; padding: var(--wbx-s3) var(--wbx-s4); background: var(--wbx-surface-sunken); border-radius: var(--wbx-r-md); }
+.wbx-payroll .wbx-payroll__upload-copy { flex: 1 1 auto; min-width: 0; }
+.wbx-payroll .wbx-payroll__upload-copy p { color: var(--wbx-text-muted); font-size: 12px; line-height: 1.5; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.wbx-payroll .wbx-payroll__upload-actions { flex: 0 0 auto; margin-left: auto; }
+.wbx-payroll .wbx-payroll__separation,
+.wbx-payroll .pq-intake-option { display: inline-flex; align-items: center; gap: 6px; margin-right: var(--wbx-s2); color: var(--wbx-text-muted); font-size: 12px; white-space: nowrap; }
+.wbx-payroll .pq-intake-option input,
+.wbx-payroll .wbx-payroll__separation input { width: 14px; height: 14px; accent-color: var(--wbx-primary); }

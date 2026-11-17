@@ -1,4 +1,11 @@
 @import "tailwindcss";
+/* wbx 五层（顺序即级联优先级：后加载必胜，无需 important） */
+@import "./styles/tokens.css";
+@import "./styles/base.css";
+@import "./styles/layout.css";
+@import "./styles/components.css";
+@import "./styles/pages.css";
+/* ↓ 以下是逐批搬空的旧覆盖层（T3/T4/T5），禁止新增规则 */
 
 /* 1. Remove outer double-card wrapper nesting on the data collection workbench */
 .wb-task-form.wb-download-workbench,
@@ -21,29 +28,22 @@
   border-radius: 14px !important;
   padding: 15px 18px !important;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03) !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
 }
 
 .wb-step-card-header {
   margin-bottom: 10px !important;
 }
 
-/* 3. 6-column compact grid for 01 处理城市 and 02 处理月份 */
+/* 3. 自适应城市网格（01 处理城市）
+   T6-0b：原为「全宽单卡」假设下的固定 6 列（!important 锁死）+ ≤1240 四列 / ≤760 两列断点。
+   T3 两列布局后账期/城市卡最窄 ~470px，6 列只剩 ~71px/列 → 城市名被截成「鲁…」、末行孤卡。
+   改为 auto-fill 自适应（每列 ≥132px），并删除两条断点块（auto-fill 已自适应，断点反而互相打架）。 */
 .wb-inline-city-grid {
-  display: grid !important;
-  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
   gap: 8px !important;
-}
-
-@media (max-width: 1240px) {
-  .wb-inline-city-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-  }
-}
-
-@media (max-width: 760px) {
-  .wb-inline-city-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  }
 }
 
 .wb-inline-city-chip {
@@ -51,6 +51,102 @@
   padding: 5px 10px !important;
   border-radius: 9px !important;
   font-size: 12.5px !important;
+}
+
+.wb-month-grid-3 {
+  display: grid;
+  /* BugFix 2026-11-17：原 repeat(3, 1fr) !important 为全宽单卡设计（3×~390px）；
+     T3 两列布局后账期卡最窄 ~371px，117px 列宽装不下 chip 内容（~163px）导致文字叠印。
+     改为自适应列（每列 ≥200px，chip 真实需求 ≈199px）：全宽 6 列 / 两列布局 2 列，无需断点兜底。 */
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.wb-month-card-3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+  padding: 9px 13px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #1e293b;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.wb-month-card-3:hover:not(:disabled) {
+  border-color: #7dd3fc;
+  background: #f8fbff;
+}
+
+.wb-month-card-3.is-selected {
+  border-color: #0284c7;
+  background: #f0f9ff;
+  color: #0369a1;
+  box-shadow: 0 1px 3px rgba(2, 132, 199, 0.08);
+}
+
+.wb-month-card-3.is-disabled,
+.wb-month-card-3:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: #f8fafc;
+}
+
+.wb-month-chip-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.wb-month-check-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid #cbd5e1;
+  background: #ffffff;
+  color: transparent;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.wb-month-card-3.is-selected .wb-month-check-box {
+  background: #0284c7;
+  border-color: #0284c7;
+  color: #ffffff;
+}
+
+.wb-month-card-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #0f172a;
+  white-space: nowrap;
+}
+
+.wb-month-card-3.is-selected .wb-month-card-title {
+  color: #0369a1;
+}
+
+.wb-month-chip-range {
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.wb-month-card-3.is-selected .wb-month-chip-range {
+  color: #0284c7;
 }
 
 .wb-city-count-note {
@@ -68,8 +164,11 @@
 .wb-inline-city-toolbar,
 .wb-city-preset-group {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .wb-city-preset-btn,
@@ -220,125 +319,542 @@
   flex-wrap: wrap;
 }
 
-.rb-shell,
 .pq-upload,
 .pq-queue,
 .pq-detail,
 .wb-approval-card,
 .tc-center,
-.wb-panel {
-  border-color: #e2e8f0 !important;
-  border-radius: 14px !important;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03) !important;
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-panel) */
+
+.workbench-app .rb-shell {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
 }
 
-/* 9. Price Approval & Task Center streamlined toolbars and empty states */
-.approval-scope {
-  border-color: #e2e8f0 !important;
-  border-radius: 12px !important;
-  background: #f8fafc !important;
-  padding: 14px 16px !important;
+/* migrated -> src/styles/pages/approval.css + collection.css  (原 §9 价格审批与任务中心覆盖层，已被 wbx-* 取代) */
+/* 10. ReportBuilder redesigned layout (multi-select dropdown + flat city/station + sticky rail) */
+.workbench-app .rb-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 316px;
+  gap: 16px;
+  align-items: start;
 }
 
-.approval-scope-empty {
-  margin-top: 8px;
-  padding: 9px 12px;
-  border-radius: 8px;
+.rb-main {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.rb-step-card {
+  position: relative;
+}
+
+/* Multi-select report dropdown */
+.rb-report-dropdown {
+  position: relative;
+}
+
+.rb-report-dropdown-trigger {
+  width: 100%;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 11px;
   background: #ffffff;
-  border: 1px dashed #cbd5e1;
+  color: #0f172a;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.rb-report-dropdown-trigger:hover:not(:disabled) {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.rb-report-dropdown-trigger.has-value {
+  border-color: #7dd3fc;
+  background: #f8fbff;
+}
+
+.rb-report-dropdown-trigger.is-open {
+  border-color: #0284c7;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.12);
+  background: #ffffff;
+}
+
+.rb-report-dropdown-trigger:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.rb-dropdown-trigger-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.rb-dropdown-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: #e0f2fe;
+  color: #0284c7;
+  flex-shrink: 0;
+}
+
+.rb-dropdown-placeholder {
+  font-size: 13px;
   color: #64748b;
+}
+
+.rb-dropdown-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rb-selected-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 7px;
+  background: #ffffff;
+  border: 1px solid #bae6fd;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #0369a1;
+  line-height: 1.3;
+}
+
+.rb-selected-chip small {
+  font-size: 11px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.rb-dropdown-trigger-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  color: #64748b;
+}
+
+.rb-dropdown-action-hint {
   font-size: 12px;
+  color: #64748b;
 }
 
-.wb-error-with-action {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: space-between !important;
-  flex-wrap: wrap !important;
-  gap: 10px 14px !important;
-  padding: 10px 14px !important;
-  border-radius: 10px !important;
+.rb-dropdown-chevron {
+  transition: transform 0.16s ease;
 }
 
-.wb-error-login-btn {
-  min-height: 28px !important;
-  padding: 4px 12px !important;
-  font-size: 12px !important;
-  font-weight: 600 !important;
-  color: #be123c !important;
-  background: #ffffff !important;
-  border: 1px solid #fecdd3 !important;
-  border-radius: 8px !important;
-  cursor: pointer !important;
-  flex-shrink: 0 !important;
+.rb-dropdown-chevron.is-rotated {
+  transform: rotate(180deg);
 }
 
-.wb-error-login-btn:hover {
-  background: #fff1f2 !important;
-  border-color: #fda4af !important;
+.rb-report-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  box-shadow: 0 14px 32px -8px rgba(15, 23, 42, 0.16);
+  overflow: hidden;
 }
 
-.tc-toolbar {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: space-between !important;
-  flex-wrap: wrap !important;
-  gap: 12px !important;
-  margin-bottom: 14px !important;
-}
-
-.tc-detail-actions {
+.rb-dropdown-search {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
-}
-
-/* 10. ReportBuilder visual alignment */
-.rb-catalog-label {
-  display: block;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  padding: 10px 14px;
+  border-bottom: 1px solid #f1f5f9;
   color: #64748b;
-  margin-bottom: 10px;
-  padding: 0 4px;
 }
 
-.rb-station-field select,
-.rb-city-trigger {
-  min-height: 36px !important;
-  border-radius: 9px !important;
-  border: 1px solid #cbd5e1 !important;
-  background: #ffffff !important;
-  font-size: 13px !important;
-  color: #1e293b !important;
-  padding: 6px 12px !important;
+.rb-dropdown-search input {
+  width: 100%;
+  border: 0;
+  outline: none;
+  font-size: 13px;
+  color: #0f172a;
+  background: transparent;
 }
 
-.rb-label-row span {
+.rb-dropdown-options {
+  display: flex;
+  flex-direction: column;
+  max-height: 290px;
+  overflow-y: auto;
+  padding: 6px;
+  gap: 4px;
+}
+
+.rb-dropdown-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.14s ease, border-color 0.14s ease;
+}
+
+.rb-dropdown-option:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.rb-dropdown-option.is-selected {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+}
+
+.rb-option-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  margin-top: 2px;
+  border-radius: 5px;
+  border: 1.5px solid #cbd5e1;
+  background: #ffffff;
+  color: #ffffff;
+  flex-shrink: 0;
+  transition: all 0.14s ease;
+}
+
+.rb-option-check.is-checked {
+  border-color: #0284c7;
+  background: #0284c7;
+}
+
+.rb-option-content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.rb-option-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rb-option-top strong {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.rb-dropdown-option.is-selected .rb-option-top strong {
+  color: #0369a1;
+}
+
+.rb-option-scope {
+  font-size: 11.5px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.rb-option-desc {
+  margin: 0;
+  font-size: 12px;
+  color: #475569;
+  line-height: 1.45;
+}
+
+.rb-option-systems {
+  font-size: 11.5px;
+  color: #64748b;
+}
+
+.rb-dropdown-empty {
+  margin: 0;
+  padding: 18px 12px;
+  text-align: center;
+  font-size: 12.5px;
+  color: #64748b;
+}
+
+.rb-dropdown-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 14px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+}
+
+.rb-dropdown-footer-count {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.rb-dropdown-footer-actions {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
-.rb-label-row button {
-  min-height: 24px !important;
-  padding: 2px 9px !important;
-  font-size: 11.5px !important;
-  font-weight: 500 !important;
-  color: #475569 !important;
-  background: #f8fafc !important;
-  border: 1px solid #e2e8f0 !important;
-  border-radius: 6px !important;
-  cursor: pointer !important;
-  transition: all 0.15s ease !important;
+.rb-dropdown-done-btn {
+  padding: 4px 12px;
+  border-radius: 7px;
+  border: 1px solid #0284c7;
+  background: #0284c7;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
-.rb-label-row button:hover:not(:disabled) {
-  color: #0369a1 !important;
-  background: #f0f9ff !important;
-  border-color: #bae6fd !important;
+.rb-dropdown-done-btn:hover {
+  background: #0369a1;
+}
+
+.rb-selected-summary-block {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rb-selected-meta-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 2px 2px;
+}
+
+.workbench-app .rb-systems {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #475569;
+  padding: 0;
+  white-space: nowrap;
+}
+
+.rb-selected-desc-line {
+  font-size: 12.5px;
+  color: #64748b;
+}
+
+.rb-text-action {
+  font-size: 12px;
+  font-weight: 500;
+  color: #0369a1;
+  background: transparent;
+  border: none;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.rb-text-action:hover:not(:disabled) {
+  background: #f0f9ff;
+}
+
+.rb-text-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Inline city filter when city list is long */
+.rb-inline-city-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 11px;
+  margin-bottom: 10px;
+  border-radius: 9px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.rb-inline-city-filter input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-size: 12.5px;
+  color: #0f172a;
+}
+
+.rb-filter-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 2px;
+}
+
+.rb-filter-clear:hover {
+  color: #475569;
+}
+
+.workbench-app .rb-fixed-scope {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px !important;
+  padding: 16px 18px !important;
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0;
+  border-radius: 11px !important;
+}
+
+.rb-fixed-scope-item {
+  display: flex !important;
+  flex-direction: column;
+  gap: 4px !important;
+}
+
+.rb-fixed-scope-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.rb-fixed-scope-item strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.rb-fixed-scope-item small {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.workbench-app .rb-explanation {
+  margin-top: 0;
+  border-radius: 10px !important;
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  padding: 9px 13px !important;
+  font-size: 12.5px;
+}
+
+.workbench-app .rb-explanation summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: #334155;
+}
+
+.workbench-app .rb-explanation ul {
+  margin: 8px 0 6px;
+  padding-left: 18px;
+  color: #475569;
+}
+
+.workbench-app .rb-explanation p {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+/* Right rail refinements */
+/* migrated -> src/styles/pages/*.css  (dead selector: .rb-rail-item-text) */
+
+/* migrated -> src/styles/pages/*.css  (dead selector: .rb-rail-item-scope) */
+
+.rb-rail-notice {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.rb-rail-notice p {
+  margin: 0 0 6px;
+}
+
+.rb-rail-recollect {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.rb-rail-blocker {
+  margin: 8px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #b45309;
+  text-align: center;
+}
+
+.workbench-app .rb-workbench .rb-rail {
+  display: flex !important;
+  flex-direction: column;
+  position: sticky;
+  top: 18px;
+}
+
+@media (max-width: 1100px) {
+  .workbench-app .rb-workbench {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workbench-app .rb-workbench .rb-rail {
+    position: static;
+  }
+}
+
+@media (max-width: 720px) {
+  .workbench-app .rb-fixed-scope {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rb-dropdown-action-hint {
+    display: none;
+  }
 }
 
 .wb-button {
@@ -362,22 +878,9 @@
   border-bottom-color: #e2e8f0 !important;
 }
 
-.wb-approval-empty-state {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 36px 16px;
-  background: #f8fafc;
-  border: 1px dashed #cbd5e1;
-  border-radius: 10px;
-  margin: 12px 0;
-}
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-approval-empty-state) */
 
-.wb-approval-empty-state p {
-  margin: 0;
-  font-size: 13px;
-  color: #64748b;
-}
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-approval-empty-state p) */
 
 /* 11. Collapsible Sidebar (左侧栏折叠为纯图标模式，释放 180px+ 宽度并收紧网格) */
 .wb-shell {
@@ -459,25 +962,9 @@
 }
 
 /* 13. Scenario Presets in 03 选择资料 (发薪齐套包、风控对账包、人员快照包) */
-.wb-scenario-pills {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 10px;
-  padding: 6px 10px;
-  background: #f8fafc;
-  border: 1px dashed #cbd5e1;
-  border-radius: 8px;
-}
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-scenario-pills) */
 
-.wb-scenario-label {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: #475569;
-  margin-right: 2px;
-  white-space: nowrap;
-}
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-scenario-label) */
 
 .wb-scenario-btn {
   display: inline-flex;
@@ -596,6 +1083,37 @@
   background: #f8fafc;
 }
 
+.wb-baize-account-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 7px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.5;
+  font-weight: 600;
+  color: #475569;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+}
+
+.wb-baize-account-badge.is-shanggou {
+  color: #0369a1;
+  background: #e0f2fe;
+  border-color: #bae6fd;
+}
+
+.wb-baize-account-badge.is-xiaoxiang {
+  color: #9a3412;
+  background: #ffedd5;
+  border-color: #fed7aa;
+}
+
+.wb-baize-account-badge.is-unknown {
+  color: #64748b;
+  background: #f8fafc;
+}
+
 /* 15. Custom Presets Add, Edit & Delete Controls */
 .wb-preset-pill-item {
   display: inline-flex;
@@ -644,21 +1162,9 @@
   align-items: center;
 }
 
-.wb-preset-add-trigger {
-  display: inline-flex !important;
-  align-items: center !important;
-  gap: 4px !important;
-  border-style: dashed !important;
-  border-color: #93c5fd !important;
-  color: #0284c7 !important;
-  background: #f0f9ff !important;
-  font-weight: 500 !important;
-}
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-preset-add-trigger) */
 
-.wb-preset-add-trigger:hover:not(:disabled) {
-  border-color: #0284c7 !important;
-  background: #e0f2fe !important;
-}
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-preset-add-trigger:hover:not(:disabled)) */
 
 /* 16. Modal Dialog for Saving Presets */
 .wb-modal-backdrop {
@@ -721,87 +1227,34 @@
   margin-top: 18px;
 }
 
-/* 17. Sidebar Bottom Mini Status Center (在折叠侧栏底部充分利用垂直留白) */
-.wb-sidebar-bottom-status {
-  padding: 12px 10px;
-  border-top: 1px solid #e2e8f0;
-  background: #ffffff;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: auto;
+/* 17. Sidebar Bottom Task Center Slot */
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-sidebar-bottom-status) */
+
+.wb-sidebar-bottom-status .wb-sidebar-item {
+  width: 100%;
 }
 
 .wb-sidebar.is-collapsed .wb-sidebar-bottom-status {
-  padding: 12px 6px;
+  padding: 10px 6px 12px;
   align-items: center;
 }
 
-.wb-sidebar-expanded-status {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-sidebar-expanded-status) */
 
-.wb-sidebar-status-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 11px;
-  font-weight: 600;
-  color: #64748b;
-}
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-sidebar-status-header) */
 
-.wb-sidebar-cluster-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-sidebar-cluster-row) */
 
-.wb-sidebar-cluster-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: #475569;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  padding: 2px 7px;
-  border-radius: 6px;
-  cursor: pointer;
-}
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-sidebar-cluster-pill) */
 
-.wb-sidebar-cluster-pill:hover {
-  background: #f0f9ff;
-  border-color: #bae6fd;
-  color: #0369a1;
-}
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-sidebar-cluster-pill:hover) */
 
 /* Collapsed Mode Mini Dots Grid & Task Capsule */
-.wb-sidebar-mini-dots-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 5px;
-  padding: 6px 7px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-sidebar-mini-dots-grid) */
 
-.wb-sidebar-mini-dots-grid:hover {
-  background: #f0f9ff;
-  border-color: #bae6fd;
-}
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-sidebar-mini-dots-grid:hover) */
 
-.wb-mini-dot-cell {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #cbd5e1;
-}
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-mini-dot-cell) */
 
 .wb-mini-dot-cell.ready {
   background: #10b981;
@@ -821,29 +1274,9 @@
   50% { opacity: 0.5; transform: scale(0.85); }
 }
 
-.wb-sidebar-mini-task-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 38px;
-  border-radius: 8px;
-  background: #f0f9ff;
-  border: 1px solid #bae6fd;
-  color: #0369a1;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px;
-}
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-sidebar-mini-task-btn) */
 
-.wb-sidebar-mini-task-btn:hover {
-  background: #0284c7;
-  color: #ffffff;
-  border-color: #0284c7;
-}
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-sidebar-mini-task-btn:hover) */
 
 .wb-sidebar-mini-task-btn.is-active {
   background: #0284c7;
@@ -872,171 +1305,11 @@
   background-color: #f0f9ff !important;
 }
 
-.wb-execution-prompt-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 100%;
-  padding: 9px 12px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  border: 1px solid #fed7aa;
-  background: #fff7ed;
-  color: #c2410c;
-  text-decoration: none;
-}
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-execution-prompt-btn) */
 
-.wb-execution-prompt-btn:hover {
-  background: #ffedd5;
-  border-color: #fb923c;
-  color: #9a3412;
-  box-shadow: 0 2px 4px rgba(234, 88, 12, 0.1);
-  transform: translateY(-1px);
-}
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-execution-prompt-btn:hover) */
 
-/* 19. Dataset Category Filter Tabs & Compact Tile View */
-.wb-dataset-category-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-}
-
-.wb-dataset-tabs {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  background: #f1f5f9;
-  padding: 3px;
-  border-radius: 8px;
-}
-
-.wb-dataset-tab-btn {
-  padding: 4px 10px;
-  font-size: 12px;
-  font-weight: 500;
-  color: #64748b;
-  border-radius: 6px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.wb-dataset-tab-btn:hover {
-  color: #0f172a;
-}
-
-.wb-dataset-tab-btn.is-active {
-  background: #ffffff;
-  color: #0284c7;
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-}
-
-.wb-dataset-view-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  padding: 2px;
-  border-radius: 7px;
-}
-
-.wb-dataset-view-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  font-size: 11.5px;
-  color: #64748b;
-  border-radius: 5px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.wb-dataset-view-btn:hover {
-  color: #0f172a;
-}
-
-.wb-dataset-view-btn.is-active {
-  background: #ffffff;
-  color: #0284c7;
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-}
-
-/* Compact Tile View Grid & Cards */
-.wb-dataset-grid-compact {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 8px;
-}
-
-.wb-dataset-compact-card {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  user-select: none;
-  min-height: 38px;
-}
-
-.wb-dataset-compact-card:hover:not(.is-disabled) {
-  border-color: #93c5fd;
-  background: #f8fbff;
-}
-
-.wb-dataset-compact-card.is-selected {
-  border-color: #0284c7;
-  background: #f0f9ff;
-}
-
-.wb-dataset-compact-card.is-disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-  background: #f8fafc;
-}
-
-.wb-dataset-compact-label {
-  font-size: 12.5px;
-  font-weight: 500;
-  color: #1e293b;
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.wb-dataset-compact-card.is-selected .wb-dataset-compact-label {
-  color: #0369a1;
-  font-weight: 600;
-}
-
-.wb-dataset-compact-tag {
-  font-size: 10.5px;
-  color: #64748b;
-  background: #f1f5f9;
-  padding: 1px 5px;
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-
-/* 20. Granular Task Retry Buttons */
+/* 19. Granular Task Retry Buttons */
 .wb-retry-single-btn {
   display: inline-flex;
   align-items: center;
@@ -1077,6 +1350,692 @@
 
 .wb-retry-all-failed-btn:hover:not(:disabled) {
   background: #c2410c;
+}
+
+/* 20. 风神数据「全部资料」分类筛选栏 */
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-dataset-category-bar) */
+
+.wb-dataset-cat-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 4px 11px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #475569;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.wb-dataset-cat-btn:hover:not(:disabled) {
+  color: #0f172a;
+  background: #ffffff;
+  border-color: #e2e8f0;
+}
+
+.wb-dataset-cat-btn.is-active {
+  background: #ffffff;
+  color: #0369a1;
+  border-color: #bae6fd;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(2, 132, 199, 0.08);
+}
+
+.wb-dataset-cat-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.wb-dataset-cat-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.wb-dataset-cat-btn.is-active .wb-dataset-cat-count {
+  color: #0284c7;
+}
+
+.wb-dataset-cat-selected {
+  font-size: 11px;
+  font-weight: 600;
+  color: #0369a1;
+  background: #e0f2fe;
+  padding: 1px 6px;
+  border-radius: 5px;
+}
+
+/* 21. 发薪平台（白泽商翼 + 本来人力）双源工作区：wb-payout-* 专属规则已迁移 -> src/styles/pages/payout.css（T6-1）。
+   本节其余规则（日期触发器窄屏、侧栏 flat-nav、子视图切换、扣款筛选栏、模板中心、核算批次容器、价格审批卡）不属于发薪平台，保留待后续批次。 */
+@media (max-width: 640px) {
+  .wb-dp-wrap,
+  .wb-dp-trigger {
+    max-width: 100% !important;
+  }
+
+  .wb-dp-trigger {
+    flex-wrap: wrap !important;
+    white-space: normal !important;
+    height: auto !important;
+    min-height: 30px !important;
+  }
+
+  .wb-dp-trigger-value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+/* ==========================================================================
+   Enterprise High-Density Workbench Overhaul (Scheme 2 + Scheme 1 Combined)
+   ========================================================================== */
+
+/* Flat 3-Item Primary Sidebar Navigation (No Group Headers) */
+.wb-sidebar-flat-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 10px;
+}
+
+.wb-sidebar-shell.is-collapsed .wb-sidebar-flat-nav {
+  padding: 12px 8px;
+  align-items: center;
+}
+
+.wb-sidebar-flat-nav .wb-nav-item {
+  min-height: 42px;
+  border-radius: 10px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.wb-sidebar-flat-nav .wb-nav-item:hover {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+}
+
+.wb-sidebar-flat-nav .wb-nav-item.is-active {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+  color: #0369a1;
+  box-shadow: 0 1px 2px rgba(2, 132, 199, 0.06);
+}
+
+/* Header-Embedded Sub-View Segmented Switcher */
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-header-subview-divider) */
+
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-module-subview-bar) */
+
+.wb-subview-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+}
+
+.wb-subview-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #475569;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 140ms ease;
+  white-space: nowrap;
+}
+
+.wb-subview-tab:hover {
+  color: #0f172a;
+}
+
+.wb-subview-tab.is-active {
+  background: #ffffff;
+  color: #0284c7;
+  border-color: #cbd5e1;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.wb-subview-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 17px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.wb-subview-badge.is-active {
+  background: #0284c7;
+  color: #ffffff;
+}
+
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-subview-meta) */
+
+/* Inline Sub-View Container (Deduction Rules & Template Center inside 薪资核算) */
+.wb-inline-subview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 22px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+
+.wb-inline-subview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.wb-inline-subview-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+.wb-inline-subview-subtitle,
+.wb-inline-subview-header .wb-muted {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: #64748b;
+}
+
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-inline-subview-actions) */
+
+/* Deduction Rules Filter Bar & Structured Cards */
+.wb-deduction-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 10px 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.wb-deduction-filter-left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+}
+
+.wb-deduction-filter-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #334155;
+  white-space: nowrap;
+}
+
+.wb-deduction-search-input {
+  width: 220px !important;
+  min-width: 180px;
+  height: 34px;
+  background: #ffffff !important;
+}
+
+.wb-deduction-filter-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-deduction-stat-pill) */
+
+.city-deduction-default,
+.station-exceptions {
+  padding: 16px 18px !important;
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 10px !important;
+}
+
+.city-deduction-default h3 {
+  margin: 0 0 4px !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+}
+
+.station-exceptions > summary {
+  font-size: 13.5px !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+  cursor: pointer;
+}
+
+/* Template Center Horizontal High-Density Cards */
+.wb-template-library {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.wb-template-toolbar {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  flex-wrap: wrap !important;
+  gap: 10px 16px !important;
+  padding: 10px 14px !important;
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 10px !important;
+}
+
+.wb-template-list {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.wb-template-item {
+  display: grid !important;
+  grid-template-columns: 36px minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 12px !important;
+  padding: 12px 14px !important;
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 10px !important;
+  transition: border-color 140ms ease, box-shadow 140ms ease !important;
+}
+
+.wb-template-item:hover {
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.04) !important;
+}
+
+.wb-template-icon {
+  width: 36px !important;
+  height: 36px !important;
+  padding: 8px !important;
+  border-radius: 8px !important;
+  background: #f0f9ff !important;
+  color: #0284c7 !important;
+  border: 1px solid #bae6fd !important;
+}
+
+.wb-template-item h3 {
+  margin: 0 !important;
+  font-size: 13.5px !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.wb-template-item > div:last-child {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex-shrink: 0 !important;
+}
+
+.wb-template-item > div:last-child .wb-error {
+  margin: 0 !important;
+  padding: 3px 8px !important;
+  font-size: 11px !important;
+  line-height: 1.3 !important;
+  border-radius: 6px !important;
+  background: #fff1f2 !important;
+  border: 1px solid #fecdd3 !important;
+  color: #be123c !important;
+  max-width: 165px !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+/* Payroll Batches Unified Intake Card (.pq-mode-bar + .pq-intake) */
+.pq-workbench {
+  display: flex;
+  flex-direction: column;
+  gap: 0 !important;
+}
+
+.pq-workbench > .pq-mode-bar {
+  margin: 0 !important;
+  padding: 10px 16px !important;
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  border-bottom: 0 !important;
+  border-radius: 12px 12px 0 0 !important;
+}
+
+.pq-workbench > .pq-intake {
+  margin: 0 0 14px 0 !important;
+  border-radius: 0 0 12px 12px !important;
+  border: 1px solid #e2e8f0 !important;
+  background: #ffffff !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03) !important;
+}
+
+.pq-workbench > .pq-queue {
+  margin-top: 0 !important;
+  border-radius: 12px !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03) !important;
+}
+
+/* Price Approval De-Nested Clean Layout */
+.wb-approval-card {
+  padding: 18px 20px !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 12px !important;
+  background: #ffffff !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03) !important;
+}
+
+/* 4-in-1 Unified Data Collection Platform Switcher Bar */
+.wb-platform-switcher-bar {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 2px;
+}
+
+.wb-platform-switch-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 11px 14px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 11px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.wb-platform-switch-card:hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.wb-platform-switch-card.is-active {
+  background: #f0f9ff;
+  border-color: #0284c7;
+  box-shadow: 0 0 0 1px rgba(2, 132, 199, 0.14), 0 2px 6px rgba(2, 132, 199, 0.07);
+}
+
+.wb-platform-switch-top {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  gap: 8px;
+}
+
+.wb-platform-switch-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  flex-shrink: 0;
+}
+
+.wb-platform-switch-card.is-active .wb-platform-switch-icon {
+  background: #0284c7;
+  border-color: #0284c7;
+  color: #ffffff;
+}
+
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-platform-switch-title-wrap) */
+
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-platform-switch-badge) */
+
+.wb-platform-switch-card.is-active .wb-platform-switch-badge {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #0284c7;
+}
+
+.wb-platform-switch-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wb-platform-switch-card.is-active .wb-platform-switch-name {
+  color: #0369a1;
+}
+
+.wb-platform-switch-count {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+  flex-shrink: 0;
+}
+
+.wb-platform-switch-sub {
+  font-size: 11.5px;
+  color: #64748b;
+  line-height: 1.35;
+  padding-left: 34px;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Combined Category & Scenario Toolbar inside Step 01 */
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-dataset-category-bar) */
+
+.wb-dataset-cat-tabs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.wb-category-scenario-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* Unified Right-Hand Cross-Platform Execution Panel */
+.wb-task-preview.wb-preview-compact {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0 !important;
+  padding: 0 !important;
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04) !important;
+  overflow: hidden !important;
+}
+
+.wb-task-preview.wb-preview-compact .wb-compact-rail-top {
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 14px 16px !important;
+  background: #ffffff !important;
+}
+
+.wb-task-preview.wb-preview-compact .wb-compact-rail-bottom {
+  border: 0 !important;
+  border-top: 1px solid #e2e8f0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 14px 16px !important;
+  background: #f8fafc !important;
+}
+
+/* Station Scope Segmented Radio Group (Step 02 inside 风神数据) */
+.wb-station-scope-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 10px;
+  padding: 9px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+}
+
+.wb-station-scope-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.wb-station-radio-group {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wb-station-radio-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #475569;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.wb-station-radio-btn:hover {
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.wb-station-radio-btn.is-active {
+  background: #f0f9ff;
+  border-color: #0284c7;
+  color: #0369a1;
+}
+
+.wb-radio-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 2px solid #94a3b8;
+  background: #ffffff;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.wb-station-radio-btn.is-active .wb-radio-dot {
+  border-color: #0284c7;
+  background: #0284c7;
+  box-shadow: inset 0 0 0 2px #ffffff;
+}
+
+/* Adaptive Scope Card & Cross-Platform Cart Platform Tags */
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-adaptive-scope-card) */
+
+/* migrated -> src/styles/pages/*.css  (dead selector: .wb-compact-plat-tag) */
+
+.wb-compact-plat-tag.is-lanorange {
+  background: #ffedd5;
+  color: #c2410c;
+  border-color: #fed7aa;
+}
+
+.wb-compact-plat-tag.is-payout {
+  background: #dcfce7;
+  color: #15803d;
+  border-color: #bbf7d0;
+}
+
+.wb-compact-plat-tag.is-xiaoxiang {
+  background: #ede9fe;
+  color: #6d28d9;
+  border-color: #ddd6fe;
+}
+
+@media (max-width: 960px) {
+  .wb-platform-switcher-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .wb-template-list {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .wb-header-subview-divider {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .wb-platform-switcher-bar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 风神短信登录输入框：聚焦时保持普通边框，不显示浏览器高亮 */
+.wb-fengshen-input:focus,
+.wb-fengshen-input:focus-visible {
+  border-color: #cbd5e1 !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 

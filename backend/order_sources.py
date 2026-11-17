@@ -4,7 +4,9 @@ import csv
 import datetime as dt
 import hashlib
 import math
+import os
 from pathlib import Path
+import uuid
 
 import pandas as pd
 from openpyxl import load_workbook
@@ -12,6 +14,7 @@ from openpyxl import load_workbook
 from fengshen_bill import BillCollectionError
 from issue_orders import DataCleaner, MergePenaltyRecords, issue_types
 from order_metrics import measured
+from separation_filter import MARK
 
 WAYBILL_COLUMNS = {
     "运单id", "骑手id", "骑手名称", "站点名称", "运单完成时间", "欺诈是否成立",
@@ -28,6 +31,8 @@ VIOLATION_CLEAN_COLUMNS = ["违规编号", "日期", "运单号", "团队名称"
                            "违规分类", "违规类型", "违规原因", "违规状态", "申诉状态", "处罚金额"]
 MAX_BYTES = 200 * 1024 * 1024
 READ_CHUNK_ROWS = 10000
+SCOPE_COLUMNS = {"代理商ID", "加盟商ID", "物流合作商ID", "商id"}
+POLARS_MIN_FILE_BYTES = 8 * 1024 * 1024
 
 
 def file_hash(path):
@@ -61,8 +66,79 @@ def _read_rows(rows, required, checkpoint=None):
     return (pd.concat(chunks, ignore_index=True).infer_objects() if chunks else pd.DataFrame(columns=headers))
 
 
+def polars_frame_to_pandas(frame):
+    return pd.DataFrame(frame.to_dict(as_series=False), columns=frame.columns)
+
+
+def _large_xlsx_is_simple(path):
+    """Reuse the guarded reader's structural checks before the native path."""
+    from zipfile import ZipFile
+    from order_xlsx import _metadata, FastXlsxUnsupported
+    try:
+        with ZipFile(path) as archive:
+            _, date_styles, _ = _metadata(archive)
+            if date_styles:
+                return False
+            for name in archive.namelist():
+                if not (name == "xl/sharedStrings.xml"
+                        or (name.startswith("xl/worksheets/") and name.endswith(".xml"))):
+                    continue
+                with archive.open(name) as stream:
+                    tail = b""
+                    while True:
+                        block = stream.read(4 * 1024 * 1024)
+                        if not block:
+                            break
+                        joined = tail + block
+                        if b"<f>" in joined or b"<f " in joined:
+                            return False
+                        tail = joined[-4:]
+    except FastXlsxUnsupported:
+        return False
+    except Exception:
+        return False
+    return True
+
+
+def _read_xlsx_polars(path, required, checkpoint=None):
+    """Read only the agreed columns through Rust calamine.
+
+    Every value stays text: IDs and timestamps must not be coerced by Excel
+    type inference. Complex files fall back to the guarded readers below.
+    """
+    import polars as pl
+    if checkpoint is not None:
+        checkpoint()
+    if not _large_xlsx_is_simple(path):
+        return None
+    try:
+        sheets = pl.read_excel(str(path), engine="calamine", sheet_id=0)
+    except Exception:
+        return None
+    if isinstance(sheets, pl.DataFrame):
+        sheets = {"sheet": sheets}
+    selected_columns = set(required) | SCOPE_COLUMNS
+    matched = []
+    for frame in sheets.values():
+        if not set(required).issubset(frame.columns):
+            continue
+        frame = frame.select(sorted(column for column in frame.columns if column in selected_columns))
+        frame = frame.with_columns([
+            pl.col(column).cast(pl.Utf8, strict=False).str.strip_chars()
+            for column in frame.columns
+        ])
+        frame = frame.filter(~pl.all_horizontal([
+            pl.col(column).is_null() | (pl.col(column) == "")
+            for column in frame.columns
+        ]))
+        matched.append(polars_frame_to_pandas(frame))
+    if checkpoint is not None:
+        checkpoint()
+    return matched[0] if len(matched) == 1 else None
+
+
 @measured("source_read_seconds")
-def read_table(path, required, *, checkpoint=None):
+def read_table(path, required, *, checkpoint=None, columns_only=False):
     path = Path(path)
     if not path.is_file() or not 0 < path.stat().st_size <= MAX_BYTES:
         raise BillCollectionError("运单或服务奖惩原始文件缺失、为空或超过大小限制")
@@ -77,26 +153,38 @@ def read_table(path, required, *, checkpoint=None):
                 except UnicodeDecodeError:
                     continue
         elif path.suffix.lower() == ".xlsx":
-            from order_xlsx import read_xlsx_tables, FastXlsxUnsupported
-            try:
-                candidates = read_xlsx_tables(path, required, _read_rows, checkpoint)
-            except FastXlsxUnsupported:
-                book = load_workbook(path, read_only=True, data_only=True)
+            polars_frame = (_read_xlsx_polars(path, required, checkpoint)
+                            if path.stat().st_size > POLARS_MIN_FILE_BYTES else None)
+            if polars_frame is not None:
+                candidates = [polars_frame]
+            else:
+                from order_xlsx import read_xlsx_tables, FastXlsxUnsupported
                 try:
-                    candidates = []
-                    for sheet in book:
-                        sheet.reset_dimensions()
-                        frame = _read_rows(sheet.iter_rows(values_only=True), required, checkpoint)
-                        if frame is not None:
-                            candidates.append(frame)
-                finally:
-                    book.close()
+                    candidates = read_xlsx_tables(path, required, _read_rows, checkpoint)
+                except FastXlsxUnsupported:
+                    book = load_workbook(path, read_only=True, data_only=True)
+                    try:
+                        candidates = []
+                        for sheet in book:
+                            sheet.reset_dimensions()
+                            frame = _read_rows(sheet.iter_rows(values_only=True), required, checkpoint)
+                            if frame is not None:
+                                candidates.append(frame)
+                    finally:
+                        book.close()
         else:
             raise BillCollectionError("运单和服务奖惩仅接受已确认的 XLSX 或 CSV 导出")
         matched = [frame for frame in candidates if frame is not None]
         if len(matched) != 1:
             raise BillCollectionError("导出文件缺少约定表头或包含多个同类数据表")
-        return matched[0]
+        frame = matched[0]
+        if columns_only:
+            selected = sorted(column for column in frame.columns
+                              if column in required or column in SCOPE_COLUMNS)
+            if not set(required).issubset(selected):
+                raise BillCollectionError("导出文件缺少约定表头")
+            frame = frame[selected]
+        return frame
     except BillCollectionError:
         raise
     except Exception:
@@ -218,7 +306,8 @@ def prepare_order_slice(download, raw, plan, start, end, include_violations, *, 
         if (not isinstance(proof, dict) or proof.get("path") != paths[key] or not path.is_file()
                 or proof.get("bytes") != path.stat().st_size or proof.get("sha256") != file_hash(path)):
             raise BillCollectionError("本批原始文件完整性校验失败")
-        frame, frame_dates = validate_slice(read_table(path, required, checkpoint=checkpoint), request, date_column, id_columns, with_dates=True)
+        frame, frame_dates = validate_slice(read_table(path, required, checkpoint=checkpoint, columns_only=True),
+                                            request, date_column, id_columns, with_dates=True)
         frames.append(frame)
         if key == "waybills":
             dates = frame_dates
@@ -244,7 +333,8 @@ def prepare_order_slice(download, raw, plan, start, end, include_violations, *, 
 
 
 @measured("finalize_seconds")
-def prepare_order_files(downloads, raw, inputs, plan, batches, selected_kinds=None, *, prepared_slices=None):
+def prepare_order_files(downloads, raw, inputs, plan, batches, selected_kinds=None, *,
+                        prepared_slices=None, separation_include=None):
     from fengshen_orders import OrderRequest
     from order_dates import natural_dates
     if isinstance(selected_kinds, str):
@@ -302,18 +392,103 @@ def prepare_order_files(downloads, raw, inputs, plan, batches, selected_kinds=No
             raise BillCollectionError("问题单骑手编号缺失，核算已停止")
         # Payroll matches natural days; mixed date/timestamp CSV values lose dates downstream.
         summary["日期"] = natural_dates(summary["日期"])
-        counts = summary["类型"].value_counts().to_dict()
-        result["问题单"] = {"rows": len(summary), "status": "empty" if summary.empty else "validated", "filtered_by_applicants": False,
+        details, detail_proofs = _problem_details(kinds, separation_include)
+        summarised, summary_proof = _filter_sites(summary, separation_include, "问题单汇总")
+        counts = summarised["类型"].value_counts().to_dict()
+        result["问题单"] = {"rows": len(summarised),
+                            "status": "empty" if summarised.empty else "validated",
+                            "filtered_by_applicants": False,
                             "type_counts": {kind: int(counts.get(kind, 0)) for kind in kinds if kind != "欺诈单"},
                             "service_rows": len(penalties),
                             "service_excluded_rows": len(penalties) - len(cleaner.bad_unit_data)}
+        if separation_include is not None:
+            result["问题单"]["separation_filter"] = {
+                "direction": "only" if separation_include else "exclude",
+                "summary": summary_proof, "details": detail_proofs}
     if "欺诈单" in selected_kinds:
         write_order_csv(fraud, Path(inputs) / (plan.city + "-欺诈单_auto.csv"))
     if include_violations:
-        write_order_csv(summary, Path(inputs) / (plan.city + "-问题单_auto.csv"))
+        _write_problem_deliverables(summarised, details, problem_paths(inputs, plan.city))
     return result
 
 
 @measured("csv_write_seconds")
 def write_order_csv(frame, path):
     frame.to_csv(path, encoding="utf-8-sig", index=False, chunksize=10000)
+
+
+def problem_paths(inputs, city):
+    base = Path(inputs)
+    return {"csv": base / (city + "-问题单_auto.csv"),
+            "summary": base / (city + "-问题单汇总_auto.xlsx"),
+            "detail": base / (city + "-问题单明细_auto.xlsx")}
+
+
+def _site_column(frame):
+    for column in ("团队名称", "站点名称"):
+        if column in frame.columns:
+            return column
+    return None
+
+
+def _filter_sites(frame, include, label):
+    if include is None:
+        return frame, None
+    column = _site_column(frame)
+    if column is None:
+        raise BillCollectionError("问题单" + str(label) + "缺少站点列，无法执行取分离过滤")
+    marked = frame[column].map(
+        lambda value: MARK in str(value if value is not None else "")).to_numpy(dtype=bool)
+    selected = frame.loc[marked] if include else frame.loc[~marked]
+    return selected, {"column": column, "rows_before": len(frame), "rows_after": len(selected)}
+
+
+def _problem_details(kinds, include):
+    fraud = kinds.get("欺诈单")
+    fraud_ids = fraud["运单id"] if isinstance(fraud, pd.DataFrame) and not fraud.empty else None
+    details, proofs = [], []
+    for name, source in kinds.items():
+        if name == "欺诈单" or not isinstance(source, pd.DataFrame) or source.empty:
+            continue
+        data = source
+        if fraud_ids is not None:
+            if "运单号" in data.columns:
+                data = data.loc[~data["运单号"].isin(fraud_ids)]
+            elif "运单id" in data.columns:
+                data = data.loc[~data["运单id"].isin(fraud_ids)]
+        if data.empty:
+            continue
+        data, proof = _filter_sites(data, include, "明细")
+        if proof is not None:
+            proofs.append({"sheet": name, **proof})
+        if not data.empty:
+            details.append((name, data))
+    return details, proofs
+
+
+def _write_xlsx(frame, path, sheet):
+    with pd.ExcelWriter(path, engine="xlsxwriter",
+                        engine_kwargs={"options": {"constant_memory": True}}) as writer:
+        frame.to_excel(writer, index=False, sheet_name=sheet)
+
+
+def _write_problem_deliverables(summary, details, targets):
+    directory = targets["csv"].parent
+    temporary = {key: directory / (".问题单_" + uuid.uuid4().hex + suffix)
+                 for key, suffix in (("csv", ".csv"), ("summary", ".xlsx"), ("detail", ".xlsx"))}
+    try:
+        write_order_csv(summary, temporary["csv"])
+        _write_xlsx(summary, temporary["summary"], "问题单汇总")
+        with pd.ExcelWriter(temporary["detail"], engine="xlsxwriter",
+                            engine_kwargs={"options": {"constant_memory": True}}) as writer:
+            if details:
+                for name, data in details:
+                    data.to_excel(writer, index=False, sheet_name=name)
+            else:
+                pd.DataFrame().to_excel(writer, index=False, sheet_name="Sheet1")
+        for key in temporary:
+            os.replace(temporary[key], targets[key])
+    except Exception:
+        for path in temporary.values():
+            path.unlink(missing_ok=True)
+        raise

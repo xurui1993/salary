@@ -105,7 +105,7 @@ export const PayrollPreparation = React.memo(function PayrollPreparation({value,
     <div className="flex items-center justify-between flex-wrap gap-2">
       <div>
         <h3 className="font-medium text-slate-900">资料准备 · {{pending_download: '待准备', preparing: '准备中', waiting_materials: '等待处理', ready: '已就绪', calculating: '核算中', calculated: '已核算'}[value.status] || value.status}</h3>
-        <p className="text-xs text-slate-500">{value.mode === 'xiaoxiang' ? '美团灯塔 · 手动上传本批次资料' : `淘宝闪购 · 月账单 ${value.plan.month} 整月（风神 + 蓝橙联动）`}</p>
+        <p className="text-xs text-slate-500">{value.mode === 'xiaoxiang' ? '美团灯塔 · 自动获取本批次资料' : `淘宝闪购 · 月账单 ${value.plan.month} 整月（风神 + 蓝橙联动）`}</p>
       </div>
 
       {/* 快捷搜素与状态筛选栏 */}

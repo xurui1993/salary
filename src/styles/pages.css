@@ -1,0 +1,24 @@
+/*
+ * L5 页面层（架构 §1.1 L5）
+ *
+ * 本文件只承载「跨页成立」的组合规则 + 页面层 @import 清单；
+ * 任何「只有某个页面才成立」的规则必须落到 `src/styles/pages/*.css`。
+ *
+ * 已落地页面层：
+ *   pages/collection.css  采集三步同屏 + 右栏摘要 + 任务中心表（T3）
+ *   pages/payroll.css     核算批次空态 + 扣款规则工具条与表格（T4）
+ *   pages/approval.css    价格审批「标题+分割线」两区与表格（T5）
+ *   pages/payout.css      发薪平台双源工作区（T6-1，类名不变视觉等价迁移）
+ *
+ * 注意：`@import` 必须位于本文件所有规则之前，否则整条声明被浏览器忽略。
+ */
+
+@import "./pages/collection.css";
+@import "./pages/payroll.css";
+@import "./pages/approval.css";
+@import "./pages/payout.css";
+
+/* 跨页：页面级 section 一律不产生横向溢出 */
+.wbx-page > section {
+  min-width: 0;
+}

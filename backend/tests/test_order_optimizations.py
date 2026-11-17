@@ -144,19 +144,22 @@ class CacheAndPipelineTests(unittest.TestCase):
         return Runner()
 
     def test_batch_overlap_cache_reuse_and_today_refresh(self):
-        plan = SimpleNamespace(city="泉州", agency_id="2", start=(self.today-dt.timedelta(days=6)).isoformat(),
+        plan = SimpleNamespace(city="泉州", agency_id="2", start=(self.today-dt.timedelta(days=8)).isoformat(),
                                end=(self.today-dt.timedelta(days=1)).isoformat())
         cache_path = self.root / "cache.sqlite"
         runner = self.runner()
         pipeline = OrderPipeline(self.root / "cold", plan, {"fraud","problem"}, cache_path, threading.Event())
         downloads, prepared, batches = pipeline.collect(runner)
         self.assertEqual(len(runner.calls), 2)
+        self.assertEqual(batches, [
+            (plan.start, (self.today-dt.timedelta(days=2)).isoformat()),
+            ((self.today-dt.timedelta(days=1)).isoformat(), plan.end)])
         self.assertEqual(len(prepared), 2)
         warm_runner = self.runner()
         warm = OrderPipeline(self.root / "warm", plan, {"fraud","problem"}, cache_path, threading.Event())
         warm.collect(warm_runner)
         self.assertEqual(warm_runner.calls, [])
-        self.assertEqual(warm.metrics["cached_days"], 6)
+        self.assertEqual(warm.metrics["cached_days"], 8)
         plan.start, plan.end = (self.today-dt.timedelta(days=1)).isoformat(), self.today.isoformat()
         refresh_runner = self.runner()
         today = OrderPipeline(self.root / "today", plan, {"fraud","problem"}, cache_path, threading.Event())
@@ -167,6 +170,42 @@ class CacheAndPipelineTests(unittest.TestCase):
         forced = OrderPipeline(self.root / "forced", plan, {"fraud","problem"}, cache_path, threading.Event(), refresh=True)
         forced.collect(forced_runner)
         self.assertEqual(forced.metrics["cached_days"], 0)
+
+    def test_streaming_manifests_are_sorted_before_finalize(self):
+        plan = SimpleNamespace(city="泉州", agency_id="2", start=(self.today-dt.timedelta(days=8)).isoformat(),
+                               end=(self.today-dt.timedelta(days=1)).isoformat())
+
+        class StreamRunner:
+            def orders_batch(self, batch, raw, selected):
+                directory = Path(raw) / (batch.start + "_" + batch.end)
+                directory.mkdir(parents=True)
+                first, last = dt.date.fromisoformat(batch.start), dt.date.fromisoformat(batch.end)
+                days = [(first + dt.timedelta(days=n)).isoformat() for n in range((last-first).days+1)]
+                rows = [dict(waybill(waybill_id=day), 运单完成时间=day + " 12:00:00") for day in days]
+                write_csv(directory / "waybills.csv", WAYBILL_COLUMNS, rows)
+                write_csv(directory / "violations.csv", VIOLATION_COLUMNS)
+                files = {"waybills": "waybills.csv", "violations": "violations.csv"}
+                return [{"dataset": "issue_orders", "status": "success", "agency_id": batch.agency_id,
+                         "start": batch.start, "end": batch.end, "time_basis": "tracking_finish",
+                         "merchant_group": "物流合作商", "all_city_riders": True, "files": files,
+                         "file_checks": file_checks(directory, files), "expected_waybills": len(rows),
+                         "expected_waybills_by_date": {day: 1 for day in days}}]
+
+            def orders_stream(self, _plan, raw, selected, segments):
+                manifests = [self.orders_batch(SimpleNamespace(**{**vars(_plan), "start": first, "end": last}),
+                                               raw, selected)[0] for first, last in segments]
+                for manifest in reversed(manifests):
+                    yield manifest
+
+        pipeline = OrderPipeline(self.root / "stream", plan, {"fraud", "problem"},
+                                 self.root / "cache.sqlite", threading.Event())
+        downloads, prepared, batches = pipeline.collect(StreamRunner())
+        self.assertEqual(len(downloads), 2)
+        self.assertEqual([value["start"] for value in downloads], sorted(value["start"] for value in downloads))
+        self.assertEqual(batches[0][0], plan.start)
+        self.assertEqual(batches[-1][1], plan.end)
+        self.assertEqual(prepared.proof(0)["start"], plan.start)
+        self.assertEqual(prepared.proof(1)["end"], plan.end)
 
     def test_cancelled_pipeline_does_not_collect(self):
         plan = SimpleNamespace(city="泉州", agency_id="2", start=self.today.isoformat(), end=self.today.isoformat())

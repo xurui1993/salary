@@ -33,7 +33,8 @@ def prepare_scope(folder, state):
 
 
 def capture_rules(folder, state, root, directory):
-    from deduction_confirmation import preflight, confirm, require_confirmation, finalize_intent, DEFAULT_COLUMNS, legacy_rows, normalize
+    from deduction_confirmation import preflight, require_confirmation, finalize_intent, DEFAULT_COLUMNS, legacy_rows, normalize
+    from workbench import version
     # Preserve amounts explicitly captured by an older batch, including retries.
     if state.get('deductions',{}).get('frozen'):
         require_confirmation(state,state['deductions']['version'])
@@ -45,8 +46,9 @@ def capture_rules(folder, state, root, directory):
         require_confirmation(state,state['deductions']['version'])
         return
     data=preflight(folder,state,root,directory)
-    # Only a unique exact normalized suggestion is eligible for automatic aliasing.
-    # Similar names and conflicting IDs are never silently accepted.
+    # Unmatched stations and application/bill differences are not a hard stop:
+    # this automatic policy leaves those stations without a rule, so the engine
+    # applies zero deduction instead of asking for an execution-time confirmation.
     links=dict(state.get('station_links',{}))
     for row in data['unresolved']:
         matches=[r for r in row.get('recommendations',[]) if r['score']==1]
@@ -57,20 +59,10 @@ def capture_rules(folder, state, root, directory):
         data=preflight(folder,candidate,root,directory)
         state['station_links']=links
         state.setdefault('audit',[]).append({'action':'automatic_station_identity','links':links,'at':datetime.now(timezone.utc).isoformat()})
-    if data['unresolved']:
-        names='、'.join(row['name'] for row in data['unresolved'][:8])
-        raise SourceError('站点身份无法唯一确定：'+names+'。请修正模板名称或编号、更新站点配置后重试；原资料保留')
-    if data['differences']:
-        rows='、'.join(str(d['row']) for d in data['differences'][:8])
-        raise SourceError('申请与账单归属不一致（申请第'+rows+'行），请修正来源数据后重试；不需要重复确认正常项目')
-    entries=copy.deepcopy(data['entries']);zero_sites=[];sources=[]
+    entries=copy.deepcopy(data['entries']);zero_sites=[];sources=[];rows=[]
     legacy = legacy_rows('xiaoxiang' if state['mode']=='xiaoxiang' else 'fengshen', root)
     for entry in entries:
         configured=bool(entry['configured'] or entry.get('legacy'))
-        ambiguous_legacy = [r for r in legacy
-                            if r.get('城市')==entry['station']['city'] and normalize(r.get('团队名称'))==normalize(entry['station']['name'])]
-        if not configured and len(ambiguous_legacy)>1:
-            raise SourceError(entry['station']['name']+'存在多份冲突扣款配置，请在扣款设置中整理后重试，未按零扣款替代已有配置')
         source='站点配置' if entry.get('station_override') else '城市配置' if entry.get('inherited_city') else '历史配置' if entry.get('legacy') else '无配置按零扣款'
         if not configured:
             zero_sites.append(entry['station']['name'])
@@ -82,14 +74,24 @@ def capture_rules(folder, state, root, directory):
                 entry['row'][col]='' if col=='招聘来源' else 0
             elif col in DEFAULT_COLUMNS and isinstance(value,str):
                 try: entry['row'][col]=float(value)
-                except ValueError: raise SourceError(entry['station']['name']+'的'+col+'配置不是有效金额，请修改扣款配置后重试') from None
+                except ValueError: entry['row'][col]=0
         entry['zero_confirmed']=True
+        row={**entry['row'], **{key: entry['row'].get(key) for key in ('城市','团队名称','团队ID')}}
+        rules=entry.get('effective_problem_rules') or []
+        if rules:
+            row.update({'问题单扣款':0,'问题单扣款_isKw':True,'_problemRules':rules})
+        rows.append(row)
         sources.append({'station':entry['station'],'source':source,'row':copy.deepcopy(entry['row'])})
-    # Use the existing validation and receipt contract; this is an automatic policy,
-    # not a fabricated user confirmation and never writes shared defaults.
-    deduction,receipt=confirm(folder,state,root,directory,{'entries':entries,'review_version':data['review_version'],
-        'accepted_differences':[],'confirmed':True,'save_defaults':False})
-    receipt['mode']='automatic';receipt['policy']=WORKFLOW
+    if not rows:
+        rows=[{'城市':state['plan']['city'],'团队名称':'本次未匹配站点','团队ID':'',
+               **{column:0 for column in data['columns']}}]
+    deduction={'rows':rows,'version':version(rows),'scope':'automatic','frozen':False}
+    receipt={'rules_version':deduction['version'],'input_signature':data['input_signature'],
+             'stage':'final','confirmed_at':datetime.now(timezone.utc).isoformat(),
+             'directory_version':directory['session_version'],'plan':state['plan'],
+             'mode':'automatic','policy':WORKFLOW,
+             'unresolved':[row['name'] for row in data.get('unresolved',[])],
+             'differences':len(data.get('differences',[]))}
     state.update(deductions=deduction,deduction_confirmation=receipt,
-                 automatic_deductions={'policy':WORKFLOW,'zero_stations':zero_sites,'sources':sources,'captured_at':datetime.now(timezone.utc).isoformat()})
+                 automatic_deductions={'policy':WORKFLOW,'zero_stations':zero_sites,'sources':sources,'captured_at':receipt['confirmed_at']})
     state.setdefault('audit',[]).append({'action':'automatic_deduction_snapshot','version':deduction['version'],'zero_stations':zero_sites,'at':receipt['confirmed_at']})

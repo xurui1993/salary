@@ -2,6 +2,9 @@ import { TaskOutcome } from './TaskOutcome';
 import React,{useEffect,useRef,useState} from 'react';
 import {ApprovalScopeFilters} from './ApprovalScopeFilters';
 import {WorkbenchDrawer} from './WorkbenchDrawer';
+import {EmptyState} from './EmptyState';
+import {toneClass, normalizeTone} from '../lib/statusSemantics';
+import {Inbox, RefreshCw, ArrowRightLeft} from 'lucide-react';
 import {platformAuthRequest,PlatformAuthError} from '../lib/platformAuthApi';
 
 type Fetcher=(url:string,init?:RequestInit)=>Promise<Response>;
@@ -111,7 +114,8 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
         </div>
       </div>
     )}
-    <section className="wb-approval-card">
+    <section className="wbx-section wbx-approvals__pending">
+      <div className="wbx-section__head"><h2 className="wbx-section__title">待审批</h2></div>
       <ApprovalScopeFilters rows={allRows} cities={scopeCities} months={scopeMonths} site={scopeSite} busy={listBusy||!!command} onChange={(cities,months,site)=>{setScopeCities(cities);setScopeMonths(months);setScopeSite(site);setPage(1);setSelection({});setPreview(null);}} onRefresh={()=>{setPage(1);setRefresh(v=>v+1);}}/>
       {error && (
         <div className="wb-error wb-error-with-action" role="alert">
@@ -129,16 +133,24 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
           <div className="wb-approval-toolbar"><span>{actor?`蓝橙账号：${actor} · `:''}当前范围 {filtered.length} 条 / 本人待办 {allRows.length} 条 · 已选{selected.length}条（跨页保留）</span><div className="wb-row"><button className="wb-button" disabled={listBusy||!!command||!filtered.length||filtered.length>200} onClick={()=>choose(filtered,true)}>勾选当前范围全部 {filtered.length} 条</button><button className="wb-button" disabled={!selected.length || !!command} onClick={()=>setSelection({})}>清空勾选</button><button className="wb-primary" disabled={!selected.length || !!command || active || !!attempt || listBusy} onClick={()=>void makePreview()}>{command==='preview'?'正在核对明细…':`预览已选${selected.length}条`}</button></div></div>
           {filtered.length>200&&<p className="wb-muted">每批最多审批200条，请缩小城市、月份或站点范围，或按页勾选。</p>}
           {active && <p className="wb-muted">已有批次执行中，可在下方查看进度；离开此页仍会继续。</p>}
-          <div className="wb-approval-table" aria-busy={listBusy}><table><thead><tr><th><input type="checkbox" aria-label="选择本页可审批流程" disabled={listBusy || !rows.some(r=>!r.reason)} checked={rows.some(r=>!r.reason) && rows.filter(r=>!r.reason).every(r=>!!selection[r.id])} onChange={e=>choose(rows,e.target.checked)}/></th><th>业务编号</th><th>城市 / 站点</th><th>结算周期</th><th>人数</th><th>申请人 / 时间</th><th>当前节点</th><th>操作</th></tr></thead><tbody>{rows.map(task=><tr key={task.id}><td><input type="checkbox" aria-label={`选择流程${code(task)}`} checked={!!selection[task.id]} disabled={!!task.reason || listBusy} onChange={e=>choose([task],e.target.checked)}/></td><td>{code(task)}{task.reason && <small className="wb-error">{task.reason}</small>}</td><td>{task.cityName || '—'}<small>{task.siteName || '—'}</small></td><td>{period(task)}</td><td>{task.rider_count ?? '—'}</td><td>{task.createByName || '—'}<small>{task.createTime || '—'}</small></td><td>{task.nodeName || '—'}</td><td><button className="wb-button" disabled={!!command || !!task.reason} onClick={()=>void showDetail(task)}>查看明细</button></td></tr>)}</tbody></table></div>
+          <div className="wb-approval-table wbx-table-scroll wbx-approvals__scroll" aria-busy={listBusy}><table className="wbx-table wbx-approvals__table"><thead><tr><th><input type="checkbox" aria-label="选择本页可审批流程" disabled={listBusy || !rows.some(r=>!r.reason)} checked={rows.some(r=>!r.reason) && rows.filter(r=>!r.reason).every(r=>!!selection[r.id])} onChange={e=>choose(rows,e.target.checked)}/></th><th>业务编号</th><th>城市 / 站点</th><th>结算周期</th><th>人数</th><th>申请人 / 时间</th><th>当前节点</th><th className="wbx-table__actions">操作</th></tr></thead><tbody>{rows.map(task=><tr key={task.id}><td><input type="checkbox" aria-label={`选择流程${code(task)}`} checked={!!selection[task.id]} disabled={!!task.reason || listBusy} onChange={e=>choose([task],e.target.checked)}/></td><td>{code(task)}{task.reason && <small className="wb-error">{task.reason}</small>}</td><td>{task.cityName || '—'}<small>{task.siteName || '—'}</small></td><td>{period(task)}</td><td>{task.rider_count ?? '—'}</td><td>{task.createByName || '—'}<small>{task.createTime || '—'}</small></td><td>{task.nodeName || '—'}</td><td className="wbx-table__actions"><button className="wb-button" disabled={!!command || !!task.reason} onClick={()=>void showDetail(task)}>查看明细</button></td></tr>)}</tbody></table></div>
           <div className="wb-approval-pagination"><span>第{page}/{pages}页 · 每页20条</span><button className="wb-button" disabled={page<=1 || listBusy} onClick={()=>setPage(p=>p-1)}>上一页</button><button className="wb-button" disabled={page>=pages || listBusy} onClick={()=>setPage(p=>p+1)}>下一页</button></div>
         </>
+      ) : listBusy ? (
+        <p className="wbx-hint" role="status">正在读取蓝橙本人待办…</p>
       ) : (
-        <div className="wb-approval-empty-state">
-          <p className="wb-muted" role="status">{listBusy ? '正在读取蓝橙本人待办…' : '当前筛选范围没有待处理的骑手价格提审。'}</p>
-        </div>
+        <EmptyState
+          icon={Inbox}
+          title="暂无待办审批"
+          description="当前筛选范围没有待处理的骑手价格提审。"
+          actions={[
+            {label:'刷新待办',tone:'primary',icon:RefreshCw,onClick:()=>setRefresh(value=>value+1)},
+            {label:'切到待审每日价格导出',icon:ArrowRightLeft,disabled:!onSwitchView,onClick:()=>onSwitchView?.('price-export')},
+          ]}
+        />
       )}
     </section>
-    {(history.length > 0 || !!batch) && <section className="wb-approval-card" id="price-record-result"><div className="wb-approval-heading"><h2>审批结果</h2><button className="wb-button" disabled={!!command} onClick={()=>void readHistory()}>刷新结果</button></div>
+    {(history.length > 0 || !!batch) && <section className="wbx-section" id="price-record-result"><div className="wbx-section__head"><h2 className="wbx-section__title">审批结果</h2>{batch && <span className={`wbx-pill ${toneClass(normalizeTone(batch.status))}`}>{batchLabels[batch.status] || batch.status}</span>}<button className="wb-button" disabled={!!command} onClick={()=>void readHistory()}>刷新结果</button></div>
       {history.length>0 && <label className="wb-approval-history">查看批次<select className="wb-select" value={batch?.id || ''} onChange={e=>setBatch(history.find(b=>b.id===e.target.value) || null)}>{batch&&!history.some(b=>b.id===batch.id)&&<option value={batch.id}>当前任务 · {batchLabels[batch.status]||batch.status}</option>}{history.map(b=><option value={b.id} key={b.id}>{new Date(b.created*1000).toLocaleString('zh-CN')} · {batchLabels[b.status] || b.status} · {b.items.length}条</option>)}</select></label>}
       {!batch?<p className="wb-muted">暂无审批批次。</p>:<><TaskOutcome task={{status:batch.status,kind:'approval',availableFiles:1}}/><div className="wb-approval-toolbar"><div><p className="wb-muted">已同意{batch.counts.success || 0} · 被拒绝{batch.counts.failed || 0} · 变化{batch.counts.changed || 0} · 待核实{batch.counts.uncertain || 0} · 未提交{batch.counts.not_sent || 0} · 等待{batch.counts.pending || 0}</p></div><div className="wb-row">
         {ACTIVE.has(batch.status) && <button className="wb-button" disabled={!!command || batch.status==='stopping'} onClick={()=>void perform('stop',async()=>{setBatch(await request<Batch>(`/batches/${batch.id}/stop`,{confirm:true}));void readHistory();})}>停止后续审批</button>}

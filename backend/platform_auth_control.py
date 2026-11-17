@@ -298,6 +298,13 @@ async def do_logout(source:str,request:Request):
     return await run_in_threadpool(logout,source,data['session_version'])
 
 
+@router.get('/baize/accounts')
+def baize_accounts(request: Request):
+    require_account(request)
+    from baize_accounts import snapshot
+    return snapshot()
+
+
 @router.get('/{source}')
 def get_status(source: str, request: Request):
     require_account(request)

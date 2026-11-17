@@ -1,0 +1,41 @@
+{
+  "task": "T4 核算批次空态重构 + 扣款规则工具条筛选",
+  "measuredAt": "2026-11-17 13:00-13:12 (+08:00)",
+  "method": "headless Chrome 157 + CDP Emulation.setDeviceMetricsOverride(dpr=1)；每项测量重启独立浏览器实例、新 profile、不清 localStorage；导航 = 侧栏「薪资核算」→ 子页 tab；错误态用 Network.setBlockedURLs 屏蔽 deduction-profiles/station-directory 制造（不触碰后端）",
+  "payrollBatches": {
+    "baseline_1440": {"scrollHeight": 900, "screens": 1.0, "maxDomDepth": 14, "maxCardLayers": 3, "textNodesIn3Layers": 3, "blankBelowContent": 311, "pqCardsRendered": 2, "emptyStateCards": 0},
+    "post_1440": {"scrollHeight": 900, "screens": 1.0, "maxDomDepth": 13, "emptyStateCards": 1, "emptyStateLayers": 1, "pqCardsRendered": 0, "blankBelowContent": 159, "emptyCardBox": {"w": 720, "h": 560}, "dashedCount": 0, "maxCardLayers": 3, "maxCardLayersNote": "3 层来自模式切换组 pq-mode-bar > .wb-segment > button.is-active，与空态无关"},
+    "post_1024": {"scrollHeight": 768, "screens": 1.0, "maxDomDepth": 13, "emptyStateCards": 1, "emptyStateLayers": 1, "blankBelowContent": 159, "emptyCardBox": {"w": 720, "h": 428}, "dashedCount": 0}
+  },
+  "deductions": {
+    "baseline_1440": {"scrollHeight": 900, "screens": 1.0, "maxDomDepth": 16, "maxCardLayers": 4, "textNodesIn3Layers": 203, "textNodesIn4Layers": 200, "blankBelowContent": 315, "statPill": "span（不可点击）", "excavationRowsRendered": 0},
+    "post_1440": {"scrollHeight": 900, "screens": 1.0, "maxDomDepth": 16, "maxCardLayers": 2, "textNodesIn3Layers": 0, "textNodesIn4Layers": 0, "blankBelowContent": 132, "dashedCount": 0, "pillTag": "BUTTON", "pillText": "待配置 143 / 154 当前 154 / 154", "pillTop": 173},
+    "post_1024": {"scrollHeight": 768, "screens": 1.0, "maxCardLayers": 2, "textNodesIn3Layers": 0, "pillTag": "BUTTON", "pillTop": 214},
+    "post_375": {"screensCollapsed": 1.34, "screensExpanded": 2.0, "noHorizontalOverflow": true, "pillTag": "BUTTON"},
+    "pillClick": {
+      "1440": {"before": "当前 154 / 154", "after": "当前 143 / 154", "ariaPressed": "true", "detailsOpen": true, "rowCount": 100, "note": "匹配 143 条，表格渲染上限 100 条"},
+      "1024": {"before": "当前 154 / 154", "after": "当前 143 / 154", "rowCount": 100},
+      "375": {"before": "当前 154 / 154", "after": "当前 143 / 154", "rowCount": 100}
+    },
+    "stickyThead": {
+      "1440": {"position": "sticky", "scrollerTop": 409, "theadTopAfterScroll": 410, "pinned": true, "scrollerMaxHeight": "544px"},
+      "1024": {"position": "sticky", "scrollerTop": 445, "theadTopAfterScroll": 446, "pinned": true, "scrollerMaxHeight": "412px"},
+      "375": {"position": "static", "note": "窄屏改为容器内横向滚动，表头不吸附", "scrollerMaxHeight": "366.85px (55vh)"}
+    },
+    "errorVsSave_1440": {"errorTop": 96, "errorBottom": 119, "errorLeft": 1139, "saveTop": 96, "saveBottom": 128, "saveLeft": 1270, "deltaY": 0, "sameBand": true, "bothVisible": true, "errorText": "Failed to fetch（CDP 屏蔽接口造的真实错误态）"}
+  },
+  "staticChecks": {
+    "tsc": "exit 0",
+    "build": "success",
+    "mainChunkBytes": 378490,
+    "mainChunkBaselineT3": 375080,
+    "vendorChunkBytes": 210909,
+    "cssBytes": 249790,
+    "payrollCssLines": 192,
+    "payrollCssImportant": 0,
+    "indexCssImportant": 320,
+    "indexCssRulesDeleted": 0,
+    "workbenchCssUntouched": true,
+    "console": "0 error / 0 warning（仅 favicon.ico 404，基线既有）"
+  }
+}

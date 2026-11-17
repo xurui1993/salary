@@ -460,7 +460,12 @@ class OrderPageCollector(BillPageCollector):
             self.output_dir = base
 
 
-def date_batches(start, end, today=None):
+ORDER_BATCH_SPAN = 7
+
+
+def date_batches(start, end, today=None, span=5):
+    if not isinstance(span, int) or isinstance(span, bool) or not 1 <= span <= ORDER_BATCH_SPAN:
+        raise BillCollectionError(f"运单分批跨度必须为 1 至 {ORDER_BATCH_SPAN} 个自然日")
     today = today or dt.datetime.now(SHANGHAI).date()
     first, last = dt.date.fromisoformat(start), dt.date.fromisoformat(end)
     if first > last:
@@ -470,7 +475,7 @@ def date_batches(start, end, today=None):
         raise BillCollectionError(f"运单仅支持近 60 个自然日：{earliest.isoformat()} 至 {today.isoformat()}；申请周期超出范围，核算已停止")
     batches = []
     while first <= last:
-        batch_end = min(first + dt.timedelta(days=4), last)
+        batch_end = min(first + dt.timedelta(days=span - 1), last)
         batches.append((first.isoformat(), batch_end.isoformat()))
         first = batch_end + dt.timedelta(days=1)
     return batches
@@ -486,8 +491,8 @@ class OrderRequest:
         if not re.fullmatch(r"\d{1,20}", str(self.agency_id)):
             raise BillCollectionError("运单采集必须指定目标城市物流合作商编号")
         first, last = dt.date.fromisoformat(self.start), dt.date.fromisoformat(self.end)
-        if not 0 <= (last - first).days < 5:
-            raise BillCollectionError("每批运单只能采集 1 至 5 个自然日")
+        if not 0 <= (last - first).days < ORDER_BATCH_SPAN:
+            raise BillCollectionError(f"每批运单只能采集 1 至 {ORDER_BATCH_SPAN} 个自然日")
 
     @property
     def timestamps(self):

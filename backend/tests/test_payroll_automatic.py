@@ -56,12 +56,16 @@ class AutomaticTests(TestCase):
         automatic.capture_rules(self.folder,self.state,self.root,self.directory)
         self.assertEqual(self.state['deductions']['rows'][0]['安全基金'],80)
 
-    def test_conflicting_or_unknown_identity_still_stops_without_zero_bypass(self):
+    def test_difference_still_runs_with_zero_rules_for_unmatched_station(self):
         self.bill('二站')
-        with self.assertRaisesRegex(SourceError,'归属不一致'):automatic.capture_rules(self.folder,self.state,self.root,self.directory)
+        automatic.capture_rules(self.folder,self.state,self.root,self.directory)
+        self.assertTrue(self.state['deductions']['rows'])
+        self.assertEqual(self.state['deduction_confirmation']['mode'],'automatic')
         self.bill('后台不存在的站点')
-        with self.assertRaisesRegex(SourceError,'身份无法唯一确定'):automatic.capture_rules(self.folder,self.state,self.root,self.directory)
-        self.assertNotIn('deductions',self.state)
+        self.state.pop('deductions',None);self.state.pop('deduction_confirmation',None)
+        automatic.capture_rules(self.folder,self.state,self.root,self.directory)
+        self.assertTrue(self.state['deductions']['rows'])
+        self.assertEqual(self.state['deduction_confirmation']['mode'],'automatic')
 
     def test_frozen_snapshot_survives_later_default_edits(self):
         automatic.capture_rules(self.folder,self.state,self.root,self.directory)

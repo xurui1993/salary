@@ -7,6 +7,7 @@ export interface RequestAttempt<T> { request_id: string; payload: T }
 // abnormal_riders（异常骑手整理生成表）只依赖蓝橙成品，交付口径与蓝橙一致。
 export const isBaize = (id: string) => id === 'baize_employees';
 export const isBenlai = (id: string) => id === 'benlai_employees';
+export const isPayoutPlatform = (id: string) => isBaize(id) || isBenlai(id);
 export const XIAOXIANG_DETAIL_DATASETS = ['detail_orders', 'detail_kesu', 'detail_reviews'];
 export const XIAOXIANG_NOTICE_DATASETS = ['rider_order_detail', 'xiaoxiang_attendance_detail'];
 export const RIDER_ARCHIVE_DATASET = 'rider_archive';
@@ -16,10 +17,9 @@ export const isMerchant = (id:string)=>id==='invitation_records'||id==='attendan
 export const isMerchantSnapshot = (id:string)=>id==='invitation_records';
 export function toggleDownloadDataset(values:string[],id:string){
   if(values.includes(id))return values.filter(value=>value!==id);
-  if(isBaize(id))return [id];
-  if(isBenlai(id))return [id];
+  if(isPayoutPlatform(id))return [...values.filter(isPayoutPlatform), id];
   if(isXiaoxiang(id))return [...values.filter(isXiaoxiang), id];
-  return [...values.filter(value=>!isBaize(value)&&!isBenlai(value)&&!isXiaoxiang(value)),id];
+  return [...values.filter(value=>!isPayoutPlatform(value)&&!isXiaoxiang(value)),id];
 }
 export const isGlobalDataset = (id: string) => isBaize(id) || isBenlai(id) || isLanorange(id);
 export const datasetGroup = (id: string) => isBaize(id) ? 'baize' : isBenlai(id) ? 'benlai' : isXiaoxiang(id) ? 'xiaoxiang' : isLanorange(id) ? 'lanorange' : 'fengshen';
@@ -39,6 +39,7 @@ export function selectionKey(value: CreateSelection) {
   if (value.datasets.length === 1 && isRiderArchive(value.datasets[0])) return JSON.stringify({datasets: ['rider_archive'], scope: 'snapshot'});
   if (value.datasets.length === 1 && isBaize(value.datasets[0])) return JSON.stringify({datasets: ['baize_employees'], scope: 'all'});
   if (value.datasets.length === 1 && isBenlai(value.datasets[0])) return JSON.stringify({datasets: ['benlai_employees'], scope: 'all'});
+  if (value.datasets.length > 1 && value.datasets.every(isPayoutPlatform)) return JSON.stringify({datasets: [...value.datasets].sort(), scope: 'all'});
   if (value.datasets.length && value.datasets.every(isXiaoxiang)) return JSON.stringify({datasets: [...value.datasets].sort(), scope: 'all', start: value.start, end: value.end});
   if (value.datasets.length && value.datasets.every(isLanorange)) {
     if (value.lanorange_full_delivery) {

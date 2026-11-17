@@ -32,7 +32,7 @@ def collect(folder,state,manager):
             if dataset!=kind:continue
             if item.get('error'):reasons.append(source_reason(item['error']))
             for info in run.get('files',[]):
-                if info.get('dataset')!=kind or info.get('artifact_role')=='summary':continue
+                if info.get('dataset')!=kind or info.get('artifact_role'):continue
                 try:
                     path,_=manager.get_file(state['download_owner'],job,info['id'],verify_integrity=False)
                     validate_upload(Path(path),kind,readability_only=True)
@@ -88,6 +88,7 @@ def inputs(folder,state):
 
 def capture_rules(folder,state,root):
     from deduction_confirmation import affiliations,normalize,profile,DEFAULT_COLUMNS
+    import problem_deductions
     from workbench import read_defaults,version
     from payroll_inputs import save
     if state.get('deductions',{}).get('rows'):
@@ -105,7 +106,12 @@ def capture_rules(folder,state,root):
         except SourceError:continue
     rows=[];sources=[];zero=[]
     city=state['plan']['city']
+    configured_rules=defaults.get('problem_rules',{})
+    city_rule_key=next((key for key,entry in defaults['cities'].items() if entry['row'].get('城市')==city),None)
     for name,code in names.items():
+        station_rule_key=next((key for key,entry in defaults['entries'].items()
+                               if entry['row'].get('城市')==city and
+                               (code and str(entry['row'].get('团队ID',''))==code or normalize(entry['row'].get('团队名称'))==normalize(name))),None)
         sites=[e['row'] for e in defaults['entries'].values() if e['row'].get('城市')==city]
         candidates=[r for r in sites if code and str(r.get('团队ID',''))==code] or [r for r in sites if normalize(r.get('团队名称'))==normalize(name)]
         city_rules=[e['row'] for e in defaults['cities'].values() if e['row'].get('城市')==city]
@@ -113,6 +119,10 @@ def capture_rules(folder,state,root):
         chosen=candidates or city_rules or old
         source='站点配置' if candidates else '城市配置' if city_rules else '历史配置' if old else '无配置按零扣款'
         row={**(copy.deepcopy(chosen[0]) if chosen else {}),'城市':city,'团队名称':name,'团队ID':code or (chosen[0].get('团队ID','') if chosen else '')}
+        problem_rules=problem_deductions.effective_rules(
+            configured_rules.get(city_rule_key,[]),configured_rules.get(station_rule_key,[]))
+        if problem_rules:
+            row.update({'问题单扣款':0,'问题单扣款_isKw':True,'_problemRules':problem_rules})
         for col in DEFAULT_COLUMNS:
             value=row.get(col)
             if value is None or value=='':row[col]=0

@@ -1,0 +1,117 @@
+/*
+ * L1 令牌层 —— 全站唯一设计变量来源（架构 §4.8 / §7.1）
+ *
+ * 契约（禁止违反）：
+ *  1. 本文件只允许两类内容：`:root{}` 变量集合、`.workbench-app{}` 旧变量桥接。
+ *  2. 禁止出现组件选择器规则，禁止出现媒体查询，禁止出现 important 强制标记。
+ *  3. 颜色/圆角/阴影/间距/字号不得在其它文件写裸值，必须引用 `--wbx-*`。
+ *
+ * 级联位置：由 `main.tsx → index.css` 的 `@import` 顺序决定，晚于 `workbench.css`，
+ * 因此桥接块中同名 `--wb-*` 变量必然覆盖 L0 兼容层。
+ */
+
+:root {
+  /* ── 底色与表面 ───────────────────────────────── */
+  --wbx-bg: #f6f7f9;
+  --wbx-surface: #ffffff;
+  --wbx-surface-sunken: #fafbfc;
+  --wbx-border: #e3e6eb;
+  --wbx-border-strong: #cfd4dc;
+
+  /* ── 文字 ────────────────────────────────────── */
+  --wbx-text: #1b2430;
+  --wbx-text-muted: #5b6573;
+  --wbx-text-inverse: #ffffff;
+
+  /* ── 主色（唯一） ─────────────────────────────── */
+  --wbx-primary: #0f6e8c;
+  --wbx-primary-hover: #0c5c75;
+  --wbx-primary-soft: #e8f2f6;
+
+  /* ── 状态色：5 个 tone，浅底 + 深字 ──────────────── */
+  --wbx-success: #1f8a5b;
+  --wbx-success-soft: #e7f4ed;
+  --wbx-warn: #b7791f;
+  --wbx-warn-soft: #fbf1e0;
+  --wbx-danger: #c0392b;
+  --wbx-danger-soft: #fbeae7;
+  --wbx-progress: #0f6e8c;
+  --wbx-progress-soft: #e8f2f6;
+  --wbx-neutral: #5b6573;
+  --wbx-neutral-soft: #eef0f3;
+
+  /* ── 焦点环 ──────────────────────────────────── */
+  --wbx-focus: 0 0 0 3px rgba(15, 110, 140, 0.25);
+
+  /* ── 圆角 ────────────────────────────────────── */
+  --wbx-r-sm: 8px;
+  --wbx-r-md: 12px;
+  --wbx-r-lg: 16px;
+  --wbx-r-pill: 999px;
+
+  /* ── 阴影：卡片只许 sh-1 ───────────────────────── */
+  --wbx-sh-1: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --wbx-sh-2: 0 8px 24px rgba(16, 24, 40, 0.12);
+
+  /* ── 间距：唯一刻度（无 6/10/14/20/28） ─────────── */
+  --wbx-s1: 4px;
+  --wbx-s2: 8px;
+  --wbx-s3: 12px;
+  --wbx-s4: 16px;
+  --wbx-s5: 24px;
+  --wbx-s6: 32px;
+  --wbx-s7: 48px;
+  --wbx-s8: 64px;
+
+  /* ── 字号与行高 ───────────────────────────────── */
+  --wbx-fs-page: 16px;
+  --wbx-fw-page: 600;
+  --wbx-fs-section: 13px;
+  --wbx-fw-section: 600;
+  --wbx-fs-body: 13px;
+  --wbx-fs-meta: 12px;
+  --wbx-fs-num: 13px;
+  --wbx-fw-num: 500;
+  --wbx-lh: 1.55;
+  --wbx-font: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei",
+    "PingFang SC", "Hiragino Sans GB", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* ── 尺寸 ────────────────────────────────────── */
+  --wbx-sidebar-w: 240px;
+  --wbx-sidebar-collapsed: 64px;
+  --wbx-rail-w: 320px;
+  --wbx-header-h: 56px;
+  --wbx-pad-page: 24px;
+  --wbx-content-max: 1600px;
+
+  /* ── 层级 ────────────────────────────────────── */
+  --wbx-z-header: 30;
+  --wbx-z-sidebar: 40;
+  --wbx-z-popover: 1000;
+  --wbx-z-drawer: 1100;
+
+  /* ── 动效 ────────────────────────────────────── */
+  --wbx-dur-spin: 1000ms;
+  --wbx-dur-fast: 120ms;
+  --wbx-dur-base: 180ms;
+  --wbx-ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+/*
+ * 旧变量桥接：`workbench.css`（L0）的 1572 条规则大量消费 `--wb-*`。
+ * 本块后加载，同名变量必然覆盖 L0 定义，使旧规则自动跟随新令牌。
+ */
+.workbench-app {
+  --wb-bg: var(--wbx-bg);
+  --wb-panel: var(--wbx-surface);
+  --wb-text: var(--wbx-text);
+  --wb-text-secondary: #334155;
+  --wb-muted: var(--wbx-text-muted);
+  --wb-border: var(--wbx-border);
+  --wb-border-subtle: #eff1f4;
+  --wb-soft: #f3f5f8;
+  --wb-accent: var(--wbx-primary);
+  --wb-accent-hover: var(--wbx-primary-hover);
+  --wb-shadow: var(--wbx-sh-1);
+  --wb-shadow-md: var(--wbx-sh-2);
+}

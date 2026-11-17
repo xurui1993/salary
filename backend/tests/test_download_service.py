@@ -551,6 +551,13 @@ class DownloadServiceTests(unittest.TestCase):
         with self.assertRaises(service.ValidationError):
             self.config(["problem"], refresh_history="true")
 
+    def test_order_export_concurrency_is_limited_to_one_or_two(self):
+        self.assertNotIn("order_export_concurrency", self.config(["problem"]))
+        self.assertEqual(self.config(["problem"], order_export_concurrency=2)["order_export_concurrency"], 2)
+        for value in (0, 3, True, "2"):
+            with self.subTest(value=value), self.assertRaises(service.ValidationError):
+                self.config(["problem"], order_export_concurrency=value)
+
     def test_invalid_cities_datasets_dates_and_empty_selections(self):
         for changes in ({"cities": []}, {"cities": ["未配置城市"]}, {"datasets": []},
                         {"datasets": ["unknown"]}, {"start": "2026-10-11", "end": "2026-10-10"},
@@ -967,7 +974,14 @@ class DownloadServiceTests(unittest.TestCase):
                 self.root.mkdir()
                 self.runner.calls.clear()
                 files, _, _ = self.execute(self.config([kind]))
-                self.assertEqual([f["dataset"] for f in files], [kind])
+                expected = [kind, kind, kind] if kind == "problem" else [kind]
+                self.assertEqual([f["dataset"] for f in files], expected)
+                if kind == "problem":
+                    self.assertEqual({f["name"] for f in files if not f.get("record_hidden")},
+                                     {"泉州_问题单汇总_2026-09-20至2026-10-10.xlsx",
+                                      "泉州_问题单明细_2026-09-20至2026-10-10.xlsx"})
+                    self.assertEqual([f["name"] for f in files if f.get("record_hidden")],
+                                     ["泉州_问题单_2026-09-20至2026-10-10.csv"])
                 self.assertEqual(len(self.runner.calls), 1)
                 self.assertEqual(self.runner.calls[0][1], "orders")
 
@@ -995,7 +1009,7 @@ class DownloadServiceTests(unittest.TestCase):
                              and kind not in service.XIAOXIANG_SELECTION
                              and kind not in service.MERCHANT_DATASETS]
         files, updates, _ = self.execute(self.config(original_datasets))
-        self.assertEqual(len(files), 12)  # Both monthly sources cover two months.
+        self.assertEqual(len(files), 14)  # Both monthly sources cover two months; problem adds two workbooks.
         self.assertEqual({file["dataset"] for file in files}, set(original_datasets))
         run, output = self.root / "run", self.root / "run"
         for file in files:

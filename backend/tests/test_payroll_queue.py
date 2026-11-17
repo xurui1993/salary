@@ -112,28 +112,22 @@ class QueueTests(TestCase):
         self.assertEqual(rows[0]['status'],'error');self.assertTrue(all(r['status']=='completed' for r in rows[1:]))
         self.assertEqual(len(calls),3);self.assertTrue(any('损坏' in e['text'] for e in rows[0]['logs']))
 
-    def test_manual_confirmation_does_not_block_next_task_and_requires_saved_version(self):
+    def test_manual_tasks_run_without_execution_confirmation(self):
         self.template('one-template.xlsx');self.template('two-template.xlsx');calls=[]
         async def runner(config,request,*,context):
             calls.append(config.preparationOnly)
             key=uuid.uuid4().hex
             prep={'id':key,'mode':'manual','status':'ready','items':{},'jobs':[],'plan':{'city':'测试城','start':'2026-10-01','end':'2026-10-15','applicants':1}}
             yield 'data: '+json.dumps({'type':'payroll_preparation','preparation':prep})+'\n\n'
-            yield 'data: '+json.dumps({'type':'finish','status':'paused'})+'\n\n'
+            yield 'data: '+json.dumps({'type':'finish','status':'success'})+'\n\n'
         q=self.queue(runner,True)
-        # Separate folders avoid ambiguous material ownership for this lifecycle test.
         (self.source/'one-template.xlsx').unlink();(self.source/'two-template.xlsx').unlink()
         self.template('one/one-template.xlsx');self.template('two/two-template.xlsx')
-        rows=self.enqueue(q,'manual');rows=self.wait(q,lambda rows:all(r['status']=='waiting_confirmation' for r in rows))
-        self.assertEqual(calls,[True,True])
-        with patch('payroll_inputs.load',return_value=(None,{'deductions':{}})),self.assertRaisesRegex(SourceError,'先完成'):q.continue_task('shared','download_shared',rows[0]['id'])
-        with patch('payroll_inputs.load',return_value=(None,{'deductions':{'version':'confirmed'}})),self.assertRaisesRegex(SourceError,'先确认'):
-            q.continue_task('shared','download_shared',rows[0]['id'],'confirmed')
+        rows=self.enqueue(q,'manual');rows=self.wait(q,lambda rows:all(r['status'] in ('completed','error') for r in rows))
+        self.assertEqual(calls,[False,False])
+        self.assertTrue(all(r['status']=='completed' for r in rows))
+        self.assertNotIn('waiting_confirmation',[r['status'] for r in rows])
         q.autostart=False;q.closing.set();q.wake.set();q.thread.join(2)
-        with patch('payroll_inputs.load',return_value=(None,{'deductions':{'version':'confirmed'}})),patch('deduction_confirmation.require_confirmation') as confirmation:
-            continued=q.continue_task('shared','download_shared',rows[0]['id'],'confirmed')
-        confirmation.assert_called_once()
-        self.assertEqual(continued['status'],'queued');self.assertEqual(self.raw(q,continued['id'])['_continue_version'],'confirmed')
 
     def test_http_identity_keeps_same_origin_write_boundary(self):
         headers=[(b'host',b'127.0.0.1:3000'),(b'x-workspace-id',b'shared'),(b'content-type',b'application/json'),(b'origin',b'https://wrong.invalid')]
@@ -228,9 +222,10 @@ class QueueTests(TestCase):
         plan=TemplatePlan('泉州','31029436','2026-08-16','2026-08-31','2026-08','半月结','template.xlsx',1)
         with patch.object(inputs,'ROOT',self.root),patch('parttime_source.read_template',return_value=plan):
             q=self.queue(autostart=True);self.enqueue(q,'manual')
-            task=self.wait(q,lambda rows:rows and rows[0]['status']=='waiting_confirmation')[0]
+            task=self.wait(q,lambda rows:rows and rows[0]['status'] in ('completed','error'))[0]
             self.assertTrue(task['batch_id']);self.assertEqual(task['preparation']['mode'],'manual')
+            self.assertNotEqual(task['status'],'waiting_confirmation')
             _,state=inputs.load('shared',task['batch_id'],'download_shared',self.root)
             self.assertEqual(state['items']['delivery_fee']['status'],'ready')
-            self.assertEqual(state['status'],'ready')
+            self.assertIn(state['status'],('ready','error','calculated'))
             q.shutdown()

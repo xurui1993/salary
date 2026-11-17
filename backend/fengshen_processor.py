@@ -23,6 +23,8 @@ from payroll_performance import read_excel, read_csv, timed, append_frame_rows, 
 import numpy as np
 import openpyxl
 from datetime import datetime
+import problem_deductions
+import rider_identity
 from price_matching import UniqueNamePrices, match_daily_price, price_rider_column, record_daily_name
 
 # 小象超市「站点关键字匹配」映射表
@@ -193,7 +195,8 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
     skip_binding_check = bool(kwargs.get("skip_binding_check", False))
 
     # 扣款项列名白名单（兼容普通城市「安全基金」与小象城市「保险费」及新增费用列）
-    DEDUCTION_COLS = ["安全基金", "保险费", "使用费", "循环物资使用费", "附加险", "招聘来源", "非蜂卡", "月费"]
+    DEDUCTION_COLS = ["安全基金", "保险费", "使用费", "循环物资使用费", "附加险", "招聘来源", "非蜂卡", "月费",
+                      problem_deductions.PROBLEM_ITEM]
 
     # 小象超市「保险费」表：展示列 → 配置表(config.json)中的扣款项源列
     # 一个配置列对应一个展示列：保险费←安全基金、循环物资使用费←非蜂卡、附加险←月费
@@ -740,6 +743,24 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
         first_date = df_apply[col3].min()
         last_date = df_apply[col4].max()
 
+        archive_identity = rider_identity.load_archive(source_folder, read_excel) if is_xiaoxiang else {}
+        if archive_identity:
+            _arc_idc_idx = get_col_idx(df_apply, ["身份证号", "身份证", "证件号码", "证件"], -1)
+            _arc_ph_idx = get_col_idx(df_apply, ["电话号", "手机号", "手机", "联系电话", "电话"], -1)
+            for _idx in df_apply.index:
+                _rid = str(df_apply.iat[_idx, rider_id_idx]).replace('.0', '').strip()
+                _info = archive_identity.get(_rid)
+                if not _info:
+                    continue
+                for _ci, _key in ((team_idx, 'station'), (rider_name_idx, 'name'),
+                                  (_arc_idc_idx, 'idcard'), (_arc_ph_idx, 'phone')):
+                    if _ci < 0:
+                        continue
+                    _current = str(df_apply.iat[_idx, _ci]).strip()
+                    if _current.lower() in ('', 'nan', 'none') and _info.get(_key):
+                        df_apply.iat[_idx, _ci] = _info[_key]
+            log(f"-> 🎯 骑手档案身份补全: {len(archive_identity)} 个骑手档案已载入", "INFO")
+
         for row in df_apply.itertuples(index=False):
             try:
                 team_name = str(row[team_idx]).strip()
@@ -764,6 +785,11 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                     _team = str(row[team_idx]).strip()
                     _rid = str(row[rider_id_idx]).replace('.0', '').strip()
                     _rname = str(row[rider_name_idx]).strip()
+                    _archive = archive_identity.get(_rid, {})
+                    if _team.lower() in ('', 'nan', 'none'):
+                        _team = _archive.get('station', '')
+                    if _rname.lower() in ('', 'nan', 'none'):
+                        _rname = _archive.get('name', '')
                     if _rid and _rid.lower() not in ('nan', 'none', ''):
                         apply_team_map[_rid] = _team
                         apply_rider_name_map[_rid] = _rname
@@ -786,6 +812,9 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
             log(f"-> 🎯 申请名单身份证映射构建完成: {len(apply_rider_idcard_map)} 个骑手→身份证映射", "INFO")
         else:
             log("-> ⚠️ 申请名单未检测到「身份证号」列，小象身份证将回退至骑手支付绑定/明细来源", "WARN")
+        for _rid, _info in archive_identity.items():
+            if _info.get('idcard'):
+                apply_rider_idcard_map.setdefault(_rid, _info['idcard'])
         
         batch_id = kwargs.get('batch_id')
         task_name = kwargs.get('task_name')
@@ -1153,6 +1182,14 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                         full_path = os.path.join(root, file_name)
                         if (full_path, "merchantFreelancer") not in files_to_process:
                             files_to_process.append((full_path, "merchantFreelancer"))
+                        continue
+                    # 这些自动下载文件名称也带日期，但不是日维度配送单，必须按专用资料处理。
+                    if "骑手订单明细" in file_name or "骑手档案" in file_name:
+                        continue
+                    if "价格档案" in file_name:
+                        full_path = os.path.join(root, file_name)
+                        if (full_path, "价格档案") not in files_to_process:
+                            files_to_process.append((full_path, "价格档案"))
                         continue
                     # 文件名中包含日期片段（允许前后缀）即视为小象配送单日期文件，
                     # 如 配送费_2026-06-01.xlsx / 2026-06-01_配送单.xlsx / 20260601.xlsx
@@ -1963,7 +2000,8 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                     for d_col in custom_deductions:
                         if d_col in DEDUCTION_COLS:
                             if d_col in df_sht2.columns:
-                                if pd.to_numeric(df_sht2[d_col], errors='coerce').fillna(0).abs().sum() == 0:
+                                is_kw_column = f"{d_col}_isKw" in df_sht2.columns and df_sht2[f"{d_col}_isKw"].astype(bool).any()
+                                if not is_kw_column and pd.to_numeric(df_sht2[d_col], errors='coerce').fillna(0).abs().sum() == 0:
                                     df_sht2 = df_sht2.drop(columns=[d_col])
                                     continue
                             else:
@@ -2294,12 +2332,18 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                     except Exception:
                         pass
 
-                    rules_headers = [str(c).strip() for c in df_rules.columns.tolist()]
-                    rules_data = df_rules.values.tolist()
+                    rule_columns = [c for c in df_rules.columns if not str(c).startswith('_')]
+                    rules_headers = [str(c).strip() for c in rule_columns]
+                    rules_data = df_rules[rule_columns].values.tolist()
                 
                     # 构建问题单关键字映射
                     global_kw_to_header = {}
                     keyword_amount_map = {}
+                    problem_rules_by_team = {}
+                    for _, rule_row in df_rules.iterrows():
+                        rules = rule_row.get('_problemRules')
+                        if isinstance(rules, list) and rules:
+                            problem_rules_by_team[problem_deductions.normalize_team(rule_row.get('团队名称'))] = rules
                     d_rules = kwargs.get("deductionRules", [])
                     if isinstance(d_rules, list) and len(d_rules) > 0 and 'sites' in d_rules[0]:
                         for city_data in d_rules:
@@ -2331,6 +2375,8 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                                 c_str = str(c)
                                 if c_str.endswith('_isKw') and row.get(c_str):
                                     h_name = c_str.replace('_isKw', '')
+                                    if h_name == problem_deductions.PROBLEM_ITEM:
+                                        continue
                                     amt = row.get(h_name, 0)
                                     global_kw_to_header[h_name] = h_name
                                     keyword_amount_map[(site_name, h_name)] = float(amt)
@@ -2365,6 +2411,14 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                         if fraud == "是":
                             val = 0
                         else:
+                            problem_amount = problem_deductions.match_amount(
+                                problem_rules_by_team.get(problem_deductions.normalize_team(r5_clean)), r0_clean, r6_clean)
+                            if problem_amount is not None:
+                                val = problem_amount
+                                matched_header = problem_deductions.PROBLEM_ITEM
+                                fast_vals.append(val)
+                                matched_headers_list.append(matched_header)
+                                continue
                             base_header = None
                             if r0_clean in rules_headers:
                                 base_header = r0_clean
@@ -3397,7 +3451,8 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                 for d_col in custom_deductions:
                     if d_col in DEDUCTION_COLS:
                         if d_col in df_sht2.columns:
-                            if pd.to_numeric(df_sht2[d_col], errors='coerce').fillna(0).abs().sum() == 0:
+                            is_kw_column = f"{d_col}_isKw" in df_sht2.columns and df_sht2[f"{d_col}_isKw"].astype(bool).any()
+                            if not is_kw_column and pd.to_numeric(df_sht2[d_col], errors='coerce').fillna(0).abs().sum() == 0:
                                 df_sht2 = df_sht2.drop(columns=[d_col])
                                 continue
                         else:
@@ -3819,6 +3874,11 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                             _rid = _norm_id(_ar[_a_rid])
                             _idc = _norm_id(_ar[_a_idc]) if _a_idc >= 0 else ""
                             _ph = _norm_id(_ar[_a_ph]) if _a_ph >= 0 else ""
+                            _info = archive_identity.get(_rid, {})
+                            if not _idc:
+                                _idc = _info.get('idcard', '')
+                            if not _ph:
+                                _ph = _info.get('phone', '')
                             if not (_idc or _ph):
                                 continue
                             _rec = (_idc, _ph)

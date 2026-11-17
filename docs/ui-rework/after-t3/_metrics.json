@@ -1,0 +1,61 @@
+{
+  "task": "T3 采集页三步压缩 + 任务中心表格",
+  "measuredAt": "2026-11-17 12:40-12:50 (+08:00)",
+  "method": "headless Chrome 157 + CDP Emulation.setDeviceMetricsOverride(deviceScaleFactor=1)；每次测量重启浏览器实例、新 profile、不清空 localStorage；先点选 1 张资料卡再测；屏数 = body.scrollHeight / innerHeight",
+  "collect": {
+    "1440x900": {
+      "scrollHeight": 900,
+      "screens": 1.0,
+      "baseline_original": {"scrollHeight": 918, "screens": 1.02},
+      "baseline_t2": {"scrollHeight": 1133, "screens": 1.26},
+      "step01": {"top": 145, "bottom": 559},
+      "step02_cities": {"top": 571, "bottom": 851},
+      "submit": {"text": "开始下载", "top": 294, "disabled": true},
+      "noHorizontalOverflow": true,
+      "platformNameClamped": [false, false, false, false],
+      "dashedCount": 0,
+      "note": "后端 platform-auth 返回 busy:true 时会多 33px 提示条 -> 933 (1.04 屏)，仍达标"
+    },
+    "1024x768": {
+      "scrollHeight": 1009,
+      "screens": 1.31,
+      "baseline_original": {"scrollHeight": 1549, "screens": 2.02, "step02Top": 1315},
+      "baseline_t2": {"scrollHeight": 1382, "screens": 1.8},
+      "step01": {"top": 174, "bottom": 599},
+      "step02_cities": {"top": 611, "bottom": 969},
+      "submit": {"text": "开始下载", "top": 294, "disabled": true},
+      "noHorizontalOverflow": true,
+      "platformNameClamped": [false, false, false, false],
+      "dashedCount": 0
+    },
+    "375x667": {
+      "scrollHeight": 1570,
+      "screens": 2.35,
+      "baseline_original": {"scrollHeight": 2569, "screens": 3.85, "submitTop": 2298},
+      "baseline_t2": {"scrollHeight": 2817, "screens": 4.22},
+      "step01": {"top": 213, "bottom": 732},
+      "step02_cities": {"top": 744, "bottom": 1231},
+      "submit": {"text": "开始下载", "top": 1453, "disabled": true},
+      "noHorizontalOverflow": true,
+      "dashedCount": 0
+    }
+  },
+  "taskCenter": {
+    "1440x900": {"screens": 1.0, "headers": ["", "任务 / 平台", "状态", "进度", "任务编号", "创建时间", "操作"], "opsSticky": "sticky", "opsRight": "0px", "opsShadow": "-8px 0 8px -8px #CFD4DC", "theadSticky": "sticky", "pillBorderWidth": "0px", "pillColors": ["#0F6E8C", "#C0392B", "#1F8A5B"], "batchBtnTop": 105, "filterBandTop": 101},
+    "1024x768": {"screens": 1.0, "tableClipW": 886, "tableScrollW": 974, "opsSticky": "sticky", "theadSticky": "sticky", "batchBtnTop": 105, "filterBandTop": 101},
+    "375x667": {"screens": 2.21, "opsSticky": "static", "theadSticky": "sticky", "noHorizontalOverflow": true}
+  },
+  "staticChecks": {
+    "tsc": "exit 0",
+    "build": "success",
+    "mainChunkBytes": 375080,
+    "vendorChunkBytes": 210909,
+    "cssBytes": 244440,
+    "indexCssImportant": 320,
+    "indexCssImportantBaseline": 320,
+    "collectionCssLines": 165,
+    "collectionCssImportant": 0,
+    "workbenchCssUntouched": true,
+    "console": "0 error / 0 warning（仅 favicon.ico 404，基线既有）"
+  }
+}

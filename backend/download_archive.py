@@ -130,10 +130,13 @@ def write_task_checklist(directory, run):
             writer = csv.writer(stream)
             writer.writerow(['任务编号','生成时间','城市','资料','实际范围开始','实际范围结束','状态','文件','字节数','SHA256'])
             for item in run.get('items', []):
-                files = [file for file in run.get('files', []) if all(file.get(key)==item.get(key) for key in ('city','dataset','start','end'))]
+                files = [file for file in run.get('files', []) if not file.get('record_hidden')
+                         and all(file.get(key)==item.get(key) for key in ('city','dataset','start','end'))]
                 for file in files or [{}]:
                     writer.writerow([run['id'],_display_time(run['created_at']),item['city'],LABELS.get(item['dataset'],item['dataset']),*artifact_scope(item),STATUSES.get(item['status'],item['status']),file.get('relative_path',''),file.get('bytes',''),file.get('sha256','')])
             for file in run.get('files', []):
+                if file.get('record_hidden'):
+                    continue
                 if file.get('artifact_role') == 'summary':
                     writer.writerow([run['id'],_display_time(run['created_at']),file['city'],LABELS.get(file['dataset'],file['dataset']),file.get('start',''),file.get('end',''),'已生成汇总',file.get('relative_path',''),file.get('bytes',''),file.get('sha256','')])
         os.replace(temporary, root / '任务清单.csv')

@@ -2,33 +2,54 @@ import {useStationDirectory} from '../lib/useStationDirectory';
 import {CityStationCount} from './CityStationCount';
 import { recoverySummary } from '../lib/downloadCenterLogic';
 import { readDownloadResponse, saveDownloadBlob, downloadOutput, downloadErrorMessage } from '../lib/outputDownload';
-import { isBaize, isBenlai, isXiaoxiang, isRiderArchive, isGlobalDataset, datasetGroup,isMerchant,isMerchantSnapshot,toggleDownloadDataset } from '../lib/downloadCenterLogic';
+import { isBaize, isBenlai, isPayoutPlatform, isXiaoxiang, isRiderArchive, isGlobalDataset, datasetGroup,isMerchant,isMerchantSnapshot,toggleDownloadDataset } from '../lib/downloadCenterLogic';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle2, CloudDownload, Download, KeyRound, Loader2, Plus, RefreshCw, Square, X, XCircle, FileSpreadsheet, Calculator, Pencil, Trash2, LayoutGrid, List, AlertTriangle } from 'lucide-react';
+import { AlertCircle, CheckCircle2, CloudDownload, Download, KeyRound, Loader2, Plus, RefreshCw, Square, X, XCircle, Pencil, Trash2, AlertTriangle, UsersRound, Building2, History, ArrowUpRight, Compass, Layers, Radar } from 'lucide-react';
 import { DownloadAccountPanel } from './DownloadAccountPanel';
 import type { FengshenAuthStatus } from './FengshenLoginModal';
-import { itemKey, phaseLabel, recoverable, retainAttempt, selectionKey, isLanorange } from '../lib/downloadCenterLogic';
+import { itemKey, newRequestId, phaseLabel, recoverable, retainAttempt, selectionKey, isLanorange } from '../lib/downloadCenterLogic';
 import type { CreateSelection, DownloadUser, ItemSelection, Recovery, RequestAttempt } from '../lib/downloadCenterLogic';
 import { WorkbenchDrawer } from './WorkbenchDrawer';
 import { DownloadRecords } from './DownloadRecords';
-import { ReportBuilder } from './ReportBuilder';
-import { reportRange, type ReportDefinition } from '../lib/reportBuilder';
+import {
+  buildUnifiedSubmissionPayloads,
+  deriveSelectedMonthsFromRange,
+  type ReportDefinition,
+} from '../lib/reportBuilder';
 import { isGenerator, inferTaskKind, registerGeneratorIds } from '../lib/taskCatalog';
-import { DOWNLOAD_PLATFORMS,moduleAcceptsDataset,type DownloadPlatform,type RecordModule } from '../lib/downloadModules';
+import { systemShortLabel } from '../lib/platformCatalog';
+import {
+  computeDynamicScopeRequirements,
+  DOWNLOAD_PLATFORMS,
+  groupDatasetsByPlatform,
+  inferDatasetPlatform,
+  moduleAcceptsDataset,
+  toggleCrossPlatformDataset,
+  type DownloadPlatform,
+  type RecordModule,
+} from '../lib/downloadModules';
 import { WorkbenchDatePicker } from './WorkbenchDatePicker';
 import {
   BUILTIN_DOWNLOAD_SCENARIOS,
   buildExecutionRailSummary,
+  buildMultiMonthRunRanges,
   buildRecentMonths,
   computeBillingPeriodRange,
+  computeDateRangeSpanDays,
   computeLighthousePeriodRange,
   computeMonthSelectionRange,
+  countFengshenDatasetsByCategory,
+  FENGSHEN_DATASET_CATEGORIES,
+  filterFengshenDatasetsByCategory,
   getDatasetCardMeta,
+  getPlatformCardBadge,
   getStageHeaderMeta,
   sortCitiesWithLanorangeFirst,
   SYSTEM_META,
+  toggleMultiMonthSelection,
   type BillingPeriodPreset,
   type BuiltinScenarioPreset,
+  type FengshenDatasetCategoryId,
 } from '../lib/workbench';
 
 interface DownloadOptions {
@@ -119,6 +140,7 @@ interface Props {
   recordModule?: RecordModule;
   taskKind?: 'download' | 'generate';
   hideNavigation?: boolean;
+  onSelectPlatform?: (platform: DownloadPlatform) => void;
   onTaskKindChange?: (kind: 'download' | 'generate') => void;
   onViewChange?: (view: 'create' | 'history') => void;
   onFormLock?: (locked: boolean) => void;
@@ -130,6 +152,7 @@ interface Props {
     cities?: string[];
     start?: string;
     end?: string;
+    datasets?: string[];
     taskKind?: 'download' | 'generate';
     token?: number;
   } | null;
@@ -238,7 +261,7 @@ export function FengshenDownloadCenter(props: Props) {
   return <DownloadAccountPanel apiFetch={props.apiFetch} onAccountChange={props.onAccountChange}>{(user, authenticatedFetch) => <AuthorizedDownloadCenter key={user.id} {...props} apiFetch={authenticatedFetch} user={user} />}</DownloadAccountPanel>;
 }
 
-function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, onActiveCountChange, fengshenAuthStatus, user, embedded, navigation, taskKind = 'download', platform,recordModule,hideNavigation, onTaskKindChange, onViewChange, onFormLock, onOpenPayroll, onNavigateGenerate, onNavigatePayroll, onOpenPrice, prefill }: Props & { user: DownloadUser }) {
+function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, onActiveCountChange, fengshenAuthStatus, user, embedded, navigation, taskKind = 'download', platform, recordModule, hideNavigation, onSelectPlatform, onTaskKindChange, onViewChange, onFormLock, onOpenPayroll, onNavigateGenerate, onNavigatePayroll, onOpenPrice, prefill }: Props & { user: DownloadUser }) {
   const apiRef = useRef(apiFetch);
   apiRef.current = apiFetch;
   const [options, setOptions] = useState<DownloadOptions | null>(null);
@@ -246,12 +269,29 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const [optionsLoading, setOptionsLoading] = useState(false);
   const [optionVersion, setOptionVersion] = useState(0);
   const [cities, setCities] = useState<string[]>([]);
-  const [datasets, setDatasets] = useState<string[]>(() => taskKind === 'generate' ? ['payment_binding'] : []);
-  const categorySelections = useRef<Record<string, string[]>>({download: [], generate: ['payment_binding'],baize:['baize_employees'],xiaoxiang:['rider_daily']});
-  const selectionScope=taskKind==='generate'?'generate':platform||'download';
+  const [datasets, setDatasets] = useState<string[]>(() =>
+    platform === 'payout'
+      ? ['baize_employees', 'benlai_employees']
+      : platform === 'xiaoxiang'
+        ? ['rider_daily']
+        : [],
+  );
+  const categorySelections = useRef<Record<string, string[]>>({
+    download: [],
+    payout: ['baize_employees', 'benlai_employees'],
+    xiaoxiang: ['rider_daily'],
+  });
+  const [fengshenCategory, setFengshenCategory] = useState<FengshenDatasetCategoryId>('all');
+  /** 「只看已选」独立开关（P0-3）：与分类互不叠加语义，点击仅过滤已勾选资料。 */
+  const [onlySelectedShown, setOnlySelectedShown] = useState(false);
+  const [payoutAuthStatuses, setPayoutAuthStatuses] = useState<Record<string, any>>({});
+  const selectionScope = platform || 'download';
   const previousKind = useRef(selectionScope);
-  const moduleDataset=(id:string)=>taskKind==='generate'?isGenerator(id):!isGenerator(id)&&(!platform||moduleAcceptsDataset(id,platform));
-  const visibleDatasets=options?.datasets.filter(value=>moduleDataset(value.id))||[];
+  const moduleDataset = (id: string) =>
+    platform
+      ? moduleAcceptsDataset(id, platform)
+      : !isGenerator(id) || ['payment_binding', 'abnormal_followup', 'abnormal_riders'].includes(id);
+  const visibleDatasets = options?.datasets.filter(value => moduleDataset(value.id)) || [];
   const defaultMonthRange = (forXiaoxiang: boolean) => {
     const today = shanghaiToday();
     const recent = buildRecentMonths(today, 2);
@@ -263,11 +303,16 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const [end, setEnd] = useState(() => taskKind === 'generate' ? computeBillingPeriodRange('last_full_month', shanghaiToday()).end : defaultMonthRange(platform === 'xiaoxiang').end);
   const [refreshHistory, setRefreshHistory] = useState(false);
   const [waybillAllCitySend, setWaybillAllCitySend] = useState(false);
-  const [lanorangeMonths, setLanorangeMonths] = useState<string[]>(() => [shanghaiToday().slice(0, 7)]);
+  const [selectedMonths, setSelectedMonths] = useState<string[]>(() => [
+    taskKind === 'generate'
+      ? computeBillingPeriodRange('last_full_month', shanghaiToday()).start.slice(0, 7)
+      : defaultMonthRange(platform === 'xiaoxiang').start.slice(0, 7),
+  ]);
+  const [lanorangeMonths, setLanorangeMonths] = useState<string[]>(() => [defaultMonthRange(platform === 'xiaoxiang').start.slice(0, 7)]);
   const [blueCities, setBlueCities] = useState<string[]>([]);
   const [includeSeparation, setIncludeSeparation] = useState(false);
   const [excludeSeparation, setExcludeSeparation] = useState(true);
-  const scopeSelections = useRef<Record<string, {cities:string[];start:string;end:string;includeSeparation:boolean;excludeSeparation:boolean}>>({});
+  const scopeSelections = useRef<Record<string, {cities:string[];start:string;end:string;selectedMonths:string[];includeSeparation:boolean;excludeSeparation:boolean}>>({});
   const [runs, setRuns] = useState<DownloadRun[]>([]);
   const [cityPickerOpen, setCityPickerOpen] = useState(false);
   const [citySearch, setCitySearch] = useState('');
@@ -276,13 +321,32 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
 
   useEffect(() => {
     if (!prefill || !prefill.token) return;
-    const target = prefill.taskKind === 'generate' ? 'generate' : selectionScope;
-    scopeSelections.current[target] = {cities:prefill.cities || cities, start:prefill.start || start, end:prefill.end || end, includeSeparation,excludeSeparation};
+    const target = selectionScope;
+    const prefillMonths =
+      prefill.start && prefill.end
+        ? deriveSelectedMonthsFromRange(
+            prefill.start,
+            prefill.end,
+            buildRecentMonths(shanghaiToday(), 3),
+          )
+        : [];
+    scopeSelections.current[target] = {
+      cities: prefill.cities || cities,
+      start: prefill.start || start,
+      end: prefill.end || end,
+      selectedMonths: prefillMonths,
+      includeSeparation,
+      excludeSeparation,
+    };
     if (prefill.cities && prefill.cities.length) {
       setCities(prefill.cities);
     }
+    if (prefill.datasets && prefill.datasets.length) {
+      setDatasets(prefill.datasets.filter(id => !options || options.datasets.some(item => item.id === id)));
+    }
     if (prefill.start) setStart(prefill.start);
     if (prefill.end) setEnd(prefill.end);
+    if (prefill.start || prefill.end) setSelectedMonths(prefillMonths);
     if (prefill.taskKind && onTaskKindChange) onTaskKindChange(prefill.taskKind);
   }, [prefill?.token]);
   const presetsKey = `download-presets:${user.id}`;
@@ -336,45 +400,21 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   }
   const [presetModal, setPresetModal] = useState<PresetModalState | null>(null);
 
-  // 03 资料分类快捷过滤与视图模式
-  const [datasetCategory, setDatasetCategory] = useState<'all' | 'payroll' | 'risk' | 'personnel'>('all');
-  const [datasetViewMode, setDatasetViewMode] = useState<'standard' | 'compact'>(() => {
-    try { return (localStorage.getItem('wb_dataset_view_mode') as 'standard' | 'compact') || 'standard'; } catch { return 'standard'; }
-  });
-  const handleToggleViewMode = (mode: 'standard' | 'compact') => {
-    setDatasetViewMode(mode);
-    try { localStorage.setItem('wb_dataset_view_mode', mode); } catch {}
-  };
-
   // 右侧执行核对栏引导平滑定位
-  const [pulsingStep, setPulsingStep] = useState<'cities' | 'datasets' | null>(null);
-  const scrollToStep = (step: 'cities' | 'datasets') => {
-    const targetId = step === 'cities' ? 'step-01-cities' : 'step-03-datasets';
-    const el = document.getElementById(targetId);
+  const [pulsingStep, setPulsingStep] = useState<'cities' | 'datasets' | 'period' | null>(null);
+  /** 右栏「清空」的二次确认层（复用 WorkbenchDrawer，不用 window.confirm）。 */
+  const [clearConfirm, setClearConfirm] = useState(false);
+  const scrollToStep = (step: 'cities' | 'datasets' | 'period') => {
+    // 步骤 ID 归一（架构 §4.3 改造点 6）：01=选择资料 / 02=城市+账期。
+    // 旧 id `step-03-datasets` 保留为兜底，避免历史锚点失效。
+    const targetId = step === 'cities' ? 'step-01-cities' : step === 'period' ? 'step-02-period' : 'step-01-datasets';
+    const legacyId = step === 'cities' ? 'step-02-cities' : step === 'period' ? 'step-02-dates' : 'step-03-datasets';
+    const el = document.getElementById(targetId) || document.getElementById(legacyId);
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' });
       setPulsingStep(step);
       setTimeout(() => setPulsingStep(curr => (curr === step ? null : curr)), 1600);
     }
-  };
-
-  const matchDatasetCategory = (id: string, category: 'all' | 'payroll' | 'risk' | 'personnel') => {
-    if (category === 'all') return true;
-    if (category === 'payroll') {
-      return ['attendance_detail', 'delivery_fee', 'penalty', 'rider_monthly', 'receive_account', 'rider_order_detail', 'xiaoxiang_attendance_detail'].includes(id);
-    }
-    if (category === 'risk') {
-      return ['fraud', 'problem'].includes(id);
-    }
-    if (category === 'personnel') {
-      return [
-        'invitation_records', 'delivery_waybill', 'rider_daily_summary', 'rider_info',
-        'goods_rent', 'baize_employees', 'benlai_employees', 'rider_daily', 'rider_archive', 'detail_orders',
-        'detail_kesu', 'detail_reviews', 'lanorange_rider_profile', 'lanorange_monthly_insurance',
-        'lanorange_batch_quit', 'abnormal_riders', 'shangyi_employees'
-      ].includes(id);
-    }
-    return true;
   };
 
   const [systemFilter, setSystemFilter] = useState<'all' | 'fengshen' | 'lanorange' | 'baize' | 'benlai' | 'xiaoxiang'>('all');
@@ -398,27 +438,42 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   useEffect(() => {
     if (previousKind.current === selectionScope || createAttempt.current) return;
     const previous = previousKind.current; previousKind.current = selectionScope;
-    scopeSelections.current[previous] = {cities:[...cities],start,end,includeSeparation,excludeSeparation};
+    scopeSelections.current[previous] = {cities:[...cities],start,end,selectedMonths:[...selectedMonths],includeSeparation,excludeSeparation};
     const savedScope = scopeSelections.current[selectionScope];
     if (savedScope) {
-      setCities(savedScope.cities); setStart(savedScope.start); setEnd(savedScope.end); setIncludeSeparation(savedScope.includeSeparation); setExcludeSeparation(savedScope.excludeSeparation);
+      setCities(savedScope.cities); setStart(savedScope.start); setEnd(savedScope.end); setSelectedMonths(savedScope.selectedMonths); setLanorangeMonths(savedScope.selectedMonths); setIncludeSeparation(savedScope.includeSeparation); setExcludeSeparation(savedScope.excludeSeparation);
     } else if (taskKind === 'generate') {
       const period = computeBillingPeriodRange('last_full_month', shanghaiToday());
-      setCities([]); setStart(period.start); setEnd(period.end); setIncludeSeparation(false); setExcludeSeparation(true);
+      setCities([]); setStart(period.start); setEnd(period.end); setSelectedMonths([period.start.slice(0, 7)]); setIncludeSeparation(false); setExcludeSeparation(true);
     } else {
       const range = defaultMonthRange(platform === 'xiaoxiang');
-      setCities([]); setStart(range.start); setEnd(range.end); setLanorangeMonths([range.start.slice(0, 7)]); setIncludeSeparation(false); setExcludeSeparation(true);
+      const initialMonth = range.start.slice(0, 7);
+      setCities([]); setStart(range.start); setEnd(range.end); setSelectedMonths([initialMonth]); setLanorangeMonths([initialMonth]); setIncludeSeparation(false); setExcludeSeparation(true);
     }
-    setDatasets(values => {
-      categorySelections.current[previous] = values;
-      const saved = categorySelections.current[selectionScope]||[];
-      return taskKind === 'download' ? saved.filter(moduleDataset) : [saved.find(isGenerator) || 'payment_binding'];
-    });
+    if (!platform) {
+      setDatasets(values => {
+        categorySelections.current[previous] = values;
+        const saved = categorySelections.current[selectionScope] || [];
+        return saved.filter(moduleDataset);
+      });
+    }
     setDuplicateApproval('');
   }, [selectionScope]);
+
+  useEffect(() => {
+    if (createAttempt.current) return;
+    scopeSelections.current[selectionScope] = {
+      cities: [...cities],
+      start,
+      end,
+      selectedMonths: [...selectedMonths],
+      includeSeparation,
+      excludeSeparation,
+    };
+  }, [selectionScope, cities, start, end, selectedMonths, includeSeparation, excludeSeparation]);
   useEffect(() => {
     const previous = createAttempt.current?.payload;
-    if (previous) { setCities(previous.cities); setDatasets(previous.datasets); setStart(previous.start); setEnd(previous.end); setRefreshHistory(!!previous.refresh_history); setWaybillAllCitySend(!!previous.waybill_all_city_send); setLanorangeMonths(Array.isArray(previous.lanorange_months) ? previous.lanorange_months : []); setBlueCities(previous.datasets?.every(isLanorange) && !previous.datasets.includes('abnormal_riders') ? (previous.cities || []).filter(city => city !== '全部城市') : []); setIncludeSeparation(!!previous.include_separation); setExcludeSeparation(previous.exclude_separation??true); }
+    if (previous) { setCities(previous.cities); setDatasets(previous.datasets); setStart(previous.start); setEnd(previous.end); setRefreshHistory(!!previous.refresh_history); setWaybillAllCitySend(!!previous.waybill_all_city_send); const restoredMonths = Array.isArray(previous.lanorange_months) ? previous.lanorange_months : []; setLanorangeMonths(restoredMonths); if (restoredMonths.length) setSelectedMonths(restoredMonths); setBlueCities(previous.datasets?.every(isLanorange) && !previous.datasets.includes('abnormal_riders') ? (previous.cities || []).filter(city => city !== '全部城市') : []); setIncludeSeparation(!!previous.include_separation); setExcludeSeparation(previous.exclude_separation??true); }
   }, []);
   const [uncertainRetry, setUncertainRetry] = useState(!!retryAttempt.current);
   const [retryPending, setRetryPending] = useState(false);
@@ -456,7 +511,44 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     }
     return data;
   }, []);
-  const stationDirectory=useStationDirectory(platform==='xiaoxiang'?'xiaoxiang':'fengshen',apiRef.current,platform!=='baize');
+  const stationDirectory=useStationDirectory(platform==='xiaoxiang'?'xiaoxiang':'fengshen',apiRef.current,platform!=='payout');
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail;
+      if (detail && typeof detail === 'object') {
+        setPayoutAuthStatuses(detail);
+      }
+    };
+    window.addEventListener('workbench:platform-statuses', handler);
+    return () => window.removeEventListener('workbench:platform-statuses', handler);
+  }, []);
+
+  useEffect(() => {
+    if (platform !== 'payout') return;
+    let cancelled = false;
+    Promise.all(
+      (['baize', 'benlai'] as const).map(source =>
+        apiRef
+          .current(`/api/fengshen-downloads/platform-auth/${source}`, { signal: AbortSignal.timeout(10000) })
+          .then(res => (res.ok ? res.json() : null))
+          .then(data => (data ? ([source, { ...data, offline: false }] as const) : null))
+          .catch(() => null),
+      ),
+    ).then(entries => {
+      if (cancelled) return;
+      const updates: Record<string, any> = {};
+      for (const entry of entries) {
+        if (entry) updates[entry[0]] = entry[1];
+      }
+      if (Object.keys(updates).length) {
+        setPayoutAuthStatuses(prev => ({ ...updates, ...prev }));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [platform, workspaceId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -470,13 +562,15 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
         registerGeneratorIds((data.generators || []).map((report: ReportDefinition) => report.id));
         setOptions(data);
         window.dispatchEvent(new CustomEvent('workbench:city-directory',{detail:data}));
-        setCities(previous => previous.filter(city => data.cities.some((item: { name: string; disabled?: boolean }) => item.name === city && !item.disabled)));
+        if (platform !== 'xiaoxiang') {
+          setCities(previous => previous.filter(city => data.cities.some((item: { name: string; disabled?: boolean }) => item.name === city && !item.disabled)));
+        }
         setDatasets(previous => previous.filter(dataset => data.datasets.some((item: { id: string }) => item.id === dataset)));
       })
       .catch(error => { if (!controller.signal.aborted) setOptionsError(error instanceof Error ? error.message : '无法加载下载选项'); })
       .finally(() => { if (!controller.signal.aborted) setOptionsLoading(false); });
     return () => controller.abort();
-  }, [getJson, workspaceId, optionVersion]);
+  }, [getJson, workspaceId, optionVersion, platform]);
 
   // 任务从运行中翻转为终态时发一次系统通知（需浏览器通知权限）
   const notifyFinishedRuns = (nextRuns: DownloadRun[]) => {
@@ -561,27 +655,104 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const citySourceLabel = options?.cities_source === 'fengshen'
     ? `风神同步${citySyncedAt && !Number.isNaN(citySyncedAt.getTime()) ? ` · ${citySyncedAt.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}` : ''}`
     : '本地配置';
+  const activePlatform: DownloadPlatform = platform || 'fengshen';
+  const groupedByPlatform = groupDatasetsByPlatform(datasets);
+  const activePlatformList = (['fengshen', 'lanorange', 'payout', 'xiaoxiang'] as const).filter(
+    plat => groupedByPlatform[plat].length > 0,
+  );
+  const activePlatformCount = activePlatformList.length;
+  const activeDatasets = platform ? groupedByPlatform[activePlatform] : datasets;
+  const dynamicScopeReq = computeDynamicScopeRequirements(activePlatform, activeDatasets);
+
+  const getPlatformScope = (plat: DownloadPlatform) => {
+    if (plat === selectionScope) {
+      return { cities, start, end, selectedMonths, includeSeparation, excludeSeparation };
+    }
+    const saved = scopeSelections.current[plat];
+    if (saved) return saved;
+    const defRange = defaultMonthRange(plat === 'xiaoxiang');
+    return {
+      cities: [],
+      start: defRange.start,
+      end: defRange.end,
+      selectedMonths: [defRange.start.slice(0, 7)],
+      includeSeparation: false,
+      excludeSeparation: true,
+    };
+  };
+
   const toggle = (value: string, values: string[], setter: (next: string[]) => void) => setter(values.includes(value) ? values.filter(item => item !== value) : [...values, value]);
   const validDates = DATE_PATTERN.test(start) && DATE_PATTERN.test(end) && start <= end;
-  const selectedReport = options?.generators?.find(report => report.id === datasets[0]);
-  const generationRange = reportRange(selectedReport, start, end, shanghaiToday());
-  const generationAll = taskKind === 'generate' && selectedReport?.scope === 'all';
-  const baizeOnly: boolean = platform === 'baize' || (datasets.length > 0 && datasets.every(isBaize));
-  const benlaiOnly: boolean = platform === 'benlai' || (datasets.length > 0 && datasets.every(isBenlai));
-  const xiaoxiangOnly: boolean = taskKind === 'download' && (platform ? platform === 'xiaoxiang' : datasets.length > 0 && datasets.every(isXiaoxiang));
-  const archiveOnly: boolean = xiaoxiangOnly && datasets.length > 0 && datasets.every(isRiderArchive);
+  const recentReportMonthCodes = buildRecentMonths(shanghaiToday(), 3);
+  const rawSelectedDatasets = activeDatasets.filter(id => !isGenerator(id));
+  const selectedGeneratorIds = activeDatasets.filter(isGenerator);
+  const abnormalRidersOnly =
+    platform !== 'lanorange' &&
+    activeDatasets.length > 0 &&
+    activeDatasets.every(id => id === 'abnormal_riders');
+  const hasAbnormalRiders = activeDatasets.includes('abnormal_riders');
+  const payoutHasBaize = datasets.includes('baize_employees');
+  const payoutHasBenlai = datasets.includes('benlai_employees');
+  const payoutBoth = payoutHasBaize && payoutHasBenlai;
+  const baizeOnly: boolean = payoutHasBaize && !payoutHasBenlai && groupedByPlatform.payout.length === 1;
+  const benlaiOnly: boolean = payoutHasBenlai && !payoutHasBaize && groupedByPlatform.payout.length === 1;
+  const payoutOnly: boolean = platform === 'payout' || (!platform && (payoutBoth || baizeOnly || benlaiOnly));
+  const xiaoxiangOnly: boolean = platform ? platform === 'xiaoxiang' : activeDatasets.length > 0 && activeDatasets.every(isXiaoxiang);
+  const archiveOnly: boolean = xiaoxiangOnly && activeDatasets.length > 0 && activeDatasets.every(isRiderArchive);
   const xiaoxiangDated: boolean = xiaoxiangOnly && !archiveOnly;
   const yesterday = new Date(shanghaiToday() + 'T00:00:00Z'); yesterday.setUTCDate(yesterday.getUTCDate() - 1);
   const dailyDate = yesterday.toISOString().slice(0, 10);
-  const blueOnly: boolean = platform === 'lanorange' || (!baizeOnly && !benlaiOnly && !xiaoxiangOnly && datasets.length > 0 && datasets.every(isGlobalDataset));
-  const merchantOnly: boolean = datasets.length > 0 && datasets.every(isMerchant), merchantSnapshotOnly: boolean = merchantOnly && !datasets.includes('attendance_detail');
-  const hasAttendance=datasets.includes('attendance_detail');
-  const noCity=blueOnly||baizeOnly||benlaiOnly,noDate=baizeOnly||benlaiOnly;
-  const attendanceDateMax=new Date(shanghaiToday()+'T00:00:00Z');attendanceDateMax.setUTCDate(attendanceDateMax.getUTCDate()-1);const attendanceLast=attendanceDateMax.toISOString().slice(0,10);
-  const attendanceDateMin=new Date(shanghaiToday()+'T00:00:00Z');attendanceDateMin.setUTCDate(attendanceDateMin.getUTCDate()-90);const attendanceFirst=attendanceDateMin.toISOString().slice(0,10);
-  const xiaoxiangDateMin=new Date(`${shanghaiToday()}T00:00:00Z`);xiaoxiangDateMin.setUTCDate(xiaoxiangDateMin.getUTCDate()-365);const xiaoxiangFirst=xiaoxiangDateMin.toISOString().slice(0,10);
-  const xiaoxiangSpanDays=validDates?Math.round((Date.parse(`${end}T00:00:00Z`)-Date.parse(`${start}T00:00:00Z`))/86400000)+1:0;
-  const xiaoxiangDateValid=validDates&&end<=dailyDate&&xiaoxiangSpanDays<=31;
+  const blueOnly: boolean =
+    platform === 'lanorange' ||
+    (!platform && !payoutOnly && !xiaoxiangOnly && !abnormalRidersOnly && activeDatasets.length > 0 && activeDatasets.every(isGlobalDataset));
+  const merchantOnly: boolean =
+    rawSelectedDatasets.length > 0 &&
+    selectedGeneratorIds.length === 0 &&
+    rawSelectedDatasets.every(isMerchant);
+  const merchantSnapshotOnly: boolean = merchantOnly && !rawSelectedDatasets.includes('attendance_detail');
+  const hasAttendance = activeDatasets.includes('attendance_detail');
+  const noCity = blueOnly || payoutOnly || abnormalRidersOnly;
+  const noDate = payoutOnly || abnormalRidersOnly;
+  const attendanceDateMax = new Date(shanghaiToday() + 'T00:00:00Z'); attendanceDateMax.setUTCDate(attendanceDateMax.getUTCDate() - 1); const attendanceLast = attendanceDateMax.toISOString().slice(0, 10);
+  const attendanceDateMin = new Date(shanghaiToday() + 'T00:00:00Z'); attendanceDateMin.setUTCDate(attendanceDateMin.getUTCDate() - 90); const attendanceFirst = attendanceDateMin.toISOString().slice(0, 10);
+  const xiaoxiangDateMin = new Date(`${shanghaiToday()}T00:00:00Z`); xiaoxiangDateMin.setUTCDate(xiaoxiangDateMin.getUTCDate() - 365); const xiaoxiangFirst = xiaoxiangDateMin.toISOString().slice(0, 10);
+  const priceMonthOptions = recentReportMonthCodes;
+  const enabledMonthOptions = priceMonthOptions.filter(month => {
+    const monthRange = computeMonthSelectionRange(month, shanghaiToday(), { capAtYesterday: xiaoxiangOnly });
+    const expectedStart = hasAttendance && monthRange.start < attendanceFirst ? attendanceFirst : monthRange.start;
+    const expectedEnd = hasAttendance && monthRange.end > attendanceLast ? attendanceLast : monthRange.end;
+    return monthRange.start <= monthRange.end && !(hasAttendance && (monthRange.end < attendanceFirst || monthRange.start > attendanceLast)) && expectedStart <= expectedEnd;
+  });
+  const activeSelectedMonths = selectedMonths.filter(month => enabledMonthOptions.includes(month));
+  const monthRunChunks = activeSelectedMonths.length > 0
+    ? buildMultiMonthRunRanges(activeSelectedMonths, shanghaiToday(), {
+        capAtYesterday: xiaoxiangOnly,
+        minDate: hasAttendance ? attendanceFirst : undefined,
+        maxDate: hasAttendance ? attendanceLast : undefined,
+        maxDaysPerRun: xiaoxiangDated ? 31 : undefined,
+      })
+    : [];
+  const isPayoutMultiBatchSubmit =
+    !createAttempt.current &&
+    activePlatformCount === 1 &&
+    activePlatformList[0] === 'payout' &&
+    payoutBoth;
+  const isMultiBatchMonthSubmit =
+    !createAttempt.current &&
+    !blueOnly &&
+    !payoutOnly &&
+    !archiveOnly &&
+    !abnormalRidersOnly &&
+    rawSelectedDatasets.length > 0 &&
+    activeSelectedMonths.length > 0 &&
+    monthRunChunks.length > 1;
+  const xiaoxiangSpanDays = validDates ? Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86400000) + 1 : 0;
+  const xiaoxiangDateValid = activeSelectedMonths.length > 0
+    ? monthRunChunks.length > 0 && monthRunChunks.every(chunk => {
+        const chunkSpan = computeDateRangeSpanDays(chunk.start, chunk.end) ?? 0;
+        return chunk.end <= dailyDate && chunkSpan <= 31;
+      })
+    : validDates && end <= dailyDate && xiaoxiangSpanDays <= 31;
   const billingPeriodRange=(preset:BillingPeriodPreset)=>{
     const range=xiaoxiangDated
       ? computeLighthousePeriodRange(preset,shanghaiToday())
@@ -590,8 +761,25 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     const nextEnd=hasAttendance&&range.end>attendanceLast?attendanceLast:range.end;
     return {start:nextStart,end:nextEnd,blocked:range.blocked||nextStart>nextEnd};
   };
+  const activeSelectedMonthsKey = activeSelectedMonths.join(',');
   useEffect(()=>{
     if(!xiaoxiangOnly)return;
+    if(activeSelectedMonths.length > 0){
+      const chunks = buildMultiMonthRunRanges(activeSelectedMonths, shanghaiToday(), { capAtYesterday: true, maxDaysPerRun: 31 });
+      if (chunks.length > 0) {
+        const nextStart = chunks[0].start;
+        const nextEnd = chunks[chunks.length - 1].end;
+        if (start !== nextStart) setStart(nextStart);
+        if (end !== nextEnd) setEnd(nextEnd);
+      } else {
+        const fallback = defaultMonthRange(true);
+        const fallbackMonth = fallback.start.slice(0, 7);
+        setSelectedMonths([fallbackMonth]);
+        setStart(fallback.start);
+        setEnd(fallback.end);
+      }
+      return;
+    }
     if(end>dailyDate||start>dailyDate){
       const curMonth = start.slice(0, 7);
       const mRange = computeMonthSelectionRange(curMonth, shanghaiToday(), { capAtYesterday: true });
@@ -604,56 +792,253 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
         setEnd(fallback.end);
       }
     }
-  },[xiaoxiangOnly,dailyDate]);
+  },[xiaoxiangOnly,dailyDate,activeSelectedMonthsKey]);
   const merchantDateValid=merchantSnapshotOnly||(validDates&&start>=attendanceFirst&&end<=attendanceLast);
-  const invalidBaizeMix = datasets.some(isBaize) && !baizeOnly;
-  const invalidBenlaiMix = datasets.some(isBenlai) && !benlaiOnly;
-  const invalidXiaoxiangMix = datasets.some(isXiaoxiang) && !xiaoxiangOnly;
-  const displayedCities = React.useMemo(() => {
+  const invalidBaizeMix = !platform && datasets.some(isPayoutPlatform) && !datasets.every(isPayoutPlatform);
+  const invalidBenlaiMix = false;
+  const invalidXiaoxiangMix = !platform && datasets.some(isXiaoxiang) && !xiaoxiangOnly;
+  const displayedCities = React.useMemo<Array<{ id: string; name: string; disabled?: boolean; note?: string }>>(() => {
     const baseCities = options?.cities ?? [];
     if (platform !== 'xiaoxiang' && !xiaoxiangOnly) {
       return baseCities;
     }
-    const merged = [...baseCities];
-    const seenNames = new Set(baseCities.map(c => c.name.trim().replace(/市$/, '')));
-    for (const dirCity of stationDirectory.data?.cities ?? []) {
-      const norm = (dirCity.name || '').trim().replace(/市$/, '');
-      if (norm && !seenNames.has(norm)) {
-        seenNames.add(norm);
-        merged.push({ id: dirCity.id || dirCity.name, name: dirCity.name });
-      }
-    }
-    return sortCitiesWithLanorangeFirst(merged);
+    const realCities = (stationDirectory.data?.cities ?? [])
+      .filter(city => city?.name)
+      .map(city => ({ id: city.id || city.name, name: city.name }));
+    return sortCitiesWithLanorangeFirst(realCities);
   }, [options?.cities, platform, xiaoxiangOnly, stationDirectory.data?.cities]);
   const selectableCities = displayedCities.filter(city => !city.disabled);
+  const selectableCityNames = selectableCities.map(city => city.name).join('\u0001');
+  useEffect(() => {
+    if (!xiaoxiangOnly || stationDirectory.data?.status !== 'ready') return;
+    const known = new Set(selectableCities.map(city => city.name));
+    setCities(previous => {
+      const kept = previous.filter(name => known.has(name));
+      return kept.length === previous.length ? previous : kept;
+    });
+  }, [xiaoxiangOnly, stationDirectory.data?.status, selectableCityNames]);
   const invalidMerchantMix=hasAttendance&&!merchantDateValid;
-  const canSubmit = taskKind === 'generate' ? datasets.length === 1 && !!selectedReport && !!generationRange && (generationAll || cities.length > 0) : datasets.every(moduleDataset) && !invalidBaizeMix && !invalidBenlaiMix && !invalidXiaoxiangMix && !invalidMerchantMix && datasets.length > 0 && (merchantOnly?(cities.length>0&&merchantDateValid):(archiveOnly || blueOnly || baizeOnly || benlaiOnly || (xiaoxiangDated && xiaoxiangDateValid) || (cities.length > 0 && validDates)));
-  const monthlyDatasets = datasets.filter(dataset => MONTHLY_DATASETS.has(dataset));
-  const periodDatasets = datasets.filter(dataset => !isLanorange(dataset) && !MONTHLY_DATASETS.has(dataset) && !SNAPSHOT_DATASETS.has(dataset) && !['payment_binding', 'abnormal_followup'].includes(dataset));
-  const followupDatasets = ['payment_binding', 'abnormal_followup'].filter(id => datasets.includes(id));
-  const monthPreview = monthlyDatasets.length || followupDatasets.length ? coveredMonths(start, end) : [];
+
+  const fengshenNeedsCities =
+    groupedByPlatform.fengshen.length > 0 &&
+    !groupedByPlatform.fengshen.every(id => id === 'abnormal_riders');
+  const fengshenScopeCities = getPlatformScope('fengshen').cities;
+  const fengshenMissingCities = fengshenNeedsCities && fengshenScopeCities.length === 0;
+
+  const canSubmit = platform
+    ? datasets.length > 0 &&
+      !fengshenMissingCities &&
+      (activePlatform !== 'fengshen' || groupedByPlatform.fengshen.length === 0 || (
+        !invalidMerchantMix &&
+        (abnormalRidersOnly || (activeSelectedMonths.length > 0 ? monthRunChunks.length > 0 : validDates))
+      )) &&
+      (activePlatform !== 'xiaoxiang' || groupedByPlatform.xiaoxiang.length === 0 || (
+        archiveOnly || xiaoxiangDateValid
+      ))
+    : datasets.every(moduleDataset) &&
+      !invalidBaizeMix &&
+      !invalidBenlaiMix &&
+      !invalidXiaoxiangMix &&
+      !invalidMerchantMix &&
+      datasets.length > 0 &&
+      (merchantOnly
+        ? cities.length > 0 && merchantDateValid
+        : archiveOnly || blueOnly || payoutOnly || abnormalRidersOnly ||
+          (xiaoxiangDated && xiaoxiangDateValid) ||
+          (cities.length > 0 && (activeSelectedMonths.length > 0 ? monthRunChunks.length > 0 : validDates)));
+
+  const monthlyDatasets = rawSelectedDatasets.filter(dataset => MONTHLY_DATASETS.has(dataset));
+  const periodDatasets = rawSelectedDatasets.filter(dataset => !isLanorange(dataset) && !MONTHLY_DATASETS.has(dataset) && !SNAPSHOT_DATASETS.has(dataset));
+  const followupDatasets = selectedGeneratorIds.filter(id => id !== 'abnormal_riders');
+  const monthPreview = monthlyDatasets.length || followupDatasets.length
+    ? (activeSelectedMonths.length > 0
+        ? activeSelectedMonths.map(m => `${m.slice(0, 4)}年${m.slice(5)}月`)
+        : coveredMonths(start, end))
+    : [];
   const orderWindowDays = options?.order_window_days || 60;
   const earliestOrderDate = new Date(`${shanghaiToday()}T00:00:00Z`);
   earliestOrderDate.setUTCDate(earliestOrderDate.getUTCDate() - orderWindowDays + 1);
   const earliestOrder = earliestOrderDate.toISOString().slice(0, 10);
-  const orderWindowWarning = datasets.some(dataset => ['fraud', 'problem'].includes(dataset)) && validDates && (start < earliestOrder || end > shanghaiToday());
-  const priceMonthOptions = buildRecentMonths(shanghaiToday(), 12);
-  const currentSelection: CreateSelection = taskKind === 'generate' ? {
-    task_kind: 'generate', generation_target: datasets[0], datasets,
-    cities: generationAll ? ['全部城市'] : cities,
-    start: generationAll ? shanghaiToday() : generationRange?.start || start,
-    end: generationAll ? shanghaiToday() : generationRange?.end || end,
-    ...(datasets.some(isLanorange) ? {lanorange_full_delivery:true} : {}),
-    ...(selectedReport?.station_rule === 'separation' && !generationAll && includeSeparation ? {include_separation:true} : {}),
-  } : { task_kind: taskKind, cities: blueOnly ? (blueCities.length && !datasets.includes('abnormal_riders') ? blueCities : ['全部城市']) : baizeOnly ? ['全部城市'] : benlaiOnly ? ['全部城市'] : xiaoxiangOnly ? (cities.length > 0 ? cities : ['全部城市']) : cities, datasets, ...(datasets.some(isLanorange) || blueOnly ? {lanorange_full_delivery:true} : {}),
-    start: archiveOnly ? shanghaiToday() : xiaoxiangDated ? start : blueOnly||baizeOnly||benlaiOnly||merchantSnapshotOnly ? shanghaiToday() : start, end: archiveOnly ? shanghaiToday() : xiaoxiangDated ? end : blueOnly||baizeOnly||benlaiOnly||merchantSnapshotOnly ? shanghaiToday() : end,
-    ...(refreshHistory && datasets.some(dataset => ['fraud', 'problem'].includes(dataset)) ? { refresh_history: true } : {}),
-    ...(waybillAllCitySend && datasets.includes('delivery_waybill') ? { waybill_all_city_send: true } : {}),
-    ...(blueOnly && datasets.includes('lanorange_part_price') ? { lanorange_months: validDates ? coveredMonths(start, end) : [...lanorangeMonths].sort() } : {}),
-    ...(datasets.some(isMerchant)?{merchant_by_city:true}:{}), ...(!noCity && !merchantOnly && !xiaoxiangOnly ? { exclude_separation: excludeSeparation } : {}) };
+  const orderWindowWarning = activeDatasets.some(dataset => ['fraud', 'problem'].includes(dataset)) && (
+    activeSelectedMonths.length > 0
+      ? monthRunChunks.some(chunk => chunk.start < earliestOrder || chunk.end > shanghaiToday())
+      : (validDates && (start < earliestOrder || end > shanghaiToday()))
+  );
+  const resolvedLanorangeMonths = (activeSelectedMonths.length > 0
+    ? [...activeSelectedMonths]
+    : lanorangeMonths.length > 0
+      ? [...lanorangeMonths]
+      : [start.slice(0, 7)]
+  ).filter(m => /^\d{4}-\d{2}$/.test(m)).sort();
+  const rawSelection: CreateSelection = {
+    task_kind: 'download',
+    cities: blueOnly
+      ? (blueCities.length && !hasAbnormalRiders ? blueCities : ['全部城市'])
+      : payoutOnly
+        ? ['全部城市']
+        : xiaoxiangOnly
+          ? (cities.length > 0 ? cities : ['全部城市'])
+          : cities,
+    datasets: rawSelectedDatasets,
+    ...(rawSelectedDatasets.some(isLanorange) || blueOnly ? { lanorange_full_delivery: true } : {}),
+    start: archiveOnly
+      ? shanghaiToday()
+      : xiaoxiangDated
+        ? (monthRunChunks[0]?.start || start)
+        : blueOnly || payoutOnly || merchantSnapshotOnly
+          ? shanghaiToday()
+          : (monthRunChunks[0]?.start || start),
+    end: archiveOnly
+      ? shanghaiToday()
+      : xiaoxiangDated
+        ? (monthRunChunks[monthRunChunks.length - 1]?.end || end)
+        : blueOnly || payoutOnly || merchantSnapshotOnly
+          ? shanghaiToday()
+          : (monthRunChunks[monthRunChunks.length - 1]?.end || end),
+    ...(refreshHistory && rawSelectedDatasets.some(dataset => ['fraud', 'problem'].includes(dataset)) ? { refresh_history: true } : {}),
+    ...(waybillAllCitySend && rawSelectedDatasets.includes('delivery_waybill') ? { waybill_all_city_send: true } : {}),
+    ...(blueOnly && rawSelectedDatasets.includes('lanorange_part_price') ? { lanorange_months: resolvedLanorangeMonths } : {}),
+    ...(rawSelectedDatasets.some(isMerchant) ? { merchant_by_city: true } : {}),
+    ...(!noCity && !rawSelectedDatasets.every(isMerchant) && !xiaoxiangOnly ? { exclude_separation: excludeSeparation } : {}),
+  };
+  const unifiedPayloads = buildUnifiedSubmissionPayloads({
+    selectedDatasets: activeDatasets,
+    availableGenerators: options?.generators || [],
+    rawSelection,
+    rawMonthChunks: monthRunChunks,
+    isMultiBatchRawMonth: isMultiBatchMonthSubmit,
+    cities,
+    start,
+    end,
+    today: shanghaiToday(),
+    excludeSeparation,
+    selectedMonths: activeSelectedMonths.length > 0 ? activeSelectedMonths : undefined,
+    isGeneratorFn: isGenerator,
+  });
+
+  const buildCrossPlatformPayloads = (): CreateSelection[] => {
+    const allPayloads: CreateSelection[] = [];
+    const today = shanghaiToday();
+    for (const plat of ['fengshen', 'lanorange', 'payout', 'xiaoxiang'] as const) {
+      const platDatasets = groupedByPlatform[plat];
+      if (!platDatasets.length) continue;
+      const pScope = getPlatformScope(plat);
+
+      if (plat === 'payout') {
+        for (const datasetId of platDatasets) {
+          allPayloads.push({
+            task_kind: 'download',
+            cities: ['全部城市'],
+            datasets: [datasetId],
+            start: today,
+            end: today,
+          });
+        }
+        continue;
+      }
+
+      if (plat === 'lanorange') {
+        allPayloads.push({
+          task_kind: 'download',
+          cities: blueCities.length > 0 ? blueCities : ['全部城市'],
+          datasets: platDatasets,
+          lanorange_full_delivery: true,
+          start: today,
+          end: today,
+          ...(platDatasets.includes('lanorange_part_price') ? { lanorange_months: resolvedLanorangeMonths } : {}),
+        });
+        continue;
+      }
+
+      if (plat === 'xiaoxiang') {
+        const xArchiveOnly = platDatasets.every(isRiderArchive);
+        const xMonths = pScope.selectedMonths.filter(m => priceMonthOptions.includes(m));
+        const xChunks = !xArchiveOnly && xMonths.length > 0
+          ? buildMultiMonthRunRanges(xMonths, today, { capAtYesterday: true, maxDaysPerRun: 31 })
+          : [];
+        const xRaw: CreateSelection = {
+          task_kind: 'download',
+          cities: pScope.cities.length > 0 ? pScope.cities : ['全部城市'],
+          datasets: platDatasets,
+          start: xArchiveOnly ? today : (xChunks[0]?.start || pScope.start),
+          end: xArchiveOnly ? today : (xChunks[xChunks.length - 1]?.end || pScope.end),
+        };
+        const xPayloads = buildUnifiedSubmissionPayloads({
+          selectedDatasets: platDatasets,
+          availableGenerators: options?.generators || [],
+          rawSelection: xRaw,
+          rawMonthChunks: xChunks,
+          isMultiBatchRawMonth: !xArchiveOnly && xChunks.length > 1,
+          cities: xRaw.cities,
+          start: xRaw.start,
+          end: xRaw.end,
+          today,
+          excludeSeparation: false,
+          selectedMonths: xMonths.length > 0 ? xMonths : undefined,
+          isGeneratorFn: isGenerator,
+        });
+        allPayloads.push(...(xPayloads as CreateSelection[]));
+        continue;
+      }
+
+      // fengshen
+      const fRawDatasets = platDatasets.filter(id => !isGenerator(id));
+      const fAbnormalOnly = platDatasets.every(id => id === 'abnormal_riders');
+      const fMerchantSnap =
+        fRawDatasets.length > 0 &&
+        platDatasets.filter(isGenerator).length === 0 &&
+        fRawDatasets.every(isMerchant) &&
+        !fRawDatasets.includes('attendance_detail');
+      const fHasAtt = platDatasets.includes('attendance_detail');
+      const fMonths = pScope.selectedMonths.filter(m => priceMonthOptions.includes(m));
+      const fChunks = !fAbnormalOnly && fMonths.length > 0
+        ? buildMultiMonthRunRanges(fMonths, today, {
+            capAtYesterday: false,
+            minDate: fHasAtt ? attendanceFirst : undefined,
+            maxDate: fHasAtt ? attendanceLast : undefined,
+          })
+        : [];
+      const fRaw: CreateSelection = {
+        task_kind: 'download',
+        cities: pScope.cities,
+        datasets: fRawDatasets,
+        start: fMerchantSnap ? today : (fChunks[0]?.start || pScope.start),
+        end: fMerchantSnap ? today : (fChunks[fChunks.length - 1]?.end || pScope.end),
+        ...(refreshHistory && fRawDatasets.some(d => ['fraud', 'problem'].includes(d)) ? { refresh_history: true } : {}),
+        ...(waybillAllCitySend && fRawDatasets.includes('delivery_waybill') ? { waybill_all_city_send: true } : {}),
+        ...(fRawDatasets.some(isMerchant) ? { merchant_by_city: true } : {}),
+        ...(!fAbnormalOnly && !fRawDatasets.every(isMerchant) ? { exclude_separation: pScope.excludeSeparation } : {}),
+      };
+      const fPayloads = buildUnifiedSubmissionPayloads({
+        selectedDatasets: platDatasets,
+        availableGenerators: options?.generators || [],
+        rawSelection: fRaw,
+        rawMonthChunks: fChunks,
+        isMultiBatchRawMonth: !fAbnormalOnly && fRawDatasets.length > 0 && fChunks.length > 1,
+        cities: pScope.cities,
+        start: fRaw.start,
+        end: fRaw.end,
+        today,
+        excludeSeparation: pScope.excludeSeparation,
+        selectedMonths: fMonths.length > 0 ? fMonths : undefined,
+        isGeneratorFn: isGenerator,
+      });
+      allPayloads.push(...(fPayloads as CreateSelection[]));
+    }
+    return allPayloads;
+  };
+
+  const crossPlatformPayloads = platform ? buildCrossPlatformPayloads() : unifiedPayloads;
+  const isUnifiedMultiBatchSubmit =
+    !createAttempt.current &&
+    !isPayoutMultiBatchSubmit &&
+    crossPlatformPayloads.length > 1;
+  const currentSelection: CreateSelection = (crossPlatformPayloads[0] as CreateSelection | undefined) || (unifiedPayloads[0] as CreateSelection | undefined) || rawSelection;
   const currentSelectionKey = selectionKey(currentSelection);
-  const matchingRun = runs.find(run => !TERMINAL_STATUSES.has(run.status) && selectionKey(run) === currentSelectionKey)
-    || (!followupDatasets.length && !datasets.some(isLanorange) && !merchantOnly ? runs.find(run => selectionKey(run) === currentSelectionKey && !!run.files?.length) : undefined);
+  const matchingRun = (isUnifiedMultiBatchSubmit || isPayoutMultiBatchSubmit || activePlatformCount > 1)
+    ? undefined
+    : (runs.find(run => !TERMINAL_STATUSES.has(run.status) && selectionKey(run) === currentSelectionKey)
+      || (!followupDatasets.length && !datasets.some(isLanorange) && !merchantOnly ? runs.find(run => selectionKey(run) === currentSelectionKey && !!run.files?.length) : undefined));
   const completedMatch = matchingRun && TERMINAL_STATUSES.has(matchingRun.status) && !!matchingRun.files?.length;
   const formLocked = creating || uncertainCreate;
 
@@ -678,10 +1063,11 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     try { localStorage.setItem(presetsKey, JSON.stringify(next)); } catch { /* 存储不可用时仅保留在内存 */ }
   };
   const applyPreset = (preset: { name: string; cities: string[]; datasets: string[] }) => {
-    if (preset.datasets.some(isGenerator) && preset.datasets.length !== 1) { setRequestError('此预设包含旧版混合选择，请按任务类型分别新建。'); return; }
-    categorySelections.current[taskKind] = datasets;
-    categorySelections.current[inferTaskKind(preset.datasets)] = preset.datasets;
-    onTaskKindChange?.(inferTaskKind(preset.datasets));
+    categorySelections.current[selectionScope] = datasets;
+    if (preset.datasets.some(isGenerator) && platform && platform !== 'fengshen') {
+      onSelectPlatform?.('fengshen');
+    }
+    onTaskKindChange?.('download');
     setCities(preset.cities.filter(city => !options || options.cities.some(item => item.name === city && !item.disabled)));
     setDatasets(preset.datasets.filter(id => !options || options.datasets.some(item => item.id === id)));
     setDuplicateApproval('');
@@ -694,7 +1080,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const applyBuiltinScenario = (scenario: BuiltinScenarioPreset) => {
     if (formLocked) return;
     const validIds = scenario.datasets.filter(id => !options || options.datasets.some(item => item.id === id));
-    categorySelections.current[taskKind] = datasets;
+    categorySelections.current[selectionScope] = datasets;
     categorySelections.current.download = validIds;
     onTaskKindChange?.('download');
     setDatasets(validIds);
@@ -709,34 +1095,48 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     setEnd(range.end);
     setDuplicateApproval('');
   };
+  const syncMonthSelection = (nextMonths: string[]) => {
+    const valid = [...new Set(nextMonths.filter(m => enabledMonthOptions.includes(m)))].sort();
+    const fallback = valid.length > 0 ? valid : enabledMonthOptions.length > 0 ? [enabledMonthOptions[0]] : [];
+    const chunks = buildMultiMonthRunRanges(fallback, shanghaiToday(), {
+      capAtYesterday: xiaoxiangOnly,
+      minDate: hasAttendance ? attendanceFirst : undefined,
+      maxDate: hasAttendance ? attendanceLast : undefined,
+      maxDaysPerRun: xiaoxiangDated ? 31 : undefined,
+    });
+    setSelectedMonths(fallback);
+    setLanorangeMonths(fallback);
+    if (chunks.length > 0) {
+      setStart(chunks[0].start);
+      setEnd(chunks[chunks.length - 1].end);
+    }
+    setDuplicateApproval('');
+  };
   const applyMonthSelection = (month: string) => {
     if (formLocked) return;
-    const range = computeMonthSelectionRange(month, shanghaiToday(), { capAtYesterday: xiaoxiangOnly });
-    const nextStart = hasAttendance && range.start < attendanceFirst ? attendanceFirst : range.start;
-    const nextEnd = hasAttendance && range.end > attendanceLast ? attendanceLast : range.end;
-    if (nextStart > nextEnd) return;
-    setStart(nextStart);
-    setEnd(nextEnd);
-    setLanorangeMonths([month]);
-    setDuplicateApproval('');
+    if (!enabledMonthOptions.includes(month)) return;
+    const nextMonths = activeSelectedMonths.length === 0
+      ? [month]
+      : toggleMultiMonthSelection(activeSelectedMonths, month, enabledMonthOptions);
+    if (!nextMonths.length) return;
+    syncMonthSelection(nextMonths);
   };
 
   // 用历史任务的城市/资料/日期预填新建表单
   const prefillFromRun = (run: DownloadRun) => {
-    if (run.datasets.some(isGenerator) && (run.datasets.length !== 1 || !isGenerator(run.datasets[0]))) {
-      setRequestError('此记录包含旧版混合选择，请按资料下载或业务表生成分别新建。'); return;
+    if (run.datasets.some(isGenerator) && (!run.datasets.every(id => moduleAcceptsDataset(id, 'fengshen')))) {
+      setRequestError('此记录包含不兼容的混合选择，请重新手动选择。'); return;
     }
-    categorySelections.current[taskKind] = datasets;
-    categorySelections.current[inferTaskKind(run.datasets)] = run.datasets;
+    categorySelections.current[selectionScope] = datasets;
+    const runMonths = Array.isArray(run.lanorange_months) && run.lanorange_months.length > 0
+      ? run.lanorange_months
+      : (!run.datasets.every(isLanorange) && DATE_PATTERN.test(run.start) && DATE_PATTERN.test(run.end)
+          ? deriveSelectedMonthsFromRange(run.start, run.end, recentReportMonthCodes)
+          : []);
     if (inferTaskKind(run.datasets) === 'generate') {
-      scopeSelections.current.generate = {
-        cities:run.cities.filter(city => city !== '全部城市' && (!options || options.cities.some(item => item.name === city && !item.disabled))),
-        start:!run.datasets.every(isLanorange) && DATE_PATTERN.test(run.start) ? run.start : start,
-        end:!run.datasets.every(isLanorange) && DATE_PATTERN.test(run.end) ? run.end : end,
-        includeSeparation:false,excludeSeparation:true,
-      };
+      onSelectPlatform?.('fengshen');
     }
-    onTaskKindChange?.(inferTaskKind(run.datasets));
+    onTaskKindChange?.('download');
     setCities(run.cities.filter(city => city !== '全部城市' && (!options || options.cities.some(item => item.name === city && !item.disabled))));
     setBlueCities(run.lanorange_by_city && Array.isArray(run.cities) ? run.cities.filter(city => city !== '全部城市') : []);
     setDatasets(run.datasets.filter(id => !options || options.datasets.some(item => item.id === id)));
@@ -744,6 +1144,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     setRefreshHistory(false);
     setWaybillAllCitySend(run.waybill_all_city_send === true);
     setLanorangeMonths(Array.isArray(run.lanorange_months) ? run.lanorange_months : []);
+    setSelectedMonths(runMonths);
     setIncludeSeparation(false);
     setExcludeSeparation(run.exclude_separation??true);
     setDuplicateApproval('');
@@ -755,6 +1156,85 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     if (creatingRef.current || !options || (!createAttempt.current && !canSubmit)) return;
     if (!createAttempt.current && matchingRun && !TERMINAL_STATUSES.has(matchingRun.status)) { selectRun(matchingRun); return; }
     if (!createAttempt.current && completedMatch && duplicateApproval !== currentSelectionKey) { selectRun(matchingRun!); return; }
+
+    if (isPayoutMultiBatchSubmit) {
+      creatingRef.current = true;
+      setCreating(true);
+      setRequestError('');
+      if (typeof Notification !== 'undefined' && Notification.permission === 'default') void Notification.requestPermission();
+      try {
+        const today = shanghaiToday();
+        const createdRuns: DownloadRun[] = [];
+        for (const datasetId of datasets.filter(isPayoutPlatform)) {
+          const singlePayload: CreateSelection = {
+            task_kind: 'download',
+            cities: ['全部城市'],
+            datasets: [datasetId],
+            start: today,
+            end: today,
+          };
+          const data = await getJson(`${API_ROOT}/runs`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...singlePayload, request_id: newRequestId() }),
+          });
+          if (!data.run?.id) throw new Error('部分发薪平台未取得下载任务，请刷新记录确认');
+          createdRuns.push(data.run);
+        }
+        const lastRun = createdRuns[createdRuns.length - 1];
+        setDuplicateApproval('');
+        setRuns(previous => [...createdRuns.slice().reverse(), ...previous.filter(item => !createdRuns.some(c => c.id === item.id))]);
+        selectedIdRef.current = lastRun.id;
+        setSelectedId(lastRun.id);
+        setSelectedRun(lastRun);
+        setSubmittedTaskInfo({
+          id: lastRun.id,
+          name: `${createdRuns.flatMap(r => r.datasets).map(datasetLabel).join('、')}（共 ${createdRuns.length} 批）`,
+        });
+        void refreshRef.current();
+      } catch (error) {
+        setRequestError(error instanceof Error ? error.message : '部分发薪平台提交失败，请刷新记录查看后再重试');
+      } finally {
+        creatingRef.current = false;
+        setCreating(false);
+      }
+      return;
+    }
+
+    if (isUnifiedMultiBatchSubmit) {
+      creatingRef.current = true;
+      setCreating(true);
+      setRequestError('');
+      if (typeof Notification !== 'undefined' && Notification.permission === 'default') void Notification.requestPermission();
+      try {
+        const createdRuns: DownloadRun[] = [];
+        for (const payload of crossPlatformPayloads) {
+          const data = await getJson(`${API_ROOT}/runs`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...payload, request_id: newRequestId() }),
+          });
+          if (!data.run?.id) throw new Error('部分任务未取得执行回执，请刷新记录确认');
+          createdRuns.push(data.run);
+        }
+        const lastRun = createdRuns[createdRuns.length - 1];
+        setDuplicateApproval('');
+        setRuns(previous => [...createdRuns.slice().reverse(), ...previous.filter(item => !createdRuns.some(c => c.id === item.id))]);
+        selectedIdRef.current = lastRun.id;
+        setSelectedId(lastRun.id);
+        setSelectedRun(lastRun);
+        setSubmittedTaskInfo({
+          id: lastRun.id,
+          name: `${[...new Set(createdRuns.flatMap(r => r.datasets))].map(datasetLabel).join('、')}（共 ${createdRuns.length} 批）`,
+        });
+        void refreshRef.current();
+      } catch (error) {
+        setRequestError(error instanceof Error ? error.message : '部分任务提交失败，请刷新记录查看后再重试');
+      } finally {
+        creatingRef.current = false;
+        setCreating(false);
+      }
+      return;
+    }
+
     createAttempt.current = retainAttempt(createAttempt.current, currentSelection);
     storeAttempt(createStorageKey, createAttempt.current);
     creatingRef.current = true;
@@ -922,26 +1402,34 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const waitingLogin = selectedRun && (selectedRun.phase === 'waiting_login' || ['waiting_login', 'waiting_for_login', 'login_required', 'waiting_auth'].includes(selectedRun.status.toLowerCase()));
   const selectedRecoverable = selectedRun?.items?.filter(recoverable) || [];
   const blueCityScoped = blueOnly && !datasets.includes('abnormal_riders');
-  const subitemCount = merchantOnly?cities.length*datasets.length:baizeOnly ? 1 : benlaiOnly ? 1 : xiaoxiangOnly ? datasets.length : blueOnly ? (datasets.filter(value => isLanorange(value) && value !== 'abnormal_riders').length * Math.max(1, blueCityScoped ? blueCities.length : 1)) + (datasets.includes('abnormal_riders') ? 1 : 0) : datasets.filter(isLanorange).length + cities.length * (periodDatasets.length + followupDatasets.length * monthPreview.length + datasets.filter(value => SNAPSHOT_DATASETS.has(value)).length + monthlyDatasets.length * monthPreview.length);
-  const submitHint = taskKind === 'generate'
-    ? datasets[0] === 'abnormal_riders' ? '全部城市 · 全量资料 · 生成一份整理表'
-      : !cities.length ? '请选择生成范围的城市' : !validDates ? '请选择有效日期' : `${cities.length} 个城市 · 按 ${monthPreview.length} 个月份生成`
-    : merchantOnly?merchantSnapshotOnly?'所选城市全部邀请记录 · 按城市分别保存 · 不筛选日期':merchantDateValid?'所选城市全部站点 · 出勤按城市和日期采集后分别领取':'出勤明细请选择最近90天内、早于今天的起止日期'
-    : baizeOnly ? '商翼全量员工原表 · 一份文件 · 不参与兼职自动补齐'
-    : benlaiOnly ? '本来人力全量灵工原表 · 一份文件 · 签约城市实时读取'
-    : xiaoxiangOnly ? (archiveOnly ? `灯塔骑手档案 · ${datasets.length} 类资料 · 快照` : start===end ? `灯塔资料 · ${datasets.length} 类 · ${start} 单日` : `灯塔资料 · ${datasets.length} 类 · ${start} 至 ${end}，共 ${xiaoxiangSpanDays} 天`)
-    : blueOnly
-    ? `蓝橙全量 · ${datasets.length} 类资料，每类一个文件` + (blueCityScoped && blueCities.length ? ` · ${blueCities.length} 个城市按城市分别导出` : '，无需选择城市和日期') + (datasets.includes('lanorange_part_price') && lanorangeMonths.length ? ` · 价格档案按 ${lanorangeMonths.length} 个月份筛选` : '')
-    : !datasets.length ? '请选择资料'
-    : !cities.length ? '请选择城市'
-    : !validDates ? '开始日期不能晚于结束日期'
-    : `${cities.length} 个城市 · ${datasets.length} 类资料 · 共 ${subitemCount} 项`;
+  const effectiveChunkCount = isMultiBatchMonthSubmit ? monthRunChunks.length : 1;
+  const subitemCount = merchantOnly
+    ? cities.length * datasets.length
+    : payoutBoth
+      ? 2
+      : baizeOnly || benlaiOnly
+        ? 1
+        : xiaoxiangOnly
+          ? datasets.length * effectiveChunkCount
+          : blueOnly
+            ? (datasets.filter(value => isLanorange(value) && value !== 'abnormal_riders').length * Math.max(1, blueCityScoped ? blueCities.length : 1)) + (hasAbnormalRiders ? 1 : 0)
+            : abnormalRidersOnly
+              ? 1
+              : rawSelectedDatasets.filter(isLanorange).length +
+                cities.length * (
+                  periodDatasets.length * effectiveChunkCount +
+                  followupDatasets.length * Math.max(1, monthPreview.length) +
+                  rawSelectedDatasets.filter(value => SNAPSHOT_DATASETS.has(value)).length +
+                  monthlyDatasets.length * Math.max(1, monthPreview.length)
+                ) +
+                (hasAbnormalRiders ? 1 : 0);
   const submitReady = !!uncertainCreate || canSubmit;
   const railSummary = buildExecutionRailSummary({
     datasetsCount: datasets.length,
-    cities: baizeOnly || benlaiOnly ? [] : blueOnly ? (datasets.includes('abnormal_riders') ? [] : blueCities) : cities,
+    cities: payoutOnly || abnormalRidersOnly ? [] : blueOnly ? (hasAbnormalRiders ? [] : blueCities) : cities,
     start,
     end,
+    selectedMonths: activeSelectedMonths,
     noCity,
     noDate,
     archiveOnly,
@@ -950,15 +1438,74 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     blueOnly,
     baizeOnly,
     benlaiOnly,
+    payoutOnly,
+    payoutBoth,
+    abnormalRidersOnly,
+    generatedCount: selectedGeneratorIds.length,
+    rawCount: rawSelectedDatasets.length,
     merchantOnly,
     merchantSnapshotOnly,
     merchantDateValid,
     validDates,
     includeSeparation,
-    ...(taskKind === 'download' ? {excludeSeparation} : {}),
+    excludeSeparation,
     subitemCount,
     submitReady,
   });
+
+  /**
+   * 预计任务量展示文案（US-1.2）：跨平台提交以批数计；其余走 `railSummary` 派生值；
+   * 无有效选择时显示「—」（不显示 0）。
+   */
+  const estimateText = (() => {
+    if (activePlatformCount > 1 && crossPlatformPayloads.length > 0) return `${crossPlatformPayloads.length} 批`;
+    if (!railSummary.estimateValue) return '—';
+    return `${railSummary.estimateValue} ${railSummary.estimateUnit}`.trim();
+  })();
+
+  /** 引导到 Step 02 城市区（跨平台时先切回风神平台再定位）。 */
+  const goToCitiesStep = () => {
+    if (platform && platform !== 'fengshen') {
+      onSelectPlatform?.('fengshen');
+      setTimeout(() => scrollToStep('cities'), 80);
+      return;
+    }
+    scrollToStep('cities');
+  };
+
+  /**
+   * 右栏缺项提示（架构 §4.3 改造点 10）：四个分支合并为**单一** `wbx-hint` 渲染，
+   * 文案/样式只此一套，`run` 存在时整行可点击定位。
+   */
+  const railHint: {text: string; tone: 'warn'; title?: string; run?: () => void} | null = (() => {
+    if (!submitReady && datasets.length === 0) {
+      return {
+        text: '请先在 Step 01 勾选至少 1 类资料（点击定位）',
+        tone: 'warn',
+        title: '点击平滑定位至 Step 01 资料选择',
+        run: () => scrollToStep('datasets'),
+      };
+    }
+    if (!canSubmit && !uncertainCreate && !creating && fengshenMissingCities) {
+      return {
+        text: '请为风神数据至少选择 1 个处理城市（点击定位）',
+        tone: 'warn',
+        title: '点击定位至风神数据 Step 02 城市选择',
+        run: goToCitiesStep,
+      };
+    }
+    if (!submitReady && railSummary.blockerHint) {
+      const needsPeriod = !validDates;
+      return {
+        text: railSummary.blockerHint,
+        tone: 'warn',
+        title: needsPeriod ? '点击定位至 Step 02 账期配置' : '点击定位至 Step 02 城市选择',
+        run: needsPeriod ? () => scrollToStep('period') : goToCitiesStep,
+      };
+    }
+    return null;
+  })();
+
   const elapsed = (since?: string) => { const seconds = Math.max(0, Math.floor((now - new Date(since || "").getTime()) / 1000)); return Number.isFinite(seconds) ? seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒` : ""; };
   const progress = Math.max(0, Math.min(100, Number(selectedRun?.progress) || 0));
   const summaryDetail = selectedRun?.summary_progress;
@@ -992,7 +1539,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
         </button>)}
       </nav>}
 
-      {invalidBaizeMix && <p role="alert" className="wb-notice">商翼仅支持独立下载，请清除其他资料选择。</p>}
+      {invalidBaizeMix && <p role="alert" className="wb-notice">发薪平台资料仅支持独立下载，请清除其他资料选择。</p>}
       {invalidXiaoxiangMix && <p role="alert" className="wb-notice">灯塔资料仅支持独立下载，请清除其他资料选择。</p>}
       {requestError && <div role="alert" className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700"><AlertCircle size={17} className="shrink-0 mt-0.5" />{requestError}<button type="button" aria-label="关闭错误提示" className="ml-auto shrink-0" onClick={() => setRequestError('')}><XCircle size={16} /></button></div>}
       {pollError && <p role="status" className="text-xs text-amber-700">{pollError}。连接恢复后自动更新。</p>}
@@ -1006,1015 +1553,1318 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
         return (
           <>
             {view === 'create' && <>
-              <section className={taskKind === 'generate' ? 'rb-shell' : `${panel} wb-task-form wb-download-workbench`} aria-label={taskKind === 'generate' ? '业务报表配置' : '新建下载配置'}>
-                {taskKind === 'download' && !embedded && <div className="wb-form-heading">
-                  <div className="wb-stage-heading-left">
-                    <div className="wb-stage-title-row">
-                      <h2>{stageMeta.title}</h2>
-                    </div>
-                    <p className="wb-muted">{stageMeta.subtitle}</p>
+            <section className={`${panel} wb-task-form wb-download-workbench`} aria-label="新建下载配置">
+              {!embedded && <div className="wb-form-heading">
+                <div className="wb-stage-heading-left">
+                  <div className="wb-stage-title-row">
+                    <h2>{stageMeta.title}</h2>
                   </div>
-                </div>}
+                  <p className="wb-muted">{stageMeta.subtitle}</p>
+                </div>
+              </div>}
           {optionsError && !options ? <div role="alert" className="flex flex-wrap items-center gap-3 p-5 text-sm text-rose-700"><AlertCircle size={17} />{optionsError}<button className={smallButton} onClick={() => optionsError.includes('请刷新工作台') || optionsError.includes('账号页面已更新') ? location.reload() : setOptionVersion(version => version + 1)}>重新加载</button></div>
-            : !options ? <p role="status" className="flex items-center gap-2 p-6 text-sm text-slate-500"><Loader2 size={16} />正在加载下载选项…</p>
+            : !options ? <p role="status" className="flex items-center gap-2 p-6 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" />正在加载下载选项…</p>
             : <>
               {optionsError && <p role="alert" className="wb-full-span flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800 sm:px-6"><AlertCircle size={14} />城市清单刷新失败，仍显示上次结果：{optionsError}</p>}
-              {taskKind === 'generate' && <ReportBuilder
-                reports={(options.generators || []).filter(report => options.datasets.some(dataset => dataset.id === report.id))} selectedId={datasets[0] || ''}
-                onSelect={id => { setDatasets([id]); setDuplicateApproval(''); }}
-                cities={options.cities} selectedCities={cities} onCities={setCities}
-                start={start} end={end} today={shanghaiToday()} onStart={setStart} onEnd={setEnd}
-                includeSeparation={includeSeparation} onSeparation={setIncludeSeparation}
-                locked={formLocked} creating={creating} disabled={creating || (!uncertainCreate && !canSubmit)}
-                submitLabel={uncertainCreate ? '确认原请求' : matchingRun && !TERMINAL_STATUSES.has(matchingRun.status) ? '查看进行中任务' : completedMatch && duplicateApproval !== currentSelectionKey ? '查看已有结果' : '生成报表'}
-                onSubmit={() => void startDownload(currentSelectionKey)}
-                uncertain={uncertainCreate} duplicate={!!completedMatch} recollect={duplicateApproval === currentSelectionKey}
-                onRecollect={value => setDuplicateApproval(value ? currentSelectionKey : '')}
-                refreshing={optionsLoading} onRefreshCities={() => setOptionVersion(value => value + 1)}
-              />}
-              {taskKind === 'download' && <>
-              <div className="wb-download-main">
-                {!platform && <div className="wb-system-overview-bar mb-4" role="group" aria-label="四大系统数据源切换">
-                  <div className="wb-row">
-                    <button
-                      type="button"
-                      aria-pressed={systemFilter === 'all'}
-                      onClick={() => setSystemFilter('all')}
-                      className={`wb-system-filter-btn ${systemFilter === 'all' ? 'is-active' : ''}`}
-                    >
-                      全部系统
-                    </button>
-                    {SYSTEM_META.map(sys => {
-                      const isSelectableGroup = sys.key === 'fengshen' || sys.key === 'lanorange' || sys.key === 'baize' || sys.key === 'benlai' || sys.key === 'xiaoxiang';
-                      const count = isSelectableGroup
-                        ? datasets.filter(id => datasetGroup(id) === sys.key).length
-                        : 0;
-                      if (isSelectableGroup) {
-                        return (
-                          <button
-                            key={sys.key}
-                            type="button"
-                            aria-pressed={systemFilter === sys.key}
-                            title={`${sys.label}（${sys.businessLine}）：${sys.description}`}
-                            onClick={() => setSystemFilter(prev => prev === sys.key ? 'all' : sys.key as 'fengshen' | 'lanorange' | 'baize' | 'benlai' | 'xiaoxiang')}
-                            className={`wb-system-filter-btn ${systemFilter === sys.key ? 'is-active' : ''}`}
-                          >
-                            <span>{sys.label}</span>
-                            {count > 0 && <small className="wb-system-count">{count}</small>}
-                          </button>
-                        );
-                      }
+              {/* @wbx:collection-main-start */}
+              <div className="wb-download-main wbx-collection">
+                {platform ? (
+                  <div className="wb-platform-switcher-bar wbx-platformbar" role="tablist" aria-label="四大采集平台切换">
+                    {DOWNLOAD_PLATFORMS.map(p => {
+                      const isPlatActive = activePlatform === p.id;
+                      const platSelectedCount = groupedByPlatform[p.id].length;
+                      const PlatIcon =
+                        p.id === 'fengshen'
+                          ? Compass
+                          : p.id === 'lanorange'
+                            ? Layers
+                            : p.id === 'payout'
+                              ? UsersRound
+                              : Radar;
                       return (
-                        <span
-                          key={sys.key}
-                          title={`${sys.label}（${sys.businessLine}）：${sys.description}`}
-                          className={`wb-system-filter-tag ${sys.planned ? 'is-planned' : ''}`}
+                        <button
+                          key={p.id}
+                          type="button"
+                          role="tab"
+                          aria-selected={isPlatActive}
+                          disabled={formLocked}
+                          onClick={() => onSelectPlatform?.(p.id)}
+                          className={`wb-platform-switch-card is-${p.id} ${isPlatActive ? 'is-active' : ''} ${platSelectedCount > 0 ? 'has-selection' : ''}`}
                         >
-                          <span>{sys.label}</span>
-                          <small>手动上传</small>
-                        </span>
+                          <div className="wb-platform-switch-top">
+                            <span className="wb-platform-switch-icon" aria-hidden="true">
+                              <PlatIcon size={15} />
+                            </span>
+                            <span className="wb-platform-switch-name">{p.navLabel}</span>
+                            {platSelectedCount > 0 && (
+                              <span className="wb-platform-switch-count tabular-nums">
+                                已选 {platSelectedCount}
+                              </span>
+                            )}
+                          </div>
+                          <span className="wb-platform-switch-sub">{p.badgeLabel}</span>
+                        </button>
                       );
                     })}
                   </div>
-                </div>}
-
-                <fieldset id="step-01-cities" aria-labelledby="download-cities-label" className={`wb-step-card transition-all duration-300 ${pulsingStep === 'cities' ? 'wb-field-pulse-highlight' : ''}`}>
-                  <div className="wb-step-card-header">
-                    <div className="wb-step-badge">
-                      <span className="wb-step-number">01</span>
-                      <span id="download-cities-label" className="wb-step-title">处理城市</span>
-                      {baizeOnly || benlaiOnly ? (
-                        <span className="wb-step-count-pill">全站全量 · 免选城市</span>
-                      ) : blueOnly ? (
-                        <span className="wb-step-count-pill tabular-nums">
-                          {datasets.includes('abnormal_riders')
-                            ? '全部城市（异常骑手固定全量）'
-                            : blueCities.length > 0
-                              ? `已选 ${blueCities.length} / ${LANORANGE_CITIES.length}`
-                              : `默认全部城市（已选 0 / ${LANORANGE_CITIES.length}）`}
-                        </span>
-                      ) : (
-                        <>
-                          <span className="wb-step-count-pill tabular-nums">
-                            {xiaoxiangOnly && cities.length === 0
-                              ? `默认全部城市（已选 0 / ${selectableCities.length}）`
-                              : `已选 ${cities.length} / ${selectableCities.length}`}
+                ) : (
+                  <div className="wb-system-overview-bar mb-4" role="group" aria-label="四大系统数据源切换">
+                    <div className="wb-row">
+                      <button
+                        type="button"
+                        aria-pressed={systemFilter === 'all'}
+                        onClick={() => setSystemFilter('all')}
+                        className={`wb-system-filter-btn ${systemFilter === 'all' ? 'is-active' : ''}`}
+                      >
+                        全部系统
+                      </button>
+                      {SYSTEM_META.map(sys => {
+                        const isSelectableGroup = sys.key === 'fengshen' || sys.key === 'lanorange' || sys.key === 'baize' || sys.key === 'benlai' || sys.key === 'xiaoxiang';
+                        const count = isSelectableGroup
+                          ? datasets.filter(id => datasetGroup(id) === sys.key).length
+                          : 0;
+                        if (isSelectableGroup) {
+                          return (
+                            <button
+                              key={sys.key}
+                              type="button"
+                              aria-pressed={systemFilter === sys.key}
+                              title={`${sys.label}（${sys.businessLine}）：${sys.description}`}
+                              onClick={() => setSystemFilter(prev => prev === sys.key ? 'all' : sys.key as 'fengshen' | 'lanorange' | 'baize' | 'benlai' | 'xiaoxiang')}
+                              className={`wb-system-filter-btn ${systemFilter === sys.key ? 'is-active' : ''}`}
+                            >
+                              <span>{sys.label}</span>
+                              {count > 0 && <small className="wb-system-count">{count}</small>}
+                            </button>
+                          );
+                        }
+                        return (
+                          <span
+                            key={sys.key}
+                            title={`${sys.label}（${sys.businessLine}）：${sys.description}`}
+                            className={`wb-system-filter-tag ${sys.planned ? 'is-planned' : ''}`}
+                          >
+                            <span>{sys.label}</span>
+                            <small>手动上传</small>
                           </span>
-                          {optionsLoading && <span className="text-xs text-sky-600 flex items-center gap-1"><Loader2 size={12} className="animate-spin" />同步中</span>}
-                        </>
-                      )}
-                    </div>
-
-                    <div className="wb-inline-city-toolbar flex-wrap">
-                      {baizeOnly || benlaiOnly ? null : blueOnly ? (
-                        <>
-                          <button
-                            type="button"
-                            className="wb-city-preset-btn"
-                            disabled={formLocked || datasets.includes('abnormal_riders')}
-                            onClick={() => setBlueCities(blueCities.length === LANORANGE_CITIES.length ? [] : [...LANORANGE_CITIES])}
-                          >
-                            {blueCities.length === LANORANGE_CITIES.length ? '清空城市' : '全选城市'}
-                          </button>
-                          {regionPresets.map(preset => {
-                            const matched = LANORANGE_CITIES.filter(city => preset.cities.includes(city));
-                            if (!matched.length) return null;
-                            const isActive = matched.length > 0 && matched.every(c => blueCities.includes(c));
-                            return (
-                              <div key={preset.id} className="wb-preset-pill-item">
-                                <button
-                                  type="button"
-                                  className={`wb-city-preset-btn ${isActive ? 'is-active' : ''}`}
-                                  disabled={formLocked || datasets.includes('abnormal_riders')}
-                                  title={`快捷勾选：${matched.join('、')}`}
-                                  onClick={() => {
-                                    if (isActive) {
-                                      setBlueCities(blueCities.filter(c => !matched.includes(c)));
-                                    } else {
-                                      setBlueCities([...new Set([...blueCities, ...matched])]);
-                                    }
-                                  }}
-                                >
-                                  {preset.label}
-                                </button>
-                                <div className="wb-preset-actions">
-                                  <button
-                                    type="button"
-                                    className="wb-preset-edit-btn"
-                                    title={`修改预设「${preset.label}」`}
-                                    onClick={e => {
-                                      e.stopPropagation();
-                                      setPresetModal({
-                                        mode: 'edit',
-                                        type: 'region',
-                                        id: preset.id,
-                                        label: preset.label,
-                                        cities: [...preset.cities],
-                                        syncWithCurrentSelection: false,
-                                      });
-                                    }}
-                                  >
-                                    <Pencil size={11} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="wb-preset-remove-btn"
-                                    title={`删除预设「${preset.label}」`}
-                                    onClick={e => {
-                                      e.stopPropagation();
-                                      saveRegionPresetsToStorage(regionPresets.filter(r => r.id !== preset.id));
-                                    }}
-                                  >
-                                    <X size={11} />
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                          <button
-                            type="button"
-                            className="wb-city-preset-btn wb-preset-add-trigger"
-                            disabled={formLocked || !blueCities.length}
-                            title={blueCities.length ? `将当前已勾选的 ${blueCities.length} 个城市保存为新片区预设` : '请先勾选城市再保存为新预设'}
-                            onClick={() => {
-                              setPresetModal({
-                                mode: 'create',
-                                type: 'region',
-                                label: '',
-                                cities: [...blueCities],
-                              });
-                            }}
-                          >
-                            <Plus size={13} />
-                            <span>存为预设</span>
-                          </button>
-                          {blueCities.length > 0 && blueCities.length < LANORANGE_CITIES.length && (
-                            <button
-                              type="button"
-                              className="wb-city-preset-btn"
-                              disabled={formLocked}
-                              onClick={() => setBlueCities([])}
-                            >
-                              清空城市
-                            </button>
-                          )}
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            className="wb-city-preset-btn"
-                            disabled={formLocked || !selectableCities.length}
-                            onClick={() => setCities(cities.length === selectableCities.length ? [] : selectableCities.map(c => c.name))}
-                          >
-                            {cities.length === selectableCities.length && cities.length ? '清空城市' : '全选城市'}
-                          </button>
-                          {regionPresets.length === 0 ? (
-                            <span className="wb-preset-empty-hint">
-                              暂无自定义片区，勾选城市后点击「+ 存为预设」
-                            </span>
-                          ) : (
-                            regionPresets.map(preset => {
-                              const matched = selectableCities.filter(c =>
-                                preset.cities.some(pc => c.name.includes(pc) || pc.includes(c.name.replace(/市$/, ''))),
-                              );
-                              if (!matched.length) return null;
-                              const matchedNames = matched.map(c => c.name);
-                              const isActive = matchedNames.length > 0 && matchedNames.every(name => cities.includes(name));
-                              return (
-                                <div key={preset.id} className="wb-preset-pill-item">
-                                  <button
-                                    type="button"
-                                    className={`wb-city-preset-btn ${isActive ? 'is-active' : ''}`}
-                                    disabled={formLocked}
-                                    title={`快捷勾选：${matchedNames.join('、')}`}
-                                    onClick={() => {
-                                      if (isActive) {
-                                        setCities(cities.filter(name => !matchedNames.includes(name)));
-                                      } else {
-                                        setCities([...new Set([...cities, ...matchedNames])]);
-                                      }
-                                    }}
-                                  >
-                                    {preset.label}
-                                  </button>
-                                  <div className="wb-preset-actions">
-                                    <button
-                                      type="button"
-                                      className="wb-preset-edit-btn"
-                                      title={`修改预设「${preset.label}」`}
-                                      onClick={e => {
-                                        e.stopPropagation();
-                                        setPresetModal({
-                                          mode: 'edit',
-                                          type: 'region',
-                                          id: preset.id,
-                                          label: preset.label,
-                                          cities: [...preset.cities],
-                                          syncWithCurrentSelection: false,
-                                        });
-                                      }}
-                                    >
-                                      <Pencil size={11} />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      className="wb-preset-remove-btn"
-                                      title={`删除预设「${preset.label}」`}
-                                      onClick={e => {
-                                        e.stopPropagation();
-                                        saveRegionPresetsToStorage(regionPresets.filter(r => r.id !== preset.id));
-                                      }}
-                                    >
-                                      <X size={11} />
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })
-                          )}
-                          <button
-                            type="button"
-                            className="wb-city-preset-btn wb-preset-add-trigger"
-                            disabled={formLocked || !cities.length}
-                            title={cities.length ? `将当前已勾选的 ${cities.length} 个城市保存为新片区预设` : '请先勾选城市再保存为新预设'}
-                            onClick={() => {
-                              setPresetModal({
-                                mode: 'create',
-                                type: 'region',
-                                label: '',
-                                cities: [...cities],
-                              });
-                            }}
-                          >
-                            <Plus size={13} />
-                            <span>存为预设</span>
-                          </button>
-                          {cities.length > 0 && cities.length < selectableCities.length && (
-                            <button
-                              type="button"
-                              className="wb-city-preset-btn"
-                              disabled={formLocked}
-                              onClick={() => setCities([])}
-                            >
-                              清空城市
-                            </button>
-                          )}
-                          {(!platform || platform === 'fengshen' || platform === 'xiaoxiang') && (
-                            <button
-                              type="button"
-                              className="wb-city-preset-btn"
-                              disabled={formLocked || stationDirectory.data?.status === 'loading'}
-                              onClick={stationDirectory.refresh}
-                              title="从平台重新读取城市下属站点目录"
-                            >
-                              {stationDirectory.data?.status === 'loading' ? '站点同步中…' : '刷新站点数'}
-                            </button>
-                          )}
-                          {(!platform || platform === 'fengshen') && (
-                            <button
-                              type="button"
-                              className="wb-city-preset-btn"
-                              disabled={formLocked || !selectableCities.length}
-                              title="全选城市、仅勾选骑手信息、日期设为今天，一次导出全部城市当前骑手信息快照（不会复用历史数据）。"
-                              onClick={() => {
-                                setCities(selectableCities.map(c => c.name));
-                                setDatasets(['rider_info']);
-                                setStart(shanghaiToday());
-                                setEnd(shanghaiToday());
-                                if (!platform) setSystemFilter('fengshen');
-                              }}
-                            >
-                              一键全城市快照
-                            </button>
-                          )}
-                        </>
-                      )}
+                        );
+                      })}
                     </div>
                   </div>
+                )}
 
-                  {baizeOnly || benlaiOnly ? (
-                    <div className="wb-baize-inline-banner" role="group" aria-label="处理城市列表">
-                      <div className="wb-baize-banner-pill">
-                        <span className="wb-city-check-box shrink-0" aria-hidden="true">✓</span>
-                        <span className="wb-baize-banner-title">{benlaiOnly ? '全部授权城市' : '全部授权站点'}</span>
-                      </div>
-                      <span className="wb-baize-banner-desc">
-                        {benlaiOnly
-                          ? '自动覆盖当前本来人力账号权限下全部灵工档案与实时签约城市；同一任务内一次导出，无需分城市筛选。'
-                          : '自动覆盖当前商翼账号权限下全部合作城市与站点，单次任务全站合并导出，无需分城市逐个筛选。'}
-                      </span>
-                    </div>
-                  ) : blueOnly ? (
-                    <>
-                      <div className="wb-inline-city-grid" role="group" aria-label="处理城市列表">
-                        {LANORANGE_CITIES.map(city => {
-                          const selected = !datasets.includes('abnormal_riders') && blueCities.includes(city);
-                          const chipDisabled = formLocked || datasets.includes('abnormal_riders');
-                          return (
-                            <button
-                              key={city}
-                              type="button"
-                              disabled={chipDisabled}
-                              aria-pressed={selected}
-                              onClick={() => toggle(city, blueCities, setBlueCities)}
-                              className={`wb-inline-city-chip ${selected ? 'is-selected' : ''} ${chipDisabled ? 'is-disabled' : ''}`}
-                            >
-                              <span className="wb-city-check-box" aria-hidden="true">
-                                {selected && '✓'}
-                              </span>
-                              <span className="wb-city-chip-name">{city}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {datasets.includes('abnormal_riders') && (
-                        <div className="wb-city-count-note">
-                          <small>当前已勾选异常骑手，固定按全部授权城市全量导出</small>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <div className="wb-inline-city-grid" role="group" aria-label="处理城市列表">
-                        {displayedCities.map(city => {
-                          const selected = !city.disabled && cities.includes(city.name);
-                          return (
-                            <button
-                              key={city.id}
-                              type="button"
-                              disabled={formLocked || city.disabled}
-                              title={city.disabled ? city.note : undefined}
-                              aria-pressed={selected}
-                              onClick={() => toggle(city.name, cities, setCities)}
-                              className={`wb-inline-city-chip ${selected ? 'is-selected' : ''} ${city.disabled ? 'is-disabled' : ''}`}
-                            >
-                              <span className="wb-city-check-box" aria-hidden="true">
-                                {selected && '✓'}
-                              </span>
-                              <span className="wb-city-chip-name">{city.name}</span>
-                              <span className="wb-city-status"><CityStationCount directory={stationDirectory.data} city={platform === 'xiaoxiang' ? city.name : city.id}/>
-                              {city.disabled && (
-                                <span className="wb-city-disabled-badge">{city.note || '下架'}</span>
-                              )}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {!selectableCities.length && (
-                        <p className="wb-notice mt-3">暂无可下载城市，请检查{platform === 'xiaoxiang' ? '灯塔' : '风神'}权限或网络连接。</p>
-                      )}
-                      {(stationDirectory.error || stationDirectory.data?.message) && (
-                        <div className="wb-city-count-note">
-                          <small className="wb-error">{stationDirectory.error || stationDirectory.data?.message}</small>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </fieldset>
-
-                <fieldset aria-labelledby="download-dates-label" className="wb-step-card">
-                  <legend className="sr-only">下载日期</legend>
-                  {(() => {
-                    const matchedPresetMonth = validDates
-                      ? priceMonthOptions.find(month => {
-                          const monthRange = computeMonthSelectionRange(month, shanghaiToday(), { capAtYesterday: xiaoxiangOnly });
-                          const expectedStart = hasAttendance && monthRange.start < attendanceFirst ? attendanceFirst : monthRange.start;
-                          const expectedEnd = hasAttendance && monthRange.end > attendanceLast ? attendanceLast : monthRange.end;
-                          return expectedStart <= expectedEnd && start === expectedStart && end === expectedEnd;
-                        }) || null
-                      : null;
-                    const isCustomDateRange = validDates && !matchedPresetMonth;
-                    return (
-                      <div className="wb-step-card-header">
-                        <div className="wb-step-badge">
-                          <span className="wb-step-number">02</span>
-                          <p id="download-dates-label" className="wb-step-title m-0">
-                            处理月份
-                          </p>
-                          {baizeOnly || benlaiOnly ? (
-                            <span className="wb-step-count-pill">全量实时快照 · 免选账期</span>
-                          ) : blueOnly && validDates ? (
-                            <span className="wb-step-count-pill tabular-nums">
-                              {start.slice(0, 7) === end.slice(0, 7)
-                                ? `${start.slice(0, 7)}（${start} ~ ${end.slice(5)}）`
-                                : `${start} ~ ${end}`}
-                            </span>
-                          ) : validDates ? (
-                            <span className="wb-step-count-pill tabular-nums">
-                              {matchedPresetMonth ? `已选 ${matchedPresetMonth}` : '自定义区间'}
-                            </span>
-                          ) : null}
-                        </div>
-                        {!baizeOnly && !benlaiOnly && !blueOnly && (
-                          <div className="wb-city-preset-group">
-                            <WorkbenchDatePicker
-                              mode="range"
-                              compact
-                              align="right"
-                              prefixLabel="按日期范围"
-                              activeHighlight={isCustomDateRange}
-                              ariaLabel="按日期范围筛选"
-                              placeholder="选择起止日期"
-                              value={start}
-                              rangeStart={start}
-                              rangeEnd={end}
-                              min={hasAttendance ? attendanceFirst : xiaoxiangOnly ? xiaoxiangFirst : undefined}
-                              max={hasAttendance ? attendanceLast : xiaoxiangOnly ? dailyDate : shanghaiToday()}
-                              today={shanghaiToday()}
-                              disabled={formLocked}
-                              onChange={nextDate => {
-                                setStart(nextDate);
-                                setEnd(nextDate);
-                                setLanorangeMonths(coveredMonths(nextDate, nextDate));
-                                setDuplicateApproval('');
-                              }}
-                              onRangeChange={(nextStart, nextEnd) => {
-                                setStart(nextStart);
-                                setEnd(nextEnd);
-                                setLanorangeMonths(coveredMonths(nextStart, nextEnd));
-                                setDuplicateApproval('');
-                              }}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-                  {baizeOnly || benlaiOnly ? (
-                    <div className="wb-baize-inline-banner" role="group" aria-label="处理月份列表">
-                      <div className="wb-baize-banner-pill">
-                        <span className="wb-city-check-box shrink-0" aria-hidden="true">✓</span>
-                        <span className="wb-baize-banner-title">不限账期（实时快照）</span>
-                      </div>
-                      <span className="wb-baize-banner-desc">
-                        {benlaiOnly
-                          ? '按导出时刻直接拉取本来人力最新全量灵工档案与签约状态，不受自然月份或日期区间限制。'
-                          : '按导出时刻直接拉取商翼系统最新全量在职与离职员工档案，不受自然月份或日期区间限制。'}
-                      </span>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="wb-inline-city-grid" role="group" aria-label="处理月份列表">
-                        {priceMonthOptions.map(month => {
-                          const monthRange = computeMonthSelectionRange(month, shanghaiToday(), { capAtYesterday: xiaoxiangOnly });
-                          const invalidSpan = monthRange.start > monthRange.end;
-                          const monthDisabled = formLocked || invalidSpan || (hasAttendance && (monthRange.end < attendanceFirst || monthRange.start > attendanceLast));
-                          const expectedStart = hasAttendance && monthRange.start < attendanceFirst ? attendanceFirst : monthRange.start;
-                          const expectedEnd = hasAttendance && monthRange.end > attendanceLast ? attendanceLast : monthRange.end;
-                          const selected = validDates && start === expectedStart && end === expectedEnd;
-                          return (
-                            <button
-                              key={month}
-                              type="button"
-                              disabled={monthDisabled}
-                              aria-pressed={selected}
-                              title={invalidSpan && xiaoxiangOnly ? '灯塔资料只能选择昨天及更早的日期' : monthDisabled && hasAttendance ? '骑手出勤明细仅支持近90天且早于今天的日期' : `${monthRange.start} 至 ${monthRange.end}`}
-                              onClick={() => applyMonthSelection(month)}
-                              className={`wb-inline-city-chip tabular-nums ${selected ? 'is-selected' : ''} ${monthDisabled ? 'is-disabled' : ''}`}
-                            >
-                              <span className="wb-city-check-box" aria-hidden="true">
-                                {selected && '✓'}
-                              </span>
-                              <span className="wb-city-chip-name">{month}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {blueOnly && (
-                        <p className="mt-2.5 text-xs leading-relaxed text-slate-500">
-                          已选月份：{coveredMonths(start, end).join('、') || start.slice(0, 7)}；勾选「兼职价格档案」时按所选月份导出，其余人事表导出全量最新档案。
-                        </p>
-                      )}
-
-                      {!validDates && <p role="alert" className="mt-2.5 text-xs text-rose-700">开始日期不能晚于结束日期，请选择有效日期。</p>}
-                      {xiaoxiangOnly && validDates && !xiaoxiangDateValid && <p role="alert" className="mt-2.5 text-xs text-rose-700">灯塔资料只能选择昨天及更早的日期，且区间最长31天。</p>}
-                      {monthPreview.length > 0 && <p className="mt-2.5 text-xs leading-relaxed text-sky-700">整月资料自动下载：{monthPreview.join('、')}。</p>}
-                      {!merchantOnly && !xiaoxiangOnly && !blueOnly && (
-                        <div className="wb-date-rule-bar">
-                          <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-700">
-                            <input
-                              type="checkbox"
-                              aria-label="排除取分离站点"
-                              checked={excludeSeparation}
-                              disabled={formLocked}
-                              onChange={event => setExcludeSeparation(event.target.checked)}
-                              className="accent-sky-700 h-3.5 w-3.5 rounded border-slate-300"
-                            />
-                            <span>排除取分离站点 <span className="font-normal text-slate-400">（不勾选则下载全部站点）</span></span>
-                          </label>
-                          {datasets.some(dataset => ['fraud', 'problem'].includes(dataset)) && (
-                            <label className="flex items-center gap-1.5 cursor-pointer text-slate-500">
-                              <input
-                                type="checkbox"
-                                checked={refreshHistory}
-                                disabled={formLocked}
-                                onChange={event => setRefreshHistory(event.target.checked)}
-                                className="accent-sky-700 h-3.5 w-3.5 rounded border-slate-300"
-                              />
-                              <span>强制刷新24小时内历史运单</span>
-                            </label>
-                          )}
-                          {datasets.includes('delivery_waybill') && (
-                            <label className="flex items-center gap-1.5 cursor-pointer text-slate-500">
-                              <input
-                                type="checkbox"
-                                aria-label="运单全城送筛选"
-                                checked={waybillAllCitySend}
-                                disabled={formLocked}
-                                onChange={event => setWaybillAllCitySend(event.target.checked)}
-                                className="accent-sky-700 h-3.5 w-3.5 rounded border-slate-300"
-                              />
-                              <span>全城送 <span className="font-normal text-slate-400">（仅导出配送标品为全城送的运单）</span></span>
-                            </label>
-                          )}
-                          {datasets.includes('delivery_waybill') && <span className="font-normal text-slate-400">运单数据按运单终态时间筛选（当日仅含已完成运单）</span>}
-                        </div>
-                      )}
-                      {orderWindowWarning && <p role="alert" className="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">欺诈单和问题单仅支持最近 {orderWindowDays} 天（{earliestOrder} 至 {shanghaiToday()}），请调整日期或取消这两类资料。</p>}
-                    </>
-                  )}
-                </fieldset>
-
-                <fieldset id="step-03-datasets" aria-labelledby="download-datasets-label" className={`wb-step-card transition-all duration-300 ${pulsingStep === 'datasets' ? 'wb-field-pulse-highlight' : ''}`}>
-                  {!platform && (
+                {/* STEP 01: 选择资料 */}
+                {platform === 'payout' ? (
+                  <fieldset id="step-01-datasets" aria-labelledby="download-datasets-label" className={`wbx-card wbx-step transition-all duration-300 ${pulsingStep === 'datasets' ? 'wb-field-pulse-highlight' : ''}`}>
                     <div className="wb-step-card-header">
                       <div className="wb-step-badge">
-                        <span className="wb-step-number">03</span>
+                        <span className="wb-step-number">01</span>
+                        {!platform && <span className="wb-sys-badge is-baize">发薪</span>}
                         <span id="download-datasets-label" className="wb-step-title">选择资料</span>
-                        <span className="wb-step-count-pill">已选 {datasets.length}</span>
+                        <span className="wb-step-count-pill tabular-nums">已选 {groupedByPlatform.payout.length} / 2 平台</span>
+                      </div>
+                      <div className="wb-city-preset-group" role="group" aria-label="发薪平台快捷选择">
+                        <button
+                          type="button"
+                          disabled={formLocked}
+                          onClick={() => setDatasets(prev => [...prev.filter(id => !isPayoutPlatform(id)), 'baize_employees', 'benlai_employees'])}
+                          className={`wb-city-preset-btn ${payoutBoth ? 'is-active' : ''}`}
+                        >
+                          双平台全选
+                        </button>
+                        <button
+                          type="button"
+                          disabled={formLocked}
+                          onClick={() => setDatasets(prev => [...prev.filter(id => !isPayoutPlatform(id)), 'baize_employees'])}
+                          className={`wb-city-preset-btn ${baizeOnly ? 'is-active' : ''}`}
+                        >
+                          仅白泽商翼
+                        </button>
+                        <button
+                          type="button"
+                          disabled={formLocked}
+                          onClick={() => setDatasets(prev => [...prev.filter(id => !isPayoutPlatform(id)), 'benlai_employees'])}
+                          className={`wb-city-preset-btn ${benlaiOnly ? 'is-active' : ''}`}
+                        >
+                          仅本来人力
+                        </button>
                       </div>
                     </div>
-                  )}
 
-                  {/* 常用业务场景包（由用户纯自定义，支持新增、修改与删除） */}
-                  {(!platform || platform === 'fengshen') && (
-                    <div className="wb-scenario-pills" role="toolbar" aria-label="常用业务场景推荐包">
-                      <span className="wb-scenario-label">常用场景包：</span>
-                      {scenarioPresets.length === 0 ? (
-                        <span className="wb-preset-empty-hint">
-                          暂无自定义场景包，勾选下方资料后点击「+ 存为场景包」
-                        </span>
-                      ) : (
-                        scenarioPresets.map(bundle => {
-                          const allSelected = bundle.datasets.length > 0 && bundle.datasets.every(id => datasets.includes(id));
-                          return (
-                            <div key={bundle.id} className="wb-preset-pill-item">
-                              <button
-                                type="button"
-                                className={`wb-scenario-btn ${allSelected ? 'is-active' : ''}`}
-                                disabled={formLocked}
-                                title={bundle.title || bundle.label}
-                                onClick={() => {
-                                  if (allSelected) {
-                                    setDatasets(datasets.filter(id => !bundle.datasets.includes(id)));
-                                  } else {
-                                    setDatasets([...new Set([...datasets.filter(id => !isBaize(id) && !isXiaoxiang(id)), ...bundle.datasets])]);
-                                  }
-                                }}
-                              >
-                                <span>{bundle.label}</span>
-                              </button>
-                              <div className="wb-preset-actions">
+                    <div className="wb-payout-cards-grid" role="group" aria-label="发薪数据源卡片">
+                      {([
+                        {
+                          datasetId: 'baize_employees',
+                          authKey: 'baize',
+                          title: '白泽商翼 · 员工原表',
+                          systemName: '商翼系统',
+                          scopeText: '全部授权站点（在职 + 离职全量）',
+                          fieldsText: '工号、姓名、身份证号、所属站点、入离职日期与状态',
+                          usageText: '独立归档员工原始总表，不参与兼职核算自动补齐',
+                          Icon: UsersRound,
+                        },
+                        {
+                          datasetId: 'benlai_employees',
+                          authKey: 'benlai',
+                          title: '本来人力 · 灵工档案',
+                          systemName: '本来人力商户端',
+                          scopeText: '全部授权城市与签约商户（实时读取）',
+                          fieldsText: '姓名、证件号、手机号、签约城市与当前在签状态',
+                          usageText: '用于核验发薪平台绑定关系及实时签约城市归属',
+                          Icon: Building2,
+                        },
+                      ] as const).map(source => {
+                        const selected = datasets.includes(source.datasetId);
+                        const authRaw = payoutAuthStatuses[source.authKey] || {};
+                        const authBadge = getPlatformCardBadge(authRaw);
+                        const SourceIcon = source.Icon;
+                        return (
+                          <div
+                            key={source.datasetId}
+                            role="checkbox"
+                            aria-checked={selected}
+                            tabIndex={formLocked ? -1 : 0}
+                            onClick={() => {
+                              if (!formLocked) {
+                                setDatasets(values => toggleCrossPlatformDataset(values, source.datasetId));
+                              }
+                            }}
+                            onKeyDown={event => {
+                              if (!formLocked && (event.key === ' ' || event.key === 'Enter')) {
+                                event.preventDefault();
+                                setDatasets(values => toggleCrossPlatformDataset(values, source.datasetId));
+                              }
+                            }}
+                            className={`wb-payout-source-card ${selected ? 'is-selected' : ''} ${formLocked ? 'is-disabled' : ''}`}
+                          >
+                            <div className="wb-payout-card-head">
+                              <div className="wb-payout-card-title-wrap">
+                                <span className={`wb-payout-check ${selected ? 'is-checked' : ''}`} aria-hidden="true">
+                                  {selected ? '✓' : ''}
+                                </span>
+                                <span className="wb-payout-card-icon" aria-hidden="true">
+                                  <SourceIcon size={16} />
+                                </span>
+                                <div className="min-w-0">
+                                  <h3 className="wb-payout-card-title">{source.title}</h3>
+                                  <span className="wb-payout-card-sub">{source.systemName}</span>
+                                </div>
+                              </div>
+                              <div className="wb-payout-card-auth">
+                                <span className={`wb-status-badge is-${authBadge.tone}`}>
+                                  <span className={`wb-dot ${authBadge.tone === 'ready' ? 'ready' : authBadge.tone === 'warn' ? 'offline' : authBadge.tone === 'busy' ? 'busy' : ''}`} />
+                                  <span>{authBadge.label}</span>
+                                </span>
                                 <button
                                   type="button"
-                                  className="wb-preset-edit-btn"
-                                  title={`修改场景包「${bundle.label}」`}
-                                  onClick={e => {
-                                    e.stopPropagation();
-                                    setPresetModal({
-                                      mode: 'edit',
-                                      type: 'scenario',
-                                      id: bundle.id,
-                                      label: bundle.label,
-                                      datasets: [...bundle.datasets],
-                                      syncWithCurrentSelection: false,
-                                    });
+                                  className="wb-payout-auth-btn"
+                                  onClick={event => {
+                                    event.stopPropagation();
+                                    window.dispatchEvent(new CustomEvent('workbench:connections'));
                                   }}
                                 >
-                                  <Pencil size={11} />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="wb-preset-remove-btn"
-                                  title={`删除场景包「${bundle.label}」`}
-                                  onClick={e => {
-                                    e.stopPropagation();
-                                    saveScenarioPresetsToStorage(scenarioPresets.filter(s => s.id !== bundle.id));
-                                  }}
-                                >
-                                  <X size={11} />
+                                  管理登录
                                 </button>
                               </div>
                             </div>
-                          );
-                        })
-                      )}
-                      <button
-                        type="button"
-                        className="wb-scenario-btn wb-preset-add-trigger"
-                        disabled={formLocked || !datasets.length}
-                        title={datasets.length ? `将当前已勾选的 ${datasets.length} 类资料保存为常用场景包` : '请先勾选资料再保存为新场景包'}
-                        onClick={() => {
-                          setPresetModal({
-                            mode: 'create',
-                            type: 'scenario',
-                            label: '',
-                            datasets: [...datasets],
-                          });
-                        }}
-                      >
-                        <Plus size={12} />
-                        <span>存为场景包</span>
-                      </button>
-                    </div>
-                  )}
 
-                  {/* 分类快捷过滤标签与视图切换 */}
-                  <div className="wb-dataset-category-bar">
-                    <div className="wb-dataset-tabs" role="tablist" aria-label="资料分类过滤">
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={datasetCategory === 'all'}
-                        className={`wb-dataset-tab-btn ${datasetCategory === 'all' ? 'is-active' : ''}`}
-                        onClick={() => setDatasetCategory('all')}
-                      >
-                        全部资料
-                      </button>
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={datasetCategory === 'payroll'}
-                        className={`wb-dataset-tab-btn ${datasetCategory === 'payroll' ? 'is-active' : ''}`}
-                        onClick={() => setDatasetCategory('payroll')}
-                      >
-                        发薪核心
-                      </button>
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={datasetCategory === 'risk'}
-                        className={`wb-dataset-tab-btn ${datasetCategory === 'risk' ? 'is-active' : ''}`}
-                        onClick={() => setDatasetCategory('risk')}
-                      >
-                        风控对账
-                      </button>
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={datasetCategory === 'personnel'}
-                        className={`wb-dataset-tab-btn ${datasetCategory === 'personnel' ? 'is-active' : ''}`}
-                        onClick={() => setDatasetCategory('personnel')}
-                      >
-                        基础人事
-                      </button>
-                    </div>
-                    <div className="wb-dataset-view-toggle">
-                      <button
-                        type="button"
-                        className={`wb-dataset-view-btn ${datasetViewMode === 'standard' ? 'is-active' : ''}`}
-                        title="标准详细卡片视图"
-                        onClick={() => handleToggleViewMode('standard')}
-                      >
-                        <LayoutGrid size={12} />
-                        <span>标准</span>
-                      </button>
-                      <button
-                        type="button"
-                        className={`wb-dataset-view-btn ${datasetViewMode === 'compact' ? 'is-active' : ''}`}
-                        title="高密度紧凑磁贴视图，大幅压减视高"
-                        onClick={() => handleToggleViewMode('compact')}
-                      >
-                        <List size={12} />
-                        <span>紧凑</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {(['fengshen', 'lanorange', 'baize', 'benlai', 'xiaoxiang'] as const).filter(group => platform?group===platform:systemFilter === 'all' || systemFilter === group).map(group => {
-                    const groupDatasets = visibleDatasets.filter(value => !isGenerator(value.id) && datasetGroup(value.id) === group);
-                    const filteredDatasets = groupDatasets.filter(value => matchDatasetCategory(value.id, datasetCategory));
-                    if (datasetCategory !== 'all' && filteredDatasets.length === 0) return null;
-                    const ids = filteredDatasets.map(value => value.id);
-                    const allSelected = ids.length > 0 && ids.every(id => datasets.includes(id));
-                    const selectedCount = datasets.filter(id => datasetGroup(id) === group && matchDatasetCategory(id, datasetCategory)).length;
-                    return (
-                      <div key={group} className="wb-source-group">
-                        <div className={platform ? 'wb-step-card-header' : 'wb-source-header'}>
-                          <div className={platform ? 'wb-step-badge' : 'wb-source-title'}>
-                            {platform && <span className="wb-step-number">03</span>}
-                            <span className={`wb-sys-badge is-${group}`}>{group === 'baize' ? '商翼' : group === 'benlai' ? '本来人力' : group === 'xiaoxiang' ? '灯塔' : group === 'lanorange' ? '蓝橙' : '风神'}</span>
-                            <span id={platform ? 'download-datasets-label' : undefined} className={platform ? 'wb-step-title' : ''}>
-                              {group === 'baize' ? '选择资料 · 商翼员工资料' : group === 'benlai' ? '选择资料 · 本来人力灵工资料' : group === 'xiaoxiang' ? '选择资料 · 灯塔资料' : group === 'lanorange' ? '选择资料 · 蓝橙资料' : '选择资料 · 风神资料'}
-                            </span>
-                            <span className="wb-step-count-pill tabular-nums">已选 {selectedCount} / {filteredDatasets.length}</span>
+                            <dl className="wb-payout-spec-list">
+                              <div className="wb-payout-spec-row">
+                                <dt>采集范围</dt>
+                                <dd>{source.scopeText}</dd>
+                              </div>
+                              <div className="wb-payout-spec-row">
+                                <dt>导出字段</dt>
+                                <dd>{source.fieldsText}</dd>
+                              </div>
+                              <div className="wb-payout-spec-row">
+                                <dt>核算用途</dt>
+                                <dd>{source.usageText}</dd>
+                              </div>
+                            </dl>
                           </div>
-                          {group !== 'baize' && group !== 'benlai' && (
-                            <button
-                              type="button"
-                              disabled={formLocked}
-                              className="wb-city-preset-btn"
-                              onClick={() => {
-                                setDatasets(allSelected ? datasets.filter(id => !ids.includes(id)) : group === 'xiaoxiang' ? ids : [...new Set([...datasets.filter(id => !isBaize(id) && !isXiaoxiang(id)), ...ids])]);
-                                if(!allSelected&&ids.includes('attendance_detail')){if(end>attendanceLast)setEnd(attendanceLast);if(start>attendanceLast)setStart(attendanceLast);if(start<attendanceFirst)setStart(attendanceFirst);}
-                              }}
-                            >
-                              {group === 'fengshen' ? (allSelected ? '清空所显资料' : '全选所显资料') : (allSelected ? '清空本组' : '全选本组')}
-                            </button>
-                          )}
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+                ) : (
+                  <fieldset id="step-01-datasets" aria-labelledby="download-datasets-label" className={`wbx-card wbx-step transition-all duration-300 ${pulsingStep === 'datasets' ? 'wb-field-pulse-highlight' : ''}`}>
+                    {!platform && (
+                      <div className="wb-step-card-header">
+                        <div className="wb-step-badge">
+                          <span className="wb-step-number">01</span>
+                          <span id="download-datasets-label" className="wb-step-title">选择资料</span>
+                          <span className="wb-step-count-pill">已选 {datasets.length}</span>
                         </div>
-                        <div className={datasetViewMode === 'compact' ? 'wb-dataset-grid-compact' : (group === 'baize' || group === 'benlai' ? 'wb-baize-single-grid gap-2.5' : 'grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3')}>
-                          {filteredDatasets.map(dataset => {
-                            const selected = datasets.includes(dataset.id);
-                            const cardMeta = getDatasetCardMeta(dataset.id, dataset.label);
-                            const showExceptionTag = !['城市·账期', '全城·全量', '全城·日期', '全站·全量'].includes(cardMeta.scopeTag);
-                            const handleToggle = () => {
-                              setDatasets(values => toggleDownloadDataset(values, dataset.id));
-                              if (dataset.id === 'attendance_detail') {
-                                if (end > attendanceLast) setEnd(attendanceLast);
-                                if (start > attendanceLast) setStart(attendanceLast);
-                                if (start < attendanceFirst) setStart(attendanceFirst);
-                              }
-                            };
+                      </div>
+                    )}
 
-                            if (datasetViewMode === 'compact') {
+                    {(['fengshen', 'lanorange', 'baize', 'benlai', 'xiaoxiang'] as const).filter(group => platform ? group === platform : systemFilter === 'all' || systemFilter === group).map(group => {
+                      const filteredDatasets = visibleDatasets.filter(value =>
+                        group === 'fengshen'
+                          ? moduleAcceptsDataset(value.id, 'fengshen')
+                          : !isGenerator(value.id) && datasetGroup(value.id) === group,
+                      );
+                      const displayedDatasets = group === 'fengshen'
+                        ? (onlySelectedShown
+                          ? filterFengshenDatasetsByCategory(filteredDatasets, fengshenCategory).filter(item => datasets.includes(item.id))
+                          : filterFengshenDatasetsByCategory(filteredDatasets, fengshenCategory))
+                        : filteredDatasets;
+                      const ids = displayedDatasets.map(value => value.id);
+                      const allSelected = ids.length > 0 && ids.every(id => datasets.includes(id));
+                      const selectedCount = datasets.filter(id =>
+                        group === 'fengshen' ? moduleAcceptsDataset(id, 'fengshen') : datasetGroup(id) === group,
+                      ).length;
+                      return (
+                        <div key={group} className="wb-source-group">
+                          <div className={platform ? 'wb-step-card-header' : 'wb-source-header'}>
+                            <div className={platform ? 'wb-step-badge' : 'wb-source-title'}>
+                              {platform && <span className="wb-step-number">01</span>}
+                              {!platform && (
+                                <span className={`wb-sys-badge is-${group}`}>{group === 'baize' ? '商翼' : group === 'benlai' ? '本来人力' : group === 'xiaoxiang' ? '灯塔' : group === 'lanorange' ? '蓝橙' : '风神'}</span>
+                              )}
+                              <span id={platform ? 'download-datasets-label' : undefined} className={platform ? 'wb-step-title' : ''}>
+                                {platform
+                                  ? '选择资料'
+                                  : group === 'baize'
+                                    ? '选择资料 · 商翼员工资料'
+                                    : group === 'benlai'
+                                      ? '选择资料 · 本来人力灵工资料'
+                                      : group === 'xiaoxiang'
+                                        ? '选择资料 · 灯塔资料'
+                                        : group === 'lanorange'
+                                          ? '选择资料 · 蓝橙资料'
+                                          : '选择资料 · 风神资料'}
+                              </span>
+                              <span className="wb-step-count-pill tabular-nums">已选 {selectedCount} / {filteredDatasets.length}</span>
+                            </div>
+                            {group !== 'baize' && group !== 'benlai' && (
+                              <button
+                                type="button"
+                                disabled={formLocked || !ids.length}
+                                className="wb-city-preset-btn"
+                                onClick={() => {
+                                  setDatasets(
+                                    allSelected
+                                      ? datasets.filter(id => !ids.includes(id))
+                                      : platform
+                                        ? [...new Set([...datasets, ...ids])]
+                                        : group === 'xiaoxiang'
+                                          ? ids
+                                          : [...new Set([...datasets.filter(id => !isPayoutPlatform(id) && !isXiaoxiang(id)), ...ids])],
+                                  );
+                                  if (!allSelected && ids.includes('attendance_detail')) {
+                                    if (end > attendanceLast) setEnd(attendanceLast);
+                                    if (start > attendanceLast) setStart(attendanceLast);
+                                    if (start < attendanceFirst) setStart(attendanceFirst);
+                                  }
+                                }}
+                              >
+                                {group === 'fengshen' ? (allSelected ? '清空所显资料' : '全选所显资料') : (allSelected ? '清空本组' : '全选本组')}
+                              </button>
+                            )}
+                          </div>
+                          {group === 'fengshen' && (
+                            <div className="wbx-datasetbar" role="tablist" aria-label="风神资料分类筛选">
+                              <div className="wb-dataset-cat-tabs">
+                                {FENGSHEN_DATASET_CATEGORIES.map(cat => {
+                                  const catCount = countFengshenDatasetsByCategory(filteredDatasets, cat.id);
+                                  const selectedInCat = filterFengshenDatasetsByCategory(filteredDatasets, cat.id).filter(item => datasets.includes(item.id)).length;
+                                  const active = fengshenCategory === cat.id;
+                                  return (
+                                    <button
+                                      key={cat.id}
+                                      type="button"
+                                      role="tab"
+                                      aria-selected={active}
+                                      disabled={formLocked}
+                                      onClick={() => setFengshenCategory(cat.id)}
+                                      className={`wb-dataset-cat-btn ${active ? 'is-active' : ''}`}
+                                    >
+                                      <span>{cat.label}</span>
+                                      <span className="wb-dataset-cat-count tabular-nums">{catCount}</span>
+
+                                    </button>
+                                  );
+                                })}
+                                {datasets.length > 0 && (
+                                  <button
+                                    type="button"
+                                    aria-pressed={onlySelectedShown}
+                                    disabled={formLocked}
+                                    title={onlySelectedShown ? '点击恢复显示全部分类' : '点击只显示已勾选的资料'}
+                                    onClick={() => setOnlySelectedShown(value => !value)}
+                                    className={`wb-dataset-cat-btn wbx-dataset-only-selected ${onlySelectedShown ? 'is-active' : ''}`}
+                                  >
+                                    <span>只看已选</span>
+                                    <span className="wb-dataset-cat-count tabular-nums">{datasets.length}</span>
+                                  </button>
+                                )}
+                              </div>
+                              {(!platform || platform === 'fengshen') && (
+                                <div className="wb-category-scenario-actions" role="toolbar" aria-label="常用业务场景推荐包">
+                                  {scenarioPresets.map(bundle => {
+                                    const allBundleSelected = bundle.datasets.length > 0 && bundle.datasets.every(id => datasets.includes(id));
+                                    return (
+                                      <div key={bundle.id} className="wb-preset-pill-item">
+                                        <button
+                                          type="button"
+                                          className={`wb-scenario-btn ${allBundleSelected ? 'is-active' : ''}`}
+                                          disabled={formLocked}
+                                          title={bundle.title || bundle.label}
+                                          onClick={() => {
+                                            if (allBundleSelected) {
+                                              setDatasets(datasets.filter(id => !bundle.datasets.includes(id)));
+                                            } else {
+                                              setDatasets(
+                                                platform
+                                                  ? [...new Set([...datasets, ...bundle.datasets])]
+                                                  : [...new Set([...datasets.filter(id => !isPayoutPlatform(id) && !isXiaoxiang(id)), ...bundle.datasets])],
+                                              );
+                                            }
+                                          }}
+                                        >
+                                          <span>{bundle.label}</span>
+                                        </button>
+                                        <div className="wb-preset-actions">
+                                          <button
+                                            type="button"
+                                            className="wb-preset-edit-btn"
+                                            title={`修改场景包「${bundle.label}」`}
+                                            onClick={e => {
+                                              e.stopPropagation();
+                                              setPresetModal({
+                                                mode: 'edit',
+                                                type: 'scenario',
+                                                id: bundle.id,
+                                                label: bundle.label,
+                                                datasets: [...bundle.datasets],
+                                                syncWithCurrentSelection: false,
+                                              });
+                                            }}
+                                          >
+                                            <Pencil size={11} />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="wb-preset-remove-btn"
+                                            title={`删除场景包「${bundle.label}」`}
+                                            onClick={e => {
+                                              e.stopPropagation();
+                                              saveScenarioPresetsToStorage(scenarioPresets.filter(s => s.id !== bundle.id));
+                                            }}
+                                          >
+                                            <X size={11} />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                  <button
+                                    type="button"
+                                    className="wb-scenario-btn wbx-preset-trigger"
+                                    disabled={formLocked || !activeDatasets.length}
+                                    title={activeDatasets.length ? `将当前已勾选的 ${activeDatasets.length} 类资料保存为常用场景包` : '请先勾选资料再保存为新场景包'}
+                                    onClick={() => {
+                                      setPresetModal({
+                                        mode: 'create',
+                                        type: 'scenario',
+                                        label: '',
+                                        datasets: [...activeDatasets],
+                                      });
+                                    }}
+                                  >
+                                    <Plus size={12} />
+                                    <span>存为场景包</span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          <div className={group === 'baize' || group === 'benlai' ? 'wb-baize-single-grid gap-2.5' : 'wbx-dataset-grid grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3'}>
+                            {displayedDatasets.length === 0 && onlySelectedShown && <p className="wbx-hint">没有已勾选的资料；关闭「只看已选」可恢复全览。</p>}
+
+                            {displayedDatasets.map(dataset => {
+                              const selected = datasets.includes(dataset.id);
+                              const cardMeta = getDatasetCardMeta(dataset.id, dataset.label);
+                              const showExceptionTag = Boolean(cardMeta.scopeTag);
+                              const handleToggle = () => {
+                                setDatasets(values =>
+                                  platform ? toggleCrossPlatformDataset(values, dataset.id) : toggleDownloadDataset(values, dataset.id),
+                                );
+                                if (dataset.id === 'attendance_detail') {
+                                  if (end > attendanceLast) setEnd(attendanceLast);
+                                  if (start > attendanceLast) setStart(attendanceLast);
+                                  if (start < attendanceFirst) setStart(attendanceFirst);
+                                }
+                              };
+
                               return (
-                                <label
-                                  key={dataset.id}
-                                  className={`wb-dataset-compact-card ${selected ? 'is-selected' : ''} ${formLocked ? 'is-disabled' : ''}`}
-                                  title={group === 'baize' ? '含员工工号、姓名、身份证号、所属站点、入离职日期及当前在职状态' : group === 'benlai' ? '含姓名、证件号、手机号、城市与签约状态；签约城市实时读取，用于支付绑定判定' : cardMeta.desc}
-                                >
+                                <label key={dataset.id} className={`${choiceStyle(selected)} wb-dataset-card ${selected ? 'is-selected' : ''} !items-start`}>
                                   <input
                                     type="checkbox"
                                     checked={selected}
                                     disabled={formLocked}
                                     onChange={handleToggle}
-                                    className="accent-sky-700 shrink-0 h-4 w-4 rounded border-slate-300"
+                                    className="accent-sky-700 shrink-0 mt-0.5 h-4 w-4 rounded border-slate-300 wb-dataset-checkbox"
                                   />
-                                  <span className="wb-dataset-compact-label">
-                                    {cardMeta.title}
-                                  </span>
-                                  {showExceptionTag && (
-                                    <span className="wb-dataset-compact-tag">{cardMeta.scopeTag}</span>
-                                  )}
+                                  <div className="wb-dataset-body flex-1 min-w-0">
+                                    <div className="wb-dataset-top-row flex items-center justify-between gap-2 !flex-nowrap">
+                                      <span className="wb-dataset-title truncate">{cardMeta.title}</span>
+                                      {showExceptionTag && (
+                                        <span className={`wb-dataset-tag is-${cardMeta.tone} shrink-0 whitespace-nowrap`}>{cardMeta.scopeTag}</span>
+                                      )}
+                                    </div>
+                                    <span className="wb-dataset-desc">
+                                      {group === 'baize'
+                                        ? '含员工工号、姓名、身份证号、所属站点、入离职日期及当前在职状态，导出全站原始档案并独立归档'
+                                        : group === 'benlai'
+                                          ? '含姓名、证件号、手机号、城市与签约状态；导出全站原始档案，签约城市在每次任务开始时实时读取'
+                                          : cardMeta.desc}
+                                    </span>
+                                  </div>
                                 </label>
                               );
-                            }
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </fieldset>
+                )}
 
-                            return (
-                              <label key={dataset.id} className={`${choiceStyle(selected)} wb-dataset-card ${selected ? 'is-selected' : ''} !items-start`}>
-                                <input
-                                  type="checkbox"
-                                  checked={selected}
+                {/* STEP 02: 动态范围与账期配置 */}
+                {!dynamicScopeReq.needsCity && !dynamicScopeReq.needsDate ? (
+                  <section className="wbx-card wbx-step" aria-label="动态范围与账期配置">
+                    <div className="wb-step-card-header">
+                      <div className="wb-step-badge">
+                        <span className="wb-step-number">02</span>
+                        <span className="wb-step-title">范围与账期配置</span>
+                        {dynamicScopeReq.autoScopeBadge && (
+                          <span className="wb-step-count-pill">{dynamicScopeReq.autoScopeBadge}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="wb-baize-inline-banner" role="status">
+                      <div className="wb-baize-banner-pill">
+                        <span className="wb-city-check-box shrink-0" aria-hidden="true">
+                          {dynamicScopeReq.hasSelection ? '✓' : 'i'}
+                        </span>
+                        <span className="wb-baize-banner-title">
+                          {dynamicScopeReq.autoScopeBadge || '智能范围适配'}
+                        </span>
+                      </div>
+                      <span className="wb-baize-banner-desc">
+                        {dynamicScopeReq.autoScopeDesc}
+                      </span>
+                    </div>
+                  </section>
+                ) : (
+                  <>
+                    {/* @wbx:steps2-start 02 组：城市 + 账期同排（≥1280 两列） */}
+                    <div className={`wbx-steps2${dynamicScopeReq.needsCity && dynamicScopeReq.needsDate ? ' is-pair' : ''}`}>
+                    {dynamicScopeReq.needsCity && (
+                      <fieldset id="step-01-cities" aria-labelledby="download-cities-label" className={`wbx-card wbx-step transition-all duration-300 ${pulsingStep === 'cities' ? 'wb-field-pulse-highlight' : ''}`}>
+                        <div className="wb-step-card-header">
+                          <div className="wb-step-badge">
+                            <span className="wb-step-number">02</span>
+                            <span id="download-cities-label" className="wb-step-title">处理城市与站点</span>
+                            {blueOnly ? (
+                              <span className="wb-step-count-pill tabular-nums">
+                                {blueCities.length > 0
+                                  ? `已选 ${blueCities.length} / ${LANORANGE_CITIES.length}`
+                                  : `默认全部城市（已选 0 / ${LANORANGE_CITIES.length}）`}
+                              </span>
+                            ) : (
+                              <>
+                                <span className="wb-step-count-pill tabular-nums">
+                                  {xiaoxiangOnly && cities.length === 0
+                                    ? `默认账号全量（已选 0 / ${selectableCities.length}）`
+                                    : `已选 ${cities.length} / ${selectableCities.length}`}
+                                </span>
+                                {optionsLoading && <span className="text-xs text-sky-600 flex items-center gap-1"><Loader2 size={12} className="animate-spin" />同步中</span>}
+                              </>
+                            )}
+                          </div>
+
+                          <div className="wb-inline-city-toolbar flex-wrap">
+                            {blueOnly ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="wb-city-preset-btn"
                                   disabled={formLocked}
-                                  onChange={handleToggle}
-                                  className="accent-sky-700 shrink-0 mt-0.5 h-4 w-4 rounded border-slate-300 wb-dataset-checkbox"
-                                />
-                                <div className="wb-dataset-body flex-1 min-w-0">
-                                  <div className="wb-dataset-top-row flex items-center justify-between gap-2 !flex-nowrap">
-                                    <span className="wb-dataset-title truncate">{cardMeta.title}</span>
-                                    {showExceptionTag && (
-                                      <span className={`wb-dataset-tag is-${cardMeta.tone} shrink-0 whitespace-nowrap`}>{cardMeta.scopeTag}</span>
-                                    )}
-                                  </div>
-                                  <span className="wb-dataset-desc">
-                                    {group === 'baize'
-                                      ? '含员工工号、姓名、身份证号、所属站点、入离职日期及当前在职状态，导出全站原始档案并独立归档'
-                                      : group === 'benlai'
-                                        ? '含姓名、证件号、手机号、城市与签约状态；导出全站原始档案，签约城市在每次任务开始时实时读取'
-                                        : cardMeta.desc}
+                                  onClick={() => setBlueCities(blueCities.length === LANORANGE_CITIES.length ? [] : [...LANORANGE_CITIES])}
+                                >
+                                  {blueCities.length === LANORANGE_CITIES.length ? '清空城市' : '全选城市'}
+                                </button>
+                                    <span className="wbx-toolbar-sep" aria-hidden="true" />
+                                {regionPresets.map(preset => {
+                                  const matched = LANORANGE_CITIES.filter(city => preset.cities.includes(city));
+                                  if (!matched.length) return null;
+                                  const isActive = matched.length > 0 && matched.every(c => blueCities.includes(c));
+                                  return (
+                                    <div key={preset.id} className="wb-preset-pill-item">
+                                      <button
+                                        type="button"
+                                        className={`wb-city-preset-btn ${isActive ? 'is-active' : ''}`}
+                                        disabled={formLocked}
+                                        title={`快捷勾选：${matched.join('、')}`}
+                                        onClick={() => {
+                                          if (isActive) {
+                                            setBlueCities(blueCities.filter(c => !matched.includes(c)));
+                                          } else {
+                                            setBlueCities([...new Set([...blueCities, ...matched])]);
+                                          }
+                                        }}
+                                      >
+                                        {preset.label}
+                                      </button>
+                                      <div className="wb-preset-actions">
+                                        <button
+                                          type="button"
+                                          className="wb-preset-edit-btn"
+                                          title={`修改预设「${preset.label}」`}
+                                          onClick={e => {
+                                            e.stopPropagation();
+                                            setPresetModal({
+                                              mode: 'edit',
+                                              type: 'region',
+                                              id: preset.id,
+                                              label: preset.label,
+                                              cities: [...preset.cities],
+                                              syncWithCurrentSelection: false,
+                                            });
+                                          }}
+                                        >
+                                          <Pencil size={11} />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="wb-preset-remove-btn"
+                                          title={`删除预设「${preset.label}」`}
+                                          onClick={e => {
+                                            e.stopPropagation();
+                                            saveRegionPresetsToStorage(regionPresets.filter(r => r.id !== preset.id));
+                                          }}
+                                        >
+                                          <X size={11} />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                                <button
+                                  type="button"
+                                  className="wb-city-preset-btn wbx-preset-trigger"
+                                  disabled={formLocked || !blueCities.length}
+                                  title={blueCities.length ? `将当前已勾选的 ${blueCities.length} 个城市保存为新片区预设` : '请先勾选城市再保存为新预设'}
+                                  onClick={() => {
+                                    setPresetModal({
+                                      mode: 'create',
+                                      type: 'region',
+                                      label: '',
+                                      cities: [...blueCities],
+                                    });
+                                  }}
+                                >
+                                  <Plus size={13} />
+                                  <span>存为预设</span>
+                                </button>
+                                {blueCities.length > 0 && blueCities.length < LANORANGE_CITIES.length && (
+                                  <button
+                                    type="button"
+                                    className="wb-city-preset-btn"
+                                    disabled={formLocked}
+                                    onClick={() => setBlueCities([])}
+                                  >
+                                    清空城市
+                                  </button>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  className="wb-city-preset-btn"
+                                  disabled={formLocked || !selectableCities.length}
+                                  onClick={() => setCities(cities.length === selectableCities.length ? [] : selectableCities.map(c => c.name))}
+                                >
+                                  {cities.length === selectableCities.length && cities.length ? '清空城市' : '全选城市'}
+                                </button>
+                                    <span className="wbx-toolbar-sep" aria-hidden="true" />
+                                {regionPresets.length === 0 ? (
+                                  <span className="wb-preset-empty-hint">
+                                    暂无自定义片区，勾选城市后点击「+ 存为预设」
                                   </span>
-                                </div>
-                              </label>
+                                ) : (
+                                  regionPresets.map(preset => {
+                                    const matched = selectableCities.filter(c =>
+                                      preset.cities.some(pc => c.name.includes(pc) || pc.includes(c.name.replace(/市$/, ''))),
+                                    );
+                                    if (!matched.length) return null;
+                                    const matchedNames = matched.map(c => c.name);
+                                    const isActive = matchedNames.length > 0 && matchedNames.every(name => cities.includes(name));
+                                    return (
+                                      <div key={preset.id} className="wb-preset-pill-item">
+                                        <button
+                                          type="button"
+                                          className={`wb-city-preset-btn ${isActive ? 'is-active' : ''}`}
+                                          disabled={formLocked}
+                                          title={`快捷勾选：${matchedNames.join('、')}`}
+                                          onClick={() => {
+                                            if (isActive) {
+                                              setCities(cities.filter(name => !matchedNames.includes(name)));
+                                            } else {
+                                              setCities([...new Set([...cities, ...matchedNames])]);
+                                            }
+                                          }}
+                                        >
+                                          {preset.label}
+                                        </button>
+                                        <div className="wb-preset-actions">
+                                          <button
+                                            type="button"
+                                            className="wb-preset-edit-btn"
+                                            title={`修改预设「${preset.label}」`}
+                                            onClick={e => {
+                                              e.stopPropagation();
+                                              setPresetModal({
+                                                mode: 'edit',
+                                                type: 'region',
+                                                id: preset.id,
+                                                label: preset.label,
+                                                cities: [...preset.cities],
+                                                syncWithCurrentSelection: false,
+                                              });
+                                            }}
+                                          >
+                                            <Pencil size={11} />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="wb-preset-remove-btn"
+                                            title={`删除预设「${preset.label}」`}
+                                            onClick={e => {
+                                              e.stopPropagation();
+                                              saveRegionPresetsToStorage(regionPresets.filter(r => r.id !== preset.id));
+                                            }}
+                                          >
+                                            <X size={11} />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })
+                                )}
+                                <button
+                                  type="button"
+                                  className="wb-city-preset-btn wbx-preset-trigger"
+                                  disabled={formLocked || !cities.length}
+                                  title={cities.length ? `将当前已勾选的 ${cities.length} 个城市保存为新片区预设` : '请先勾选城市再保存为新预设'}
+                                  onClick={() => {
+                                    setPresetModal({
+                                      mode: 'create',
+                                      type: 'region',
+                                      label: '',
+                                      cities: [...cities],
+                                    });
+                                  }}
+                                >
+                                  <Plus size={13} />
+                                  <span>存为预设</span>
+                                </button>
+                                {cities.length > 0 && cities.length < selectableCities.length && (
+                                  <button
+                                    type="button"
+                                    className="wb-city-preset-btn"
+                                    disabled={formLocked}
+                                    onClick={() => setCities([])}
+                                  >
+                                    清空城市
+                                  </button>
+                                )}
+                                    <span className="wbx-toolbar-sep" aria-hidden="true" />
+                                {(!platform || platform === 'fengshen' || platform === 'xiaoxiang') && (
+                                  <button
+                                    type="button"
+                                    className="wb-city-preset-btn"
+                                    disabled={formLocked || stationDirectory.data?.status === 'loading'}
+                                    onClick={stationDirectory.refresh}
+                                    title="从平台重新读取城市下属站点目录"
+                                  >
+                                    {stationDirectory.data?.status === 'loading' ? '站点同步中…' : '刷新站点数'}
+                                  </button>
+                                )}
+                                {(!platform || platform === 'fengshen') && (
+                                  <button
+                                    type="button"
+                                    className="wbx-btn wbx-btn--primary wbx-snapshot-btn"
+                                    disabled={formLocked || !selectableCities.length}
+                                    title="全选城市、仅勾选骑手信息、日期设为今天，一次导出全部城市当前骑手信息快照（不会复用历史数据）。"
+                                    onClick={() => {
+                                      setCities(selectableCities.map(c => c.name));
+                                      setDatasets(prev => [...prev.filter(id => !moduleAcceptsDataset(id, 'fengshen')), 'rider_info']);
+                                      setSelectedMonths([]);
+                                      setStart(shanghaiToday());
+                                      setEnd(shanghaiToday());
+                                      if (!platform) setSystemFilter('fengshen');
+                                    }}
+                                  >
+                                    一键全城市快照
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        {blueOnly ? (
+                          <div className="wb-inline-city-grid" role="group" aria-label="处理城市列表">
+                            {LANORANGE_CITIES.map(city => {
+                              const selected = blueCities.includes(city);
+                              return (
+                                <button
+                                  key={city}
+                                  type="button"
+                                  disabled={formLocked}
+                                  aria-pressed={selected}
+                                  onClick={() => toggle(city, blueCities, setBlueCities)}
+                                  className={`wb-inline-city-chip ${selected ? 'is-selected' : ''} ${formLocked ? 'is-disabled' : ''}`}
+                                >
+                                  <span className="wb-city-check-box" aria-hidden="true">
+                                    {selected && '✓'}
+                                  </span>
+                                  <span className="wb-city-chip-name">{city}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <>
+                            <div className="wb-inline-city-grid" role="group" aria-label="处理城市列表">
+                              {displayedCities.map(city => {
+                                const selected = !city.disabled && cities.includes(city.name);
+                                return (
+                                  <button
+                                    key={city.id}
+                                    type="button"
+                                    disabled={formLocked || city.disabled}
+                                    title={city.disabled ? city.note : undefined}
+                                    aria-pressed={selected}
+                                    onClick={() => toggle(city.name, cities, setCities)}
+                                    className={`wb-inline-city-chip ${selected ? 'is-selected' : ''} ${city.disabled ? 'is-disabled' : ''}`}
+                                  >
+                                    <span className="wb-city-check-box" aria-hidden="true">
+                                      {selected && '✓'}
+                                    </span>
+                                    <span className="wb-city-chip-name">{city.name}</span>
+                                    <span className="wb-city-status">
+                                      {city.disabled ? (
+                                        <span className="wb-city-disabled-badge">{city.note || '下架'}</span>
+                                      ) : (
+                                        <CityStationCount directory={stationDirectory.data} city={platform === 'xiaoxiang' ? city.name : city.id} />
+                                      )}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {xiaoxiangOnly && (
+                              <div className="wb-city-count-note">
+                                <small>灯塔资料按当前登录账号及已授权站点全量导出；城市选择仅用于核对真实城市与站点范围，不改变导出范围。</small>
+                              </div>
+                            )}
+                            {hasAbnormalRiders && !abnormalRidersOnly && (
+                              <div className="wb-city-count-note">
+                                <small>同时包含「异常骑手整理」，提交时该报表将自动按全部授权城市全量生成。</small>
+                              </div>
+                            )}
+                            {!selectableCities.length && (
+                              <p className="wb-notice mt-3">暂无可下载城市，请检查{platform === 'xiaoxiang' ? '灯塔' : '风神'}权限或网络连接。</p>
+                            )}
+                            {(stationDirectory.error || stationDirectory.data?.message) && (
+                              <div className="wb-city-count-note">
+                                <small className="wb-error">{stationDirectory.error || stationDirectory.data?.message}</small>
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        {dynamicScopeReq.needsSeparationRule && (
+                          <div className="wb-station-scope-bar" role="group" aria-label="站点范围规则">
+                            <span className="wb-station-scope-label">站点范围：</span>
+                            <div className="wb-station-radio-group">
+                              <button
+                                type="button"
+                                disabled={formLocked}
+                                aria-pressed={excludeSeparation}
+                                onClick={() => setExcludeSeparation(true)}
+                                className={`wb-station-radio-btn ${excludeSeparation ? 'is-active' : ''}`}
+                              >
+                                <span className="wb-radio-dot" aria-hidden="true" />
+                                <span>排除取分离站点</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={formLocked}
+                                aria-pressed={!excludeSeparation}
+                                onClick={() => setExcludeSeparation(false)}
+                                className={`wb-station-radio-btn ${!excludeSeparation ? 'is-active' : ''}`}
+                              >
+                                <span className="wb-radio-dot" aria-hidden="true" />
+                                <span>全部站点（含取分离）</span>
+                              </button>
+                            </div>
+                            <label className="sr-only">
+                              <input
+                                type="checkbox"
+                                aria-label="排除取分离站点"
+                                checked={excludeSeparation}
+                                disabled={formLocked}
+                                onChange={event => setExcludeSeparation(event.target.checked)}
+                              />
+                              <span>排除取分离站点</span>
+                            </label>
+                          </div>
+                        )}
+
+                        {!dynamicScopeReq.needsDate && dynamicScopeReq.autoScopeBadge && (
+                          <div className="wb-baize-inline-banner mt-3" role="status">
+                            <div className="wb-baize-banner-pill">
+                              <span className="wb-city-check-box shrink-0" aria-hidden="true">✓</span>
+                              <span className="wb-baize-banner-title">{dynamicScopeReq.autoScopeBadge}</span>
+                            </div>
+                            <span className="wb-baize-banner-desc">{dynamicScopeReq.autoScopeDesc}</span>
+                          </div>
+                        )}
+                      </fieldset>
+                    )}
+
+                    {dynamicScopeReq.needsDate && (
+                      <fieldset id="step-02-period" aria-labelledby="download-dates-label" className={`wbx-card wbx-step transition-all duration-300 ${pulsingStep === 'period' ? 'wb-field-pulse-highlight' : ''}`}>
+                        <legend className="sr-only">下载日期</legend>
+                        {(() => {
+                          const isCustomDateRange = activeSelectedMonths.length === 0 && validDates;
+                          const allMonthsSelected = enabledMonthOptions.length > 0 && enabledMonthOptions.every(m => activeSelectedMonths.includes(m));
+                          return (
+                            <div className="wb-step-card-header">
+                              <div className="wb-step-badge">
+                                <span className="wb-step-number">02</span>
+                                <p id="download-dates-label" className="wb-step-title m-0">
+                                  处理月份与账期
+                                </p>
+                                {activeSelectedMonths.length > 1 ? (
+                                  <span className="wb-step-count-pill tabular-nums">
+                                    已选 {activeSelectedMonths.length} 个月（{activeSelectedMonths.join('、')}）
+                                  </span>
+                                ) : activeSelectedMonths.length === 1 ? (
+                                  <span className="wb-step-count-pill tabular-nums">
+                                    已选 {activeSelectedMonths[0]}
+                                  </span>
+                                ) : validDates ? (
+                                  <span className="wb-step-count-pill tabular-nums">
+                                    自定义区间（{start} ~ {end.slice(5)}）
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="wb-city-preset-group">
+                                {enabledMonthOptions.length > 1 && (
+                                  <button
+                                    type="button"
+                                    className={`wb-city-preset-btn ${allMonthsSelected ? 'is-active' : ''}`}
+                                    disabled={formLocked}
+                                    onClick={() => syncMonthSelection(allMonthsSelected ? [enabledMonthOptions[0]] : [...enabledMonthOptions])}
+                                  >
+                                    {allMonthsSelected ? '仅选最新月' : `全选近${enabledMonthOptions.length}月`}
+                                  </button>
+                                )}
+                                {!blueOnly && (
+                                  <WorkbenchDatePicker
+                                    mode="range"
+                                    compact
+                                    align="right"
+                                    prefixLabel="按日期范围"
+                                    activeHighlight={isCustomDateRange}
+                                    ariaLabel="按日期范围筛选"
+                                    placeholder="选择起止日期"
+                                    value={start}
+                                    rangeStart={start}
+                                    rangeEnd={end}
+                                    min={hasAttendance ? attendanceFirst : xiaoxiangOnly ? xiaoxiangFirst : undefined}
+                                    max={hasAttendance ? attendanceLast : xiaoxiangOnly ? dailyDate : shanghaiToday()}
+                                    today={shanghaiToday()}
+                                    disabled={formLocked}
+                                    onChange={nextDate => {
+                                      setSelectedMonths([]);
+                                      setStart(nextDate);
+                                      setEnd(nextDate);
+                                      setLanorangeMonths([nextDate.slice(0, 7)]);
+                                      setDuplicateApproval('');
+                                    }}
+                                    onRangeChange={(nextStart, nextEnd) => {
+                                      setSelectedMonths([]);
+                                      setStart(nextStart);
+                                      setEnd(nextEnd);
+                                      setLanorangeMonths([nextStart.slice(0, 7)]);
+                                      setDuplicateApproval('');
+                                    }}
+                                  />
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
+                        <div className="wb-month-grid-3" role="group" aria-label="处理月份列表（支持多选）">
+                          {priceMonthOptions.map(month => {
+                            const monthRange = computeMonthSelectionRange(month, shanghaiToday(), { capAtYesterday: xiaoxiangOnly });
+                            const invalidSpan = monthRange.start > monthRange.end;
+                            const monthDisabled = formLocked || invalidSpan || (hasAttendance && (monthRange.end < attendanceFirst || monthRange.start > attendanceLast));
+                            const expectedStart = hasAttendance && monthRange.start < attendanceFirst ? attendanceFirst : monthRange.start;
+                            const expectedEnd = hasAttendance && monthRange.end > attendanceLast ? attendanceLast : monthRange.end;
+                            const selected = !monthDisabled && activeSelectedMonths.includes(month);
+                            return (
+                              <button
+                                key={month}
+                                type="button"
+                                disabled={monthDisabled}
+                                aria-pressed={selected}
+                                title={invalidSpan && xiaoxiangOnly ? '灯塔资料只能选择昨天及更早的日期' : monthDisabled && hasAttendance ? '骑手出勤明细仅支持近90天且早于今天的日期' : `${expectedStart} 至 ${expectedEnd}（支持多选）`}
+                                onClick={() => applyMonthSelection(month)}
+                                className={`wb-month-card-3 tabular-nums ${selected ? 'is-selected' : ''} ${monthDisabled ? 'is-disabled' : ''}`}
+                              >
+                                <span className="wb-month-chip-left">
+                                  <span className="wb-month-check-box" aria-hidden="true">
+                                    {selected && '✓'}
+                                  </span>
+                                  <span className="wb-month-card-title">{month}</span>
+                                </span>
+                                <span className="wb-month-chip-range">
+                                  {expectedStart.slice(5)} ~ {expectedEnd.slice(5)}
+                                </span>
+                              </button>
                             );
                           })}
                         </div>
+                        {blueOnly && (
+                          <p className="mt-2.5 text-xs leading-relaxed text-slate-500">
+                            已选月份：{resolvedLanorangeMonths.join('、')}；勾选「价格档案」时按所选月份导出，其余人事表导出全量最新档案。
+                          </p>
+                        )}
+                        {isMultiBatchMonthSubmit && (
+                          <p className="mt-2.5 text-xs leading-relaxed text-sky-700">
+                            {xiaoxiangDated
+                              ? `已多选 ${activeSelectedMonths.length} 个月（灯塔单批上限 31 天），提交后将自动拆分为 ${monthRunChunks.length} 个下载任务依次执行。`
+                              : `所选月份非连续区间，提交后将自动拆分为 ${monthRunChunks.length} 个下载任务（${monthRunChunks.map(c => c.months.join(' ~ ')).join('、')}）依次执行。`}
+                          </p>
+                        )}
+
+                        {!validDates && <p role="alert" className="mt-2.5 text-xs text-rose-700">开始日期不能晚于结束日期，请选择有效日期。</p>}
+                        {xiaoxiangOnly && activeSelectedMonths.length === 0 && validDates && !xiaoxiangDateValid && <p role="alert" className="mt-2.5 text-xs text-rose-700">灯塔资料只能选择昨天及更早的日期，且区间最长31天。</p>}
+                        {monthPreview.length > 0 && <p className="mt-2.5 text-xs leading-relaxed text-sky-700">整月资料自动下载：{monthPreview.join('、')}。</p>}
+                        {(activeDatasets.some(dataset => ['fraud', 'problem'].includes(dataset)) || activeDatasets.includes('delivery_waybill')) && (
+                          <div className="wb-date-rule-bar">
+                            {activeDatasets.some(dataset => ['fraud', 'problem'].includes(dataset)) && (
+                              <label className="flex items-center gap-1.5 cursor-pointer text-slate-500">
+                                <input
+                                  type="checkbox"
+                                  checked={refreshHistory}
+                                  disabled={formLocked}
+                                  onChange={event => setRefreshHistory(event.target.checked)}
+                                  className="accent-sky-700 h-3.5 w-3.5 rounded border-slate-300"
+                                />
+                                <span>强制刷新24小时内历史运单</span>
+                              </label>
+                            )}
+                            {activeDatasets.includes('delivery_waybill') && (
+                              <label className="flex items-center gap-1.5 cursor-pointer text-slate-500">
+                                <input
+                                  type="checkbox"
+                                  aria-label="运单全城送筛选"
+                                  checked={waybillAllCitySend}
+                                  disabled={formLocked}
+                                  onChange={event => setWaybillAllCitySend(event.target.checked)}
+                                  className="accent-sky-700 h-3.5 w-3.5 rounded border-slate-300"
+                                />
+                                <span>全城送 <span className="font-normal text-slate-400">（仅导出配送标品为全城送的运单）</span></span>
+                              </label>
+                            )}
+                            {activeDatasets.includes('delivery_waybill') && <span className="font-normal text-slate-400">运单数据按运单终态时间筛选（当日仅含已完成运单）</span>}
+                          </div>
+                        )}
+                        {orderWindowWarning && <p role="alert" className="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">欺诈单和问题单仅支持最近 {orderWindowDays} 天（{earliestOrder} 至 {shanghaiToday()}），请调整日期或取消这两类资料。</p>}
+                      </fieldset>
+                    )}
+                    </div>
+                    {/* @wbx:steps2-end */}
+                  </>
+                )}
+
+                {platform === 'payout' && (() => {
+                  const payoutRuns = runs.filter(run => run.datasets.some(isPayoutPlatform)).slice(0, 5);
+                  if (payoutRuns.length === 0) return null;
+                  return (
+                    <section className="wbx-card wbx-step wb-payout-recent-card" aria-label="发薪平台最近采集记录">
+                      <div className="wb-step-card-header">
+                        <div className="wb-step-badge">
+                          <History size={15} className="text-slate-500" />
+                          <span className="wb-step-title">最近采集记录</span>
+                          <span className="wb-step-count-pill tabular-nums">{payoutRuns.length} 条</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="wb-city-preset-btn"
+                          onClick={() => setView('history')}
+                        >
+                          <span>全部任务中心</span>
+                          <ArrowUpRight size={13} />
+                        </button>
                       </div>
-                    );
-                  })}
-                </fieldset>
+                      <div className="wb-payout-recent-list">
+                        {payoutRuns.map(run => {
+                          const runStatus = statusInfo(run.status);
+                          const readyFiles = run.files || [];
+                          const firstFile = readyFiles[0];
+                          const isActiveRun = !TERMINAL_STATUSES.has(run.status.toLowerCase());
+                          return (
+                            <div key={run.id} className="wb-payout-recent-row">
+                              <div className="wb-payout-recent-main">
+                                <span className="wb-payout-recent-name">
+                                  {run.datasets.map(datasetLabel).join('、')}
+                                </span>
+                                <span className="wb-payout-recent-meta tabular-nums">
+                                  {displayTime(run.created_at) || '刚刚'}
+                                  {readyFiles.length > 0 ? ` · ${readyFiles.length} 份文件（${formatSize(readyFiles.reduce((s, f) => s + (f.bytes || 0), 0))}）` : ''}
+                                </span>
+                              </div>
+                              <div className="wb-payout-recent-actions">
+                                <span className={`rounded-md px-2 py-0.5 text-xs font-medium ${runStatus.color}`}>
+                                  {isActiveRun ? `${runStatus.label} ${Math.round(run.progress || 0)}%` : runStatus.label}
+                                </span>
+                                {readyFiles.length === 1 && firstFile ? (
+                                  <button
+                                    type="button"
+                                    className="wb-city-preset-btn"
+                                    onClick={() => {
+                                      void downloadOutput(`${API_ROOT}/runs/${run.id}/files/${firstFile.id}`, workspaceId, firstFile.name, apiRef.current)
+                                        .catch(err => setRequestError(err instanceof Error ? err.message : '文件领取失败，请重试'));
+                                    }}
+                                  >
+                                    <Download size={12} />
+                                    <span>直接下载</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="wb-city-preset-btn"
+                                    onClick={() => selectRun(run)}
+                                  >
+                                    <span>查看详情</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  );
+                })()}
+
                 {uncertainCreate && <p className="wb-notice mt-3">原请求资料：{createAttempt.current?.payload.datasets.map(datasetLabel).join('、')}。本次继续确认原请求，分类不改变其内容。</p>}
                 {uncertainCreate && <p role="status" className="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">上次提交结果尚未确认，已锁定原选择。请点击“重新确认原请求”，继续确认同一任务。</p>}
                 {!uncertainCreate && matchingRun && <div className="mt-3 rounded-lg bg-sky-50 border border-sky-200 p-3 text-xs text-sky-800 space-y-2"><p>{completedMatch ? '相同选择已有文件，可直接查看和下载。' : '相同选择已有任务正在执行，可直接查看进度。'}</p>{completedMatch && <label className="flex items-center gap-2"><input type="checkbox" checked={duplicateApproval === currentSelectionKey} disabled={creating} onChange={event => setDuplicateApproval(event.target.checked ? currentSelectionKey : '')} />重新采集，创建新版本</label>}</div>}
               </div>
-              <aside className="wb-task-preview wb-preview-compact" aria-label="本次任务已选清单与执行">
-                <div className="wb-compact-rail-top">
-                  <div className="wb-compact-rail-header">
-                    <div className="wb-compact-rail-title">
-                      <h4>已选清单</h4>
-                      <span className="wb-compact-count-pill">
-                        {datasets.length > 0 ? `已选 ${datasets.length} 项` : '0 项'}
+              {/* @wbx:rail-start 执行规则与摘要（V2：右栏不再重复明细清单） */}
+              <aside className="wbx-rail" aria-label="执行规则与摘要与开始任务">
+                <div className="wbx-rail__card">
+                  <header className="wbx-rail__head">
+                    <div className="wbx-rail__title-wrap">
+                      <h4 className="wbx-rail__title">执行规则与摘要</h4>
+                      <span className="wbx-pill wbx-pill--neutral tabular-nums">
+                        {datasets.length > 0
+                          ? activePlatformCount > 1
+                            ? `已选 ${datasets.length} 项 · 跨 ${activePlatformCount} 平台`
+                            : `已选 ${datasets.length} 项`
+                          : '0 项'}
                       </span>
                     </div>
-                    {datasets.length > 0 && !baizeOnly && !benlaiOnly && (
+                    {datasets.length > 0 && (
                       <button
                         type="button"
-                        className="wb-compact-clear-btn"
+                        className="wbx-btn wbx-btn--ghost wbx-btn--sm"
                         disabled={formLocked}
-                        onClick={() => setDatasets([])}
+                        onClick={() => setClearConfirm(true)}
                       >
                         清空
                       </button>
                     )}
-                  </div>
+                  </header>
 
-                  <div className="wb-compact-list-wrap">
-                    {datasets.length > 0 ? (
-                      <div className="wb-compact-list-surface">
-                        <ul className="wb-compact-dataset-list is-dense">
-                          {datasets.map((id, index) => {
-                            const cardMeta = getDatasetCardMeta(id, datasetLabel(id));
-                            const showExceptionTag = !['城市·账期', '全城·全量', '全城·日期', '全站·全量'].includes(cardMeta.scopeTag);
-                            return (
-                              <li key={id} className="wb-compact-dataset-item">
-                                <span className="wb-compact-item-index" aria-hidden="true">
-                                  {String(index + 1).padStart(2, '0')}
-                                </span>
-                                <div className="wb-compact-item-body">
-                                  <div className="wb-compact-item-row">
-                                    <span className="wb-compact-item-name" title={datasetLabel(id)}>
-                                      {cardMeta.title}
-                                    </span>
-                                    {showExceptionTag && (
-                                      <span className={`wb-dataset-tag wb-compact-item-tag is-${cardMeta.tone}`}>
-                                        {cardMeta.scopeTag}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                                {!baizeOnly && !benlaiOnly && (
-                                  <button
-                                    type="button"
-                                    className="wb-compact-item-remove"
-                                    disabled={formLocked}
-                                    aria-label={`移除 ${datasetLabel(id)}`}
-                                    onClick={() => setDatasets(values => values.filter(v => v !== id))}
-                                  >
-                                    ×
-                                  </button>
-                                )}
-                              </li>
-                            );
-                          })}
-                        </ul>
-                        {railSummary.listFooterText && (
-                          <div className="wb-compact-list-footer">
-                            <span className="wb-compact-footer-text">{railSummary.listFooterText}</span>
-                            <span className={`wb-compact-ready-badge ${submitReady ? 'is-ready' : 'is-warn'}`}>
-                              {submitReady ? '配置就绪' : '待完善'}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="wb-compact-empty">
-                        <span className="wb-compact-empty-dot" />
-                        <p>尚未勾选采集资料</p>
-                        <small>请在左侧模块勾选需要下载的数据表</small>
+                  <dl className="wbx-rail__facts">
+                    {activePlatformCount > 1 && (
+                      <div className="wbx-rail__fact">
+                        <dt>合并提交</dt>
+                        <dd className="wbx-rail__fact-strong">
+                          {activePlatformList.map(p => DOWNLOAD_PLATFORMS.find(item => item.id === p)?.label).join(' + ')}（{crossPlatformPayloads.length} 批）
+                        </dd>
                       </div>
                     )}
-                  </div>
-                </div>
+                    <div className="wbx-rail__fact">
+                      <dt>处理城市</dt>
+                      <dd title={(blueOnly ? blueCities : cities).join('、')}>{railSummary.cityLabel}</dd>
+                    </div>
+                    <div className="wbx-rail__fact">
+                      <dt>业务账期</dt>
+                      <dd>
+                        <span className="wbx-rail__mono">{railSummary.periodText}</span>
+                        {railSummary.periodSpanBadge && <span className="wbx-pill wbx-pill--progress">{railSummary.periodSpanBadge}</span>}
+                      </dd>
+                    </div>
+                    <div className="wbx-rail__fact">
+                      <dt>{railSummary.thirdRowLabel}</dt>
+                      <dd>{railSummary.thirdRowValue}</dd>
+                    </div>
+                    <div className="wbx-rail__fact">
+                      <dt>预计任务量</dt>
+                      <dd className="wbx-rail__fact-strong tabular-nums">
+                        {estimateText}
+                      </dd>
+                    </div>
+                  </dl>
 
-                <div className="wb-compact-rail-bottom">
-                  <div className="wb-compact-scope-box">
-                    <div className="wb-compact-scope-header">
-                      <span>执行范围核对</span>
-                    </div>
-                    <div className="wb-compact-scope-row">
-                      <span className="wb-compact-scope-k">处理城市</span>
-                      <span className="wb-compact-scope-v" title={(blueOnly ? blueCities : cities).join('、')}>
-                        {railSummary.cityLabel}
-                      </span>
-                    </div>
-                    <div className="wb-compact-scope-row">
-                      <span className="wb-compact-scope-k">业务账期</span>
-                      <span className="wb-compact-scope-v wb-compact-scope-period">
-                        <span className="font-mono">{railSummary.periodText}</span>
-                        {railSummary.periodSpanBadge && (
-                          <span className="wb-compact-period-badge">{railSummary.periodSpanBadge}</span>
-                        )}
-                      </span>
-                    </div>
-                    <div className="wb-compact-scope-row">
-                      <span className="wb-compact-scope-k">{railSummary.thirdRowLabel}</span>
-                      <span className="wb-compact-scope-v">
-                        {railSummary.thirdRowValue}
-                      </span>
-                    </div>
-                  </div>
+                  <details className="wbx-rail__selected">
+                    <summary>查看已选资料（{datasets.length}）</summary>
+                    {datasets.length > 0 ? (
+                      <ul className="wbx-rail__list">
+                        {datasets.map((id, index) => {
+                          const cardMeta = getDatasetCardMeta(id, datasetLabel(id));
+                          const itemPlat = inferDatasetPlatform(id);
+                          return (
+                            <li key={id} className="wbx-rail__item">
+                              <span className="wbx-rail__item-index tabular-nums" aria-hidden="true">
+                                {String(index + 1).padStart(2, '0')}
+                              </span>
+                              <span className={`wb-sys-badge is-${itemPlat === 'payout' ? 'baize' : itemPlat} wbx-rail__item-badge`}>
+                                {systemShortLabel(itemPlat === 'payout' ? 'baize' : itemPlat)}
+                              </span>
+                              <span className="wbx-rail__item-name" title={datasetLabel(id)}>{cardMeta.title}</span>
+                              <button
+                                type="button"
+                                className="wbx-rail__item-remove"
+                                disabled={formLocked}
+                                aria-label={`移除 ${datasetLabel(id)}`}
+                                onClick={() => setDatasets(values => values.filter(v => v !== id))}
+                              >
+                                ×
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <p className="wbx-hint">尚未勾选采集资料，在 Step 01 勾选后这里会列出摘要。</p>
+                    )}
+                  </details>
 
-                  <div className="wb-compact-action-area">
+                  <div className="wbx-rail__actions">
                     <button
                       type="button"
                       onClick={() => void startDownload()}
                       disabled={creating || (!uncertainCreate && !canSubmit)}
-                      className="wb-compact-submit-btn"
+                      className="wbx-btn wbx-btn--primary wbx-btn--lg wbx-rail__submit"
                     >
                       {creating ? <Loader2 size={16} className="animate-spin" /> : <CloudDownload size={16} />}
                       <span>
-                        {creating ? '提交中…' : uncertainCreate ? '确认原请求' : matchingRun && !TERMINAL_STATUSES.has(matchingRun.status) ? '查看进行中任务' : completedMatch && duplicateApproval !== currentSelectionKey ? '查看已有文件' : '开始下载'}
+                        {creating
+                          ? '提交中…'
+                          : uncertainCreate
+                            ? '确认原请求'
+                            : matchingRun && !TERMINAL_STATUSES.has(matchingRun.status)
+                              ? '查看进行中任务'
+                              : completedMatch && duplicateApproval !== currentSelectionKey
+                                ? '查看已有文件'
+                                : activePlatformCount > 1
+                                  ? `一键合并提交 (${datasets.length} 项)`
+                                  : rawSelectedDatasets.length === 0 && selectedGeneratorIds.length > 0
+                                    ? '生成报表'
+                                    : '开始下载'}
                       </span>
                     </button>
-                    {!canSubmit && !uncertainCreate && !creating ? (
-                      !baizeOnly && !benlaiOnly && (blueOnly ? blueCities.length === 0 : cities.length === 0) ? (
-                        <button
-                          type="button"
-                          className="wb-execution-prompt-btn"
-                          title="点击平滑定位至 01 城市选择"
-                          onClick={() => scrollToStep('cities')}
-                        >
-                          <AlertTriangle size={13} className="shrink-0 text-amber-600" />
-                          <span>请至少选择 1 个处理城市（点击定位）</span>
-                        </button>
-                      ) : datasets.length === 0 ? (
-                        <button
-                          type="button"
-                          className="wb-execution-prompt-btn"
-                          title="点击平滑定位至 03 资料选择"
-                          onClick={() => scrollToStep('datasets')}
-                        >
-                          <AlertTriangle size={13} className="shrink-0 text-amber-600" />
-                          <span>请至少勾选 1 类资料（点击定位）</span>
-                        </button>
-                      ) : !submitReady && railSummary.blockerHint ? (
-                        <p className="wb-compact-submit-hint is-warn">
-                          {railSummary.blockerHint}
-                        </p>
-                      ) : null
-                    ) : !submitReady && datasets.length > 0 && railSummary.blockerHint ? (
-                      <p className="wb-compact-submit-hint is-warn">
-                        {railSummary.blockerHint}
+                    {railHint && (
+                      <p className={`wbx-hint ${railHint.tone === 'warn' ? 'wbx-hint--warn' : ''}`}>
+                        {railHint.run ? (
+                          <button
+                            type="button"
+                            className="wbx-hint__link"
+                            title={railHint.title}
+                            onClick={railHint.run}
+                          >
+                            <AlertTriangle size={13} className="shrink-0" />
+                            <span>{railHint.text}</span>
+                          </button>
+                        ) : (
+                          <span>{railHint.text}</span>
+                        )}
                       </p>
-                    ) : null}
+                    )}
                     {submittedTaskInfo && (
-                      <div role="status" className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/95 p-2.5 text-xs text-emerald-800">
-                        <div className="flex items-center justify-between gap-2 font-medium">
-                          <span className="flex items-center gap-1.5 text-emerald-700">
-                            <CheckCircle2 size={14} className="shrink-0 text-emerald-600" />
+                      <div role="status" className="wbx-rail__done">
+                        <div className="wbx-rail__done-head">
+                          <span>
+                            <CheckCircle2 size={14} className="shrink-0" />
                             已成功创建任务
                           </span>
                           <button
                             type="button"
-                            className="text-slate-400 hover:text-slate-600 p-0.5"
+                            className="wbx-rail__item-remove"
                             onClick={() => setSubmittedTaskInfo(null)}
                             aria-label="关闭提示"
                           >
                             <X size={13} />
                           </button>
                         </div>
-                        <p className="mt-1 text-slate-600 text-[11px] leading-relaxed">
-                          任务已在后台执行，可直接查看进度与结果。
-                        </p>
-                        <button type="button" className="wb-button mt-2" onClick={()=>{setHistoryFocusId(submittedTaskInfo.id);selectedIdRef.current=submittedTaskInfo.id;setSelectedId(submittedTaskInfo.id);setView('history');}}>查看本次任务</button>
+                        <p className="wbx-rail__done-desc">任务已在后台执行，可直接查看进度与结果。</p>
+                        <button
+                          type="button"
+                          className="wbx-btn wbx-btn--sm"
+                          onClick={() => {
+                            setHistoryFocusId(submittedTaskInfo.id);
+                            selectedIdRef.current = submittedTaskInfo.id;
+                            setSelectedId(submittedTaskInfo.id);
+                            setView('history');
+                          }}
+                        >
+                          查看本次任务
+                        </button>
                       </div>
                     )}
                   </div>
                 </div>
               </aside>
-              </>}
+              {/* @wbx:rail-end */}
+              {clearConfirm && (
+                <WorkbenchDrawer title="清空已选资料" onClose={() => setClearConfirm(false)}>
+                  <p>将清空右栏当前已选的 {datasets.length} 类资料勾选，本次配置的其它范围与账期不受影响。</p>
+                  <p className="wbx-hint">仅清空当前勾选，不会删除已采集的数据，也不影响历史任务与已生成文件。</p>
+                  <div className="wbx-dialog-actions">
+                    <button type="button" className="wbx-btn" onClick={() => setClearConfirm(false)}>
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      className="wbx-btn wbx-btn--danger"
+                      onClick={() => {
+                        setDatasets([]);
+                        setClearConfirm(false);
+                      }}
+                    >
+                      确认清空
+                    </button>
+                  </div>
+                </WorkbenchDrawer>
+              )}
             </>}
         </section>
       </>}
@@ -2056,9 +2906,9 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
 {selectedRun && <div className={`${panel} wb-task-detail min-w-0 space-y-4 p-4 sm:p-5`}>
 
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div><h3 className="flex flex-wrap items-center gap-2 text-base font-semibold text-slate-900">{selectedRun.datasets.every(isBaize) ? '商翼全量员工资料' : selectedRun.datasets.every(isBenlai) ? '本来人力全量灵工资料' : selectedRun.datasets.every(isLanorange) ? (selectedRun.lanorange_by_city ? `蓝橙 ${selectedRun.cities.join('、')}` : '蓝橙全量') : selectedRun.cities.length > 2 ? `${selectedRun.cities.length} 个城市` : selectedRun.cities.join('、')}的下载任务 <span className={`rounded-md px-2 py-1 text-xs font-normal ${statusInfo(selectedRun.status).color}`}>{runStatusLabel}</span></h3><p className="mt-2 text-xs text-slate-500">{selectedRun.datasets.every(isLanorange) ? (selectedRun.lanorange_by_city ? '所选城市、全部状态、不按日期筛选' : '全部城市、全部状态、不按日期筛选') : `${selectedRun.start} 至 ${selectedRun.end}`} · {selectedRun.datasets.length} 类资料</p></div>
+                <div><h3 className="flex flex-wrap items-center gap-2 text-base font-semibold text-slate-900">{selectedRun.datasets.every(isBaize) ? '商翼全量员工资料' : selectedRun.datasets.every(isBenlai) ? '本来人力全量灵工资料' : selectedRun.datasets.every(id => id === 'abnormal_riders') ? '异常骑手整理（全量）' : selectedRun.datasets.every(isLanorange) ? (selectedRun.lanorange_by_city ? `蓝橙 ${selectedRun.cities.join('、')}` : '蓝橙全量') : selectedRun.cities.length > 2 ? `${selectedRun.cities.length} 个城市` : selectedRun.cities.join('、')}的{selectedRun.datasets.every(isGenerator) ? '报表任务' : '下载任务'} <span className={`rounded-md px-2 py-1 text-xs font-normal ${statusInfo(selectedRun.status).color}`}>{runStatusLabel}</span></h3><p className="mt-2 text-xs text-slate-500">{selectedRun.datasets.every(id => id === 'abnormal_riders') ? '全部授权城市 · 全量最新档案整理' : selectedRun.datasets.every(isLanorange) ? (selectedRun.lanorange_by_city ? '所选城市、全部状态、不按日期筛选' : '全部城市、全部状态、不按日期筛选') : `${selectedRun.start} 至 ${selectedRun.end}`} · {selectedRun.datasets.length} 类资料</p></div>
                 {!activeRun && <details><summary className="wb-link">需要重新采集？</summary><p className="text-xs">先处理下方可恢复项。新任务不会继续原导出；结果未知时请先核对原回执。</p><button type="button" className={smallButton} disabled={selectedRun.items?.some(item => item.submission_state === 'unknown')} onClick={() => prefillFromRun(selectedRun)}>重新采集并创建新任务</button></details>}
-                {activeRun && <button type="button" className={smallButton} disabled={cancelling || ['cancelling', 'canceling'].includes(selectedRun.status)} onClick={() => void cancelDownload()}>{cancelling ? <Loader2 size={13} /> : <Square size={13} />}停止任务</button>}
+                {activeRun && <button type="button" className={smallButton} disabled={cancelling || ['cancelling', 'canceling'].includes(selectedRun.status)} onClick={() => void cancelDownload()}>{cancelling ? <Loader2 size={13} className="animate-spin" /> : <Square size={13} />}停止任务</button>}
               </div>
               <div role="status" className="space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"><span>{activeRun ? phaseLabel(selectedRun.phase) : statusInfo(selectedRun.status).label}{selectedRun.queue_position ? ` · 排队第 ${selectedRun.queue_position} 位` : ''}{activeRun && selectedRun.phase_since ? ` · ${elapsed(selectedRun.phase_since)}` : ''}</span><span>{Math.round(progress)}%</span></div>
@@ -2073,7 +2923,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
               {selectedRun.phase === 'waiting_manual' && <p role="status" className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">平台要求额外验证，当前任务已暂停。请打开风神验证窗口查看具体原因。</p>}
               {selectedRun.error && <p role="alert" className="rounded-lg bg-rose-50 border border-rose-200 p-3 text-xs text-rose-700 break-words">{selectedRun.error}</p>}
 
-              {canRecoverDetail(selectedRun) && <div className="rounded-lg bg-sky-50 border border-sky-200 p-3 text-xs text-sky-800"><p>可继续查询已提交的明细任务。</p><button type="button" className={`${smallButton} mt-2`} disabled={!!resumingRunId} onClick={() => void resumeDetail()}>{resumingRunId ? <Loader2 size={14} /> : <RefreshCw size={14} />}恢复已有明细下载</button>{recoveryError?.runId === selectedRun.id && <p role="alert" className="mt-2 text-amber-700">{recoveryError.message}</p>}</div>}
+              {canRecoverDetail(selectedRun) && <div className="rounded-lg bg-sky-50 border border-sky-200 p-3 text-xs text-sky-800"><p>可继续查询已提交的明细任务。</p><button type="button" className={`${smallButton} mt-2`} disabled={!!resumingRunId} onClick={() => void resumeDetail()}>{resumingRunId ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}恢复已有明细下载</button>{recoveryError?.runId === selectedRun.id && <p role="alert" className="mt-2 text-amber-700">{recoveryError.message}</p>}</div>}
               {!!selectedRun.items?.length && <details key={`items-${selectedRun.id}`} open={failedItems.length > 0} className="border-t border-slate-200 pt-3">
                 <summary className="cursor-pointer text-sm text-slate-700">任务明细{failedItems.length > 0 ? ` · ${failedItems.length} 项需要处理` : ` · ${selectedRun.items.length} 项`}</summary>
                 <div className="mt-3 space-y-3">
@@ -2165,7 +3015,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                 {!!selectedRun.performance.generators?.length && <div>{selectedRun.performance.generators.map((generator, index) => <div key={index}><p className="wb-muted">{datasetLabel(generator.name)}{generator.scope ? ` · ${generator.scope.city} · ${generator.scope.month}` : ` · 子任务 ${index + 1}`} · {Number(generator.elapsed_seconds || 0).toFixed(2)} 秒</p>{generator.name === 'abnormal_riders' && <p className="wb-muted pl-3">读取来源 {generator.stages?.read_sources ? `${Number(generator.stages.read_sources.seconds).toFixed(2)} 秒` : '未记录'} · 写入子表 {generator.stages?.write_sheets ? `${Number(generator.stages.write_sheets.seconds).toFixed(2)} 秒` : '未记录'} · 保存压缩 {generator.stages?.save_workbook ? `${Number(generator.stages.save_workbook.seconds).toFixed(2)} 秒` : '未记录'}（均包含在该子任务耗时内）</p>}</div>)}</div>}
                 {selectedRun.performance.source_cache && <p className="wb-muted">本任务解析缓存命中 {selectedRun.performance.source_cache.hits} 次；临时大表缓存 {selectedRun.performance.source_cache.spill_files || 0} 份、{((selectedRun.performance.source_cache.spill_bytes || 0) / 1048576).toFixed(1)} MB。任务结束自动清理；内存为服务进程采样，非任务独占。</p>}
               </details>}
-              <details className="border-t border-slate-200 pt-3 text-xs text-slate-500"><summary className="cursor-pointer w-fit">任务信息与保存位置</summary><div className="mt-3 space-y-2"><p>编号：{selectedRun.archive_code || selectedRun.id.slice(0, 6).toUpperCase()}</p><p className="break-all">任务目录：{selectedRun.archive_relative_dir || '旧版任务保留原存放位置'}</p><p>城市：{selectedRun.cities.join('、')}</p><p>资料：{selectedRun.datasets.map(datasetLabel).join('、')}</p>{selectedRun.retry_of && <p>此任务处理原任务 {selectedRun.retry_of.slice(0, 6).toUpperCase()} 的未完成项。</p>}{selectedRun.recovery_of && <p>此任务恢复原有平台导出。</p>}{!activeRun && <button type="button" className={smallButton} disabled={rawBusy} onClick={() => void downloadRawBundle()}>下载已保留原始资料</button>}{selectedRun.last_activity_at && <p>最近进展：{displayTime(selectedRun.last_activity_at)}</p>}{!activeRun && <button type="button" className={smallButton} disabled={!!downloadingSummaryId} onClick={() => void downloadSummary()}>{downloadingSummaryId ? <Loader2 size={14} /> : <Download size={14} />}下载说明</button>}</div></details>
+              <details className="border-t border-slate-200 pt-3 text-xs text-slate-500"><summary className="cursor-pointer w-fit">任务信息与保存位置</summary><div className="mt-3 space-y-2"><p>编号：{selectedRun.archive_code || selectedRun.id.slice(0, 6).toUpperCase()}</p><p className="break-all">任务目录：{selectedRun.archive_relative_dir || '旧版任务保留原存放位置'}</p><p>城市：{selectedRun.cities.join('、')}</p><p>资料：{selectedRun.datasets.map(datasetLabel).join('、')}</p>{selectedRun.retry_of && <p>此任务处理原任务 {selectedRun.retry_of.slice(0, 6).toUpperCase()} 的未完成项。</p>}{selectedRun.recovery_of && <p>此任务恢复原有平台导出。</p>}{!activeRun && <button type="button" className={smallButton} disabled={rawBusy} onClick={() => void downloadRawBundle()}>下载已保留原始资料</button>}{selectedRun.last_activity_at && <p>最近进展：{displayTime(selectedRun.last_activity_at)}</p>}{!activeRun && <button type="button" className={smallButton} disabled={!!downloadingSummaryId} onClick={() => void downloadSummary()}>{downloadingSummaryId ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}下载说明</button>}</div></details>
 
               {!!selectedRun.logs?.length && <details className="border-t border-slate-200 pt-3 text-xs text-slate-600"><summary className="cursor-pointer w-fit">执行日志</summary><div className="mt-3 max-h-48 space-y-2 overflow-y-auto font-mono bg-slate-50 border border-slate-200 rounded-lg p-3">{selectedRun.logs.map((log, index) => <p key={index} className="break-words"><span className="mr-2 text-slate-400">{displayTime(log.time)}</span>{log.message}</p>)}</div></details>}
             </div>}

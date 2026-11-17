@@ -26,7 +26,7 @@ from fengshen_bill import (BILL_URL, RIDER_BILL_URL, WAYBILL_URL, BillCollection
                            BillRequest, MonthlyBillRequest, BillPageCollector,
                            MonthlyBillPageCollector, atomic_json, validate_profile)
 from fengshen_orders import OrderPageCollector, date_batches, validate_order_profile, SHANGHAI
-from order_sources import prepare_order_files
+from order_sources import prepare_order_files, problem_paths
 from lanorange_catalog import DATASETS as LANORANGE_DATASETS, ALL_CITIES, city_scoped, source_key, source_directory, platform_months, months_contiguous
 from parttime_source import (COLLECTION_LOCK, unpack_daily, validate_daily,
                              clean_rider_bill, format_rider_monthly_workbook)
@@ -164,6 +164,10 @@ def validate_request(payload, today=None):
         raise ValidationError("下载参数必须为对象")
     if "refresh_history" in payload and type(payload["refresh_history"]) is not bool:
         raise ValidationError("历史数据刷新选项必须为布尔值")
+    if "order_export_concurrency" in payload and (
+            type(payload["order_export_concurrency"]) is not int
+            or payload["order_export_concurrency"] not in (1, 2)):
+        raise ValidationError("运单导出并发数只能为 1 或 2")
     if "waybill_all_city_send" in payload and type(payload["waybill_all_city_send"]) is not bool:
         raise ValidationError("运单全城送筛选选项必须为布尔值")
     if "lanorange_months" in payload:
@@ -305,6 +309,8 @@ def validate_request(payload, today=None):
             **({"exclude_separation": payload['exclude_separation']} if 'exclude_separation' in payload
                else {"include_separation": True} if payload.get("include_separation") else {}),
             **({"refresh_history": True} if payload.get("refresh_history") else {}),
+            **({"order_export_concurrency": payload["order_export_concurrency"]}
+               if "order_export_concurrency" in payload else {}),
             **({"waybill_all_city_send": True} if payload.get("waybill_all_city_send") else {})}
 
 
@@ -518,6 +524,13 @@ def _open_runner(config, log, cancelled, notify):
                     def orders_batch(self, plan, raw, selected):
                         return self._reports.orders(plan, raw, selected, allow_existing_batches=True)
 
+                    def orders_stream(self, plan, raw, selected, segments):
+                        from fengshen_http_reports import DEFAULT_ORDER_EXPORT_CONCURRENCY
+                        return self._reports.orders_stream(
+                            plan, raw, selected, segments,
+                            concurrency=config.get("order_export_concurrency",
+                                                   DEFAULT_ORDER_EXPORT_CONCURRENCY))
+
                     def resume_orders(self, plan, raw, selected, source_dir):
                         return self._reports.resume_orders(plan, raw, selected, source_dir)
 
@@ -730,7 +743,8 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
             if error:
                 entry["error"] = error
             if staged is not None:
-                entry["files"] = [info for info in staged if _item_key(info) == _item_key(value)]
+                entry["files"] = [info for info in staged
+                                  if not info.get("record_hidden") and _item_key(info) == _item_key(value)]
             values.append(entry)
         return values
 
@@ -839,11 +853,22 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
     def publish(path, directory, description):
         set_phase("publishing")
         path = Path(path).resolve()
-        name = archive_filename(description["city"], description["dataset"], description["start"],
-                                description["end"], suffix=path.suffix,
-                                stamp=config.get("archive_created_at"),
-                                variant="系统合并" if description.get('delivery_kind') == 'system_merged' else None,
-                                months=platform_months(config, description['dataset']))
+        name = description.get("filename")
+        if name is None:
+            name = archive_filename(description["city"], description["dataset"], description["start"],
+                                    description["end"], suffix=path.suffix,
+                                    stamp=config.get("archive_created_at"),
+                                    variant="系统合并" if description.get('delivery_kind') == 'system_merged' else None,
+                                    months=platform_months(config, description['dataset']))
+        else:
+            if (not isinstance(name, str) or Path(name).name != name
+                    or Path(name).suffix.lower() != path.suffix.lower()
+                    or any(char in name for char in '\r\n\x00')):
+                raise BillCollectionError("归档文件名称无效")
+            try:
+                archive_component(Path(name).stem)
+            except ValueError:
+                raise BillCollectionError("归档文件名称含无效路径字符") from None
         if config.get('result_layout') == 2:
             from task_catalog import GENERATORS
             category = '来源' if config.get('task_kind') == 'generate' and description['dataset'] not in GENERATORS else '结果'
@@ -970,8 +995,8 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
         try:
             staged = operation()
             _checkpoint(cancelled)
-            if (not isinstance(staged, list) or len(staged) != len(items)
-                    or sorted(_item_key(value) for value in staged) != sorted(_item_key(value) for value in items)):
+            if (not isinstance(staged, list)
+                    or {_item_key(value) for value in staged} != {_item_key(value) for value in items}):
                 raise BillCollectionError("分项文件清单与本次业务范围不一致，未发布文件")
             completed = entries(items, "success", phase="completed", staged=staged,
                                 **({"submission_state": "submitted"} if context.get("resuming") else {}))
@@ -1631,7 +1656,6 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                 order_selected = [key for key in ("fraud", "problem") if key in city_selected]
                 if order_selected:
                     def orders():
-                        batches = date_batches(plan.start, plan.end)
                         source_dir = resume_order_sources.get(city)
                         context.update(raw=raw / "issue_orders", kind="issue_orders", resuming=source_dir is not None)
                         pipeline, prepared = None, None
@@ -1640,6 +1664,8 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                             if source_dir.is_relative_to(root) or not source_dir.is_dir():
                                 raise BillCollectionError("原运单恢复目录无效")
                             progress_log("[恢复] 复用原运单与报告文件，不重新提交导出")
+                            from fengshen_http_reports import order_recovery_batches
+                            batches = order_recovery_batches(plan, source_dir)
                             downloads = runner.resume_orders(plan, raw / "issue_orders", set(order_selected), source_dir)
                         elif hasattr(runner, "orders_batch"):
                             from order_pipeline import OrderPipeline
@@ -1653,21 +1679,45 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                             downloads, prepared, batches = pipeline.collect(runner)
                         else:
                             downloads = runner.orders(plan, raw / "issue_orders", set(order_selected))
+                            batches = [(manifest["start"], manifest["end"]) for manifest in downloads]
                         set_phase("validating")
                         generated = raw / "order_processed"
                         generated.mkdir(exist_ok=pipeline is not None)
                         from order_metrics import measurements
                         timings = pipeline.metrics.setdefault("timings", {}) if pipeline is not None else {}
+                        separation_include = separation_filter.filter_direction(config)
                         with measurements(timings):
-                            prepare_order_files(downloads, raw, generated, plan, batches,
-                                                selected_kinds={DATASETS[k] for k in order_selected},
-                                                **({"prepared_slices": prepared} if prepared is not None else {}))
+                            result = prepare_order_files(
+                                downloads, raw, generated, plan, batches,
+                                selected_kinds={DATASETS[k] for k in order_selected},
+                                separation_include=separation_include,
+                                **({"prepared_slices": prepared} if prepared is not None else {}))
                         if pipeline is not None:
                             pipeline.complete()
+                        proof = result.get("问题单", {}).get("separation_filter")
+                        if proof:
+                            summary = proof["summary"]
+                            progress_log(
+                                f"[过滤] {city} problem 取分离站点过滤"
+                                f"（{'仅保留' if separation_include else '排除'}）："
+                                f"{summary['rows_before']} → {summary['rows_after']} 行")
                         staged = []
                         for kind in order_selected:
-                            source = generated / (city + "-" + DATASETS[kind] + "_auto.csv")
-                            staged.append(publish(source, output, item(city, kind)))
+                            if kind == "problem":
+                                paths = problem_paths(generated, city)
+                                for role, label, key in (("problem_summary", "问题单汇总", "summary"),
+                                                         ("problem_detail", "问题单明细", "detail")):
+                                    staged.append(publish(
+                                        paths[key], output,
+                                        {**item(city, kind), "artifact_role": role, "pre_formatted": True,
+                                         "filename": f"{city}_{label}_{plan.start}至{plan.end}.xlsx"}))
+                                # Payroll reads the original eight-column CSV; it is not a user deliverable.
+                                staged.append(publish(
+                                    paths["csv"], output,
+                                    {**item(city, kind), "record_hidden": True, "pre_formatted": True}))
+                            else:
+                                source = generated / (city + "-" + DATASETS[kind] + "_auto.csv")
+                                staged.append(publish(source, output, item(city, kind)))
                         return staged
                     run_step([item(city, key) for key in order_selected], orders)
                 if "delivery_waybill" in city_selected:

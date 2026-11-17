@@ -232,7 +232,7 @@ class PayrollQueue:
         if self._stopped(task['id']):raise QueueStopped()
         values={**task['config'],'sourcePath':str(source),'city':task.get('plan',{}).get('city','') if task.get('plan') else '',
                 'payrollPreparationId':task.get('batch_id') or '',
-                'preparationOnly':task['mode']!='fengshen' and not task.get('_continue_version'),
+                'preparationOnly':False,
                 'deductionConfigVersion':task.get('_continue_version',''),
                 '_queue_cancelled':lambda:self._stopped(task['id']) or self.closing.is_set()}
         runner=self.runner or run_payroll
@@ -263,9 +263,9 @@ class PayrollQueue:
                     try:
                         _,stored=load(task['wid'],task['batch_id'],task['owner'],self.root);last=public(stored)
                     except SourceError:pass
-                mapped='completed' if status=='success' else 'waiting_confirmation' if status=='paused' and task['mode']!='fengshen' else 'cancelled' if status=='cancelled' else 'error'
+                mapped='completed' if status=='success' else 'cancelled' if status=='cancelled' else 'error'
                 self._update(task['id'],{'status':mapped,'preparation':last,'progress':100 if mapped=='completed' else 0,
-                                        'current_action':'核算完成，可下载结果' if mapped=='completed' else '资料已准备，请确认扣款' if mapped=='waiting_confirmation' else '任务已停止，资料保留' if mapped=='cancelled' else '任务已结束，请查看日志',
+                                        'current_action':'核算完成，可下载结果' if mapped=='completed' else '任务已停止，资料保留' if mapped=='cancelled' else '任务已结束，请查看日志',
                                         '_finished_clock':time.time()})
             if self._stopped(task['id']) and not (kind=='finish' and data.get('status')=='success'):
                 if task.get('batch_id'):

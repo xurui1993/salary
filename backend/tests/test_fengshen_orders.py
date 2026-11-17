@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from fengshen_bill import AuthenticationRequired, BillCollectionError, CityPopupNotClosed
 from fengshen_orders import LEGACY_FILE_HOST, OrderPageCollector, OrderRequest, QUERY_URL, WAYBILL_URL, date_batches, new_task, query_count, query_response_matches, task_rows, secure_file_url, validate_order_profile, waybill_scope
 from issue_orders import issue_types
+from openpyxl import load_workbook
 from order_sources import (
     WAYBILL_COLUMNS, VIOLATION_COLUMNS, clean_violations, merge_slices,
     file_hash, prepare_order_files, read_table, validate_slice,
@@ -68,6 +69,14 @@ class OrderTests(unittest.TestCase):
             ("2026-08-16", "2026-08-20"), ("2026-08-21", "2026-08-25"),
             ("2026-08-26", "2026-08-30"), ("2026-08-31", "2026-08-31")])
 
+    def test_issue_order_batches_can_use_seven_days(self):
+        self.assertEqual(date_batches("2026-10-01", "2026-10-31", dt.date(2026, 10, 31), span=7), [
+            ("2026-10-01", "2026-10-07"), ("2026-10-08", "2026-10-14"),
+            ("2026-10-15", "2026-10-21"), ("2026-10-22", "2026-10-28"),
+            ("2026-10-29", "2026-10-31")])
+        with self.assertRaises(BillCollectionError):
+            date_batches("2026-10-01", "2026-10-31", dt.date(2026, 10, 31), span=8)
+
     def test_sixty_day_window_is_checked_before_collection(self):
         today = dt.date(2026, 10, 11)
         self.assertEqual(date_batches("2026-08-13", "2026-08-13", today), [("2026-08-13", "2026-08-13")])
@@ -75,8 +84,8 @@ class OrderTests(unittest.TestCase):
             with self.subTest(start=start), self.assertRaisesRegex(BillCollectionError, "近 60"):
                 date_batches(start, end, today)
 
-    def test_reversed_or_six_day_batch_is_rejected(self):
-        for start, end in (("2026-08-20", "2026-08-16"), ("2026-08-16", "2026-08-21")):
+    def test_reversed_or_eight_day_batch_is_rejected(self):
+        for start, end in (("2026-08-20", "2026-08-16"), ("2026-08-16", "2026-08-23")):
             with self.assertRaises(BillCollectionError):
                 OrderRequest(start, end, "31029436")
 
@@ -311,6 +320,72 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(result["欺诈单"]["status"], "empty")
         self.assertEqual(result["问题单"]["status"], "empty")
         self.assertTrue((inputs / "泉州-问题单_auto.csv").is_file())
+        self.assertTrue((inputs / "泉州-问题单汇总_auto.xlsx").is_file())
+        self.assertTrue((inputs / "泉州-问题单明细_auto.xlsx").is_file())
+        summary = load_workbook(inputs / "泉州-问题单汇总_auto.xlsx")
+        detail = load_workbook(inputs / "泉州-问题单明细_auto.xlsx")
+        try:
+            self.assertEqual(summary.sheetnames, ["问题单汇总"])
+            self.assertEqual([cell.value for cell in summary.active[1]],
+                             ["类型", "日期", "运单号", "骑手id", "配送员姓名", "团队名称", "事件原因", "处罚金额"])
+            self.assertEqual(detail.sheetnames, ["Sheet1"])
+        finally:
+            summary.close()
+            detail.close()
+
+    def test_problem_summary_and_raw_detail_workbooks_keep_only_data_types(self):
+        penalties = [violation("v1"), violation("v2", rider_id="998")]
+        penalties[1].update({"违规分类": "投诉", "违规类型": "投诉"})
+        record, raw, inputs, plan = self.bundle([waybill(late="是")], penalties)
+        result = prepare_order_files([record], raw, inputs, plan, [("2026-08-16", "2026-08-20")])
+        self.assertEqual(result["问题单"]["type_counts"], {"差评": 1, "投诉": 1, "物流责": 0, "不准时单": 1})
+        summary = load_workbook(inputs / "泉州-问题单汇总_auto.xlsx")
+        detail = load_workbook(inputs / "泉州-问题单明细_auto.xlsx")
+        try:
+            self.assertEqual(summary.sheetnames, ["问题单汇总"])
+            summary_rows = list(summary.active.iter_rows(values_only=True))
+            self.assertEqual(summary_rows[0][0], "类型")
+            self.assertEqual({row[0] for row in summary_rows[1:]}, {"差评", "投诉", "不准时单"})
+            self.assertEqual(detail.sheetnames, ["差评", "投诉", "不准时单"])
+            self.assertIn("违规编号", [cell.value for cell in detail["差评"][1]])
+            self.assertIn("站点名称", [cell.value for cell in detail["不准时单"][1]])
+        finally:
+            summary.close()
+            detail.close()
+
+    def test_fraud_rows_are_absent_from_problem_detail_workbook(self):
+        fraud = waybill(fraud="是", late="是")
+        record, raw, inputs, plan = self.bundle(
+            [fraud], [violation("v1", fraud["运单id"]), violation("v2")])
+        result = prepare_order_files([record], raw, inputs, plan, [("2026-08-16", "2026-08-20")])
+        self.assertEqual(result["问题单"]["rows"], 1)
+        detail = load_workbook(inputs / "泉州-问题单明细_auto.xlsx")
+        try:
+            self.assertEqual(detail.sheetnames, ["差评"])
+            self.assertEqual([row[0] for row in detail["差评"].iter_rows(min_row=2, values_only=True)], ["v2"])
+        finally:
+            detail.close()
+
+    def test_separation_choice_filters_summary_csv_and_both_workbooks(self):
+        separated = violation("v2")
+        separated["团队名称"] = "泉州测试站(取分离)"
+        record, raw, inputs, plan = self.bundle(penalties=[violation("v1"), separated])
+        result = prepare_order_files([record], raw, inputs, plan, [("2026-08-16", "2026-08-20")],
+                                     separation_include=False)
+        self.assertEqual(result["问题单"]["separation_filter"]["summary"],
+                         {"column": "团队名称", "rows_before": 2, "rows_after": 1})
+        with (inputs / "泉州-问题单_auto.csv").open(encoding="utf-8-sig", newline="") as source:
+            self.assertEqual([row["团队名称"] for row in csv.DictReader(source)], ["泉州测试站"])
+        summary = load_workbook(inputs / "泉州-问题单汇总_auto.xlsx")
+        detail = load_workbook(inputs / "泉州-问题单明细_auto.xlsx")
+        try:
+            self.assertEqual([row[5] for row in summary.active.iter_rows(min_row=2, values_only=True)],
+                             ["泉州测试站"])
+            self.assertEqual([row[3] for row in detail["差评"].iter_rows(min_row=2, values_only=True)],
+                             ["泉州测试站"])
+        finally:
+            summary.close()
+            detail.close()
 
     def test_service_categories_and_excluded_statuses_with_export_whitespace(self):
         penalties = []

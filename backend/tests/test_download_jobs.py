@@ -244,6 +244,19 @@ class ManagerTests(unittest.TestCase):
         with self.assertRaises(jobs.DownloadRequestConflict):
             manager.create("tester", CONFIG, request_id="refresh_history_01")
 
+    def test_order_export_concurrency_survives_durable_config(self):
+        seen = []
+        def execute(config, *args):
+            seen.append(config)
+            return self.success_executor(config, *args)
+        manager = self.manager(execute)
+        run = manager.create("tester", {**CONFIG, "order_export_concurrency": 2},
+                             request_id="order_concurrency_01")
+        self.wait_run(manager, run["id"])
+        self.assertEqual(seen[0]["order_export_concurrency"], 2)
+        with self.assertRaises(jobs.DownloadRequestConflict):
+            manager.create("tester", CONFIG, request_id="order_concurrency_01")
+
     def test_separation_flag_and_verified_payroll_agency_survive_durable_config(self):
         seen=[]
         def execute(config,*args):
@@ -990,6 +1003,77 @@ class ManagerTests(unittest.TestCase):
                 "start": "2026-10-01", "end": "2026-10-31", "name": name, "relative_path": name}
         entry = manager._file_entry(run, info, config)
         self.assertEqual((entry["artifact_role"], entry["name"]), ("summary", name))
+
+    def test_problem_workbooks_and_hidden_payroll_csv_are_registered_separately(self):
+        config = {**CONFIG, "datasets": ["problem"]}
+        manager = self.manager(Mock())
+        run = {"id": "a" * 32, "owner": "tester", "status": "running", "items": [], "files": [], "logs": []}
+        directory = manager._archive_directory(run, create=True)
+        names = {
+            "problem_summary": "泉州_问题单汇总_2026-10-01至2026-10-05.xlsx",
+            "problem_detail": "泉州_问题单明细_2026-10-01至2026-10-05.xlsx",
+            None: "泉州_问题单_2026-10-01至2026-10-05.csv",
+        }
+        entries = []
+        for role, name in names.items():
+            (directory / name).write_bytes(name.encode())
+            info = {"city": "泉州", "dataset": "problem", "start": "2026-10-01", "end": "2026-10-05",
+                    "name": name, "relative_path": name, **({"artifact_role": role} if role else {}),
+                    **({"record_hidden": True} if role is None else {})}
+            entries.append(manager._file_entry(run, info, config))
+        DownloadManager._merge_files(run, entries)
+        DownloadManager._merge_files(run, entries)
+        self.assertEqual(len(run["files"]), 3)
+        self.assertEqual({entry.get("artifact_role") for entry in run["files"]},
+                         {"problem_summary", "problem_detail", None})
+        self.assertEqual(sum(bool(entry.get("record_hidden")) for entry in run["files"]), 1)
+        jobs._refresh(run)
+        self.assertEqual(run["summary"]["files"], 2)
+
+    def test_publish_delivery_omits_hidden_payroll_csv(self):
+        def executor(config, run_dir, log, cancelled, update):
+            files = []
+            for name, extras in (("result.xlsx", {}), ("detail.xlsx", {}),
+                                 ("internal.csv", {"record_hidden": True})):
+                path = run_dir / name
+                path.write_bytes(name.encode())
+                files.append({"name": name, "relative_path": name, "city": config["cities"][0],
+                              "dataset": "delivery_fee", "start": config["start"], "end": config["end"],
+                              "bytes": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                              **extras})
+            return files
+
+        manager = self.manager(executor)
+        run = manager.create("tester", CONFIG, "hidden_delivery_fixture")
+        finished = self.wait_run(manager, run["id"])
+        folder = manager.publish_delivery("tester", run["id"])
+        self.assertEqual(finished["status"], "success")
+        self.assertEqual({path.name for path in folder.iterdir() if path.is_file()},
+                         {"泉州_result.xlsx", "泉州_detail.xlsx"})
+
+    def test_routes_hide_internal_payroll_csv(self):
+        def executor(config, run_dir, log, cancelled, update):
+            files = []
+            for name, extras in (("result.xlsx", {}), ("detail.xlsx", {}),
+                                 ("internal.csv", {"record_hidden": True})):
+                path = run_dir / name
+                path.write_bytes(name.encode())
+                files.append({"name": name, "relative_path": name, "city": config["cities"][0],
+                              "dataset": "delivery_fee", "start": config["start"], "end": config["end"],
+                              "bytes": path.stat().st_size, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                              **extras})
+            return files
+
+        manager = self.manager(executor)
+        run = manager.create("tester", CONFIG, "hidden_route_fixture")
+        self.wait_run(manager, run["id"])
+        with patch.object(routes, "get_manager", return_value=manager):
+            detail = routes.run(run["id"], request())["run"]
+            listed = routes.runs(request())["runs"]
+        self.assertEqual(len(detail["files"]), 2)
+        self.assertEqual(len(listed), 1)
+        self.assertEqual(len(listed[0]["files"]), 2)
+        self.assertFalse(any(file.get("record_hidden") for file in detail["files"] + listed[0]["files"]))
 
     def test_multi_city_merged_rider_detail_is_accepted_for_multi_city_runs(self):
         config = {**CONFIG, "cities": ["三亚", "泉州"], "datasets": ["rider_detail"],

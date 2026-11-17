@@ -1,0 +1,250 @@
+/* ==========================================================================
+   pages/payout.css —— 发薪平台（白泽商翼 + 本来人力）双源工作区
+   T6-1：从 src/index.css §21 迁出 wb-payout-* 专属规则。
+   - 类名保持不变（JSX 未动，视觉等价迁移）
+   - accent 色由散落 sky（#0284c7 / #0369a1 / #f0f9ff / #e0f2fe / #bae6fd）
+     统一为 --wbx-primary / --wbx-primary-soft 令牌（PRD「单一主色」）
+   - 原 900px 断点收敛为 768px（PRD 断点规范：1280/1024/768）
+   - 冗余规则删除：`.wb-payout-recent-card .wb-step-card-header { margin-bottom:10px }` 带
+     强制声明的原规则与 index.css §2 同值，迁移后由 §2 继续生效，故不迁入本文件
+   本文件不含任何强制覆盖声明。
+   ========================================================================== */
+
+/* 两张来源卡：>768 双列，≤768 单列 */
+.wb-payout-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 768px) {
+  .wb-payout-cards-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.wb-payout-source-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--wbx-surface);
+  border: 1px solid var(--wbx-border);
+  border-radius: 14px;
+  padding: 16px 18px;
+  cursor: pointer;
+  transition: border-color var(--wbx-dur-fast) var(--wbx-ease),
+    background-color var(--wbx-dur-fast) var(--wbx-ease),
+    box-shadow var(--wbx-dur-fast) var(--wbx-ease);
+  box-shadow: var(--wbx-sh-1);
+  outline: none;
+}
+
+.wb-payout-source-card:hover:not(.is-disabled) {
+  border-color: rgba(15, 110, 140, 0.5);
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.05);
+}
+
+.wb-payout-source-card:focus-visible {
+  border-color: var(--wbx-primary);
+  box-shadow: var(--wbx-focus);
+}
+
+.wb-payout-source-card.is-selected {
+  border-color: var(--wbx-primary);
+  background: linear-gradient(180deg, var(--wbx-primary-soft) 0%, var(--wbx-surface) 42%);
+  box-shadow: 0 2px 8px rgba(15, 110, 140, 0.09);
+}
+
+.wb-payout-source-card.is-disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.wb-payout-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+
+.wb-payout-card-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.wb-payout-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1.5px solid var(--wbx-border-strong);
+  background: var(--wbx-surface);
+  color: transparent;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: all var(--wbx-dur-fast) var(--wbx-ease);
+}
+
+.wb-payout-check.is-checked {
+  background: var(--wbx-primary);
+  border-color: var(--wbx-primary);
+  color: var(--wbx-text-inverse);
+}
+
+.wb-payout-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--wbx-neutral-soft);
+  color: var(--wbx-text-muted);
+  flex-shrink: 0;
+}
+
+.wb-payout-source-card.is-selected .wb-payout-card-icon {
+  background: var(--wbx-primary-soft);
+  color: var(--wbx-primary);
+}
+
+.wb-payout-card-title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--wbx-text);
+  line-height: 1.3;
+}
+
+.wb-payout-source-card.is-selected .wb-payout-card-title {
+  color: var(--wbx-primary);
+}
+
+.wb-payout-card-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--wbx-text-muted);
+}
+
+.wb-payout-card-auth {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.wb-payout-auth-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 2px 9px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--wbx-primary);
+  background: var(--wbx-surface);
+  border: 1px solid rgba(15, 110, 140, 0.28);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: all var(--wbx-dur-fast) var(--wbx-ease);
+  white-space: nowrap;
+}
+
+.wb-payout-auth-btn:hover {
+  background: var(--wbx-primary-soft);
+  border-color: var(--wbx-primary);
+}
+
+.wb-payout-spec-list {
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--wb-border-subtle);
+  display: flex;
+  flex-direction: column;
+}
+
+.wb-payout-spec-row {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--wb-border-subtle);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.wb-payout-spec-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 2px;
+}
+
+.wb-payout-spec-row dt {
+  color: var(--wbx-text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.wb-payout-spec-row dd {
+  margin: 0;
+  color: var(--wbx-text);
+}
+
+/* 最近采集记录（发薪平台页内列表） */
+.wb-payout-recent-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--wbx-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--wbx-surface);
+}
+
+.wb-payout-recent-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--wb-border-subtle);
+}
+
+.wb-payout-recent-row:last-child {
+  border-bottom: 0;
+}
+
+.wb-payout-recent-row:hover {
+  background: var(--wbx-surface-sunken);
+}
+
+.wb-payout-recent-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.wb-payout-recent-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--wbx-text);
+}
+
+.wb-payout-recent-meta {
+  font-size: 11.5px;
+  color: var(--wbx-text-muted);
+}
+
+.wb-payout-recent-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}

@@ -281,4 +281,59 @@ class ConfirmationTests(unittest.TestCase):
         self.assertEqual(claimed['deduction_confirmation'],receipt)
 
 
+    def test_problem_rules_import_preview_save_and_city_inheritance(self):
+        self.directory['cities']=[{'id':'001','name':'测试城'}]
+        initial=review.profile('fengshen',self.root)
+        rows=[
+            {'城市':'测试城','团队名称':'城市统一扣款','团队ID':'*','问题单类型':'不准时单','判责原因关键词':'','单次扣款金额':20},
+            {'城市':'测试城','团队名称':'一站','团队ID':'0001','问题单类型':'超时','判责原因关键词':'客户取消','单次扣款金额':15},
+            {'城市':'测试城','团队名称':'一站','团队ID':'0001','问题单类型':'投诉','判责原因关键词':'服务态度','单次扣款金额':10},
+        ]
+        preview=review.preview_problem_rules('fengshen',self.root,{'version':initial['version'],'rows':rows},self.directory)
+        self.assertEqual(len(preview['diff']['added']),3)
+        saved=review.save_problem_rules('fengshen',self.root,{'version':initial['version'],'preview_version':preview['preview_version'],'rows':rows},self.directory)
+        self.assertIn('problem_rules',saved)
+        drafts=review.station_drafts('fengshen',self.root,self.directory)
+        first=next(e for e in drafts['entries'] if e['station']['name']=='一站')
+        second=next(e for e in drafts['entries'] if e['station']['name']=='二站')
+        self.assertEqual([(r['problem_type'],r['amount']) for r in first['effective_problem_rules']],
+                         [('不准时单',20),('投诉',10),('超时',15)])
+        self.assertEqual([(r['problem_type'],r['amount']) for r in second['effective_problem_rules']],[('不准时单',20)])
+        self.assertTrue(second['inherited_problem_rules'])
+
+    def test_problem_rule_import_rejects_unknown_duplicate_and_invalid_values(self):
+        self.directory['cities']=[{'id':'001','name':'测试城'}]
+        current=review.profile('fengshen',self.root)
+        base={'城市':'测试城','团队名称':'一站','团队ID':'0001','问题单类型':'超时','判责原因关键词':'','单次扣款金额':10}
+        with self.assertRaisesRegex(SourceError,'重复'):
+            review.preview_problem_rules('fengshen',self.root,{'version':current['version'],'rows':[base,base]},self.directory)
+        with self.assertRaisesRegex(SourceError,'站点不在'):
+            review.preview_problem_rules('fengshen',self.root,{'version':current['version'],'rows':[{**base,'团队ID':'9999'}]},self.directory)
+        with self.assertRaisesRegex(SourceError,'金额'):
+            review.preview_problem_rules('fengshen',self.root,{'version':current['version'],'rows':[{**base,'单次扣款金额':'abc'}]},self.directory)
+        with self.assertRaisesRegex(SourceError,'重新加载'):
+            review.preview_problem_rules('fengshen',self.root,{'version':'stale','rows':[base]},self.directory)
+
+    def test_problem_rules_bind_to_batch_rows_and_prefer_reason_match(self):
+        import problem_deductions as rules_helper
+        self.directory['cities']=[{'id':'001','name':'测试城'}]
+        current=review.profile('fengshen',self.root)
+        rows=[{'城市':'测试城','团队名称':'城市统一扣款','团队ID':'*','问题单类型':'超时','判责原因关键词':'','单次扣款金额':12},
+              {'城市':'测试城','团队名称':'城市统一扣款','团队ID':'*','问题单类型':'超时','判责原因关键词':'客户取消','单次扣款金额':20},
+              {'城市':'测试城','团队名称':'城市统一扣款','团队ID':'*','问题单类型':'不准时单','判责原因关键词':'','单次扣款金额':5}]
+        preview=review.preview_problem_rules('fengshen',self.root,{'version':current['version'],'rows':rows},self.directory)
+        review.save_problem_rules('fengshen',self.root,{'version':current['version'],'preview_version':preview['preview_version'],'rows':rows},self.directory)
+        self.assertEqual(rules_helper.match_amount(rows,'超时','客户取消'),20)
+        self.assertEqual(rules_helper.match_amount(rows,'超时','骑手迟到'),12)
+        self.assertEqual(rules_helper.match_amount(rows,'不准时单','客户取消'),5)
+        data=self.read();body=self.payload(data)
+        deduction,receipt=review.confirm(self.folder,self.state,self.root,self.directory,body)
+        row=deduction['rows'][0]
+        self.assertEqual(row['问题单扣款'],0);self.assertTrue(row['问题单扣款_isKw'])
+        self.assertEqual([r['problem_type'] for r in row['_problemRules']],['不准时单','超时','超时'])
+        self.assertEqual(receipt['entries'][0]['problem_rules'],row['_problemRules'])
+        self.state.update(deductions=deduction,deduction_confirmation=receipt)
+        review.require_confirmation(self.state,deduction['version'])
+
+
 if __name__=='__main__':unittest.main()

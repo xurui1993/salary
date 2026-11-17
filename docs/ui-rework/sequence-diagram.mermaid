@@ -1,0 +1,53 @@
+%% 兼职运力与薪资结算调度中心 · 增量 UI 改造 · 时序图
+%% 来源：docs/ui-rework/01-architecture.md §2.2
+sequenceDiagram
+  autonumber
+  participant B as 浏览器
+  participant M as main.tsx
+  participant L0 as workbench.css (L0 兼容层)
+  participant EN as index.css (L1..L5)
+  participant SH as AppShell
+  participant RS as ExecutionRailSummary
+  participant CW as CollectionWorkbench
+  participant API as /api/* (契约不变)
+  participant DM as DeductionManager
+
+  Note over B,EN: —— 启动：样式层与首屏 ——
+  B->>M: 加载 /src/main.tsx
+  M->>L0: import './workbench.css'
+  Note over L0: 1572 条旧规则先落地（最后一道防线，只读）
+  M->>EN: import './index.css'
+  EN->>EN: @import tailwindcss → tokens → base → layout → components → pages
+  Note over EN: 新层后加载 ⇒ 同特异性必胜，新层 0 个 !important
+  M->>SH: render(<App/>)
+  SH->>SH: document.title = APP_TITLE
+  SH->>SH: 读 localStorage.sidebar_collapsed + matchMedia(BP.md/BP.sm)
+  SH-->>B: 首屏 wbx-shell（body 已为 #F6F7F9，0 次暗闪）
+
+  Note over CW,RS: —— 采集页：三步同屏 + 右栏只留决策信息 ——
+  CW->>CW: 用户在 #step-01-datasets 勾选资料 → datasets
+  CW->>RS: buildExecutionRailSummary({datasets, cities, start, end, ...})
+  RS-->>CW: {cityLabel, periodText, estimateValue, blockerHint, submitReady}
+  CW->>CW: 右栏仅渲染计数/城市/账期/预计任务量（不重复明细清单）
+  CW->>CW: #step-01-cities 与 #step-02-period 同屏（wbx-steps2 两列）
+  alt submitReady = false
+    CW->>CW: 单一 wbx-hint 说明缺项，点击 scrollToStep('datasets'|'cities')
+  else submitReady = true
+    CW->>API: POST /api/fengshen-downloads（载荷不变）
+    API-->>CW: run 记录 → manifest 轮询推进
+    CW->>CW: 行内 Loader2.animate-spin 可见旋转（V12）
+  end
+
+  Note over DM: —— 扣款规则：待配置 1 次点击筛出 + 同屏保存 ——
+  DM->>DM: onlyUnconfigured = false（默认全量）
+  DM->>DM: 点击 wbx-pill（143 个待配置）→ onlyUnconfigured = true
+  DM->>DM: filteredEntries = entries.filter(!configured) 且叠加 cityFilter + search
+  DM->>DM: 显示「当前 N / 全部 M」，pill 变「已筛：只看待配置 ×」
+  DM->>API: PUT /api/workbench/deduction-profiles/{platform}（body 不变）
+  API-->>DM: {version}
+  DM->>DM: setNotice('已保存') 原地提示，不跳页、不整页刷新
+  Note over DM: 错误条与「保存后续默认扣款」同在 wbx-toolbar，1440×900 同屏（V7）
+
+  Note over API,SH: —— 轮询与隐藏降噪（P1-5）——
+  SH->>API: GET /api/parttime/queue（可见时 2500ms / 隐藏时 10000ms）
+  SH->>SH: visibilitychange → 立即 refresh 一次

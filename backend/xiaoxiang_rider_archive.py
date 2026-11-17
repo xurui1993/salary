@@ -24,7 +24,7 @@ BEIJING = timezone(timedelta(hours=8), 'Asia/Shanghai')
 LIST_PATH = '/api/s/peisong/query/rider/list'
 SENS_PATH = '/api/s/peisong/rider/sens/query'
 ATTR_PATH = '/api/s/peisong/supplier/rider/attr/list/query'
-LIST_PAGE_LIMIT = 2000
+LIST_PAGE_LIMIT = 200
 LIST_PAGE_GUARD = 50
 SENS_BATCH_LIMIT = 50
 _MIS_COOKIE = 'moa_token'

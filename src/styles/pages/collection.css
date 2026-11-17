@@ -1,0 +1,199 @@
+/*
+* L5 页面层 · 数据采集页 + 任务中心（架构 §4.3 P0-3 / T3）
+*
+* 契约：
+*  1. 只放「采集页 / 任务中心才成立」的组合规则，不定义新原语（原语在 L4 components.css）。
+*  2. 0 个 important；颜色/间距/圆角/阴影一律引用 `--wbx-*`。
+*  3. 覆盖 `index.css` 遗留规则时统一加 `.wbx-collection` / `.wbx-step` / `.wbx-taskcenter`
+*     作用域（形成 0,2,0 以上特异度），不靠加载顺序赌胜负。
+*  4. 旧 `wb-*` 类本批保留（双轨并行），这里只补新类与必要覆盖。
+*/
+/* ══ 一、采集页主区 ═══════════════════════════════════════ */
+.wbx-collection { display: flex; flex-direction: column; gap: var(--wbx-s3); min-width: 0; }
+/* 平台切换：≥1281 四列；≤1280 改 2×2，保证 4 个平台名完整可读 */
+.wbx-collection .wbx-platformbar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--wbx-s2); min-width: 0; }
+.wbx-platformbar .wb-platform-switch-card { min-width: 0; padding: 6px var(--wbx-s3); gap: 3px; border-radius: var(--wbx-r-sm); }
+.wbx-platformbar .wb-platform-switch-top { min-width: 0; gap: 6px; }
+.wbx-platformbar .wb-platform-switch-name { min-width: 0; overflow: hidden; white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.25; }
+.wbx-platformbar .wb-platform-switch-sub { padding-left: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.wbx-platformbar .wb-platform-switch-count { flex-shrink: 0; margin-left: auto; }
+@media (max-width: 1280px) {
+  .wbx-collection .wbx-platformbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wbx-platformbar .wb-platform-switch-sub { display: none; }
+}
+/* ══ 二、步骤卡：单层影、无边框、卡内无「卡套卡」 ═══════════ */
+.wbx-step { padding: var(--wbx-s2) var(--wbx-s3); gap: var(--wbx-s2); border: 0; box-shadow: var(--wbx-sh-1); border-radius: var(--wbx-r-md); }
+.wbx-step .wb-step-card-header { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; gap: var(--wbx-s2); }
+.wbx-step .wb-source-group { margin: 0; padding: 0; }
+.wbx-step .wb-source-group + .wb-source-group { padding-top: var(--wbx-s2); }
+.wbx-step .wb-step-count-pill,
+.wbx-step .wb-city-preset-btn { flex-shrink: 0; }
+/* 02 组：城市 + 账期同排（≥1280 两列，其余单列） */
+.wbx-steps2 { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--wbx-s3); align-items: start; min-width: 0; }
+/* 只有「城市 + 账期」同时存在时才并排；单块时保持整行，避免凭空压窄 Grid */
+@media (min-width: 1280px) {
+  .wbx-steps2.is-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* ══ 三、Step 01 资料区密度 ════════════════════════════════ */
+/* 分类筛选条：单行横向滚动，替代 113px 的换行堆叠 */
+.wbx-datasetbar { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--wbx-s2); min-width: 0; margin-bottom: var(--wbx-s2); padding: 0 0 var(--wbx-s1); overflow-x: auto; scrollbar-width: thin; }
+.wbx-datasetbar .wb-dataset-cat-tabs { flex: 0 0 auto; flex-wrap: nowrap; overflow: visible; }
+.wbx-datasetbar .wb-category-scenario-actions { flex: 0 0 auto; flex-wrap: nowrap; }
+/* 虚线「存为场景包 / 存为预设」→ 实线（采集页 dashed 元素归零） */
+.wbx-preset-trigger { border-style: solid; }
+/* 资料卡：标题一行不裁切关键字段，描述保持两行 */
+.wbx-step .wb-dataset-body { gap: 0; }
+.wbx-step .wb-dataset-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; line-height: 1.35; }
+.wbx-step .wb-dataset-card { min-height: 0; }
+.wbx-step .wb-dataset-desc { line-height: 1.4; }
+/* 资料卡范围标签统一不占位：它和标题抢宽度会把标题压成「骑手出勤…」，
+作用域信息已由描述首句表达（城市/月度/全量），标签在卡片上冗余 */
+.wbx-step .wb-dataset-tag { display: none; }
+/* ≤1280：资料卡 175px 宽，进一步收口 */
+@media (max-width: 1280px) {
+  /* 步骤卡整体再收一档：窄屏优先保证同屏，不牺牲字段 */
+  .wbx-step { padding: var(--wbx-s2) var(--wbx-s3); }
+  .wbx-step .wb-step-card-header { align-items: center; row-gap: var(--wbx-s1); }
+  .wbx-step .wb-dataset-desc { line-height: 1.35; }
+  .wbx-step .wb-dataset-grid-tight { gap: var(--wbx-s1); }
+  .wbx-step .wb-city-count-note { margin: 0; padding: var(--wbx-s1) var(--wbx-s2); overflow: hidden; font-size: 11.5px; line-height: 1.4; white-space: nowrap; text-overflow: ellipsis; }
+  /* 城市区工具条里的空态提示：单行，避免把头部撑到 3 行 */
+  .wbx-step .wb-preset-empty-hint { flex-shrink: 1; max-width: 160px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+}
+/* ≥769：资料卡统一 4 列（1440 下 197px/卡，1024 下 132px/卡），5 行压到 4 行 */
+@media (min-width: 769px) {
+  .wbx-collection .wbx-step .wb-source-group > .grid.wbx-dataset-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--wbx-s1); }
+}
+/* 智能范围提示条：说明文字单行省略，避免整条占 2 行 56px */
+.wbx-step .wb-baize-inline-banner { padding: 2px var(--wbx-s2); gap: var(--wbx-s2); }
+.wbx-step .wb-baize-banner-desc { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.wbx-step .wb-baize-banner-title { white-space: nowrap; }
+/* ≤768：资料卡两列并排，单卡仍保留标题 + 两行描述（15 张卡从 15 行压到 8 行） */
+@media (max-width: 768px) {
+  .wbx-collection .wbx-step .wb-source-group > .grid.wbx-dataset-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--wbx-s1); }
+  .wbx-step .wb-dataset-card { min-height: 0; }
+  .wbx-step .wb-step-card-header { row-gap: var(--wbx-s1); }
+  /* 手机上描述压到一行（两行 clamp 由 index.css 锁定，此处按行高裁剪到 1 行） */
+  .wbx-step .wb-dataset-desc { max-height: 17px; }
+  /* 手机端：未勾选的卡只留标题（描述在 158px 宽下只能显示半句，勾选后展开） */
+  .wbx-step .wb-dataset-card:not(.is-selected) .wb-dataset-desc { max-height: 0; margin-top: 0; }
+  .wbx-step { padding: var(--wbx-s2); }
+  /* 右栏在手机上位于页尾，进一步收紧，保证整页 ≤2.5 屏 */
+  .wbx-rail__card { gap: var(--wbx-s2); padding: var(--wbx-s3) var(--wbx-s2); }
+  .wbx-rail__facts { gap: var(--wbx-s1); padding: var(--wbx-s1) 0; }
+}
+/* 站点同步提示：压成 20px 单行细条（原为 50px 面板） */
+.wbx-step .wb-city-count-note { align-items: center; overflow: hidden; font-size: 11.5px; line-height: 1.5; white-space: nowrap; }
+.wbx-step .wb-city-count-note > small { display: block; max-height: 18px; overflow: hidden; font-size: 11.5px; line-height: 18px; white-space: nowrap; text-overflow: ellipsis; }
+/* Step 02 头部按钮带：单行横向滚动，替代 111px 的换行堆叠 */
+.wbx-step .wb-inline-city-toolbar { flex-wrap: nowrap; min-width: 0; max-width: 100%; overflow-x: auto; scrollbar-width: thin; }
+.wbx-step .wb-inline-city-toolbar .wb-preset-empty-hint { flex: 1 1 auto; min-width: 0; max-width: none; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* ══ 四、右栏「执行规则与摘要」 ════════════════════════════ */
+.wbx-rail { position: relative; align-self: start; min-width: 0; }
+/* N1：sticky 挂在网格项本身。父级 .wbx-rail__card 与容器同高时卡片没有位移行程，
+而 .wbx-rail 的包含块是整行网格区（由左栏内容撑高），滚动时才有吸附空间。 */
+@media (min-width: 1024px) {
+  .wbx-rail { position: sticky; top: calc(var(--wbx-header-h) + var(--wbx-s3)); align-self: start; height: fit-content; }
+}
+@media (min-width: 1024px) {
+  .wbx-rail { grid-column: 2 / 3; }
+}
+.wbx-rail__card { display: flex; flex-direction: column; gap: var(--wbx-s3); max-height: 80vh; overflow: auto; padding: var(--wbx-s3); background: var(--wbx-surface); border-radius: var(--wbx-r-md); box-shadow: var(--wbx-sh-1); }
+.wbx-rail__head { display: flex; align-items: center; justify-content: space-between; gap: var(--wbx-s2); min-height: 24px; }
+.wbx-rail__title-wrap { display: inline-flex; align-items: center; gap: var(--wbx-s2); min-width: 0; }
+.wbx-rail__title { margin: 0; color: var(--wbx-text); font-size: var(--wbx-fs-section); font-weight: var(--wbx-fw-section); white-space: nowrap; }
+.wbx-rail__facts { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: var(--wbx-s2) 0; border-top: 1px solid var(--wbx-border); border-bottom: 1px solid var(--wbx-border); }
+.wbx-rail__fact { display: flex; align-items: baseline; justify-content: space-between; gap: var(--wbx-s2); min-width: 0; }
+.wbx-rail__fact dt { flex-shrink: 0; color: var(--wbx-text-muted); font-size: var(--wbx-fs-meta); }
+.wbx-rail__fact dd { display: inline-flex; align-items: center; gap: 6px; min-width: 0; margin: 0; overflow: hidden; color: var(--wbx-text); font-size: var(--wbx-fs-body); font-weight: 500; white-space: nowrap; text-overflow: ellipsis; }
+.wbx-rail__fact-strong { font-weight: 600; }
+.wbx-rail__mono { overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--wbx-fs-meta); }
+.wbx-rail__selected { font-size: var(--wbx-fs-meta); }
+.wbx-rail__selected > summary { color: var(--wbx-text-muted); cursor: pointer; list-style: none; }
+.wbx-rail__selected > summary::-webkit-details-marker { display: none; }
+.wbx-rail__selected > summary::before { content: "＋ "; color: var(--wbx-primary); }
+.wbx-rail__selected[open] > summary::before { content: "－ "; }
+.wbx-rail__list { display: flex; flex-direction: column; gap: 2px; max-height: 200px; margin: var(--wbx-s2) 0 0; padding: 0; overflow: auto; list-style: none; }
+.wbx-rail__item { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 2px 0; }
+.wbx-rail__item-index { flex-shrink: 0; color: var(--wbx-text-muted); font-size: 10px; }
+.wbx-rail__item-badge { flex-shrink: 0; }
+.wbx-rail__item-name { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--wbx-text); white-space: nowrap; text-overflow: ellipsis; }
+.wbx-rail__item-remove { flex-shrink: 0; padding: 0 4px; color: var(--wbx-text-muted); background: transparent; border: 0; border-radius: var(--wbx-r-sm); cursor: pointer; line-height: 1.4; }
+.wbx-rail__item-remove:hover:not(:disabled) { color: var(--wbx-danger); background: var(--wbx-danger-soft); }
+.wbx-rail__actions { display: flex; flex-direction: column; gap: var(--wbx-s2); padding-top: var(--wbx-s2); border-top: 1px solid var(--wbx-border); }
+.wbx-rail__submit { width: 100%; }
+.wbx-hint__link { display: inline-flex; align-items: flex-start; gap: 6px; padding: 0; color: inherit; font: inherit; text-align: left; background: transparent; border: 0; cursor: pointer; }
+.wbx-hint__link:hover { text-decoration: underline; }
+.wbx-rail__done { display: flex; flex-direction: column; gap: var(--wbx-s2); padding: var(--wbx-s2); color: var(--wbx-success); background: var(--wbx-success-soft); border-radius: var(--wbx-r-sm); }
+.wbx-rail__done-head { display: flex; align-items: center; justify-content: space-between; gap: var(--wbx-s2); font-size: var(--wbx-fs-meta); font-weight: 600; }
+.wbx-rail__done-head > span { display: inline-flex; align-items: center; gap: 6px; }
+.wbx-rail__done-desc { margin: 0; color: var(--wbx-text-muted); font-size: var(--wbx-fs-meta); }
+/* N3：外层 .tc-center 已有边框（其 box-shadow 在 index.css 为 important，无法在本层覆盖），
+内层表格容器去掉边框与底色，全页只保留一层描边 */
+.wbx-taskcenter .wbx-table-scroll { border: 0; background: transparent; border-radius: 0; }
+/* N3：日期筛选触发器在 workbench.css 里「边框 + 0 1px 2px 阴影」并存，这里只去阴影 */
+.wbx-taskcenter .wb-datepicker-trigger { box-shadow: none; }
+.wbx-taskcenter .wb-datepicker-trigger.is-open { box-shadow: none; }
+/* ══ 五、任务中心表格 ═════════════════════════════════════ */
+/* 第一带：快捷筛选（左）+ 批量操作（右）——同一水平带 */
+.wbx-taskcenter__bar { flex-wrap: wrap; gap: var(--wbx-s2); margin-bottom: 0; padding: 0 0 var(--wbx-s2); border-bottom: 1px solid var(--wbx-border); }
+/* 第二带：搜索 / 平台 / 类型 / 日期 / 刷新 */
+.wbx-taskcenter__filters { flex-wrap: wrap; gap: var(--wbx-s2); margin-bottom: var(--wbx-s3); padding: var(--wbx-s2) 0 0; }
+.wbx-taskcenter .wb-quick-filters { flex-wrap: nowrap; margin-bottom: 0; overflow-x: auto; scrollbar-width: none; }
+.wbx-taskcenter__lead { flex-wrap: wrap; gap: var(--wbx-s2); min-width: 0; }
+.wbx-taskcenter__search { flex: 1 1 180px; min-width: 160px; max-width: 320px; }
+.wbx-taskcenter__actions { gap: var(--wbx-s2); margin-left: auto; }
+.wbx-taskcenter__scroll { background: var(--wbx-surface); border: 1px solid var(--wbx-border); border-radius: var(--wbx-r-md); }
+.wbx-taskcenter__table { min-width: 880px; }
+.wbx-taskcenter .wbx-table td,
+.wbx-taskcenter .wbx-table th { vertical-align: middle; }
+.wbx-taskcenter__check { width: 34px; }
+.wbx-taskcenter__task { min-width: 200px; max-width: 340px; }
+.wbx-taskcenter__title { display: block; max-width: 100%; padding: 0; overflow: hidden; color: var(--wbx-text); font-size: var(--wbx-fs-body); font-weight: 600; text-align: left; white-space: nowrap; text-overflow: ellipsis; background: transparent; border: 0; cursor: pointer; }
+.wbx-taskcenter__title:hover { color: var(--wbx-primary); }
+.wbx-taskcenter__sub { display: block; margin-top: 2px; overflow: hidden; color: var(--wbx-text-muted); font-size: var(--wbx-fs-meta); white-space: nowrap; text-overflow: ellipsis; }
+.wbx-taskcenter__num,
+.wbx-taskcenter__time { color: var(--wbx-text-muted); font-size: var(--wbx-fs-meta); white-space: nowrap; }
+.wbx-taskcenter__progress { min-width: 96px; }
+.wbx-taskcenter__pct { color: var(--wbx-text-muted); font-size: var(--wbx-fs-meta); }
+.wbx-taskcenter__muted { color: var(--wbx-text-muted); font-size: var(--wbx-fs-meta); }
+.wbx-progress { display: block; height: 4px; margin-top: 4px; overflow: hidden; background: var(--wbx-neutral-soft); border-radius: var(--wbx-r-pill); }
+.wbx-progress__bar { display: block; height: 100%; background: var(--wbx-progress); border-radius: inherit; }
+.wbx-taskcenter .wbx-table__actions { box-shadow: -8px 0 8px -8px var(--wbx-border-strong); }
+.wbx-taskcenter__ops { display: flex; flex-wrap: nowrap; justify-content: flex-end; gap: var(--wbx-s1); white-space: nowrap; }
+.wbx-taskcenter__skeleton { padding: var(--wbx-s3); }
+/* ≤768：表格本身横向滚动，操作列不再 sticky（否则会盖住整屏可见区，只剩「操作」） */
+@media (max-width: 768px) {
+  .wbx-taskcenter .wbx-table__actions { position: static; box-shadow: none; }
+}
+/* 表头与操作列 sticky 需要有高度上限的滚动容器 */
+@media (min-width: 1024px) {
+  .wbx-taskcenter__scroll { max-height: calc(100vh - var(--wbx-header-h) - 300px); }
+}
+/* 采集页底部留白：主体已同屏，48px 尾距改为 24px（仅该页生效，:has 不可用时自动跳过） */
+@supports selector(:has(*)) {
+  .wbx-page:has(.wbx-collection) { padding-top: var(--wbx-s4); padding-bottom: var(--wbx-s5); }
+}
+/* N2：右栏「清空」二次确认层的按钮条（复用 WorkbenchDrawer） */
+.wbx-dialog-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--wbx-s2); margin-top: var(--wbx-s4); }
+
+
+/* P0-2：城市卡 flex 布局 —— 名称可截断、站数不换行，「保定 1 站」任何宽度都不折行 */
+.wbx-step .wb-inline-city-chip { display: flex; align-items: center; justify-content: space-between; gap: var(--wbx-s2); min-width: 0; }
+.wbx-step .wb-inline-city-chip .wb-city-check-box { flex-shrink: 0; }
+.wbx-step .wb-inline-city-chip .wb-city-chip-name { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.wbx-step .wb-inline-city-chip .wb-city-status { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+/* P0-3：「只看已选」独立开关（复用分类按钮外观，语义独立，放分类行末尾） */
+.wbx-dataset-only-selected { flex-shrink: 0; margin-left: auto; }
+.wbx-dataset-only-selected.is-active { color: var(--wbx-primary); background: var(--wbx-primary-soft); border-color: var(--wbx-primary); font-weight: 600; }
+/* P1-6：02 工具行分组分隔符 */
+.wbx-toolbar-sep { flex-shrink: 0; align-self: center; width: 1px; height: 18px; background: var(--wbx-border-strong); }
+.wbx-snapshot-btn { flex-shrink: 0; }
+
+/* T6-0b：旧层只给了 white-space:nowrap，文字会溢出自身盒子（叠印机制），这里补 ellipsis 与 flex 约束 */
+.wbx-step .wb-month-card-3 { min-width: 0; }
+.wbx-step .wb-month-chip-left { flex: 1 1 auto; min-width: 0; }
+.wbx-step .wb-month-card-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.wbx-step .wb-month-chip-range { flex: 0 0 auto; margin-left: 8px; }
+.wbx-step .wb-city-chip-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.wbx-step .wb-city-status { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }

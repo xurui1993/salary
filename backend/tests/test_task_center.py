@@ -151,5 +151,17 @@ class SharedListTests(unittest.TestCase):
             opened.assert_called_once_with(str(folder))
             with self.assertRaises(HTTPException):center.open_directory({'path':'C:/arbitrary'},request('POST'))
 
+    def test_module_fengshen_includes_generate_records(self):
+        rows = [
+            record('dl_1'),
+            {**record('gen_1'), 'kind': 'generate', 'datasets': ['payment_binding']},
+            {**record('gen_2'), 'kind': 'generate', 'datasets': ['abnormal_riders'], 'cities': ['全部城市']},
+            {**record('lan_1'), 'datasets': ['lanorange_part_price'], 'cities': ['全部城市']},
+        ]
+        fengshen, _ = center.select_records(rows, set(), {'module': 'fengshen'})
+        self.assertEqual(sorted(r['id'] for r in fengshen), ['dl_1', 'gen_1', 'gen_2'])
+        lanorange, _ = center.select_records(rows, set(), {'module': 'lanorange'})
+        self.assertEqual([r['id'] for r in lanorange], ['lan_1'])
+
 
 if __name__=='__main__':unittest.main()

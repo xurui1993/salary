@@ -115,12 +115,16 @@ def options(request: Request):
         raise HTTPException(503, "下载配置暂时不可用，请检查采集依赖") from None
 
 
+def _visible(run):
+    return {**run, "files": [file for file in run.get("files", []) if not file.get("record_hidden")]}
+
+
 @router.get("/runs")
 def runs(request: Request):
     user = require_account(request)
     owner = None if user["role"] == "admin" else user["owner"]
     try:
-        return {"runs": _call(lambda: get_manager().list_runs(owner))}
+        return {"runs": [_visible(run) for run in _call(lambda: get_manager().list_runs(owner))]}
     except HTTPException as exc:
         if exc.status_code >= 500:
             return {"runs": []}
@@ -175,13 +179,13 @@ async def create(request: Request):
     gate_datasets(config['datasets'])
     result = _call(lambda: get_manager().create(owner, config, request_id=request_id))
     audit_event(user, "download.create", result["id"])
-    return {"run": result}
+    return {"run": _visible(result)}
 
 
 @router.get("/runs/{run_id}")
 def run(run_id: str, request: Request):
     _, owner = _authorized(request, run_id)
-    return {"run": _call(lambda: get_manager().get_run(owner, run_id))}
+    return {"run": _visible(_call(lambda: get_manager().get_run(owner, run_id)))}
 
 
 @router.post("/runs/{run_id}/cancel")
@@ -190,7 +194,7 @@ async def cancel(run_id: str, request: Request):
     await _json(request)
     result = _call(lambda: get_manager().cancel(owner, run_id))
     audit_event(user, "download.cancel", run_id)
-    return {"run": result}
+    return {"run": _visible(result)}
 
 
 @router.post("/runs/{run_id}/resume-detail")
@@ -207,7 +211,7 @@ async def resume_detail(run_id: str, request: Request):
     result = _call(lambda: get_manager().retry(owner, run_id, items, "resume_" + run_id, actor_owner=user["owner"],
                                               allow_shared_result=user["role"] == "admin", existing_only=True))
     audit_event(user, "download.resume", result["id"])
-    return {"run": result}
+    return {"run": _visible(result)}
 
 
 @router.post("/runs/{run_id}/retry")
@@ -223,7 +227,7 @@ async def retry(run_id: str, request: Request):
     result = _call(lambda: get_manager().retry(owner, run_id, payload["items"], request_id, actor_owner=user["owner"],
                                               allow_shared_result=user["role"] == "admin"))
     audit_event(user, "download.retry", result["id"])
-    return {"run": result}
+    return {"run": _visible(result)}
 
 
 @router.get("/runs/{run_id}/files/{file_id}")

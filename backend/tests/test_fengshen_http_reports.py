@@ -40,6 +40,9 @@ class ProtocolFixture:
         self.exports = 0
         self.export_error = None
         self.products = {"6865": ALL_CITY_SEND_PRODUCT, "44": "饿了么-蜂鸟专送", "8281": "淘宝全城送"}
+        self.hold_until_exports = 0
+        self.fail_first_after_two = False
+        self.downloads_at_second_export = None
 
     def request(self, method, url, *, body=None, params=None):
         assert method == "POST"
@@ -55,7 +58,15 @@ class ProtocolFixture:
             return {"result": {"data": {"total": self.total,
                     "data": [{"agencyId": self.order_agency}] if self.total else []}}}
         if url == TASKS_URL:
-            return {"result": {"data": {"data": [dict(task) for task in self.tasks]}}}
+            rows = []
+            for task in self.tasks:
+                row = dict(task)
+                if self.hold_until_exports and self.exports < self.hold_until_exports:
+                    row["statusDesc"] = "生成中"
+                elif self.fail_first_after_two and self.exports >= 2 and row["id"] == 1:
+                    row["statusDesc"] = "导出失败"
+                rows.append(row)
+            return {"result": {"data": {"data": rows}}}
         if url == EXPORT_URL:
             self.exports += 1
             if self.export_error:
@@ -63,6 +74,8 @@ class ProtocolFixture:
             for _ in range(2 if self.ambiguous else 1):
                 self.tasks.append({"id": len(self.tasks) + 1, "fileName": "运单", "exportTime": int(time.time()*1000),
                                    "status": 1, "statusDesc": "导出成功"})
+            if self.exports == 2:
+                self.downloads_at_second_export = self.client.download.call_count
             return {"result": {"code": "200"}}
         if url == TASK_URL:
             return {"result": {"data": "https://files.ele.me/waybills"}}
@@ -249,16 +262,65 @@ class ReportTests(unittest.TestCase):
         self.assertFalse(outcome["欺诈单"]["filtered_by_applicants"])
         self.assertEqual(self.fixture.exports, 0)
 
-    def test_six_day_range_splits_five_plus_one(self):
+    def test_eight_day_range_splits_seven_plus_one(self):
         self.fixture.total = 0
-        self.plan.start = (dt.date.fromisoformat(self.plan.end) - dt.timedelta(days=5)).isoformat()
+        self.plan.start = (dt.date.fromisoformat(self.plan.end) - dt.timedelta(days=7)).isoformat()
         reports = self.collector.orders(self.plan, self.root, {"fraud"})
         self.assertEqual(len(reports), 2)
-        self.assertEqual(len(reports[0]["expected_waybills_by_date"]), 5)
+        self.assertEqual(len(reports[0]["expected_waybills_by_date"]), 7)
         self.assertEqual(len(reports[1]["expected_waybills_by_date"]), 1)
         self.assertEqual(reports[0]["start"], self.plan.start)
         self.assertEqual(reports[1]["end"], self.plan.end)
         self.assertEqual(self.fixture.exports, 0)
+
+    def test_corrupt_waybill_download_is_fetched_once_more(self):
+        original = ProtocolFixture.download
+        calls = []
+        def download(url, target):
+            calls.append(target)
+            if len(calls) == 1:
+                Path(target).write_bytes(b"not a zip")
+                return target
+            return original(url, target)
+        self.client.download.side_effect = download
+        reports = list(self.collector.orders_stream(self.plan, self.root, {"problem"}))
+        self.assertEqual(len(reports), 1)
+        self.assertEqual(reports[0]["status"], "success")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(reports[0]["expected_waybills"], 1)
+
+    def test_concurrent_exports_start_before_the_first_download(self):
+        self.fixture.hold_until_exports = 2
+        self.plan.start = (dt.date.fromisoformat(self.plan.end) - dt.timedelta(days=11)).isoformat()
+        reports = list(self.collector.orders_stream(self.plan, self.root, {"fraud"}, concurrency=2))
+        self.assertEqual(self.fixture.exports, 2)
+        self.assertEqual(self.fixture.downloads_at_second_export, 0)
+        self.assertEqual(len(reports), 2)
+        self.assertEqual([report["task_id"] for report in reports], ["1", "2"])
+        self.assertEqual([report["start"] for report in reports], sorted(report["start"] for report in reports))
+
+    def test_serial_mode_downloads_the_first_batch_before_submitting_the_second(self):
+        self.plan.start = (dt.date.fromisoformat(self.plan.end) - dt.timedelta(days=11)).isoformat()
+        reports = list(self.collector.orders_stream(self.plan, self.root, {"fraud"}, concurrency=1))
+        self.assertEqual(self.fixture.exports, 2)
+        self.assertEqual(self.fixture.downloads_at_second_export, 1)
+        self.assertEqual(len(reports), 2)
+
+    def test_failure_with_two_exports_retains_both_receipts_and_interrupts_the_other(self):
+        self.fixture.hold_until_exports = 2
+        self.fixture.fail_first_after_two = True
+        self.plan.start = (dt.date.fromisoformat(self.plan.end) - dt.timedelta(days=11)).isoformat()
+        with self.assertRaises(BillCollectionError):
+            list(self.collector.orders_stream(self.plan, self.root, {"fraud"}, concurrency=2))
+        self.assertEqual(self.fixture.exports, 2)
+        manifests = {json.loads(path.read_text(encoding="utf-8"))["start"]:
+                     json.loads(path.read_text(encoding="utf-8"))
+                     for path in self.root.glob("*/manifest.json")}
+        self.assertEqual(len(manifests), 2)
+        self.assertEqual({value["status"] for value in manifests.values()}, {"failed", "interrupted"})
+        self.assertEqual(len(list(self.root.glob("*/http_submission.json"))), 2)
+        with self.assertRaises(HttpTransportError):
+            list(self.collector.orders_stream(self.plan, self.root, {"fraud"}, concurrency=2))
 
     def test_foreign_city_response_never_exports(self):
         self.fixture.order_agency = 9

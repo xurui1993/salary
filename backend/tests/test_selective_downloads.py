@@ -187,7 +187,10 @@ class SelectiveDownloadsTests(unittest.TestCase):
                 manifest, raw, inputs, plan = self.bundle(str(index), "问题单" in kinds)
                 result = prepare_order_files([manifest], raw, inputs, plan, [(self.start, self.end)], selected_kinds=selected)
                 self.assertEqual(set(result), kinds | {"order_batches"})
-                self.assertEqual({path.name for path in inputs.iterdir()}, {"泉州-" + kind + "_auto.csv" for kind in kinds})
+                expected = {"泉州-" + kind + "_auto.csv" for kind in kinds if kind != "问题单"}
+                if "问题单" in kinds:
+                    expected |= {"泉州-问题单_auto.csv", "泉州-问题单汇总_auto.xlsx", "泉州-问题单明细_auto.xlsx"}
+                self.assertEqual({path.name for path in inputs.iterdir()}, expected)
                 if "欺诈单" in kinds:
                     self.assertEqual(result["欺诈单"]["rows"], 1)
                 if "问题单" in kinds:

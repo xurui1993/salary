@@ -36,24 +36,13 @@ export function connectionSummary(systems: {state?: string; offline?: boolean}[]
   return '需连接';
 }
 
-export type SystemKey = 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang' | 'benlai' | 'dengta';
+import { connectionChips, systemLabel, systemShortLabel } from './platformCatalog';
 
-export interface SystemMetaItem {
-  key: SystemKey;
-  label: '风神' | '蓝橙' | '商翼' | '小象灯塔' | '灯塔' | '本来人力';
-  businessLine: string;
-  description: string;
-  planned?: boolean;
-}
+// 平台字典已迁移至 `./platformCatalog`（单一数据源），此处仅做兼容再导出，
+// 保证既有 `import { SYSTEM_META } from '../lib/workbench'` 无需改动。
+export type { SystemKey, SystemMetaItem } from './platformCatalog';
+export { SYSTEM_META } from './platformCatalog';
 
-export const SYSTEM_META: SystemMetaItem[] = [
-  { key: 'fengshen', label: '风神', businessLine: '淘宝闪购自有系统', description: '配送费、违规扣款、月度UB账单、骑手绑定、欺诈/问题单等核心账单数据源。' },
-  { key: 'lanorange', label: '蓝橙', businessLine: '原雷神', description: '原雷神 · 骑手人事档案、兼职价格档案、离职/批量离职、请假等内部人事数据源。' },
-  { key: 'baize', label: '商翼', businessLine: '商翼系统', description: '商翼全部员工原表独立下载；不随兼职核算自动补齐。' },
-  { key: 'xiaoxiang', label: '灯塔', businessLine: '美团灯塔系统', description: '商配送骑手订单明细与日维度骑手分析，独立下载。' },
-  { key: 'benlai', label: '本来人力', businessLine: '本来人力商户端', description: '企业全量灵工档案与签约状态；签约城市用于发薪平台绑定判定。' },
-  { key: 'dengta', label: '灯塔', businessLine: '美团灯塔系统', description: '灯塔薪资申请表与配送资料手动上传核算。' },
-];
 
 export type BillingPeriodPreset =
   | 'last_full_month'
@@ -170,6 +159,85 @@ export function computeMonthSelectionRange(
   }
   const lastDay = daysInMonth(year, month);
   return { start, end: `${ym}-${pad2(lastDay)}` };
+}
+
+export function toggleMultiMonthSelection(
+  currentMonths: string[],
+  targetMonth: string,
+  allowedMonths: string[],
+): string[] {
+  if (!allowedMonths.includes(targetMonth)) return currentMonths;
+  const validCurrent = [...new Set(currentMonths.filter(m => allowedMonths.includes(m)))].sort();
+  if (validCurrent.includes(targetMonth)) {
+    if (validCurrent.length <= 1) return validCurrent;
+    return validCurrent.filter(m => m !== targetMonth);
+  }
+  return [...validCurrent, targetMonth].sort();
+}
+
+export function areMonthsContiguous(months: string[]): boolean {
+  const sorted = [...new Set(months)].sort();
+  if (sorted.length <= 1) return true;
+  for (let i = 1; i < sorted.length; i += 1) {
+    const [prevY, prevM] = sorted[i - 1].split('-').map(Number);
+    const [curY, curM] = sorted[i].split('-').map(Number);
+    if (!Number.isFinite(prevY) || !Number.isFinite(prevM) || !Number.isFinite(curY) || !Number.isFinite(curM)) {
+      return false;
+    }
+    const prevIdx = prevY * 12 + (prevM - 1);
+    const curIdx = curY * 12 + (curM - 1);
+    if (curIdx - prevIdx !== 1) return false;
+  }
+  return true;
+}
+
+export interface MonthRunChunk {
+  months: string[];
+  start: string;
+  end: string;
+}
+
+export function buildMultiMonthRunRanges(
+  selectedMonths: string[],
+  referenceDateStr: string,
+  options: {
+    capAtYesterday?: boolean;
+    minDate?: string;
+    maxDate?: string;
+    maxDaysPerRun?: number;
+  } = {},
+): MonthRunChunk[] {
+  const { capAtYesterday = false, minDate, maxDate, maxDaysPerRun } = options;
+  const sorted = [...new Set(selectedMonths.filter(m => /^\d{4}-\d{2}$/.test(m)))].sort();
+  const perMonth: MonthRunChunk[] = [];
+  for (const month of sorted) {
+    const base = computeMonthSelectionRange(month, referenceDateStr, { capAtYesterday });
+    const clampedStart = minDate && base.start < minDate ? minDate : base.start;
+    const clampedEnd = maxDate && base.end > maxDate ? maxDate : base.end;
+    if (clampedStart <= clampedEnd) {
+      perMonth.push({ months: [month], start: clampedStart, end: clampedEnd });
+    }
+  }
+  if (perMonth.length <= 1) return perMonth;
+
+  const merged: MonthRunChunk[] = [perMonth[0]];
+  for (let i = 1; i < perMonth.length; i += 1) {
+    const prev = merged[merged.length - 1];
+    const curr = perMonth[i];
+    const isContiguous = areMonthsContiguous([prev.months[prev.months.length - 1], curr.months[0]]);
+    const combinedDays = computeDateRangeSpanDays(prev.start, curr.end);
+    const withinLimit = !maxDaysPerRun || (combinedDays !== null && combinedDays <= maxDaysPerRun);
+    if (isContiguous && withinLimit) {
+      merged[merged.length - 1] = {
+        months: [...prev.months, ...curr.months],
+        start: prev.start,
+        end: curr.end,
+      };
+    } else {
+      merged.push(curr);
+    }
+  }
+  return merged;
 }
 
 export interface BuiltinScenarioPreset {
@@ -392,10 +460,30 @@ export interface SidebarNavItemSpec {
 }
 
 export interface SidebarNavGroupSpec {
-  id: 'collection' | 'business' | 'archive';
-  title: '数据采集' | '核算与业务' | '归档与配置';
+  id: 'collection' | 'business';
+  title: '数据采集' | '核算与业务';
   items: SidebarNavItemSpec[];
 }
+
+export const PRIMARY_NAV_ITEMS: SidebarNavItemSpec[] = [
+  { id: 'collection', label: '数据采集', iconKey: 'compass' },
+  { id: 'payroll', label: '薪资核算', iconKey: 'wallet-cards' },
+  { id: 'approval', label: '价格审批', iconKey: 'badge-dollar-sign' },
+];
+
+export type CollectionSubView = 'create' | 'history';
+export type PayrollSubView = 'batches' | 'deductions' | 'templates';
+
+export const COLLECTION_SUB_VIEWS: { id: CollectionSubView; label: string; iconKey: SidebarNavItemSpec['iconKey'] }[] = [
+  { id: 'create', label: '新建采集', iconKey: 'compass' },
+  { id: 'history', label: '任务中心', iconKey: 'folder-check' },
+];
+
+export const PAYROLL_SUB_VIEWS: { id: PayrollSubView; label: string; iconKey: SidebarNavItemSpec['iconKey'] }[] = [
+  { id: 'batches', label: '核算批次', iconKey: 'wallet-cards' },
+  { id: 'deductions', label: '扣款规则', iconKey: 'sliders-horizontal' },
+  { id: 'templates', label: '模板中心', iconKey: 'file-spreadsheet' },
+];
 
 export const SIDEBAR_NAV_GROUPS: SidebarNavGroupSpec[] = [
   {
@@ -404,42 +492,108 @@ export const SIDEBAR_NAV_GROUPS: SidebarNavGroupSpec[] = [
     items: [
       { id: 'fengshen', label: '风神数据', iconKey: 'compass' },
       { id: 'lanorange', label: '蓝橙数据', iconKey: 'layers' },
-      { id: 'baize', label: '白泽商翼', iconKey: 'users-round' },
+      { id: 'payout', label: '发薪平台', iconKey: 'users-round' },
       { id: 'xiaoxiang', label: '小象灯塔', iconKey: 'radar' },
-      { id: 'benlai', label: '本来人力', iconKey: 'building-2' },
     ],
   },
   {
     id: 'business',
     title: '核算与业务',
     items: [
-      { id: 'generate', label: '专项报表', iconKey: 'bar-chart-3' },
       { id: 'payroll', label: '薪资核算', iconKey: 'wallet-cards' },
       { id: 'approval', label: '价格审批', iconKey: 'badge-dollar-sign' },
-    ],
-  },
-  {
-    id: 'archive',
-    title: '归档与配置',
-    items: [
-      { id: 'history', label: '任务中心', iconKey: 'folder-check' },
       { id: 'deductions', label: '扣款规则', iconKey: 'sliders-horizontal' },
       { id: 'templates', label: '模板中心', iconKey: 'file-spreadsheet' },
     ],
   },
 ];
 
+export const SIDEBAR_FOOTER_ITEM: SidebarNavItemSpec = {
+  id: 'history',
+  label: '任务中心',
+  iconKey: 'folder-check',
+};
+
 export interface HeaderModuleContext {
-  groupLabel: '数据采集' | '核算与业务' | '归档与配置';
+  groupLabel: '数据采集' | '核算与业务' | '任务记录' | '薪资核算' | '价格审批';
   title: string;
   subtitle: string;
   iconKey: SidebarNavItemSpec['iconKey'];
 }
 
+export function getPrimaryHeaderContext(options: {
+  workspaceView: 'create' | 'history' | 'approval' | 'price-export';
+  taskKind: 'download' | 'generate' | 'payroll';
+  downloadPlatform: 'fengshen' | 'lanorange' | 'payout' | 'xiaoxiang';
+  payrollSubView?: PayrollSubView;
+}): HeaderModuleContext {
+  const { workspaceView, taskKind, downloadPlatform, payrollSubView = 'batches' } = options;
+
+  if (workspaceView === 'approval' || workspaceView === 'price-export') {
+    return {
+      groupLabel: '价格审批',
+      title: workspaceView === 'approval' ? '批量审批' : '待审每日价格导出',
+      subtitle:
+        workspaceView === 'approval'
+          ? '筛选本人蓝橙价格提审，跨页勾选后预览并批量审批'
+          : '拉取有权限站点的最新待审版本，导出骑手每日价格表',
+      iconKey: 'badge-dollar-sign',
+    };
+  }
+
+  if (workspaceView === 'create' && taskKind === 'payroll') {
+    if (payrollSubView === 'deductions') {
+      return {
+        groupLabel: '薪资核算',
+        title: '扣款规则配置',
+        subtitle: '按城市与团队维护站点默认扣款金额、关键词匹配规则及批量同步',
+        iconKey: 'sliders-horizontal',
+      };
+    }
+    if (payrollSubView === 'templates') {
+      return {
+        groupLabel: '薪资核算',
+        title: '标准模板中心',
+        subtitle: '下载与更新淘宝闪购、美团小象等兼职薪资核算标准 Excel 模板',
+        iconKey: 'file-spreadsheet',
+      };
+    }
+    return {
+      groupLabel: '薪资核算',
+      title: '核算批次队列',
+      subtitle: '上传薪资申请表，自动识别范围、齐套资料并执行兼职核算',
+      iconKey: 'wallet-cards',
+    };
+  }
+
+  if (workspaceView === 'history') {
+    return {
+      groupLabel: '数据采集',
+      title: '任务中心',
+      subtitle: '统一查看跨平台采集任务、专项报表与核算进度，一键领取产出文件',
+      iconKey: 'folder-check',
+    };
+  }
+
+  const platformNames: Record<'fengshen' | 'lanorange' | 'payout' | 'xiaoxiang', string> = {
+    fengshen: '风神数据（含专项报表）',
+    lanorange: '蓝橙数据',
+    payout: '发薪平台（白泽商翼 + 本来人力）',
+    xiaoxiang: systemLabel('xiaoxiang'),
+  };
+
+  return {
+    groupLabel: '数据采集',
+    title: platformNames[downloadPlatform] || '跨平台数据采集',
+    subtitle: '四合一跨平台数据采集工作台 · 切换平台保留已选资料，支持一键合并提交多平台任务',
+    iconKey: 'compass',
+  };
+}
+
 export function getHeaderModuleContext(
   workspaceView: 'create' | 'history' | 'approval' | 'price-export',
   taskKind: 'download' | 'generate' | 'payroll',
-  downloadPlatform: 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang' | 'benlai',
+  downloadPlatform: 'fengshen' | 'lanorange' | 'payout' | 'xiaoxiang',
   historyAll: boolean,
 ): HeaderModuleContext {
   if (workspaceView === 'approval' || workspaceView === 'price-export') {
@@ -454,7 +608,7 @@ export function getHeaderModuleContext(
   }
   if (workspaceView === 'history' && historyAll) {
     return {
-      groupLabel: '归档与配置',
+      groupLabel: '任务记录',
       title: '任务中心',
       subtitle: '统一查看任务、下载结果和整理历史记录',
       iconKey: 'folder-check',
@@ -484,11 +638,11 @@ export function getHeaderModuleContext(
       iconKey: 'layers',
     };
   }
-  if (downloadPlatform === 'baize') {
+  if (downloadPlatform === 'payout') {
     return {
       groupLabel: '数据采集',
-      title: '白泽商翼',
-      subtitle: '商翼系统全量员工原始档案独立下载与记录巡检',
+      title: '发薪平台',
+      subtitle: '白泽商翼员工档案与本来人力灵工档案统一采集、授权巡检与结果领取',
       iconKey: 'users-round',
     };
   }
@@ -500,18 +654,10 @@ export function getHeaderModuleContext(
       iconKey: 'radar',
     };
   }
-  if (downloadPlatform === 'benlai') {
-    return {
-      groupLabel: '数据采集',
-      title: '本来人力',
-      subtitle: '本来人力商户端灵工档案与签约状态导出，用于支付绑定判定',
-      iconKey: 'building-2',
-    };
-  }
   return {
     groupLabel: '数据采集',
     title: '风神数据',
-    subtitle: '按城市与账期采集配送费、违规扣款、UB账单及考勤源表',
+    subtitle: '按城市与账期采集配送费、违规扣款、UB账单、考勤源表与专项报表',
     iconKey: 'compass',
   };
 }
@@ -525,7 +671,7 @@ export interface StageHeaderMeta {
 
 export function getStageHeaderMeta(
   taskKind: 'download' | 'generate',
-  platform?: 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang' | 'benlai',
+  platform?: 'fengshen' | 'lanorange' | 'payout' | 'xiaoxiang',
   view: 'create' | 'history' = 'create',
 ): StageHeaderMeta {
   if (taskKind === 'generate') {
@@ -539,12 +685,11 @@ export function getStageHeaderMeta(
           : '选择目标表，系统自动关联来源资料。',
     };
   }
-  const titleMap: Record<'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang' | 'benlai', string> = {
+  const titleMap: Record<'fengshen' | 'lanorange' | 'payout' | 'xiaoxiang', string> = {
     fengshen: '风神下载',
     lanorange: '蓝橙下载',
-    baize: '商翼下载',
+    payout: '发薪平台',
     xiaoxiang: '灯塔下载',
-    benlai: '本来人力下载',
   };
   const title = platform ? titleMap[platform] : '资料下载';
   return {
@@ -554,7 +699,9 @@ export function getStageHeaderMeta(
     subtitle:
       view === 'history'
         ? '查看本模块采集任务进度、核对分项状态并领取产出文件。'
-        : '选择所需资料，再确认处理范围。',
+        : platform === 'payout'
+          ? '勾选需要导出的发薪数据源，全站全城实时直采并自动归档。'
+          : '选择所需资料，再确认处理范围。',
   };
 }
 
@@ -572,13 +719,8 @@ export function getPlatformStatusCluster(
   states: Record<string, { state?: string; busy?: boolean; offline?: boolean } | undefined>,
   fengshenFallback?: { state?: string; busy?: boolean; offline?: boolean } | null,
 ): PlatformStatusChip[] {
-  const defs: { key: PlatformStatusChip['key']; shortLabel: PlatformStatusChip['shortLabel'] }[] = [
-    { key: 'fengshen', shortLabel: '风神' },
-    { key: 'lanorange', shortLabel: '蓝橙' },
-    { key: 'baize', shortLabel: '商翼' },
-    { key: 'xiaoxiang', shortLabel: '灯塔' },
-    { key: 'benlai', shortLabel: '本来' },
-  ];
+  const defs: { key: PlatformStatusChip['key']; shortLabel: PlatformStatusChip['shortLabel'] }[] =
+    connectionChips().map(item => ({ key: item.key, shortLabel: item.shortName }));
   return defs.map(({ key, shortLabel }) => {
     const raw = states[key] || (key === 'fengshen' ? fengshenFallback || {} : {});
     const state = raw?.state || '';
@@ -919,6 +1061,24 @@ const DATASET_CARD_META_MAP: Record<string, Omit<DatasetCardMeta, 'id'>> = {
     tone: 'snapshot',
     desc: '工服、餐箱及电池领用扣款登记表',
   },
+  payment_binding: {
+    title: '骑手支付绑定',
+    scopeTag: '生成·按月',
+    tone: 'monthly',
+    desc: '自动关联风神收薪绑定与蓝橙、发薪档案，输出骑手支付绑定及多城汇总',
+  },
+  abnormal_followup: {
+    title: '异常骑手跟进',
+    scopeTag: '生成·按月',
+    tone: 'monthly',
+    desc: '以支付绑定为基准，关联物资、UB账单与价格档案，输出异常待跟进表',
+  },
+  abnormal_riders: {
+    title: '异常骑手整理',
+    scopeTag: '生成·全量',
+    tone: 'full',
+    desc: '固定全城全量汇总蓝橙离职、请假与骑手档案（免选城市与月份）',
+  },
   // 蓝橙数据
   lanorange_rider_quit: {
     title: '骑手离职',
@@ -968,12 +1128,24 @@ const DATASET_CARD_META_MAP: Record<string, Omit<DatasetCardMeta, 'id'>> = {
     tone: 'full',
     desc: '原雷神在职与离职骑手人事总档案',
   },
-  // 白泽商翼
+  delivery_waybill: {
+    title: '运单数据',
+    scopeTag: '城市·账期',
+    tone: 'city',
+    desc: '按运单终态时间导出城市运单明细，支持全城送标品筛选',
+  },
+  // 发薪平台（白泽商翼 + 本来人力）
   baize_employees: {
     title: '商翼员工资料',
     scopeTag: '全站·全量',
     tone: 'full',
     desc: '导出商翼系统全量在职与离职员工原始档案表，独立归档不参与兼职自动补齐',
+  },
+  benlai_employees: {
+    title: '本来人力灵工资料',
+    scopeTag: '全城·全量',
+    tone: 'full',
+    desc: '导出本来人力全量灵工档案与实时签约城市，用于发薪平台绑定判定',
   },
   // 小象灯塔
   rider_daily: {
@@ -1023,7 +1195,7 @@ const DATASET_CARD_META_MAP: Record<string, Omit<DatasetCardMeta, 'id'>> = {
 export function getDatasetCardMeta(datasetId: string, rawLabel?: string): DatasetCardMeta {
   const cleanLabel = (rawLabel || datasetId)
     .replaceAll('白泽', '商翼')
-    .replaceAll('小象灯塔', '灯塔')
+    .replaceAll('小象灯塔', systemShortLabel('xiaoxiang'))
     .replaceAll('小象', '灯塔')
     .replace(/（灯塔）$/, '');
   const known = DATASET_CARD_META_MAP[datasetId];
@@ -1361,6 +1533,7 @@ export interface ExecutionRailSummaryInput {
   cities: string[];
   start: string;
   end: string;
+  selectedMonths?: string[];
   noCity: boolean;
   noDate: boolean;
   archiveOnly: boolean;
@@ -1369,6 +1542,11 @@ export interface ExecutionRailSummaryInput {
   blueOnly: boolean;
   baizeOnly: boolean;
   benlaiOnly?: boolean;
+  payoutOnly?: boolean;
+  payoutBoth?: boolean;
+  abnormalRidersOnly?: boolean;
+  generatedCount?: number;
+  rawCount?: number;
   merchantOnly: boolean;
   merchantSnapshotOnly: boolean;
   merchantDateValid: boolean;
@@ -1385,6 +1563,10 @@ export interface ExecutionRailSummary {
   periodSpanBadge: string | null;
   thirdRowLabel: string;
   thirdRowValue: string;
+  /** 预计任务量数值（纯数字或 `N × M`）；无有效选择时为空串，UI 显示「—」。 */
+  estimateValue: string;
+  /** 预计任务量单位（`批` / `份` / `类`）；与 `estimateValue` 同生同灭。 */
+  estimateUnit: string;
   listFooterText: string;
   blockerHint: string;
 }
@@ -1395,6 +1577,7 @@ export function buildExecutionRailSummary(input: ExecutionRailSummaryInput): Exe
     cities,
     start,
     end,
+    selectedMonths,
     noCity,
     noDate,
     archiveOnly,
@@ -1403,6 +1586,11 @@ export function buildExecutionRailSummary(input: ExecutionRailSummaryInput): Exe
     blueOnly,
     baizeOnly,
     benlaiOnly,
+    payoutOnly,
+    payoutBoth,
+    abnormalRidersOnly,
+    generatedCount = 0,
+    rawCount = datasetsCount,
     merchantOnly,
     merchantSnapshotOnly,
     merchantDateValid,
@@ -1413,28 +1601,48 @@ export function buildExecutionRailSummary(input: ExecutionRailSummaryInput): Exe
     submitReady,
   } = input;
 
-  const cityLabel = cities.length > 0
-    ? `${cities.slice(0, 3).join('、')}${cities.length > 3 ? ` 等 ${cities.length} 城` : ''}`
-    : archiveOnly
-      ? '全部站点快照'
-      : xiaoxiangDated
-        ? '可访问全部城市'
-        : baizeOnly
-          ? '全部站点（商翼全量）'
-          : benlaiOnly
-            ? '全部站点（本来人力全量）'
-            : blueOnly
-            ? '全部城市（全量）'
-            : '未选择城市';
+  const isPayoutAny = Boolean(baizeOnly || benlaiOnly || payoutBoth || payoutOnly);
 
-  const isSnapshotScope = baizeOnly || noDate;
+  const cityLabel = abnormalRidersOnly
+    ? '全部城市（全量）'
+    : cities.length > 0
+      ? `${cities.slice(0, 3).join('、')}${cities.length > 3 ? ` 等 ${cities.length} 城` : ''}`
+      : archiveOnly
+        ? '全部站点快照'
+        : xiaoxiangDated
+          ? '账号全量（未选城市）'
+          : payoutBoth
+            ? '全站全城（商翼 + 本来）'
+            : baizeOnly
+              ? '全部站点（商翼全量）'
+              : benlaiOnly
+                ? '全部站点（本来人力全量）'
+                : payoutOnly
+                  ? '全部授权站点与城市'
+                  : blueOnly
+                    ? '全部城市（全量）'
+                    : '未选择城市';
+
+  const isSnapshotScope = isPayoutAny || noDate || Boolean(abnormalRidersOnly);
   const spanDays = !isSnapshotScope ? computeDateRangeSpanDays(start, end) : null;
+  const sortedMonths = selectedMonths ? [...new Set(selectedMonths)].sort() : [];
 
   let periodText = '全量实时快照';
   let periodSpanBadge: string | null = '不限账期';
 
-  if (!isSnapshotScope) {
-    if (!start || !end) {
+  if (abnormalRidersOnly) {
+    periodText = '全量最新档案';
+    periodSpanBadge = '不限账期';
+  } else if (!isSnapshotScope) {
+    if (sortedMonths.length > 1) {
+      if (blueOnly || !areMonthsContiguous(sortedMonths)) {
+        periodText = sortedMonths.join('、');
+        periodSpanBadge = `共 ${sortedMonths.length} 个月`;
+      } else {
+        periodText = start.slice(0, 4) === end.slice(0, 4) ? `${start} ~ ${end.slice(5)}` : `${start} ~ ${end}`;
+        periodSpanBadge = spanDays ? `${sortedMonths.length}个月 · ${spanDays}天` : `共 ${sortedMonths.length} 个月`;
+      }
+    } else if (!start || !end) {
       periodText = '待选择账期';
       periodSpanBadge = null;
     } else if (start === end) {
@@ -1452,23 +1660,34 @@ export function buildExecutionRailSummary(input: ExecutionRailSummaryInput): Exe
   let thirdRowLabel = '站点规则';
   let thirdRowValue = '排除取分离';
 
-  if (!noCity && !xiaoxiangOnly) {
+  if (abnormalRidersOnly) {
+    thirdRowLabel = '交付规格';
+    thirdRowValue = '1 份全城整理表';
+  } else if (!noCity && !xiaoxiangOnly && !isPayoutAny) {
     thirdRowLabel = '站点规则';
     thirdRowValue = merchantOnly ? '全部站点' : excludeSeparation !== undefined ? (excludeSeparation ? '排除取分离' : '全部站点（含取分离）') : includeSeparation ? '仅取分离' : '排除取分离';
   } else {
     thirdRowLabel = '交付规格';
-    thirdRowValue = baizeOnly || benlaiOnly
-      ? '单份全量原表'
-      : blueOnly
-        ? `每类 1 份汇总表`
-        : archiveOnly
-          ? '全城骑手档案快照'
-          : `按账期合并导出`;
+    thirdRowValue = payoutBoth
+      ? '2 份独立原表'
+      : baizeOnly || benlaiOnly
+        ? '单份全量原表'
+        : payoutOnly
+          ? '按所选平台独立导出'
+          : blueOnly
+            ? `每类 1 份汇总表`
+            : archiveOnly
+              ? '全城骑手档案快照'
+              : `按账期合并导出`;
   }
 
   let listFooterText = '';
   if (datasetsCount > 0) {
-    if (baizeOnly) {
+    if (abnormalRidersOnly) {
+      listFooterText = '异常骑手整理 · 固定全城全量导出';
+    } else if (payoutBoth) {
+      listFooterText = '已选双发薪平台 · 自动拆分为 2 批独立采集';
+    } else if (baizeOnly) {
       listFooterText = '商翼全量员工档案 · 独立归档';
     } else if (benlaiOnly) {
       listFooterText = '本来人力全量灵工档案 · 签约城市实时读取';
@@ -1480,6 +1699,14 @@ export function buildExecutionRailSummary(input: ExecutionRailSummaryInput): Exe
       listFooterText = `已选 ${datasetsCount} 类蓝橙资料 · 全城全量直连`;
     } else if (merchantOnly) {
       listFooterText = `已选 ${datasetsCount} 类商家资料 · ${cities.length || 0} 城全部站点`;
+    } else if (generatedCount > 0 && rawCount > 0) {
+      listFooterText = cities.length > 0
+        ? `已选 ${rawCount} 类资料 + ${generatedCount} 份报表 · 将自动分批提交`
+        : `已选 ${rawCount} 类资料 + ${generatedCount} 份报表 · 待选择处理城市`;
+    } else if (generatedCount > 0) {
+      listFooterText = cities.length > 0
+        ? `已选 ${generatedCount} 份专项报表 · 预计 ${subitemCount} 个生成子项`
+        : `已选 ${generatedCount} 份专项报表 · 待选择处理城市`;
     } else {
       listFooterText = cities.length > 0
         ? `已选 ${datasetsCount} 类资料 · 预计 ${subitemCount} 个采集子项`
@@ -1490,7 +1717,7 @@ export function buildExecutionRailSummary(input: ExecutionRailSummaryInput): Exe
   let blockerHint = '';
   if (!submitReady) {
     if (datasetsCount === 0) {
-      blockerHint = '请先在左侧勾选需要采集的资料';
+      blockerHint = isPayoutAny ? '请先在左侧选择至少 1 个发薪平台' : '请先在左侧勾选需要采集的资料';
     } else if (!noCity && cities.length === 0) {
       blockerHint = '请至少选择 1 个处理城市';
     } else if (merchantOnly && !merchantSnapshotOnly && !merchantDateValid) {
@@ -1500,14 +1727,84 @@ export function buildExecutionRailSummary(input: ExecutionRailSummaryInput): Exe
     }
   }
 
+  // 预计任务量（US-1.2）：快照类恒为 1 批/份；城市×资料类按 资料数 × 城市数 估；
+  // 全量覆盖类（无城市维度）按资料数估；无有效选择时留空串，由 UI 渲染「—」，不显示 0。
+  let estimateValue = '';
+  let estimateUnit = '';
+  if (datasetsCount > 0) {
+    if (isPayoutAny) {
+      estimateValue = '1';
+      estimateUnit = '批';
+    } else if (abnormalRidersOnly || archiveOnly) {
+      estimateValue = '1';
+      estimateUnit = '份';
+    } else if (noCity) {
+      estimateValue = String(datasetsCount);
+      estimateUnit = '类';
+    } else if (cities.length > 0) {
+      estimateValue = `${datasetsCount} × ${cities.length}`;
+      estimateUnit = '份';
+    }
+  }
+
   return {
     cityLabel,
     periodText,
     periodSpanBadge,
     thirdRowLabel,
     thirdRowValue,
+    estimateValue,
+    estimateUnit,
     listFooterText,
     blockerHint,
   };
 }
+
+export type FengshenDatasetCategoryId = 'all' | 'settlement' | 'attendance' | 'orders' | 'profile' | 'reports';
+
+export interface FengshenDatasetCategoryDef {
+  id: FengshenDatasetCategoryId;
+  label: string;
+  datasetIds: string[];
+}
+
+export const FENGSHEN_DATASET_CATEGORIES: FengshenDatasetCategoryDef[] = [
+  { id: 'all', label: '全部资料', datasetIds: [] },
+  { id: 'settlement', label: '账单结算', datasetIds: ['delivery_fee', 'penalty', 'rider_monthly', 'receive_account'] },
+  { id: 'attendance', label: '明细与出勤', datasetIds: ['rider_detail', 'attendance_detail', 'invitation_records'] },
+  { id: 'orders', label: '风控与运单', datasetIds: ['fraud', 'problem', 'delivery_waybill'] },
+  { id: 'profile', label: '档案与物资', datasetIds: ['rider_info', 'goods_rent'] },
+  { id: 'reports', label: '专项报表', datasetIds: ['payment_binding', 'abnormal_followup', 'abnormal_riders'] },
+];
+
+const FENGSHEN_REPORT_ORDER = ['payment_binding', 'abnormal_followup', 'abnormal_riders'];
+
+export function sortFengshenDatasetsWithReportsLast<T extends { id: string }>(datasets: T[]): T[] {
+  const reportIndex = new Map(FENGSHEN_REPORT_ORDER.map((id, index) => [id, index]));
+  const raw = datasets.filter(item => !reportIndex.has(item.id));
+  const reports = datasets
+    .filter(item => reportIndex.has(item.id))
+    .sort((a, b) => (reportIndex.get(a.id) ?? 99) - (reportIndex.get(b.id) ?? 99));
+  return [...raw, ...reports];
+}
+
+export function filterFengshenDatasetsByCategory<T extends { id: string }>(
+  datasets: T[],
+  category: FengshenDatasetCategoryId,
+): T[] {
+  const ordered = sortFengshenDatasetsWithReportsLast(datasets);
+  if (category === 'all') return ordered;
+  const def = FENGSHEN_DATASET_CATEGORIES.find(item => item.id === category);
+  if (!def || def.datasetIds.length === 0) return ordered;
+  const allowed = new Set(def.datasetIds);
+  return ordered.filter(item => allowed.has(item.id));
+}
+
+export function countFengshenDatasetsByCategory(
+  datasets: { id: string }[],
+  category: FengshenDatasetCategoryId,
+): number {
+  return filterFengshenDatasetsByCategory(datasets, category).length;
+}
+
 

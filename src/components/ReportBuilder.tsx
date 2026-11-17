@@ -1,2 +1,918 @@
-// @ts-nocheck
-var __defProp=Object.defineProperty;var __name=(target,value)=>__defProp(target,"name",{value,configurable:true});import{Fragment,jsx,jsxs}from"react/jsx-runtime";import{useEffect,useRef,useState}from"react";import{Check,ChevronDown,FileSpreadsheet,RefreshCw,Search}from"lucide-react";import{monthBounds,reportRange}from"../lib/reportBuilder";import{WorkbenchDatePicker}from"./WorkbenchDatePicker";import{useStationDirectory}from"../lib/useStationDirectory";import{CityStationCount}from"./CityStationCount";function ReportBuilder(props: { onSelect: (id: string) => void; onRecollect: (value: boolean) => void; [key: string]: any }){const stationDirectory=useStationDirectory("fengshen");const{reports,selectedId,cities,selectedCities,locked}=props;const report=reports.find(item=>item.id===selectedId);const range=reportRange(report,props.start,props.end,props.today);const[reportSearch,setReportSearch]=useState("");const[cityOpen,setCityOpen]=useState(false),[citySearch,setCitySearch]=useState("");const picker=useRef(null);useEffect(()=>{setCityOpen(false);setCitySearch("")},[selectedId,locked]);useEffect(()=>{const outside=__name(event=>{if(!picker.current?.contains(event.target))setCityOpen(false)},"outside");const escape=__name(event=>{if(event.key==="Escape")setCityOpen(false)},"escape");document.addEventListener("mousedown",outside);document.addEventListener("keydown",escape);return()=>{document.removeEventListener("mousedown",outside);document.removeEventListener("keydown",escape)}},[]);const selectable=cities.filter(city=>!city.disabled);const chooseCity=__name(name=>props.onCities(selectedCities.includes(name)?selectedCities.filter(value=>value!==name):[...selectedCities,name]),"chooseCity");const chooseMonth=__name((month,start)=>{if(!month){if(start)props.onStart("");else props.onEnd("");return}const bounds=monthBounds(month);if(!bounds)return;if(start)props.onStart(bounds.start);else props.onEnd(bounds.end)},"chooseMonth");const quickMonth=__name(offset=>{const[year,month]=props.today.slice(0,7).split("-").map(Number);const date=new Date(Date.UTC(year,month-1+offset,1));const bounds=monthBounds(date.toISOString().slice(0,7));if(bounds){props.onStart(bounds.start);props.onEnd(bounds.end)}},"quickMonth");const citySummary=selectedCities.length?`${selectedCities.slice(0,3).join("\u3001")}${selectedCities.length>3?`\u7B49 ${selectedCities.length} \u57CE`:""}`:"\u8BF7\u9009\u62E9\u57CE\u5E02";const hint=!report?"\u8BF7\u9009\u62E9\u62A5\u8868":!range?"\u8BF7\u9009\u62E9\u6709\u6548\u7684\u65F6\u95F4\u8303\u56F4":report.scope==="all"?"\u5168\u90E8\u57CE\u5E02 \xB7 \u5F53\u524D\u5168\u91CF":!selectedCities.length?"\u8BF7\u9009\u62E9\u81F3\u5C11\u4E00\u4E2A\u57CE\u5E02":report.scope==="city_month"?`${selectedCities.length} \u4E2A\u57CE\u5E02 \xD7 ${range.months} \u4E2A\u6708\u4EFD`:`${selectedCities.length} \u4E2A\u57CE\u5E02 \xB7 ${range.start} \u81F3 ${range.end}`;return jsxs("section",{className:"rb-builder","aria-label":"\u4E13\u9879\u62A5\u8868\u751F\u6210",children:[jsxs("aside",{className:"rb-catalog","aria-label":"\u62A5\u8868\u76EE\u5F55",children:[jsx("span",{className:"rb-catalog-label",children:"\u9009\u62E9\u62A5\u8868\u7C7B\u578B"}),reports.length>6&&jsxs("label",{className:"rb-report-search",children:[jsx(Search,{size:14}),jsx("input",{"aria-label":"\u641C\u7D22\u62A5\u8868",placeholder:"\u641C\u7D22\u62A5\u8868",value:reportSearch,onChange:e=>setReportSearch(e.target.value)})]}),jsx("div",{className:"rb-report-list",role:"radiogroup","aria-label":"\u9009\u62E9\u4E1A\u52A1\u62A5\u8868",children:reports.filter(item=>item.label.includes(reportSearch.trim())).map(item=>jsxs("button",{type:"button",role:"radio","aria-checked":selectedId===item.id,disabled:locked,onClick:()=>props.onSelect(item.id),className:selectedId===item.id?"is-selected":"",children:[jsx(FileSpreadsheet,{size:18}),jsxs("span",{children:[jsx("strong",{children:item.label}),jsx("small",{children:item.scope==="city_month"?"\u6309\u57CE\u5E02 \xB7 \u6309\u6708":item.scope==="city_range"?"\u6309\u57CE\u5E02 \xB7 \u6309\u65E5\u671F":"\u5168\u90E8\u57CE\u5E02 \xB7 \u5168\u91CF"})]}),selectedId===item.id&&jsx(Check,{size:15})]},item.id))}),!reports.length&&jsx("p",{className:"rb-muted",children:"\u6682\u65E0\u53EF\u7528\u62A5\u8868\u3002"})]}),jsxs("div",{className:"rb-configuration",children:[jsxs("header",{className:"rb-heading",children:[jsxs("div",{children:[jsx("h3",{children:report?.label||"\u9009\u62E9\u4E1A\u52A1\u62A5\u8868"}),jsx("p",{children:report?.description||"\u4ECE\u5DE6\u4FA7\u9009\u62E9\u9700\u8981\u751F\u6210\u7684\u62A5\u8868\u3002"})]}),jsx("span",{className:"rb-systems",children:report?.systems?.join(" / ")})]}),report&&jsxs(Fragment,{children:[jsxs("div",{className:"rb-fields",children:[report.scope==="all"?jsxs("div",{className:"rb-fixed-scope",children:[jsxs("div",{children:[jsx("span",{children:"\u57CE\u5E02\u8303\u56F4"}),jsx("strong",{children:"\u5168\u90E8\u57CE\u5E02"})]}),jsxs("div",{children:[jsx("span",{children:"\u8D44\u6599\u8303\u56F4"}),jsx("strong",{children:"\u5F53\u524D\u5168\u91CF \xB7 \u4E0D\u6309\u65E5\u671F\u7B5B\u9009"})]})]}):jsxs(Fragment,{children:[jsxs("div",{className:"rb-field rb-city-field",ref:picker,children:[jsx("label",{id:"report-city-label",children:"\u5904\u7406\u57CE\u5E02"}),jsxs("button",{type:"button",className:"rb-city-trigger","aria-labelledby":"report-city-label","aria-expanded":cityOpen,disabled:locked,onClick:()=>setCityOpen(!cityOpen),children:[jsx("span",{className:selectedCities.length?"":"rb-muted",children:citySummary}),jsxs("span",{children:[selectedCities.length>0&&jsxs("small",{children:[selectedCities.length," \u57CE"]}),jsx(ChevronDown,{size:15})]})]}),cityOpen&&jsxs("div",{className:"rb-city-picker",children:[jsxs("label",{className:"rb-city-search",children:[jsx(Search,{size:14}),jsx("input",{autoFocus:true,"aria-label":"\u641C\u7D22\u62A5\u8868\u57CE\u5E02",placeholder:"\u641C\u7D22\u57CE\u5E02",value:citySearch,onChange:e=>setCitySearch(e.target.value)})]}),jsxs("div",{className:"rb-city-tools",children:[jsx("button",{type:"button",disabled:locked||!selectable.length,onClick:()=>props.onCities(selectable.map(city=>city.name)),children:"\u5168\u9009\u53EF\u7528\u57CE\u5E02"}),jsx("button",{type:"button",disabled:locked,onClick:()=>props.onCities([]),children:"\u6E05\u7A7A"}),jsxs("button",{type:"button",disabled:locked||props.refreshing,onClick:props.onRefreshCities,children:[jsx(RefreshCw,{size:12}),props.refreshing?"\u5237\u65B0\u4E2D\u2026":"\u5237\u65B0\u57CE\u5E02"]})]}),jsx("div",{className:"rb-city-options",role:"group","aria-label":"\u62A5\u8868\u57CE\u5E02\u5217\u8868",children:cities.filter(city=>city.name.includes(citySearch.trim())).map(city=>jsxs("label",{title:city.note,children:[jsx("input",{type:"checkbox",disabled:locked||city.disabled,checked:!city.disabled&&selectedCities.includes(city.name),onChange:()=>chooseCity(city.name)}),jsx("span",{children:city.name}),jsx(CityStationCount,{directory:stationDirectory.data,city:city.id}),city.disabled&&jsx("small",{children:city.note||"\u4E0D\u53EF\u7528"})]},city.id))}),!selectable.length&&jsx("p",{className:"rb-muted",children:"\u6682\u65E0\u53EF\u7528\u57CE\u5E02\uFF0C\u8BF7\u5237\u65B0\u57CE\u5E02\u6216\u68C0\u67E5\u5E73\u53F0\u8FDE\u63A5\u3002"}),jsxs("div",{className:"rb-city-picker-footer",children:[jsxs("span",{children:["\u5DF2\u9009 ",selectedCities.length," \u57CE"]}),jsx("button",{type:"button",onClick:stationDirectory.refresh,children:"\u5237\u65B0\u7AD9\u70B9\u6570"}),jsx("button",{type:"button",onClick:()=>setCityOpen(false),children:"\u5B8C\u6210"})]})]})]}),jsxs("div",{className:"rb-field rb-period-field",children:[jsxs("div",{className:"rb-label-row",children:[jsx("label",{children:report.scope==="city_month"?"\u4E1A\u52A1\u6708\u4EFD":"\u4E1A\u52A1\u65E5\u671F"}),report.scope==="city_month"&&jsxs("span",{children:[jsx("button",{type:"button",disabled:locked,onClick:()=>quickMonth(-1),children:"\u4E0A\u6708"}),jsx("button",{type:"button",disabled:locked,onClick:()=>quickMonth(0),children:"\u672C\u6708"})]})]}),jsxs("div",{className:"rb-period-inputs",children:[jsxs("div",{children:[jsx("span",{className:"sr-only",children:report.scope==="city_month"?"\u5F00\u59CB\u6708\u4EFD":"\u5F00\u59CB\u65E5\u671F"}),jsx(WorkbenchDatePicker,{ariaLabel:report.scope==="city_month"?"\u62A5\u8868\u5F00\u59CB\u6708\u4EFD":"\u62A5\u8868\u5F00\u59CB\u65E5\u671F",mode:report.scope==="city_month"?"month":"date",max:report.scope==="city_month"?props.today.slice(0,7):props.today,value:report.scope==="city_month"?props.start.slice(0,7):props.start,rangeRole:"start",rangeStart:props.start,rangeEnd:props.end,today:props.today,disabled:locked,onChange:val=>report.scope==="city_month"?chooseMonth(val,true):props.onStart(val)})]}),jsx("span",{children:"\u81F3"}),jsxs("div",{children:[jsx("span",{className:"sr-only",children:report.scope==="city_month"?"\u7ED3\u675F\u6708\u4EFD":"\u7ED3\u675F\u65E5\u671F"}),jsx(WorkbenchDatePicker,{ariaLabel:report.scope==="city_month"?"\u62A5\u8868\u7ED3\u675F\u6708\u4EFD":"\u62A5\u8868\u7ED3\u675F\u65E5\u671F",mode:report.scope==="city_month"?"month":"date",max:report.scope==="city_month"?props.today.slice(0,7):props.today,value:report.scope==="city_month"?props.end.slice(0,7):props.end,rangeRole:"end",rangeStart:props.start,rangeEnd:props.end,today:props.today,align:"right",disabled:locked,onChange:val=>report.scope==="city_month"?chooseMonth(val,false):props.onEnd(val)})]})]}),range&&report.scope==="city_month"&&jsxs("small",{className:"rb-muted",children:[range.start," \u81F3 ",range.end," \xB7 \u6309\u6708\u4EFD\u751F\u6210"]}),!range&&jsx("small",{role:"alert",className:"rb-invalid",children:"\u5F00\u59CB\u65F6\u95F4\u4E0D\u80FD\u665A\u4E8E\u7ED3\u675F\u65F6\u95F4\uFF0C\u8BF7\u586B\u5199\u6709\u6548\u8303\u56F4\u3002"})]})]}),report.station_rule==="separation"&&report.scope!=="all"&&jsxs("label",{className:"rb-field rb-station-field",children:["\u7AD9\u70B9\u8303\u56F4",jsxs("select",{"aria-label":"\u62A5\u8868\u7AD9\u70B9\u8303\u56F4",disabled:locked,value:props.includeSeparation?"only":"exclude",onChange:e=>props.onSeparation(e.target.value==="only"),children:[jsx("option",{value:"exclude",children:"\u6392\u9664\u53D6\u5206\u79BB\u7AD9\u70B9"}),jsx("option",{value:"only",children:"\u4EC5\u53D6\u5206\u79BB\u7AD9\u70B9"})]})]})]}),jsxs("details",{className:"rb-explanation",children:[jsxs("summary",{children:["\u62A5\u8868\u8BF4\u660E\u4E0E\u6765\u6E90\uFF08",report.sources.length,"\uFF09"]}),jsx("ul",{children:report.sources.map(source=>jsx("li",{children:source.replaceAll("\u767D\u6CFD","\u5546\u7FFC")},source))}),jsx("p",{children:"\u8D44\u6599\u4E0D\u8DB3\u65F6\u6682\u505C\u751F\u6210\uFF0C\u5DF2\u53D6\u5F97\u7684\u8D44\u6599\u4FDD\u7559\u3002"})]},report.id)]}),props.uncertain&&jsx("p",{className:"rb-notice",role:"status",children:"\u4E0A\u6B21\u63D0\u4EA4\u7ED3\u679C\u5C1A\u672A\u786E\u8BA4\uFF0C\u8303\u56F4\u5DF2\u9501\u5B9A\u3002\u8BF7\u786E\u8BA4\u539F\u8BF7\u6C42\uFF0C\u907F\u514D\u91CD\u590D\u521B\u5EFA\u3002"}),props.duplicate&&!props.uncertain&&jsxs("div",{className:"rb-notice",children:[jsx("p",{children:"\u76F8\u540C\u8303\u56F4\u5DF2\u6709\u7ED3\u679C\uFF0C\u53EF\u76F4\u63A5\u67E5\u770B\u3002"}),jsxs("label",{children:[jsx("input",{type:"checkbox",checked:props.recollect,disabled:locked,onChange:e=>props.onRecollect(e.target.checked)}),"\u91CD\u65B0\u91C7\u96C6\uFF0C\u751F\u6210\u65B0\u7248\u672C"]})]}),jsxs("footer",{className:"rb-footer",children:[jsxs("div",{children:[jsx("strong",{children:hint}),report?.station_rule==="separation"&&report.scope!=="all"&&jsx("small",{children:props.includeSeparation?"\u4EC5\u53D6\u5206\u79BB\u7AD9\u70B9":"\u6392\u9664\u53D6\u5206\u79BB\u7AD9\u70B9"})]}),jsxs("button",{type:"button",className:"wb-primary",disabled:props.disabled||!report||!range,onClick:props.onSubmit,children:[jsx(FileSpreadsheet,{size:16}),props.creating?"\u63D0\u4EA4\u4E2D\u2026":props.submitLabel]})]})]})]})}__name(ReportBuilder,"ReportBuilder");export{ReportBuilder};
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Check,
+  ChevronDown,
+  FileSpreadsheet,
+  Layers,
+  MapPin,
+  RefreshCw,
+  Search,
+  X,
+} from 'lucide-react';
+import {
+  buildGenerateBatchPayloads,
+  buildRecentReportMonths,
+  buildReportMonthChunks,
+  deriveSelectedMonthsFromRange,
+  summarizeSelectedReportsScope,
+  toggleReportMonthSelection,
+  toggleReportSelection,
+  type ReportDefinition,
+} from '../lib/reportBuilder';
+import { useStationDirectory } from '../lib/useStationDirectory';
+import { CityStationCount } from './CityStationCount';
+
+interface CityItem {
+  id: string;
+  name: string;
+  disabled?: boolean;
+  note?: string;
+}
+
+export interface ReportBuilderProps {
+  reports: ReportDefinition[];
+  selectedIds?: string[];
+  onSelectIds?: (ids: string[]) => void;
+  selectedId?: string;
+  onSelect?: (id: string) => void;
+  cities: CityItem[];
+  selectedCities: string[];
+  onCities: (cities: string[]) => void;
+  start: string;
+  end: string;
+  today: string;
+  onStart: (value: string) => void;
+  onEnd: (value: string) => void;
+  selectedMonths?: string[];
+  onSelectedMonths?: (months: string[]) => void;
+  excludeSeparation?: boolean;
+  onExcludeSeparation?: (value: boolean) => void;
+  includeSeparation?: boolean;
+  onSeparation?: (value: boolean) => void;
+  locked: boolean;
+  creating: boolean;
+  disabled: boolean;
+  submitLabel: string;
+  onSubmit: () => void;
+  uncertain: boolean;
+  duplicate: boolean;
+  recollect: boolean;
+  onRecollect: (value: boolean) => void;
+  refreshing: boolean;
+  onRefreshCities: () => void;
+}
+
+function reportScopeLabel(scope: ReportDefinition['scope']): string {
+  if (scope === 'city_month') return '按城市 · 近3月';
+  if (scope === 'city_range') return '按城市 · 按日期';
+  return '全部城市 · 全量';
+}
+
+export function ReportBuilder(props: ReportBuilderProps) {
+  const stationDirectory = useStationDirectory('fengshen');
+  const { reports, cities, selectedCities, locked } = props;
+
+  const activeSelectedIds = (
+    props.selectedIds ?? (props.selectedId ? [props.selectedId] : [])
+  ).filter(id => reports.some(report => report.id === id));
+
+  const recentMonths = buildRecentReportMonths(props.today, 3);
+  const allowedMonthCodes = recentMonths.map(item => item.month);
+  const activeMonths = (
+    props.selectedMonths !== undefined
+      ? props.selectedMonths.filter(m => allowedMonthCodes.includes(m))
+      : deriveSelectedMonthsFromRange(props.start, props.end, allowedMonthCodes)
+  ).sort();
+
+  const selectedReports = reports.filter(report => activeSelectedIds.includes(report.id));
+  const scopeSummary = summarizeSelectedReportsScope(
+    selectedReports,
+    props.start,
+    props.end,
+    props.today,
+    activeMonths,
+  );
+  const range = scopeSummary.range;
+  const monthChunks =
+    activeMonths.length > 0 ? buildReportMonthChunks(activeMonths, props.today) : [];
+
+  const effectiveExcludeSeparation =
+    props.excludeSeparation !== undefined
+      ? props.excludeSeparation
+      : !(props.includeSeparation ?? false);
+
+  const handleExcludeSeparationChange = (checked: boolean) => {
+    if (locked) return;
+    props.onExcludeSeparation?.(checked);
+    props.onSeparation?.(!checked);
+  };
+
+  const updateSelectedIds = (nextIds: string[]) => {
+    if (props.onSelectIds) {
+      props.onSelectIds(nextIds);
+      return;
+    }
+    if (props.onSelect) {
+      props.onSelect(nextIds[nextIds.length - 1] || '');
+    }
+  };
+
+  const handleToggleReport = (id: string) => {
+    if (locked) return;
+    if (props.onSelectIds) {
+      updateSelectedIds(
+        toggleReportSelection(
+          activeSelectedIds,
+          id,
+          reports.map(r => r.id),
+        ),
+      );
+      return;
+    }
+    if (props.onSelect) {
+      props.onSelect(id);
+    }
+  };
+
+  const [reportDropdownOpen, setReportDropdownOpen] = useState(false);
+  const [reportSearch, setReportSearch] = useState('');
+  const [citySearch, setCitySearch] = useState('');
+  const reportDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (locked) {
+      setReportDropdownOpen(false);
+    }
+  }, [locked]);
+
+  useEffect(() => {
+    const outside = (event: MouseEvent) => {
+      if (!reportDropdownRef.current?.contains(event.target as Node)) {
+        setReportDropdownOpen(false);
+      }
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setReportDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', outside);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('mousedown', outside);
+      document.removeEventListener('keydown', escape);
+    };
+  }, []);
+
+  const selectable = cities.filter(city => !city.disabled);
+  const filteredCities = citySearch.trim()
+    ? cities.filter(city => city.name.includes(citySearch.trim()))
+    : cities;
+  const filteredReports = reportSearch.trim()
+    ? reports.filter(
+        report =>
+          report.label.includes(reportSearch.trim()) ||
+          (report.description || '').includes(reportSearch.trim()),
+      )
+    : reports;
+
+  const chooseCity = (name: string) => {
+    if (locked) return;
+    props.onCities(
+      selectedCities.includes(name)
+        ? selectedCities.filter(value => value !== name)
+        : [...selectedCities, name],
+    );
+  };
+
+  const applyMonths = (nextMonths: string[]) => {
+    if (locked) return;
+    const valid = [...new Set(nextMonths.filter(m => allowedMonthCodes.includes(m)))].sort();
+    if (!valid.length) return;
+    const nextChunks = buildReportMonthChunks(valid, props.today);
+    props.onSelectedMonths?.(valid);
+    if (nextChunks.length > 0) {
+      props.onStart(nextChunks[0].start);
+      props.onEnd(nextChunks[nextChunks.length - 1].end);
+    }
+  };
+
+  const handleToggleMonth = (monthCode: string) => {
+    if (locked) return;
+    const nextMonths = toggleReportMonthSelection(activeMonths, monthCode, allowedMonthCodes);
+    applyMonths(nextMonths);
+  };
+
+  const blockerText = !selectedReports.length
+    ? '请先在左侧「01 报表类型」选择至少 1 份报表'
+    : scopeSummary.needsCity && !selectedCities.length
+      ? '请至少选择 1 个处理城市'
+      : scopeSummary.needsDate && !range
+        ? '请选择有效的业务月份'
+        : '';
+
+  const plannedBatches = buildGenerateBatchPayloads(
+    selectedReports,
+    selectedCities,
+    props.start,
+    props.end,
+    props.today,
+    {
+      excludeSeparation: effectiveExcludeSeparation,
+      selectedMonths: activeMonths,
+    },
+  );
+  const plannedBatchCount = plannedBatches.length;
+
+  const effectiveSubmitLabel =
+    props.submitLabel === '生成报表'
+      ? selectedReports.length > 1
+        ? `批量生成 ${selectedReports.length} 份报表`
+        : plannedBatchCount > 1
+          ? `批量生成 ${plannedBatchCount} 批报表`
+          : '生成报表'
+      : props.submitLabel;
+
+  const allReportsSelected =
+    reports.length > 0 && reports.every(report => activeSelectedIds.includes(report.id));
+  const allMonthsSelected =
+    allowedMonthCodes.length > 0 &&
+    allowedMonthCodes.every(monthCode => activeMonths.includes(monthCode));
+
+  return (
+    <section className="rb-workbench" aria-label="专项报表生成">
+      <div className="rb-main">
+        {/* Step 01: Left Report Type Multi-Select Dropdown */}
+        <section className="wb-step-card rb-step-card" aria-labelledby="report-type-label">
+          <div className="wb-step-card-header">
+            <div className="wb-step-badge">
+              <span className="wb-step-number">01</span>
+              <span id="report-type-label" className="wb-step-title">
+                报表类型
+              </span>
+              <span className="wb-step-count-pill tabular-nums">
+                已选 {selectedReports.length} / {reports.length} 项
+              </span>
+            </div>
+
+            {reports.length > 0 && props.onSelectIds && (
+              <div className="wb-inline-city-toolbar">
+                <button
+                  type="button"
+                  className="wb-city-preset-btn"
+                  disabled={locked}
+                  onClick={() =>
+                    updateSelectedIds(
+                      allReportsSelected ? [] : reports.map(report => report.id),
+                    )
+                  }
+                >
+                  {allReportsSelected ? '清空报表' : '全选报表'}
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="rb-report-dropdown" ref={reportDropdownRef}>
+            <button
+              type="button"
+              className={`rb-report-dropdown-trigger ${selectedReports.length > 0 ? 'has-value' : ''} ${reportDropdownOpen ? 'is-open' : ''}`}
+              aria-haspopup="listbox"
+              aria-expanded={reportDropdownOpen}
+              aria-label="选择业务报表"
+              disabled={locked || !reports.length}
+              onClick={() => setReportDropdownOpen(open => !open)}
+            >
+              <div className="rb-dropdown-trigger-main">
+                <span className="rb-dropdown-icon" aria-hidden="true">
+                  <FileSpreadsheet size={16} />
+                </span>
+                {selectedReports.length === 0 ? (
+                  <span className="rb-dropdown-placeholder">
+                    请选择需要生成的专项报表（支持多选）
+                  </span>
+                ) : (
+                  <div className="rb-dropdown-chips">
+                    {selectedReports.map(report => (
+                      <span key={report.id} className="rb-selected-chip">
+                        <span>{report.label}</span>
+                        <small>{reportScopeLabel(report.scope)}</small>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="rb-dropdown-trigger-end">
+                <span className="rb-dropdown-action-hint">
+                  {reportDropdownOpen ? '收起列表' : '点击选择（支持多选）'}
+                </span>
+                <ChevronDown
+                  size={16}
+                  className={`rb-dropdown-chevron ${reportDropdownOpen ? 'is-rotated' : ''}`}
+                />
+              </div>
+            </button>
+
+            {reportDropdownOpen && (
+              <div
+                className="rb-report-dropdown-menu"
+                role="listbox"
+                aria-multiselectable={!!props.onSelectIds}
+                aria-label="专项报表下拉列表"
+              >
+                {reports.length > 4 && (
+                  <label className="rb-dropdown-search">
+                    <Search size={14} />
+                    <input
+                      autoFocus
+                      aria-label="搜索报表"
+                      placeholder="搜索报表名称或说明…"
+                      value={reportSearch}
+                      onChange={e => setReportSearch(e.target.value)}
+                    />
+                  </label>
+                )}
+
+                <div className="rb-dropdown-options">
+                  {filteredReports.map(item => {
+                    const isSelected = activeSelectedIds.includes(item.id);
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        role="option"
+                        aria-selected={isSelected}
+                        disabled={locked}
+                        onClick={() => handleToggleReport(item.id)}
+                        className={`rb-dropdown-option ${isSelected ? 'is-selected' : ''}`}
+                      >
+                        <span
+                          className={`rb-option-check ${isSelected ? 'is-checked' : ''}`}
+                          aria-hidden="true"
+                        >
+                          {isSelected && <Check size={12} strokeWidth={2.75} />}
+                        </span>
+                        <div className="rb-option-content">
+                          <div className="rb-option-top">
+                            <strong>{item.label}</strong>
+                            <span className="rb-option-scope">{reportScopeLabel(item.scope)}</span>
+                          </div>
+                          {item.description && (
+                            <p className="rb-option-desc">{item.description}</p>
+                          )}
+                          {item.systems && item.systems.length > 0 && (
+                            <span className="rb-option-systems">
+                              关联系统：{item.systems.join(' / ')}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                  {!filteredReports.length && (
+                    <p className="rb-dropdown-empty">未找到匹配的报表</p>
+                  )}
+                </div>
+
+                <div className="rb-dropdown-footer">
+                  <span className="rb-dropdown-footer-count tabular-nums">
+                    已选 {selectedReports.length} / {reports.length} 项
+                  </span>
+                  <div className="rb-dropdown-footer-actions">
+                    {props.onSelectIds && (
+                      <>
+                        <button
+                          type="button"
+                          className="rb-text-action"
+                          disabled={locked || allReportsSelected}
+                          onClick={() => updateSelectedIds(reports.map(r => r.id))}
+                        >
+                          全选
+                        </button>
+                        <button
+                          type="button"
+                          className="rb-text-action"
+                          disabled={locked || !selectedReports.length}
+                          onClick={() => updateSelectedIds([])}
+                        >
+                          清空
+                        </button>
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      className="rb-dropdown-done-btn"
+                      onClick={() => setReportDropdownOpen(false)}
+                    >
+                      完成
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {!reports.length && <p className="rb-muted">暂无可用报表。</p>}
+
+          {selectedReports.length > 0 && (
+            <div className="rb-selected-summary-block">
+              <div className="rb-selected-meta-bar">
+                {scopeSummary.systems.length > 0 && (
+                  <div className="rb-systems">
+                    <Layers size={13} aria-hidden="true" />
+                    <span>关联系统：{scopeSummary.systems.join(' / ')}</span>
+                  </div>
+                )}
+                <span className="rb-selected-desc-line">
+                  {selectedReports.length === 1
+                    ? selectedReports[0].description || '确认下方范围后点击右侧「生成报表」。'
+                    : `已选 ${selectedReports.length} 份报表，提交后将自动拆分为 ${selectedReports.length} 批独立生成任务。`}
+                </span>
+              </div>
+
+              {scopeSummary.sources.length > 0 && (
+                <details
+                  className="rb-explanation"
+                  key={selectedReports.map(r => r.id).join(',')}
+                >
+                  <summary>报表说明与来源（{scopeSummary.sources.length}）</summary>
+                  <ul>
+                    {scopeSummary.sources.map(source => (
+                      <li key={source}>{source.replaceAll('白泽', '商翼')}</li>
+                    ))}
+                  </ul>
+                  <p>资料不足时暂停生成，已取得的资料保留。</p>
+                </details>
+              )}
+            </div>
+          )}
+        </section>
+
+        {/* Step 02: 处理城市与站点范围（全部取消下拉框，平铺展示） */}
+        {selectedReports.length > 0 && (
+          scopeSummary.allGlobal ? (
+            <section className="wb-step-card rb-step-card" aria-label="全局报表固定范围">
+              <div className="wb-step-card-header">
+                <div className="wb-step-badge">
+                  <span className="wb-step-number">02</span>
+                  <span className="wb-step-title">处理范围</span>
+                  <span className="wb-step-count-pill">固定全局口径</span>
+                </div>
+              </div>
+              <div className="rb-fixed-scope">
+                <div className="rb-fixed-scope-item">
+                  <span className="rb-fixed-scope-label">城市范围</span>
+                  <strong>全部授权城市</strong>
+                  <small>自动整合全部城市站点，无需单独勾选</small>
+                </div>
+                <div className="rb-fixed-scope-item">
+                  <span className="rb-fixed-scope-label">资料周期</span>
+                  <strong>当前全量 · 不按日期筛选</strong>
+                  <small>直接汇总蓝橙 5 类在职/离职与请假最新档案</small>
+                </div>
+              </div>
+            </section>
+          ) : (
+            <section className="wb-step-card rb-step-card" aria-labelledby="report-city-label">
+              <div className="wb-step-card-header">
+                <div className="wb-step-badge">
+                  <span className="wb-step-number">02</span>
+                  <span id="report-city-label" className="wb-step-title">
+                    处理城市
+                  </span>
+                  <span className="wb-step-count-pill tabular-nums">
+                    已选 {selectedCities.length} / {selectable.length}
+                  </span>
+                </div>
+
+                <div className="wb-inline-city-toolbar flex-wrap">
+                  <button
+                    type="button"
+                    className="wb-city-preset-btn"
+                    disabled={locked || !selectable.length}
+                    onClick={() =>
+                      props.onCities(
+                        selectedCities.length === selectable.length
+                          ? []
+                          : selectable.map(city => city.name),
+                      )
+                    }
+                  >
+                    {selectedCities.length === selectable.length && selectedCities.length
+                      ? '清空城市'
+                      : '全选城市'}
+                  </button>
+                  <button
+                    type="button"
+                    className="wb-city-preset-btn"
+                    disabled={locked || props.refreshing}
+                    onClick={props.onRefreshCities}
+                  >
+                    <RefreshCw size={12} className={props.refreshing ? 'animate-spin' : ''} />
+                    <span>{props.refreshing ? '刷新中…' : '刷新城市'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="wb-city-preset-btn"
+                    disabled={locked || stationDirectory.data?.status === 'loading'}
+                    onClick={stationDirectory.refresh}
+                  >
+                    {stationDirectory.data?.status === 'loading' ? '站点同步中…' : '刷新站点数'}
+                  </button>
+                </div>
+              </div>
+
+              {cities.length > 18 && (
+                <div className="rb-inline-city-filter">
+                  <Search size={14} />
+                  <input
+                    aria-label="筛选处理城市"
+                    placeholder="输入城市名称快速定位…"
+                    value={citySearch}
+                    onChange={e => setCitySearch(e.target.value)}
+                  />
+                  {citySearch && (
+                    <button
+                      type="button"
+                      className="rb-filter-clear"
+                      aria-label="清除城市筛选"
+                      onClick={() => setCitySearch('')}
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div
+                className="wb-inline-city-grid rb-inline-city-grid"
+                role="group"
+                aria-labelledby="report-city-label"
+              >
+                {filteredCities.map(city => {
+                  const selected = !city.disabled && selectedCities.includes(city.name);
+                  return (
+                    <button
+                      key={city.id}
+                      type="button"
+                      disabled={locked || city.disabled}
+                      title={city.disabled ? city.note : undefined}
+                      aria-pressed={selected}
+                      onClick={() => chooseCity(city.name)}
+                      className={`wb-inline-city-chip ${selected ? 'is-selected' : ''} ${
+                        city.disabled ? 'is-disabled' : ''
+                      }`}
+                    >
+                      <span className="wb-city-check-box" aria-hidden="true">
+                        {selected && '✓'}
+                      </span>
+                      <span className="wb-city-chip-name">{city.name}</span>
+                      <span className="wb-city-status">
+                        <CityStationCount directory={stationDirectory.data} city={city.id} />
+                        {city.disabled && (
+                          <span className="wb-city-disabled-badge">{city.note || '下架'}</span>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {!selectable.length && (
+                <p className="wb-notice mt-3">暂无可用城市，请刷新城市或检查平台连接。</p>
+              )}
+
+              {!scopeSummary.needsDate && scopeSummary.needsSeparation && (
+                <div className="wb-date-rule-bar" role="group" aria-label="报表站点范围">
+                  <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-700">
+                    <input
+                      type="checkbox"
+                      aria-label="排除取分离站点"
+                      checked={effectiveExcludeSeparation}
+                      disabled={locked}
+                      onChange={event => handleExcludeSeparationChange(event.target.checked)}
+                      className="accent-sky-700 h-3.5 w-3.5 rounded border-slate-300"
+                    />
+                    <span>
+                      排除取分离站点{' '}
+                      <span className="font-normal text-slate-400">
+                        （不勾选则下载全部站点）
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              )}
+            </section>
+          )
+        )}
+
+        {/* Step 03: 业务月份（近3个月多选 + 风神样式排除取分离站点开关） */}
+        {selectedReports.length > 0 && scopeSummary.needsDate && (
+          <section className="wb-step-card rb-step-card" aria-labelledby="report-month-label">
+            <div className="wb-step-card-header">
+              <div className="wb-step-badge">
+                <span className="wb-step-number">03</span>
+                <span id="report-month-label" className="wb-step-title">
+                  业务月份
+                </span>
+                {activeMonths.length > 1 ? (
+                  <span className="wb-step-count-pill tabular-nums">
+                    已选 {activeMonths.length} 个月（{activeMonths.join('、')}）
+                  </span>
+                ) : activeMonths.length === 1 ? (
+                  <span className="wb-step-count-pill tabular-nums">
+                    已选 {activeMonths[0]}
+                  </span>
+                ) : (
+                  <span className="wb-step-count-pill">仅开放近 3 个月选择</span>
+                )}
+              </div>
+
+              {allowedMonthCodes.length > 1 && (
+                <div className="wb-city-preset-group">
+                  <button
+                    type="button"
+                    className={`wb-city-preset-btn ${allMonthsSelected ? 'is-active' : ''}`}
+                    disabled={locked}
+                    onClick={() =>
+                      applyMonths(
+                        allMonthsSelected ? [allowedMonthCodes[0]] : [...allowedMonthCodes],
+                      )
+                    }
+                  >
+                    {allMonthsSelected ? '仅选最新月' : `全选近${allowedMonthCodes.length}月`}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div
+              className="wb-month-grid-3"
+              role="group"
+              aria-labelledby="report-month-label"
+            >
+              {recentMonths.map(item => {
+                const selected = activeMonths.includes(item.month);
+                return (
+                  <button
+                    key={item.month}
+                    type="button"
+                    disabled={locked}
+                    aria-pressed={selected}
+                    title={`${item.start} 至 ${item.end}（支持多选）`}
+                    onClick={() => handleToggleMonth(item.month)}
+                    className={`wb-month-card-3 tabular-nums ${selected ? 'is-selected' : ''}`}
+                  >
+                    <span className="wb-month-chip-left">
+                      <span className="wb-month-check-box" aria-hidden="true">
+                        {selected && '✓'}
+                      </span>
+                      <span className="wb-month-card-title">{item.label}</span>
+                    </span>
+                    <span className="wb-month-chip-range">
+                      {item.start.slice(5)} ~ {item.end.slice(5)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {monthChunks.length > 1 && (
+              <p className="mt-2.5 text-xs leading-relaxed text-sky-700">
+                已多选非连续月份（{activeMonths.join('、')}），提交后将自动拆分为 {monthChunks.length}{' '}
+                个月度批次依次生成。
+              </p>
+            )}
+
+            {!range && (
+              <small role="alert" className="rb-invalid">
+                请在上方选择近 3 个月内的有效业务月份。
+              </small>
+            )}
+
+            {scopeSummary.needsSeparation && (
+              <div className="wb-date-rule-bar" role="group" aria-label="报表站点范围">
+                <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-700">
+                  <input
+                    type="checkbox"
+                    aria-label="排除取分离站点"
+                    checked={effectiveExcludeSeparation}
+                    disabled={locked}
+                    onChange={event => handleExcludeSeparationChange(event.target.checked)}
+                    className="accent-sky-700 h-3.5 w-3.5 rounded border-slate-300"
+                  />
+                  <span>
+                    排除取分离站点{' '}
+                    <span className="font-normal text-slate-400">
+                      （不勾选则下载全部站点）
+                    </span>
+                  </span>
+                </label>
+              </div>
+            )}
+          </section>
+        )}
+      </div>
+
+      {/* Right Sticky Execution & Summary Rail */}
+      <aside className="wb-task-preview wb-preview-compact rb-rail" aria-label="已选报表与执行核对">
+        <div className="wb-compact-rail-top">
+          <div className="wb-compact-rail-header">
+            <div className="wb-compact-rail-title">
+              <h4>已选报表</h4>
+              <span className="wb-compact-count-pill tabular-nums">
+                {selectedReports.length > 0 ? `已选 ${selectedReports.length} 项` : '0 项'}
+              </span>
+            </div>
+            {selectedReports.length > 0 && props.onSelectIds && (
+              <button
+                type="button"
+                className="wb-compact-clear-btn"
+                disabled={locked}
+                onClick={() => updateSelectedIds([])}
+              >
+                清空
+              </button>
+            )}
+          </div>
+
+          <div className="wb-compact-list-wrap">
+            {selectedReports.length > 0 ? (
+              <div className="wb-compact-list-surface">
+                <ul className="wb-compact-dataset-list is-dense">
+                  {selectedReports.map((report, index) => (
+                    <li key={report.id} className="wb-compact-dataset-item">
+                      <span className="wb-compact-item-index tabular-nums" aria-hidden="true">
+                        {String(index + 1).padStart(2, '0')}
+                      </span>
+                      <div className="wb-compact-item-body">
+                        <div className="wb-compact-item-row">
+                          <span className="wb-compact-item-name" title={report.label}>
+                            {report.label}
+                          </span>
+                          <span className="wb-dataset-tag wb-compact-item-tag is-amber">
+                            {reportScopeLabel(report.scope)}
+                          </span>
+                        </div>
+                      </div>
+                      {props.onSelectIds && (
+                        <button
+                          type="button"
+                          className="wb-compact-item-remove"
+                          disabled={locked}
+                          title={`移除 ${report.label}`}
+                          aria-label={`移除 ${report.label}`}
+                          onClick={() => handleToggleReport(report.id)}
+                        >
+                          ×
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                <div className="wb-compact-list-footer">
+                  <span className="wb-compact-footer-text">
+                    {selectedReports.length > 1
+                      ? `已选多份报表 · 自动拆分为 ${selectedReports.length} 批独立生成`
+                      : scopeSummary.allGlobal
+                        ? '全城全量整理 · 独立归档'
+                        : '确认范围后即可生成业务表'}
+                  </span>
+                  <span
+                    className={`wb-compact-ready-badge ${
+                      !blockerText ? 'is-ready' : 'is-warn'
+                    }`}
+                  >
+                    {!blockerText ? '配置就绪' : '待完善'}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="wb-compact-empty">
+                <span className="wb-compact-empty-dot" />
+                <p>尚未选择报表类型</p>
+                <small>请在左侧「01 报表类型」下拉框中勾选 1 项或多项业务报表</small>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="wb-compact-rail-bottom">
+          <div className="wb-compact-scope-box">
+            <div className="wb-compact-scope-header">
+              <span>执行范围核对</span>
+            </div>
+            <div className="wb-compact-scope-row">
+              <span className="wb-compact-scope-k">关联系统</span>
+              <span className="wb-compact-scope-v">
+                {scopeSummary.systems.length ? scopeSummary.systems.join('、') : '未选择'}
+              </span>
+            </div>
+            <div className="wb-compact-scope-row">
+              <span className="wb-compact-scope-k">处理城市</span>
+              <span className="wb-compact-scope-v tabular-nums" title={selectedCities.join('、')}>
+                {!selectedReports.length
+                  ? '待选择报表'
+                  : scopeSummary.allGlobal
+                    ? '全部授权城市'
+                    : selectedCities.length > 0
+                      ? `已选 ${selectedCities.length} 城${
+                          selectedCities.length <= 2 ? `（${selectedCities.join('、')}）` : ''
+                        }`
+                      : '未选择城市'}
+              </span>
+            </div>
+            {scopeSummary.needsSeparation && (
+              <div className="wb-compact-scope-row">
+                <span className="wb-compact-scope-k">站点范围</span>
+                <span className="wb-compact-scope-v">
+                  {effectiveExcludeSeparation ? '排除取分离' : '全部站点（含取分离）'}
+                </span>
+              </div>
+            )}
+            <div className="wb-compact-scope-row">
+              <span className="wb-compact-scope-k">业务账期</span>
+              <span className="wb-compact-scope-v wb-compact-scope-period tabular-nums">
+                {!selectedReports.length
+                  ? '待选择'
+                  : scopeSummary.allGlobal
+                    ? '当前全量（不限账期）'
+                    : monthChunks.length > 1
+                      ? (
+                        <>
+                          <span className="font-mono">{activeMonths.join('、')}</span>
+                          <span className="wb-compact-period-badge">
+                            共 {activeMonths.length} 个月
+                          </span>
+                        </>
+                      )
+                      : range
+                        ? (
+                          <>
+                            <span className="font-mono">
+                              {range.start.slice(5)} ~ {range.end.slice(5)}
+                            </span>
+                            {range.months > 0 && (
+                              <span className="wb-compact-period-badge">共 {range.months} 个月</span>
+                            )}
+                          </>
+                        )
+                        : '无效月份'}
+              </span>
+            </div>
+            <div className="wb-compact-scope-row">
+              <span className="wb-compact-scope-k">交付规格</span>
+              <span className="wb-compact-scope-v tabular-nums">
+                {plannedBatchCount > 1
+                  ? `${selectedReports.length} 份报表（分 ${plannedBatchCount} 批）`
+                  : selectedReports.length === 1
+                    ? '1 份业务报表'
+                    : '—'}
+              </span>
+            </div>
+          </div>
+
+          {props.uncertain && (
+            <p className="rb-rail-notice" role="status">
+              上次提交结果尚未确认，范围已锁定。请确认原请求，避免重复创建。
+            </p>
+          )}
+
+          {props.duplicate && !props.uncertain && selectedReports.length === 1 && (
+            <div className="rb-rail-notice">
+              <p>相同范围已有结果，可直接查看。</p>
+              <label className="rb-rail-recollect">
+                <input
+                  type="checkbox"
+                  checked={props.recollect}
+                  disabled={locked}
+                  onChange={e => props.onRecollect(e.target.checked)}
+                />
+                <span>重新采集，生成新版本</span>
+              </label>
+            </div>
+          )}
+
+          <div className="wb-compact-action-area">
+            <button
+              type="button"
+              className="wb-compact-submit-btn wb-rail-submit-btn"
+              disabled={props.disabled || !selectedReports.length || (scopeSummary.needsDate && !range)}
+              onClick={props.onSubmit}
+            >
+              <FileSpreadsheet size={16} />
+              <span>{props.creating ? '提交中…' : effectiveSubmitLabel}</span>
+            </button>
+
+            {blockerText && (
+              <div className="rb-rail-blocker" role="status">
+                <MapPin size={13} className="shrink-0" />
+                <span>{blockerText}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </aside>
+    </section>
+  );
+}

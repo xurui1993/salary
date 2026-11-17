@@ -12,6 +12,7 @@ import threading
 from openpyxl import load_workbook
 from parttime_source import SourceError, identifier
 from fengshen_bill import atomic_json
+import problem_deductions
 
 LOCK = threading.RLock()
 META = ('城市', '团队名称', '团队ID')
@@ -53,11 +54,17 @@ def profile(platform, root):
             data = json.loads(path.read_text(encoding='utf-8'))
             if not isinstance(data, dict) or not isinstance(data['entries'], dict) or not isinstance(data.get('cities', {}), dict):
                 raise ValueError()
-        except (OSError, ValueError, KeyError):
+            rules = data.get('problem_rules', {})
+            if not isinstance(rules, dict) or any(not isinstance(value, list) for value in rules.values()):
+                raise ValueError()
+            problem_deductions.sorted_rules([rule for value in rules.values() for rule in value])
+        except (OSError, ValueError, KeyError, problem_deductions.ProblemRuleError):
             raise SourceError('站点扣款默认配置无法读取，请检查原文件') from None
     else:
         data = {'entries': {}}
-    return {**data, 'cities': data.get('cities', {}), 'version': digest([data['entries'], data.get('cities', {})])}
+    rules = data.get('problem_rules', {})
+    return {**data, 'cities': data.get('cities', {}), 'problem_rules': rules,
+            'version': digest([data['entries'], data.get('cities', {}), rules])}
 
 
 def city_station(platform, city):
@@ -89,6 +96,7 @@ def station_drafts(platform, root, directory):
     defaults = profile(platform, root)
     legacy = legacy_rows(platform, root)
     columns = columns_for(platform, root)
+    problem_rules = defaults.get('problem_rules', {})
     result = []
     for station in directory['stations']:
         key = station_key(station)
@@ -100,9 +108,14 @@ def station_drafts(platform, root, directory):
         row = {**values, '城市': station['city'], '团队名称': station['name'], '团队ID': station['id']}
         for col in columns:
             row.setdefault(col, None)
+        city_rules = problem_rules.get(digest([platform, station['city_id']]), [])
+        station_rules = problem_rules.get(key, [])
         result.append({'key': key, 'station': station, 'row': row, 'configured': bool(previous or city_default),
                        'inherited_city': bool(city_default and not previous), 'station_override': bool(previous),
-                       'zero_confirmed': bool((previous or city_default or {}).get('zero_confirmed')), 'legacy': bool(inherited and not previous and not city_default)})
+                       'zero_confirmed': bool((previous or city_default or {}).get('zero_confirmed')), 'legacy': bool(inherited and not previous and not city_default),
+                       'problem_rules': problem_deductions.sorted_rules(station_rules),
+                       'effective_problem_rules': problem_deductions.effective_rules(city_rules, station_rules),
+                       'inherited_problem_rules': bool(city_rules and not station_rules)})
     cities = []
     for city in directory.get('cities', []):
         station = city_station(platform, city)
@@ -110,7 +123,9 @@ def station_drafts(platform, root, directory):
         previous = defaults['cities'].get(key)
         row = {**((previous or {}).get('row', {})), **dict(zip(META, (city['name'], station['name'], '*')))}
         for col in columns: row.setdefault(col, None)
-        cities.append({'key': key, 'station': station, 'row': row, 'configured': bool(previous), 'zero_confirmed': bool(previous and previous.get('zero_confirmed'))})
+        cities.append({'key': key, 'station': station, 'row': row, 'configured': bool(previous),
+                       'zero_confirmed': bool(previous and previous.get('zero_confirmed')),
+                       'problem_rules': problem_deductions.sorted_rules(problem_rules.get(key, []))})
     return {'entries': result, 'cities': cities, 'columns': columns, 'version': defaults['version'], 'directory': directory}
 
 
@@ -173,8 +188,163 @@ def save_profile(platform, root, payload, directory):
             backup = path.parent / 'history' / (platform + '_' + datetime.now().strftime('%Y%m%d_%H%M%S_%f') + '.json')
             backup.parent.mkdir(parents=True, exist_ok=True)
             atomic_json(backup, json.loads(path.read_text(encoding='utf-8')))
-        atomic_json(path, {'entries': current['entries'], 'cities': current['cities']})
+        atomic_json(path, {'entries': current['entries'], 'cities': current['cities'],
+                           'problem_rules': current.get('problem_rules', {})})
         return profile(platform, root)
+
+
+PROBLEM_FIELDS = {
+    'city': ('城市', '城市名称', 'city'),
+    'team': ('团队名称', '站点名称', '团队', '站点', 'team', 'team_name'),
+    'team_id': ('团队ID', '团队id', '站点ID', '站点id', 'site_id', 'team_id'),
+    'problem_type': ('问题单类型', '问题类型', '类型', 'problem_type'),
+    'reason': ('判责原因关键词', '判责原因', '原因关键词', '原因', 'reason', 'reason_keyword'),
+    'amount': ('单次扣款金额', '扣款金额', '金额', 'amount'),
+}
+
+
+def _problem_value(row, field):
+    for name in PROBLEM_FIELDS[field]:
+        if name in row:
+            return row[name]
+    lowered = {str(key).strip().lower(): value for key, value in row.items()}
+    for name in PROBLEM_FIELDS[field]:
+        if name.lower() in lowered:
+            return lowered[name.lower()]
+    return None
+
+
+def _problem_city(cities, value):
+    text = str(value or '').strip()
+    matches = [city for city in cities if city['name'] == text or city['id'] == text]
+    if not matches and text:
+        normalized = normalize(text).removesuffix('市')
+        matches = [city for city in cities if normalize(city['name']).removesuffix('市') == normalized]
+    if len(matches) != 1:
+        raise problem_deductions.ProblemRuleError('城市不在当前后台目录中或存在同名城市，请按城市编号确认')
+    return matches[0]
+
+
+def parse_problem_rows(rows, platform, directory):
+    if not isinstance(rows, list) or not rows or len(rows) > problem_deductions.MAX_RULES:
+        raise SourceError('问题单扣款规则需要 1 至 10000 行')
+    cities = directory.get('cities', [])
+    stations = directory.get('stations', [])
+    seen = set()
+    result = []
+    for index, row in enumerate(rows, 1):
+        if not isinstance(row, dict):
+            raise SourceError(f'第 {index} 行问题单扣款规则格式无效')
+        try:
+            city = _problem_city(cities, _problem_value(row, 'city'))
+            team_name = str(_problem_value(row, 'team') or '').strip()
+            team_id = str(_problem_value(row, 'team_id') or '').strip()
+            city_scope = team_id == '*' or normalize(team_name) in ('城市统一扣款', '城市默认', '城市默认扣款')
+            if city_scope:
+                key = digest([platform, city['id']])
+                team_name, team_id = '城市统一扣款', '*'
+            else:
+                candidates = [station for station in stations if station['city_id'] == city['id']]
+                if team_id:
+                    candidates = [station for station in candidates if team_id in station_codes(station)]
+                elif team_name:
+                    candidates = [station for station in candidates if normalize(station['name']) == normalize(team_name)]
+                if len(candidates) != 1:
+                    raise problem_deductions.ProblemRuleError('站点不在当前后台目录中或存在同名站点，请填写团队ID确认')
+                station = candidates[0]
+                key, team_name, team_id = station_key(station), station['name'], station['id']
+            rule = problem_deductions.normalize_rule({
+                'problem_type': _problem_value(row, 'problem_type'),
+                'reason_keyword': _problem_value(row, 'reason'),
+                'amount': _problem_value(row, 'amount'),
+            })
+        except problem_deductions.ProblemRuleError as error:
+            raise SourceError(f'第 {index} 行：{error}') from None
+        duplicate = (key, rule['problem_type'], rule['reason_keyword'])
+        if duplicate in seen:
+            raise SourceError(f'第 {index} 行：同一站点的问题类型与判责原因关键词重复')
+        seen.add(duplicate)
+        result.append({'key': key, 'scope': 'city' if city_scope else 'station',
+                       'city': city['name'], 'team_name': team_name, 'team_id': team_id, **rule})
+    return result
+
+
+def _group_problem_rows(rows):
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(row['key'], []).append({
+            'problem_type': row['problem_type'], 'reason_keyword': row['reason_keyword'], 'amount': row['amount']})
+    return {key: problem_deductions.sorted_rules(rules) for key, rules in grouped.items()}
+
+
+def _problem_identity(platform, directory):
+    result = {}
+    for city in directory.get('cities', []):
+        result[digest([platform, city['id']])] = (city['name'], '城市统一扣款', '*', 'city')
+    for station in directory.get('stations', []):
+        result[station_key(station)] = (station['city'], station['name'], station['id'], 'station')
+    return result
+
+
+def _flatten_problem_rules(platform, rules, directory):
+    identity = _problem_identity(platform, directory)
+    result = []
+    for key, values in rules.items():
+        city, team_name, team_id, scope = identity.get(key, ('', '已失效站点', key, 'station'))
+        for rule in problem_deductions.sorted_rules(values):
+            result.append({'key': key, 'scope': scope, 'city': city, 'team_name': team_name, 'team_id': team_id, **rule})
+    return result
+
+
+def _problem_diff(platform, current, imported, directory):
+    current_rows = _flatten_problem_rules(platform, current, directory)
+    imported_rows = _flatten_problem_rules(platform, imported, directory)
+    current_map = {(row['key'], row['problem_type'], row['reason_keyword']): row for row in current_rows}
+    imported_map = {(row['key'], row['problem_type'], row['reason_keyword']): row for row in imported_rows}
+    added, updated, unchanged = [], [], []
+    for key, row in imported_map.items():
+        previous = current_map.get(key)
+        if previous is None:
+            added.append({**row, 'action': 'added'})
+        elif previous['amount'] != row['amount']:
+            updated.append({**row, 'action': 'updated', 'previous_amount': previous['amount']})
+        else:
+            unchanged.append({**row, 'action': 'unchanged'})
+    removed = [{**row, 'action': 'removed'} for key, row in current_map.items() if key not in imported_map]
+    return {'added': added, 'updated': updated, 'removed': removed, 'unchanged': unchanged}
+
+
+def preview_problem_rules(platform, root, payload, directory):
+    if not isinstance(payload, dict):
+        raise SourceError('问题单扣款导入参数无效')
+    with LOCK:
+        current = profile(platform, root)
+        if current['version'] != payload.get('version'):
+            raise SourceError('默认扣款已被其他人修改，请重新加载后再导入')
+        rows = parse_problem_rows(payload.get('rows'), platform, directory)
+        grouped = _group_problem_rows(rows)
+        diff = _problem_diff(platform, current.get('problem_rules', {}), grouped, directory)
+        return {'rows': rows, 'diff': diff, 'version': current['version'],
+                'preview_version': problem_deductions.digest(grouped)}
+
+
+def save_problem_rules(platform, root, payload, directory):
+    preview = preview_problem_rules(platform, root, payload, directory)
+    if payload.get('preview_version') != preview['preview_version']:
+        raise SourceError('问题单扣款预览已变化，请重新导入预览')
+    with LOCK:
+        current = profile(platform, root)
+        if current['version'] != payload.get('version') or current['version'] != preview['version']:
+            raise SourceError('默认扣款已被其他人修改，请重新加载后再导入')
+        path = Path(root) / 'data' / 'deduction_profiles' / (platform + '.json')
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists():
+            backup = path.parent / 'history' / (platform + '_' + datetime.now().strftime('%Y%m%d_%H%M%S_%f') + '.json')
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            atomic_json(backup, json.loads(path.read_text(encoding='utf-8')))
+        atomic_json(path, {'entries': current['entries'], 'cities': current['cities'],
+                           'problem_rules': _group_problem_rows(preview['rows'])})
+        return {**profile(platform, root), 'diff': preview['diff']}
 
 
 def tables(path, sheet_name=None):
@@ -351,7 +521,9 @@ def preflight(folder, state, root, directory, city_id=''):
                                 'bill': sorted(observed), 'reason': '申请与账单站点编号不同' if code_difference else '申请与账单站点不同' if observed else '账单未提供此申请人的可核对站点'})
     basis = {'inputs': input_signature(state), 'directory_version': directory['session_version'],
              'directory': [s for s in directory['stations'] if not selected_city or s['city'] == selected_city], 'directory_city': selected_city, 'default_version': drafts['version'],
-             'draft_values': [{'key': e['key'], 'row': e['row']} for e in selected], 'columns': drafts['columns'],
+             'draft_values': [{'key': e['key'], 'row': e['row'],
+                               'problem_rules': e.get('effective_problem_rules', [])} for e in selected],
+             'columns': drafts['columns'],
              'differences': differences, 'unresolved': unresolved, 'associations': association_rows,
              'association_version': associations['version'], 'account_scope': scope(directory)}
     separation = sorted(name for name in names if '取分离' in name)
@@ -385,6 +557,12 @@ def confirm(folder, state, root, directory, payload):
                            {k:v for k,v in expected[e['key']]['row'].items() if k not in META and k not in reviewed['columns']})['row'] for e in submitted]
     if not rows:
         raise SourceError('本次没有已确认的扣款站点')
+    for entry, row in zip(submitted, rows):
+        rules = expected[entry['key']].get('effective_problem_rules', [])
+        if rules:
+            row['问题单扣款'] = 0
+            row['问题单扣款_isKw'] = True
+            row['_problemRules'] = rules
     if payload.get('save_defaults') is True:
         # Authorization is enforced by the route before any default write.
         save_profile(platform_for(state), root, {'entries': submitted, 'cities': payload.get('cities', []), 'version': reviewed['version']}, directory)
@@ -396,11 +574,13 @@ def confirm(folder, state, root, directory, payload):
             rows.append({**canonical[link['key']], '团队名称': link['name']})
             existing.add(normalize(link['name']))
     deduction = {'rows': rows, 'version': version(rows), 'scope': 'batch', 'frozen': False}
+    approved_entries = [{**entry, 'problem_rules': expected[entry['key']].get('effective_problem_rules', [])}
+                        for entry in submitted]
     receipt = {'rules_version': deduction['version'], 'input_signature': reviewed['input_signature'],
                'accepted_differences': sorted(accepted), 'confirmed_at': datetime.now(timezone.utc).isoformat(),
                'directory_version': directory['session_version'], 'stage': reviewed['stage'],
                'city_id': payload.get('city_id', ''), 'template_hash': state['template_hash'],
-               'plan': state['plan'], 'entries': submitted, 'station_links': state.get('station_links', {}),
+               'plan': state['plan'], 'entries': approved_entries, 'station_links': state.get('station_links', {}),
                'association_resolution': {r['name']:r['key'] for r in reviewed['association_rows'] if r['key']}}
     return deduction, receipt
 
@@ -427,6 +607,8 @@ def finalize_intent(folder, state, root, directory):
     for key, entry in approved.items():
         if any(entry['row'][col] != current[key]['row'][col] for col in META):
             raise SourceError('后台站点身份已变化，请重新确认扣款清单')
+        if entry.get('problem_rules', []) != current[key].get('effective_problem_rules', []):
+            raise SourceError('问题单扣款规则已变化，请重新确认扣款清单')
     # Defaults may have changed while downloading. This batch keeps exactly the approved rows.
     state['deduction_confirmation'] = {**intent, 'stage': 'final', 'input_signature': input_signature(state),
                                        'directory_version': directory['session_version']}

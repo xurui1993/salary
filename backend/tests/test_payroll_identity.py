@@ -1,4 +1,5 @@
 """Run the payroll engine against name variants without changing raw orders."""
+import csv
 from pathlib import Path
 import unittest
 
@@ -82,6 +83,61 @@ class PayrollIdentityTests(unittest.TestCase):
         self.assertEqual(sum(row['出勤天数'] for row in fund), 2)
         self.assertEqual(sum(row['安全基金'] for row in fund), 20)
         self.assertEqual(self.daily_orders(book), 2)
+
+    def test_rider_archive_fills_missing_application_identity(self):
+        source = self.fixture(xiaoxiang=True)
+        template = source / '小象-template.xlsx'
+        workbook = load_workbook(template)
+        apply = workbook['申请名单']
+        headers = [cell.value for cell in apply[1]]
+        apply.cell(2, headers.index('身份证号') + 1).value = None
+        apply.cell(2, headers.index('电话号') + 1).value = None
+        workbook.save(template)
+        workbook.close()
+        archive = Workbook()
+        sheet = archive.active
+        sheet.title = '骑手档案'
+        sheet.append(['所属站点', '骑手ID', '姓名', '身份证号', '手机号'])
+        sheet.append(['测试站', 1001, '合成人员', 'ARCHIVE-CARD-001', '13900000000'])
+        archive.save(source / '灯塔骑手档案0810.xlsx')
+        archive.close()
+        book = self.calculate(source)
+        rows = self.income_rows(book)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][7], 'ARCHIVE-CARD-001')
+        self.assertEqual(rows[0][8], '13900000000')
+
+    def test_problem_order_rules_land_in_payroll_deduction_column(self):
+        source = self.fixture()
+        template = source / '兼职-template.xlsx'
+        workbook = load_workbook(template)
+        workbook.create_sheet('问题单')
+        workbook.save(template)
+        workbook.close()
+        with (source / '问题单.csv').open('w', encoding='utf-8-sig', newline='') as stream:
+            writer = csv.writer(stream)
+            writer.writerow(['类型', '日期', '运单号', '骑手ID', '骑手姓名', '团队名称', '事故原因', '处罚金额'])
+            writer.writerow(['不准时单', '2026-08-01', 'PROBLEM-001', '1001', '合成人员', '测试站', '客户取消', 0])
+        results, logs = [], []
+        rules = [{'城市': '测试城市', '团队名称': '测试站', '团队ID': 'T001',
+                  '安全基金': 0, '问题单扣款': 0, '问题单扣款_isKw': True,
+                  '_problemRules': [{'problem_type': '不准时单', 'reason_keyword': '客户取消', 'amount': 10}]}]
+        processor.process_rider_data(
+            '测试城市', '半月结', str(source), '', lambda message, *_: logs.append(message),
+            lambda *_: None, lambda *value: results.append(value), fixtures.THEME,
+            output_root=str(source / 'output'), strict_inputs=True, skip_binding_check=True,
+            force_no_price=True, deductionRules=rules,
+        )
+        self.assertEqual(results[-1][0], 'success', '\n'.join(logs))
+        output = Path(results[-1][1])
+        main = next(path for path in output.glob('*.xlsx') if '蓝橙无单价&未绑名单' not in path.name)
+        book = load_workbook(main)
+        try:
+            fund = self.fund_rows(book)
+            self.assertEqual(len(fund), 1)
+            self.assertEqual(fund[0]['问题单扣款'], 10)
+        finally:
+            book.close()
 
     def test_missing_application_name_uses_latest_source_name(self):
         source = self.fixture()

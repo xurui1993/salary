@@ -84,6 +84,8 @@ def _fingerprint(config):
     public["datasets"] = sorted(expand_followup_datasets(public["datasets"]))
     if config.get("refresh_history"):
         public["refresh_history"] = True
+    if config.get("order_export_concurrency"):
+        public["order_export_concurrency"] = config["order_export_concurrency"]
     if config.get("include_separation"):
         public["include_separation"] = True
     if 'exclude_separation' in config:
@@ -406,7 +408,7 @@ class DownloadManager:
         if config.get('payroll_agencies'): business_intent['payroll_agencies'] = config['payroll_agencies']
         if config.get('task_kind')=='payroll_source' and config.get('payroll_unified'):
             business_intent.update(payroll_unified=True,payroll_scope_mode=config.get('payroll_scope_mode','legacy'),payroll_scope_agencies=config.get('payroll_scope_agencies',[]))
-        config = json.loads(json.dumps({key: config[key] for key in ("cities", "datasets", "start", "end", "months", "lanorange_months")
+        config = json.loads(json.dumps({key: config[key] for key in ("cities", "datasets", "start", "end", "months", "lanorange_months", "order_export_concurrency")
                                        if key in config}, ensure_ascii=False))
         config.update(business_intent)
         if refresh_history:
@@ -1091,7 +1093,7 @@ class DownloadManager:
             if config.get('lanorange_by_city'): requested_config['lanorange_by_city'] = True
             if config.get('lanorange_full_delivery'): requested_config['lanorange_full_delivery'] = True
             if config.get('merchant_by_city'): requested_config['merchant_by_city'] = True
-            for option in ('include_separation', 'exclude_separation', 'payroll_agencies', 'task_kind', 'generation_target', 'parent_batch_id', 'parent_workspace'):
+            for option in ('include_separation', 'exclude_separation', 'payroll_agencies', 'task_kind', 'generation_target', 'parent_batch_id', 'parent_workspace', 'order_export_concurrency'):
                 if option in config: requested_config[option] = config[option]
             requested_config.update(cities=selected_cities, datasets=selected_datasets,
                                     retry_of=run_id, retry_items=sorted(items, key=_key))
@@ -1233,15 +1235,6 @@ class DownloadManager:
                 raise DownloadSummaryPending('任务结束后发布结果')
             selected = [f for f in record['files'] if f.get('available',True) and
                         (record['kind'] != 'generate' or f['dataset'] in GENERATORS)]
-            known = {(f['run_id'], f['id']) for f in selected}
-            for member_id in record.get('member_ids', []):
-                member_owner = self.run_owner(member_id)
-                with self._lock, self._connection() as connection:
-                    _, member_run = self._find(connection, member_owner, member_id)
-                for file in member_run.get('files', []):
-                    if file.get('record_hidden') and (member_id, file['id']) not in known:
-                        selected.append({**file, 'run_id': member_id})
-                        known.add((member_id, file['id']))
             if not selected:
                 raise DownloadNotFound('暂无可发布结果')
             entries=[]
@@ -1343,15 +1336,17 @@ class DownloadManager:
 
     @staticmethod
     def _merge_files(run, entries):
-        existing = {_key(entry): entry for entry in run["files"]}
+        def identity(entry):
+            return (*_key(entry), entry.get("artifact_role", ""), entry.get("name", ""))
+        existing = {identity(entry): entry for entry in run["files"]}
         for entry in entries:
-            previous = existing.get(_key(entry))
+            previous = existing.get(identity(entry))
             if previous:
                 if any(previous.get(key) != entry.get(key) for key in ("relative_path", "name", "sha256", "bytes")):
                     raise ValueError("子项文件重复且内容不一致")
             else:
                 run["files"].append(entry)
-                existing[_key(entry)] = entry
+                existing[identity(entry)] = entry
 
     def _restore_checkpoint(self, run, config):
         """Import verified committed files, never infer a new platform request."""
@@ -1417,7 +1412,6 @@ class DownloadManager:
                 identity=db.execute('SELECT file_id FROM artifacts WHERE run_id=? AND path=?',(run['id'],str(path))).fetchone()
                 if identity:restored_id=identity['file_id']
         if not path.is_file():raise ValueError('下载文件不存在')
-        is_summary = info.get('artifact_role') == 'summary'
         scope_error = delivery_scope_error(info, config, path.suffix)
         if scope_error:
             raise ValueError(scope_error)
@@ -1454,7 +1448,8 @@ class DownloadManager:
                 "end": info.get("end", ""), "bytes": path.stat().st_size,
                 **({'delivery_kind': info['delivery_kind']} if info.get('delivery_kind') in ('platform_original','system_merged') else {}),
                 **({'delivery_group': info['delivery_group']} if info.get('delivery_group') in ('天津商翼','本来人力') else {}),
-                **({'artifact_role': 'summary'} if is_summary else {}),
+                **({'artifact_role': info['artifact_role']}
+                   if info.get('artifact_role') in ('summary', 'problem_summary', 'problem_detail') else {}),
                 **({'record_hidden': True} if info.get('record_hidden') is True else {})}
 
     def get_file(self, owner, run_id, file_id, verify_integrity=True):

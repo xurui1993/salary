@@ -6,7 +6,7 @@ import { THEMES } from "./constants";
 import { LogEntry, AppConfig, TaskHistoryRecord } from "./types";
 import { FengshenLoginModal, FengshenAuthStatus } from "./components/FengshenLoginModal";
 import { CorePage, TaskItem } from "./components/CorePage";
-import { X, SlidersHorizontal, Calculator, FileSpreadsheet, Compass, Layers, UsersRound, Radar, BarChart3, WalletCards, BadgeDollarSign, FolderCheck, PanelLeftClose, PanelLeftOpen, Building2 } from "lucide-react";
+import { X, Menu, SlidersHorizontal, Calculator, FileSpreadsheet, Compass, Layers, UsersRound, Radar, WalletCards, BadgeDollarSign, FolderCheck, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { UploadProgressOverlay } from "./components/UploadProgressOverlay";
 import type { PayrollPreparationState } from './components/PayrollPreparation';
 import type { RunResult } from './components/RunResultCard';
@@ -24,10 +24,19 @@ import { StationDeductionManager } from "./components/StationDeductionManager";
 import {useStationDirectory,stationCountText} from './lib/useStationDirectory';
 import { SystemTemplatesPanel } from "./components/SystemTemplatesPanel";
 import { initialTaskKind, TASK_KIND_LABELS, type TaskKind } from "./lib/taskCatalog";
-import { getHeaderModuleContext, getPayrollSidebarBadge } from "./lib/workbench";
+import {
+  COLLECTION_SUB_VIEWS,
+  getHeaderModuleContext,
+  getPayrollSidebarBadge,
+  getPrimaryHeaderContext,
+  PAYROLL_SUB_VIEWS,
+  PRIMARY_NAV_ITEMS,
+  type PayrollSubView,
+} from "./lib/workbench";
 import { DOWNLOAD_PLATFORMS,type DownloadPlatform } from './lib/downloadModules';
-import "./workbench.css";
-import "./workbench-unified.css";
+import { PlatformDock } from './components/PlatformDock';
+import { APP_TITLE, SIDEBAR_BRAND, SIDEBAR_BRAND_HINT } from './lib/appMeta';
+import { BP, currentViewportWidth } from './lib/breakpoints';
 
 const showDesktopNotification = (title: string, body: string) => {
   if (!("Notification" in window)) {
@@ -106,7 +115,7 @@ export default function App() {
   const appTheme = 'light' as const;
 
   useEffect(() => {
-    document.title = "薪酬工作台";
+    document.title = APP_TITLE;
     document.documentElement.setAttribute('data-theme', 'light');
     document.documentElement.classList.remove('dark');
     localStorage.setItem('app_theme', 'light');
@@ -146,11 +155,38 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return localStorage.getItem('sidebar_collapsed') === 'true'; } catch { return false; }
   });
+  // 外壳断点状态（D6：只用 1280/1024/768 三档；纯函数来自 lib/breakpoints）
+  const [viewportWidth, setViewportWidth] = useState<number>(() => currentViewportWidth());
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [dockOpen, setDockOpen] = useState(false);
+  useEffect(() => {
+    let frame = 0;
+    const onResize = () => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => setViewportWidth(currentViewportWidth()));
+    };
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, []);
+  // <768 走抽屉（抽屉内始终展开）；769–1280 强制 64px 图标栏；>1280 由用户偏好决定
+  const isDrawerMode = viewportWidth <= BP.sm;
+  const sidebarIsCollapsed = !isDrawerMode && (sidebarCollapsed || viewportWidth <= BP.lg);
+  useEffect(() => {
+    if (!isDrawerMode) setMobileNavOpen(false);
+  }, [isDrawerMode]);
   const [deductionDefaultOnly, setDeductionDefaultOnly] = useState(false);
   const [deductionVersion, setDeductionVersion] = useState(0);
+  const [payrollSubView, setPayrollSubView] = useState<PayrollSubView>('batches');
   const [workspaceView, setWorkspaceView] = useState<'create' | 'history' | 'approval' | 'price-export'>('create');
   const [downloadPlatform,setDownloadPlatform]=useState<DownloadPlatform>(()=>{
-    try{const saved=localStorage.getItem('workbench_download_platform');return DOWNLOAD_PLATFORMS.find(value=>value.id===saved)?.id||'fengshen';}catch{return 'fengshen';}
+    try{
+      const saved=localStorage.getItem('workbench_download_platform');
+      if (saved === 'baize' || saved === 'benlai') return 'payout';
+      return DOWNLOAD_PLATFORMS.find(value=>value.id===saved)?.id||'fengshen';
+    }catch{return 'fengshen';}
   });
   const [historyAll,setHistoryAll]=useState(false);
   const platformMeta=DOWNLOAD_PLATFORMS.find(value=>value.id===downloadPlatform)!;
@@ -165,7 +201,10 @@ export default function App() {
     void read();const timer=setInterval(read,10000);
     return()=>{disposed=true;controller.abort();clearInterval(timer);};
   },[workspaceId]);
-  const [taskKind, setTaskKind] = useState<TaskKind>(initialTaskKind);
+  const [taskKind, setTaskKind] = useState<TaskKind>(() => {
+    const initial = initialTaskKind();
+    return initial === 'generate' ? 'download' : initial;
+  });
   const [taskFormLocked, setTaskFormLocked] = useState(false);
   const [activeDownloadCount, setActiveDownloadCount] = useState(0);
   const [payrollResumeVersion, setPayrollResumeVersion] = useState(0);
@@ -182,7 +221,7 @@ export default function App() {
       const value = await response.json(); if (!response.ok) throw new Error(value.detail || '核算批次读取失败');
       setPayrollPreparation(value); setPayrollResumeVersion(version => version + 1); localStorage.setItem(`payroll_preparation_${workspaceId}`, value.id);
       setAppConfig(previous => ({...previous, city: value.plan.city, payrollSourceMode: value.mode}));
-      setTaskKind('payroll'); navigateWorkspace('create');
+      setPayrollSubView('batches'); setTaskKind('payroll'); navigateWorkspace('create');
     } catch (error) { showToast(error instanceof Error ? error.message : '核算批次读取失败', 'error'); }
   };
   const [downloadNavigation, setDownloadNavigation] = useState({ view: 'create' as 'create' | 'history', version: 0 });
@@ -275,22 +314,38 @@ export default function App() {
     cities?: string[];
     start?: string;
     end?: string;
+    datasets?: string[];
     taskKind?: 'download' | 'generate';
     token?: number;
   } | null>(null);
 
   const handleNavigateGenerate = (cities: string[], start?: string, end?: string) => {
     setHistoryAll(false);
-    setTaskKind('generate');
+    setDownloadPlatform('fengshen');
+    try { localStorage.setItem('workbench_download_platform', 'fengshen'); } catch {}
+    setTaskKind('download');
     navigateWorkspace('create');
-    setDownloadPrefill({ cities, start, end, taskKind: 'generate', token: Date.now() });
-    showToast(cities.length ? `已带入 ${cities.length} 个城市，请确认报表与时间范围` : '请选择报表、城市与时间范围', 'info');
+    setDownloadPrefill({
+      cities,
+      start,
+      end,
+      datasets: ['payment_binding'],
+      taskKind: 'download',
+      token: Date.now(),
+    });
+    showToast(
+      cities.length
+        ? `已带入 ${cities.length} 个城市至风神数据，请确认专项报表与时间范围`
+        : '已跳转风神数据，请在全部资料中勾选专项报表',
+      'info',
+    );
   };
 
   const handleNavigatePayroll = (city?: string) => {
     if (city) {
       setAppConfig(prev => ({ ...prev, city }));
     }
+    setPayrollSubView('batches');
     setTaskKind('payroll');
     navigateWorkspace('create');
     showToast(city ? `已切换至兼职薪资核算，目标城市：${city}` : '已切换至兼职薪资核算', 'info');
@@ -655,7 +710,7 @@ export default function App() {
       localStorage.removeItem(`payroll_preparation_${workspaceId}`);
       setAppConfig(previous => ({...previous, sourcePath: uploaded.path, city: data.plan.city, payrollSourceMode: detectedMode}));
       appendLog(`已识别申请范围：${data.plan.city} · ${data.plan.start} 至 ${data.plan.end} · ${data.plan.applicants} 人，开始自动处理`, 'INFO', 'core');
-      await handleRun({action:'core', sourcePath:uploaded.path, city:data.plan.city, payrollSourceMode:detectedMode, payrollPreparationId:'', preparationOnly:detectedMode!=='fengshen', deductionConfigVersion:''});
+      await handleRun({action:'core', sourcePath:uploaded.path, city:data.plan.city, payrollSourceMode:detectedMode, payrollPreparationId:'', preparationOnly:detectedMode==='manual', deductionConfigVersion:''});
     } catch (error) { setUploadStatus(null); const message=error instanceof Error ? error.message : '模板无法读取'; if(mode==='fengshen'){appendLog(message,'ERROR','core');showToast('任务已结束，详情见执行日志','info');}else showToast(message,'error'); }
     finally { uploadSubmission.current = false; }
   };
@@ -1000,19 +1055,38 @@ export default function App() {
 
   return (
     <div className="workbench-app">
-      <div className={`wb-shell ${sidebarCollapsed ? 'has-collapsed-sidebar' : ''}`}>
-        <aside className={`wb-sidebar ${sidebarCollapsed ? 'is-collapsed' : ''}`} aria-label="桌面端工作台侧栏">
-          <div className="wb-sidebar-brand">
-            <span className="wb-sidebar-logo"><Calculator size={20} /></span>
-            <div className="wb-sidebar-brand-text">
-              <strong>薪酬结算中心</strong>
-              <small>多平台数据采集与自动化核算</small>
+      <div
+        className={`wb-shell wbx-shell ${sidebarIsCollapsed ? 'has-collapsed-sidebar' : ''}`}
+        data-sidebar={sidebarIsCollapsed ? 'collapsed' : 'expanded'}
+        data-collapsed={sidebarIsCollapsed ? 'true' : 'false'}
+        data-mobile-open={mobileNavOpen ? 'true' : 'false'}
+      >
+        {mobileNavOpen && (
+          <button
+            type="button"
+            className="wbx-scrim"
+            aria-label="关闭导航抽屉"
+            onClick={() => setMobileNavOpen(false)}
+          />
+        )}
+        <aside
+          className={`wb-sidebar wbx-sidebar ${sidebarIsCollapsed ? 'is-collapsed' : ''}`}
+          data-collapsed={sidebarIsCollapsed ? 'true' : 'false'}
+          aria-label="工作台侧栏"
+        >
+          <div className="wb-sidebar-brand wbx-brand">
+            <span className="wb-sidebar-logo wbx-brand__logo" title={SIDEBAR_BRAND}>
+              <Calculator size={20} />
+            </span>
+            <div className="wb-sidebar-brand-text wbx-brand__text">
+              <strong className="wbx-brand__name" title={SIDEBAR_BRAND}>{SIDEBAR_BRAND}</strong>
+              <small className="wbx-brand__hint" title={SIDEBAR_BRAND_HINT}>{SIDEBAR_BRAND_HINT}</small>
             </div>
             <button
               type="button"
-              className="wb-sidebar-toggle-btn"
-              title={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
-              aria-label={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
+              className="wb-sidebar-toggle-btn wbx-brand__toggle"
+              title={sidebarIsCollapsed ? "展开侧栏" : "收起侧栏"}
+              aria-label={sidebarIsCollapsed ? "展开侧栏" : "收起侧栏"}
               onClick={() => {
                 setSidebarCollapsed(prev => {
                   const next = !prev;
@@ -1021,204 +1095,79 @@ export default function App() {
                 });
               }}
             >
-              {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+              {sidebarIsCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
             </button>
           </div>
           <div className="wb-sidebar-scroll">
-            <div className="wb-sidebar-group">
-              <span className="wb-sidebar-label">数据采集</span>
-              {DOWNLOAD_PLATFORMS.map(platform => {
-                const PlatformIcon =
-                  platform.id === 'fengshen'
+            <nav className="wb-sidebar-flat-nav wbx-nav" aria-label="主业务导航">
+              {PRIMARY_NAV_ITEMS.map(item => {
+                const isCollectionActive =
+                  item.id === 'collection' &&
+                  (workspaceView === 'history' || (workspaceView === 'create' && taskKind !== 'payroll'));
+                const isPayrollActive =
+                  item.id === 'payroll' && workspaceView === 'create' && taskKind === 'payroll';
+                const isApprovalActive =
+                  item.id === 'approval' && (workspaceView === 'approval' || workspaceView === 'price-export');
+                const isActive = isCollectionActive || isPayrollActive || isApprovalActive;
+                const payrollBadge = item.id === 'payroll' ? getPayrollSidebarBadge(payrollPreparation?.status, isRunning) : null;
+                const NavIcon =
+                  item.id === 'collection'
                     ? Compass
-                    : platform.id === 'lanorange'
-                      ? Layers
-                      : platform.id === 'baize'
-                        ? UsersRound
-                        : platform.id === 'benlai'
-                          ? Building2
-                          : Radar;
+                    : item.id === 'payroll'
+                      ? WalletCards
+                      : BadgeDollarSign;
+
                 return (
                   <button
-                    key={platform.id}
+                    key={item.id}
                     type="button"
-                    title={platform.navLabel}
+                    title={item.label}
                     disabled={taskFormLocked}
-                    aria-pressed={(workspaceView === 'create' || (workspaceView === 'history' && !historyAll)) && taskKind === 'download' && downloadPlatform === platform.id}
-                    onClick={() => openDownloadModule(platform.id)}
-                    className="wb-sidebar-item"
+                    aria-pressed={isActive}
+                    onClick={() => {
+                      if (item.id === 'collection') {
+                        setHistoryAll(false);
+                        setTaskKind('download');
+                        navigateWorkspace('create');
+                      } else if (item.id === 'payroll') {
+                        setPayrollSubView('batches');
+                        setTaskKind('payroll');
+                        navigateWorkspace('create');
+                      } else {
+                        setPriceRecordId(undefined);
+                        navigateWorkspace('approval');
+                      }
+                      setMobileNavOpen(false);
+                    }}
+                    className="wb-sidebar-item wbx-nav__item"
                   >
-                    <span className="wb-sidebar-icon" aria-hidden="true">
-                      <PlatformIcon size={15} />
+                    <span className="wb-sidebar-icon wbx-nav__icon" aria-hidden="true">
+                      <NavIcon size={16} />
                     </span>
-                    <span className="wb-sidebar-text">{platform.navLabel}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="wb-sidebar-group">
-              <span className="wb-sidebar-label">核算与业务</span>
-              <button
-                type="button"
-                title="专项报表"
-                disabled={taskFormLocked}
-                aria-pressed={(workspaceView === 'create' || (workspaceView === 'history' && !historyAll)) && taskKind === 'generate'}
-                onClick={() => { setHistoryAll(false); setTaskKind('generate'); navigateWorkspace('create'); }}
-                className="wb-sidebar-item"
-              >
-                <span className="wb-sidebar-icon" aria-hidden="true">
-                  <BarChart3 size={15} />
-                </span>
-                <span className="wb-sidebar-text">专项报表</span>
-              </button>
-              {(() => {
-                const payrollBadge = getPayrollSidebarBadge(payrollPreparation?.status, isRunning);
-                return (
-                  <button
-                    type="button"
-                    title="薪资核算"
-                    disabled={taskFormLocked}
-                    aria-pressed={workspaceView === 'create' && taskKind === 'payroll'}
-                    onClick={() => { setTaskKind('payroll'); navigateWorkspace('create'); }}
-                    className="wb-sidebar-item"
-                  >
-                    <span className="wb-sidebar-icon" aria-hidden="true">
-                      <WalletCards size={15} />
-                    </span>
-                    <span className="wb-sidebar-text">薪资核算</span>
-                    {payrollBadge && (
-                      <span className={`wb-sidebar-badge is-${payrollBadge.tone}`}>{payrollBadge.label}</span>
+                    <span className="wb-sidebar-text wbx-nav__label">{item.label}</span>
+                    {item.id === 'collection' && activeDownloadCount > 0 && (
+                      <span className="wb-sidebar-badge wbx-nav__badge is-active tabular-nums">{activeDownloadCount} 进行中</span>
+                    )}
+                    {item.id === 'payroll' && payrollBadge && (
+                      <span className={`wb-sidebar-badge wbx-nav__badge is-${payrollBadge.tone}`}>{payrollBadge.label}</span>
+                    )}
+                    {item.id === 'approval' && approvalActiveCount + priceExportActiveCount > 0 && (
+                      <span className="wb-sidebar-badge wbx-nav__badge is-active">进行中</span>
                     )}
                   </button>
                 );
-              })()}
-              <button
-                type="button"
-                title="价格审批"
-                className="wb-sidebar-item"
-                disabled={taskFormLocked}
-                aria-pressed={workspaceView === 'approval' || workspaceView === 'price-export'}
-                onClick={() => {setPriceRecordId(undefined);navigateWorkspace('approval');}}
-              >
-                <span className="wb-sidebar-icon" aria-hidden="true">
-                  <BadgeDollarSign size={15} />
-                </span>
-                <span className="wb-sidebar-text">价格审批</span>
-                {approvalActiveCount + priceExportActiveCount > 0 && (
-                  <span className="wb-sidebar-badge is-active">进行中</span>
-                )}
-              </button>
-            </div>
-            <div className="wb-sidebar-group">
-              <span className="wb-sidebar-label">归档与配置</span>
-              <button
-                type="button"
-                title="任务中心"
-                aria-pressed={workspaceView === 'history' && historyAll}
-                onClick={() => { setHistoryAll(true); navigateWorkspace('history'); }}
-                className="wb-sidebar-item"
-              >
-                <span className="wb-sidebar-icon" aria-hidden="true">
-                  <FolderCheck size={15} />
-                </span>
-                <span className="wb-sidebar-text">任务中心</span>
-                {(activeDownloadCount > 0 || isRunning) && (
-                  <span className="wb-sidebar-badge is-active">
-                    {activeDownloadCount + (isRunning ? 1 : 0)} 进行中
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                title="扣款规则"
-                aria-pressed={deductionOpen}
-                onClick={() => { setDeductionDefaultOnly(true); setDeductionOpen(true); }}
-                className="wb-sidebar-item"
-              >
-                <span className="wb-sidebar-icon" aria-hidden="true">
-                  <SlidersHorizontal size={15} />
-                </span>
-                <span className="wb-sidebar-text">扣款规则</span>
-              </button>
-              <button
-                type="button"
-                title="模板中心"
-                aria-pressed={globalTemplatesOpen}
-                onClick={() => setGlobalTemplatesOpen(true)}
-                className="wb-sidebar-item"
-              >
-                <span className="wb-sidebar-icon" aria-hidden="true">
-                  <FileSpreadsheet size={15} />
-                </span>
-                <span className="wb-sidebar-text">模板中心</span>
-              </button>
-            </div>
-          </div>
-
-          {/* 侧栏底部微型状态中心（纯图标折叠与展开自适应） */}
-          <div className="wb-sidebar-bottom-status" aria-label="系统与任务微型状态中心">
-            {sidebarCollapsed ? (
-              <div className="flex flex-col items-center gap-2">
-                <button
-                  type="button"
-                  className="wb-sidebar-mini-dots-grid"
-                  title="平台连接健康状态（风神、蓝橙、商翼、灯塔、本来人力），点击管理登录"
-                  onClick={() => window.dispatchEvent(new CustomEvent('workbench:connections'))}
-                >
-                  <span className="wb-mini-dot-cell ready" />
-                  <span className="wb-mini-dot-cell warn" />
-                  <span className="wb-mini-dot-cell busy" />
-                  <span className="wb-mini-dot-cell ready" />
-                </button>
-                <button
-                  type="button"
-                  className={`wb-sidebar-mini-task-btn ${activeDownloadCount > 0 || isRunning ? 'is-active' : ''}`}
-                  title={activeDownloadCount > 0 || isRunning ? `${activeDownloadCount + (isRunning ? 1 : 0)} 个任务正在进行中` : '任务中心 · 暂无进行中任务'}
-                  onClick={() => { setHistoryAll(true); navigateWorkspace('history'); }}
-                >
-                  <FolderCheck size={14} />
-                  <span className="tabular-nums">{activeDownloadCount + (isRunning ? 1 : 0)}</span>
-                </button>
-              </div>
-            ) : (
-              <div className="wb-sidebar-expanded-status">
-                <div className="wb-sidebar-status-header">
-                  <span>通道状态</span>
-                  <button
-                    type="button"
-                    className="text-[11px] text-sky-600 hover:text-sky-700 font-normal"
-                    onClick={() => window.dispatchEvent(new CustomEvent('workbench:connections'))}
-                  >
-                    管理
-                  </button>
-                </div>
-                <div className="wb-sidebar-cluster-row">
-                  <span
-                    className="wb-sidebar-cluster-pill"
-                    title="数据源平台连接通道"
-                    onClick={() => window.dispatchEvent(new CustomEvent('workbench:connections'))}
-                  >
-                    <span className="wb-dot ready" />
-                    <span>平台通道就绪</span>
-                  </span>
-                  {(activeDownloadCount > 0 || isRunning) && (
-                    <span
-                      className="wb-sidebar-cluster-pill text-sky-700 border-sky-200 bg-sky-50"
-                      title="点击查看进行中任务"
-                      onClick={() => { setHistoryAll(true); navigateWorkspace('history'); }}
-                    >
-                      <span className="wb-dot busy" />
-                      <span>{activeDownloadCount + (isRunning ? 1 : 0)} 任务执行中</span>
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
+              })}
+            </nav>
           </div>
         </aside>
-        <div className="wb-viewport">
+        <div className="wb-viewport wbx-viewport">
           {(() => {
-            const headerCtx = getHeaderModuleContext(workspaceView, taskKind, downloadPlatform, historyAll);
+            const headerCtx = getPrimaryHeaderContext({
+              workspaceView,
+              taskKind: taskKind === 'generate' ? 'download' : taskKind,
+              downloadPlatform,
+              payrollSubView,
+            });
             const HeaderModuleIcon =
               headerCtx.iconKey === 'compass'
                 ? Compass
@@ -1226,36 +1175,148 @@ export default function App() {
                   ? Layers
                   : headerCtx.iconKey === 'users-round'
                     ? UsersRound
-                    : headerCtx.iconKey === 'building-2'
-                      ? Building2
-                      : headerCtx.iconKey === 'radar'
+                    : headerCtx.iconKey === 'radar'
                       ? Radar
-                      : headerCtx.iconKey === 'bar-chart-3'
-                        ? BarChart3
-                        : headerCtx.iconKey === 'wallet-cards'
-                          ? WalletCards
-                          : headerCtx.iconKey === 'badge-dollar-sign'
-                            ? BadgeDollarSign
-                            : FolderCheck;
+                      : headerCtx.iconKey === 'wallet-cards'
+                        ? WalletCards
+                        : headerCtx.iconKey === 'sliders-horizontal'
+                          ? SlidersHorizontal
+                          : headerCtx.iconKey === 'file-spreadsheet'
+                            ? FileSpreadsheet
+                            : headerCtx.iconKey === 'badge-dollar-sign'
+                              ? BadgeDollarSign
+                              : FolderCheck;
+            const isPriceModule = workspaceView === 'approval' || workspaceView === 'price-export';
+            const isPayrollModule = workspaceView === 'create' && taskKind === 'payroll';
+            const isCollectionModule = !isPriceModule && !isPayrollModule;
+
             return (
-              <header className="wb-header">
-                <div className="wb-brand">
+              <header className="wb-header wbx-header">
+                <div className="wb-brand wbx-header__lead">
+                  <button
+                    type="button"
+                    className="wbx-burger"
+                    aria-label={mobileNavOpen ? '收起导航' : '展开导航'}
+                    aria-expanded={mobileNavOpen}
+                    onClick={() => setMobileNavOpen(value => !value)}
+                  >
+                    <Menu size={18} />
+                  </button>
                   <span className="wb-header-module-icon" aria-hidden="true">
                     <HeaderModuleIcon size={15} />
                   </span>
-                  <div className="wb-breadcrumb-wrap">
-                    <div className="wb-breadcrumb-line">
-                      <span className="wb-breadcrumb-group">{headerCtx.groupLabel}</span>
-                      <span className="wb-breadcrumb-sep" aria-hidden="true">/</span>
-                      <h1 className="wb-breadcrumb-current">{headerCtx.title}</h1>
+                  <h1 className="wb-breadcrumb-current wbx-header__title" title={headerCtx.title}>
+                    {headerCtx.title}
+                  </h1>
+
+                  {isCollectionModule && (
+                    <div className="wb-subview-segmented wbx-tabs" role="tablist" aria-label="数据采集子视图切换">
+                      {COLLECTION_SUB_VIEWS.map(sub => {
+                        const isSubActive = workspaceView === sub.id;
+                        const SubIcon = sub.id === 'create' ? Compass : FolderCheck;
+                        return (
+                          <button
+                            key={sub.id}
+                            type="button"
+                            role="tab"
+                            aria-selected={isSubActive}
+                            disabled={taskFormLocked}
+                            onClick={() => {
+                              if (sub.id === 'history') {
+                                setHistoryAll(true);
+                                navigateWorkspace('history');
+                              } else {
+                                setHistoryAll(false);
+                                setTaskKind('download');
+                                navigateWorkspace('create');
+                              }
+                            }}
+                            className={`wb-subview-tab wbx-tabs__tab ${isSubActive ? 'is-active' : ''}`}
+                          >
+                            <SubIcon size={13} />
+                            <span>{sub.label}</span>
+                            {sub.id === 'history' && (activeDownloadCount > 0 || isRunning) && (
+                              <span className="wb-subview-badge is-active tabular-nums">
+                                {activeDownloadCount + (isRunning ? 1 : 0)}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
-                    <p className="wb-breadcrumb-sub">{headerCtx.subtitle}</p>
-                  </div>
+                  )}
+
+                  {isPayrollModule && (
+                    <div className="wb-subview-segmented wbx-tabs" role="tablist" aria-label="薪资核算子视图切换">
+                      {PAYROLL_SUB_VIEWS.map(sub => {
+                        const isSubActive = payrollSubView === sub.id;
+                        const SubIcon =
+                          sub.id === 'batches'
+                            ? WalletCards
+                            : sub.id === 'deductions'
+                              ? SlidersHorizontal
+                              : FileSpreadsheet;
+                        return (
+                          <button
+                            key={sub.id}
+                            type="button"
+                            role="tab"
+                            aria-selected={isSubActive}
+                            onClick={() => setPayrollSubView(sub.id)}
+                            className={`wb-subview-tab wbx-tabs__tab ${isSubActive ? 'is-active' : ''}`}
+                          >
+                            <SubIcon size={13} />
+                            <span>{sub.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {isPriceModule && (
+                    <div className="wb-subview-segmented wbx-tabs" role="tablist" aria-label="蓝橙价格管理功能">
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={workspaceView === 'approval'}
+                        onClick={() => {
+                          setPriceRecordId(undefined);
+                          navigateWorkspace('approval');
+                        }}
+                        className={`wb-subview-tab wbx-tabs__tab ${workspaceView === 'approval' ? 'is-active' : ''}`}
+                      >
+                        <BadgeDollarSign size={13} />
+                        <span>批量审批</span>
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={workspaceView === 'price-export'}
+                        onClick={() => {
+                          setPriceRecordId(undefined);
+                          navigateWorkspace('price-export');
+                        }}
+                        className={`wb-subview-tab wbx-tabs__tab ${workspaceView === 'price-export' ? 'is-active' : ''}`}
+                      >
+                        <FileSpreadsheet size={13} />
+                        <span>待审每日价格导出</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <div className="wb-header-actions">
-                  <div className="wb-global-dock" role="group" aria-label="全局平台连接与任务通知">
-                    <SystemConnections apiFetch={fetchWithAuth} fengshenStatus={fengshenAuthStatus} onOpenFengshen={() => setFengshenLoginRequest(value => value + 1)} />
-                    <span className="wb-dock-divider" aria-hidden="true" />
+
+                <div className="wb-header-actions wbx-header__actions">
+                  <div className="wb-global-dock wbx-dock" role="group" aria-label="全局平台连接与任务通知">
+                    <PlatformDock open={dockOpen} onToggle={() => setDockOpen(value => !value)} onClose={() => setDockOpen(false)}>
+                      <SystemConnections
+                        apiFetch={fetchWithAuth}
+                        fengshenStatus={fengshenAuthStatus}
+                        onOpenFengshen={() => setFengshenLoginRequest(value => value + 1)}
+                        hideTrigger
+                        open={dockOpen}
+                        onOpenChange={setDockOpen}
+                      />
+                    </PlatformDock>
                     <HeaderDownloadCenter
                       apiFetch={fetchWithAuth}
                       runningTask={runningTask}
@@ -1263,13 +1324,14 @@ export default function App() {
                       progressText={progressText}
                       onNavigateHistory={() => {
                         setHistoryAll(true);
+                        setTaskKind('download');
                         navigateWorkspace('history');
                       }}
                       onOpenPlatformAuth={platformKey => {
                         if (platformKey === 'fengshen') {
                           setFengshenLoginRequest(value => value + 1);
                         } else {
-                          window.dispatchEvent(new CustomEvent('workbench:connections'));
+                          setDockOpen(true);
                         }
                       }}
                       onShowToast={showToast}
@@ -1279,20 +1341,8 @@ export default function App() {
               </header>
             );
           })()}
-          <nav className="wb-mobile-nav" aria-label="移动端工作台导航">
-            <select className="wb-select" aria-label="切换工作台页面" disabled={taskFormLocked} value={workspaceView==='approval'||workspaceView==='price-export'?'price':workspaceView === 'history'&&historyAll ? 'history' : taskKind==='download'?downloadPlatform:taskKind} onChange={event => {
-              const value = event.target.value;
-              if (value === 'history'){setHistoryAll(true);navigateWorkspace('history');}
-              else if(value==='price'){setPriceRecordId(undefined);navigateWorkspace('approval');}
-              else if(DOWNLOAD_PLATFORMS.some(platform=>platform.id===value))openDownloadModule(value as DownloadPlatform);
-              else {setHistoryAll(false);setTaskKind(value as TaskKind); navigateWorkspace('create'); }
-            }}>
-              <optgroup label="数据采集">{DOWNLOAD_PLATFORMS.map(platform=><option key={platform.id} value={platform.id}>{platform.navLabel}</option>)}</optgroup><optgroup label="核算与业务"><option value="generate">专项报表</option><option value="payroll">薪资核算</option><option value="price">价格审批</option></optgroup><optgroup label="归档与配置"><option value="history">任务中心</option></optgroup>
-            </select>
-            <button className="wb-button" onClick={() => { setDeductionDefaultOnly(true); setDeductionOpen(true); }}>扣款规则</button>
-            <button className="wb-button" onClick={() => setGlobalTemplatesOpen(true)}>模板中心</button>
-          </nav>
-          <main className="wb-main">
+          <main className="wb-main wbx-main">
+            <div className="wbx-page">
             {missingCityTeams.length > 0 && (
               <section className="mb-4 rounded-xl border border-amber-300 bg-amber-50/95 p-4 shadow-xs" role="alert" aria-label="未匹配城市团队警告">
                 <div className="flex items-center justify-between mb-2">
@@ -1365,8 +1415,8 @@ export default function App() {
               </section>
             )}
 
-            {workspaceView==='approval' && <LanorangeApprovals focusId={priceRecordId} apiFetch={fetchWithAuth} workspaceId={workspaceId} onActiveCount={setApprovalActiveCount} onSwitchView={view=>{setPriceRecordId(undefined);navigateWorkspace(view);}}/>}
-            {workspaceView==='price-export' && <LanorangePriceExports focusId={priceRecordId} apiFetch={fetchWithAuth} workspaceId={workspaceId} onActiveCount={setPriceExportActiveCount} onSwitchView={view=>{setPriceRecordId(undefined);navigateWorkspace(view);}}/>}
+            {workspaceView==='approval' && <LanorangeApprovals focusId={priceRecordId} apiFetch={fetchWithAuth} workspaceId={workspaceId} onActiveCount={setApprovalActiveCount} onSwitchView={view => navigateWorkspace(view)} />}
+            {workspaceView==='price-export' && <LanorangePriceExports focusId={priceRecordId} apiFetch={fetchWithAuth} workspaceId={workspaceId} onActiveCount={setPriceExportActiveCount} onSwitchView={view => navigateWorkspace(view)} />}
             <section hidden={workspaceView==='approval' || workspaceView==='price-export' || (workspaceView !== 'history' && taskKind === 'payroll')} aria-label="任务下载">
               <FengshenDownloadCenter
                 apiFetch={fetchWithAuth}
@@ -1374,10 +1424,14 @@ export default function App() {
                 navigation={downloadNavigation}
                 embedded
                 hideNavigation
-                taskKind={taskKind === 'generate' ? 'generate' : 'download'}
-                platform={taskKind==='generate'?undefined:downloadPlatform}
-                recordModule={historyAll?undefined:taskKind==='generate'?'generate':downloadPlatform}
-                onTaskKindChange={setTaskKind}
+                taskKind="download"
+                platform={downloadPlatform}
+                recordModule={undefined}
+                onSelectPlatform={(nextPlatform) => {
+                  setDownloadPlatform(nextPlatform);
+                  try { localStorage.setItem('workbench_download_platform', nextPlatform); } catch {}
+                }}
+                onTaskKindChange={(nextKind) => setTaskKind(nextKind === 'generate' ? 'download' : nextKind)}
                 onViewChange={setWorkspaceView}
                 onFormLock={setTaskFormLocked}
                 onOpenPayroll={id => void openPayrollBatch(id)}
@@ -1392,10 +1446,11 @@ export default function App() {
               />
             </section>
             <section hidden={workspaceView !== 'create' || taskKind !== 'payroll'} aria-label="兼职薪资核算">
+              {payrollSubView === 'batches' && (
                 <CorePage
-                  onOpenDeductions={(defaultOnly = false) => { setDeductionDefaultOnly(defaultOnly); setDeductionOpen(true); }}
+                  onOpenDeductions={(defaultOnly = false) => { setDeductionDefaultOnly(defaultOnly); setPayrollSubView('deductions'); }}
                   onOpenConnections={() => window.dispatchEvent(new CustomEvent('workbench:connections'))}
-                  onOpenDownloads={() => navigateWorkspace('history')}
+                  onOpenDownloads={() => { setHistoryAll(true); navigateWorkspace('history'); }}
                   onNavigateDownloadCenter={() => { setTaskKind('download'); navigateWorkspace('create'); }}
                   deductionVersion={deductionVersion}
                   appTheme={appTheme}
@@ -1428,7 +1483,33 @@ export default function App() {
                   lastRunResult={lastRunResult}
                   workspaceId={getWorkspaceId()}
                 />
+              )}
+
+              {payrollSubView === 'deductions' && (
+                <StationDeductionManager
+                  inline
+                  platform={(!deductionDefaultOnly && payrollPreparation ? payrollPreparation.mode : appConfig.payrollSourceMode) === 'xiaoxiang' ? 'xiaoxiang' : 'fengshen'}
+                  apiFetch={fetchWithAuth}
+                  onClose={() => setPayrollSubView('batches')}
+                  onSaved={() => setDeductionVersion(value => value + 1)}
+                />
+              )}
+
+              {payrollSubView === 'templates' && (
+                <section className="wb-inline-subview-card" aria-label="系统模板中心">
+                  <div className="wb-inline-subview-header">
+                    <div>
+                      <h3 className="wb-inline-subview-title">兼职薪资核算标准模板中心</h3>
+                      <p className="wb-inline-subview-subtitle">
+                        下载淘宝闪购、美团小象灯塔等最新标准薪资申请表模板，填写后可在「核算批次」直接上传执行。
+                      </p>
+                    </div>
+                  </div>
+                  <SystemTemplatesPanel onNavigatePayroll={() => setPayrollSubView('batches')} />
+                </section>
+              )}
             </section>
+            </div>
           </main>
         </div>
       </div>

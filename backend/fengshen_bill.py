@@ -415,19 +415,20 @@ def atomic_json(path, data):
             temporary.unlink(missing_ok=True)
 
 
-def validate_bill_file(path, max_bytes=200 * 1024 * 1024):
+def validate_bill_file(path, max_bytes=200 * 1024 * 1024, *, max_unpacked=None):
     path = Path(path)
     size = path.stat().st_size
     if size == 0 or size > max_bytes:
         raise BillCollectionError("下载文件为空或超过大小限制")
     if not zipfile.is_zipfile(path):
         raise BillCollectionError("账单下载未返回有效 XLSX 或 ZIP；可能返回登录页面")
+    unpacked_limit = max_bytes * 5 if max_unpacked is None else max_unpacked
     try:
         with zipfile.ZipFile(path) as archive:
             entries = archive.infolist()
             if not entries or len(entries) > 10000 or any(entry.flag_bits & 1 for entry in entries):
                 raise BillCollectionError("账单压缩文件为空、加密或条目数量异常")
-            if sum(entry.file_size for entry in entries) > max_bytes * 5:
+            if sum(entry.file_size for entry in entries) > unpacked_limit:
                 raise BillCollectionError("账单压缩文件解压大小超过限制")
             if archive.testzip() is not None:
                 raise BillCollectionError("账单压缩文件校验失败")

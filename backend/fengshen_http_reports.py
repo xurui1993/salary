@@ -22,11 +22,14 @@ from order_metrics import measured
 from fengshen_http import HttpTransportError
 from fengshen_orders import (
     EXPORT_URL, QUERY_URL, TASKS_URL, TASK_URL, VIOLATIONS_URL, ENUMERATE_URL,
-    ALL_CITY_SEND_PRODUCT, OrderRequest, date_batches, new_task, query_count, task_rows,
-    waybill_scope, SHANGHAI,
+    ALL_CITY_SEND_PRODUCT, OrderRequest, ORDER_BATCH_SPAN, date_batches, new_task,
+    query_count, task_rows, waybill_scope, SHANGHAI,
 )
 
 MONTHLY_SCOPE_ATTEMPTS = 3
+DEFAULT_ORDER_EXPORT_CONCURRENCY = 1
+# High-volume cities expand about 10x (7 days ~1.7GB); the default cap targets small bills.
+ORDER_WAYBILL_MAX_UNPACKED = 4 * 1024 ** 3
 
 
 class MonthlyScopeMismatch(BillCollectionError):
@@ -101,13 +104,23 @@ def file_info(path):
     return {"path": path.name, "bytes": path.stat().st_size, "sha256": checksum}
 
 
+def order_recovery_batches(plan, source):
+    """Use the current span, falling back to legacy 5-day batch directories."""
+    source = Path(source)
+    for span in (ORDER_BATCH_SPAN, 5):
+        batches = date_batches(plan.start, plan.end, span=span)
+        if all((source / (first + "_" + last)).is_dir() for first, last in batches):
+            return batches
+    return date_batches(plan.start, plan.end, span=ORDER_BATCH_SPAN)
+
+
 def order_recovery_manifests(plan, source, selected):
     """Validate retained files and submission scope without platform requests."""
     source = Path(source)
     result = []
     if not selected or not set(selected) <= {"fraud", "problem"} or source.is_symlink():
         raise BillCollectionError("原运单恢复范围无效")
-    for first, last in date_batches(plan.start, plan.end):
+    for first, last in order_recovery_batches(plan, source):
         directory = source / (first + "_" + last)
         def proof(name):
             path = directory / name
@@ -164,9 +177,11 @@ class ReportHttpCollector:
         self.scope_recheck_delay = 3.0
 
     @measured("platform_poll_wait_seconds")
-    def _wait(self, deadline):
+    def _wait(self, deadline, started=None):
         self.client.checkpoint()
-        self.client.cancelled.wait(min(self.poll_interval, max(0, deadline - time.monotonic())))
+        since = time.monotonic() - (started if started is not None else time.monotonic())
+        interval = min(self.poll_interval, 2.0) if since < 30 else self.poll_interval
+        self.client.cancelled.wait(min(interval, max(0, deadline - time.monotonic())))
         self.client.checkpoint()
 
     @staticmethod
@@ -283,20 +298,46 @@ class ReportHttpCollector:
     def _download_order_file(self, url, target):
         return self.client.download(url, target)
 
-    def _waybills(self, request, raw, state, created=False, time_basis=None, product_id=None):
-        basis = time_basis or ("tracking_created" if created else "tracking_finish")
-        dates_created = basis == "tracking_created"
+    def _download_waybill_file(self, state, target):
+        """Fetch the completed export twice at most; large downloads occasionally arrive truncated."""
+        target = Path(target)
+        for attempt in (1, 2):
+            state["failure_phase"] = "downloading"
+            self.log("[下载] 正在获取本批运单原始文件")
+            payload = self.client.request_json("POST", TASK_URL,
+                        body={"params": {"request": {"taskId": int(state["task_id"])}}})
+            file = self._download_order_file(nested_value(payload, ["result", "data"]), target)
+            state["failure_phase"] = "validating"
+            try:
+                if validate_bill_file(file, max_unpacked=ORDER_WAYBILL_MAX_UNPACKED)["format"] != "xlsx":
+                    raise BillCollectionError("运单导出不是有效 XLSX 文件")
+                return file
+            except BillCollectionError:
+                target.unlink(missing_ok=True)
+                if attempt == 2:
+                    raise
+                self.log("[下载] 本批运单文件校验未通过，正在重新获取一次")
+
+    @measured("order_counts_seconds")
+    def _prepare_counts(self, request, created=False, product_id=None):
         self.client.select_city(request.agency_id)
-        state["expected_waybills_by_date"] = self._daily_counts(request, dates_created, product_id)
+        counts = self._daily_counts(request, created, product_id)
         # A single-day total is already proven by the identical daily query.
         # Repeating it immediately triggers REQUEST_TOO_FREQUENT on the platform.
-        state["expected_waybills"] = total = (state["expected_waybills_by_date"][request.start]
-                                             if request.start == request.end else self._count(request, dates_created, product_id))
-        if not total and any(state["expected_waybills_by_date"].values()):
+        total = (counts[request.start] if request.start == request.end
+                 else self._count(request, created, product_id))
+        if not total and any(counts.values()):
             raise BillCollectionError("运单批次查询为空但逐日查询非空，已停止导出")
+        return {"expected_waybills_by_date": counts, "expected_waybills": total}
+
+    def _waybills(self, request, raw, state, created=False, time_basis=None, product_id=None, prepared=None):
+        basis = time_basis or ("tracking_created" if created else "tracking_finish")
+        dates_created = basis == "tracking_created"
+        prepared = prepared or self._prepare_counts(request, dates_created, product_id)
+        state.update(prepared)
         atomic_json(raw / "query_state.json", {"status": "success", "agency_id": request.agency_id,
                     "start": request.start, "end": request.end, **state})
-        if total == 0:
+        if state["expected_waybills"] == 0:
             if created:
                 from waybill_workbook import WAYBILL_TITLES
             else:
@@ -317,7 +358,8 @@ class ReportHttpCollector:
                                              "dataset": "delivery_waybill" if created else "issue_orders"})
         state.update(failure_phase="waiting_export", submission_state="submitted")
         deadline, matched = time.monotonic() + self.timeout, None
-        association_deadline = time.monotonic() + min(30, self.timeout)
+        started = time.monotonic()
+        association_deadline = started + min(30, self.timeout)
         baseline_ids = {str(row["id"]) for row in baseline}
         while time.monotonic() < deadline:
             self.client.assert_city(request.agency_id)
@@ -345,15 +387,8 @@ class ReportHttpCollector:
                 if matched.get("statusDesc") == "导出成功":
                     if type(matched.get("status")) is not int or matched["status"] != 1:
                         raise BillCollectionError("运单导出成功状态与已核实协议不符")
-                    payload = self.client.request_json("POST", TASK_URL,
-                                body={"params": {"request": {"taskId": int(state["task_id"])}}})
-                    state["failure_phase"] = "downloading"
-                    self.log("[下载] 正在获取本批运单原始文件")
-                    file = self._download_order_file(nested_value(payload, ["result", "data"]),
-                                                     raw / ("waybills_created.xlsx" if created else "waybills.xlsx"))
-                    state["failure_phase"] = "validating"
-                    if validate_bill_file(file)["format"] != "xlsx":
-                        raise BillCollectionError("运单导出不是有效 XLSX 文件")
+                    file = self._download_waybill_file(
+                        state, raw / ("waybills_created.xlsx" if created else "waybills.xlsx"))
                     snapshot = self._live_snapshot(request, state, receipt["started_at"], state["task_id"],
                                                    dates_created, product_id)
                     if snapshot is not None:
@@ -361,7 +396,7 @@ class ReportHttpCollector:
                         atomic_json(raw / "query_state.json", {"status": "success", "agency_id": request.agency_id,
                                     "start": request.start, "end": request.end, **state})
                     return file_info(file)
-            self._wait(deadline)
+            self._wait(deadline, started)
         raise HttpTransportError("本批运单生成超时，已保留原任务编号", "waiting_export", "submitted")
 
     def _violations(self, request, raw, state):
@@ -382,44 +417,242 @@ class ReportHttpCollector:
         self.log("[下载] 正在获取本批服务奖惩原始文件")
         return file_info(self._download_order_file(url, raw / "violations.csv"))
 
-    def orders(self, plan, raw, selected, *, allow_existing_batches=False):
+    @staticmethod
+    def _order_manifest(request):
+        return {"dataset": "issue_orders", "transport": "http", "status": "preparing",
+                "agency_id": request.agency_id, "start": request.start, "end": request.end,
+                "time_basis": "tracking_finish", "merchant_group": "物流合作商",
+                "all_city_riders": True}
+
+    @staticmethod
+    def _mark(item, name, seconds):
+        item["timings"][name] = item["timings"].get(name, 0.0) + seconds
+
+    def _empty_waybills(self, raw):
+        from order_sources import WAYBILL_COLUMNS
+        return self._empty(raw, "waybills_empty.csv", WAYBILL_COLUMNS)
+
+    def _success(self, item, files):
+        manifest, state = item["manifest"], item["state"]
+        manifest.update(status="success", files={key: info["path"] for key, info in files.items()},
+                        file_checks=files, task_id=state.get("task_id"),
+                        expected_waybills=state.get("expected_waybills"),
+                        expected_waybills_by_date=state.get("expected_waybills_by_date"),
+                        timings={key: round(value, 3) for key, value in item["timings"].items()})
+        if "live_day_snapshot" in state:
+            manifest["live_day_snapshot"] = state["live_day_snapshot"]
+        atomic_json(item["path"], manifest)
+        item["settled"] = True
+        return manifest
+
+    def _fail_item(self, item, exc):
+        item["settled"] = True
+        item["manifest"]["timings"] = {key: round(value, 3) for key, value in item["timings"].items()}
+        state = item["state"]
+        self._failure(exc, item["manifest"], item["path"],
+                      state.get("failure_phase", "preparing"),
+                      state.get("submission_state", "not_submitted"))
+
+    @staticmethod
+    def _interrupt(item):
+        state = item["state"]
+        item["manifest"].update(status="interrupted",
+                                failure_phase=state.get("failure_phase", "waiting_export"),
+                                submission_state=state.get("submission_state", "submitted"),
+                                task_id=state.get("task_id"),
+                                timings={key: round(value, 3) for key, value in item["timings"].items()})
+        atomic_json(item["path"], item["manifest"])
+        item["settled"] = True
+
+    def _prepare_batch(self, item, prepared, include_violations):
+        request, directory, state = item["request"], item["directory"], item["state"]
+        try:
+            started = time.perf_counter()
+            counts = prepared.pop(item["index"], None)
+            if counts is None:
+                counts = self._prepare_counts(request)
+            self._mark(item, "counts", time.perf_counter() - started)
+            state.update(counts)
+            atomic_json(directory / "query_state.json", {"status": "success", "agency_id": request.agency_id,
+                        "start": request.start, "end": request.end, **state})
+            if state["expected_waybills"] == 0:
+                files = {"waybills": self._empty_waybills(directory)}
+                if include_violations:
+                    started = time.perf_counter()
+                    files["violations"] = self._violations(request, directory, state)
+                    self._mark(item, "violations", time.perf_counter() - started)
+                return self._success(item, files)
+            started = time.perf_counter()
+            baseline = self._tasks()
+            self._mark(item, "baseline", time.perf_counter() - started)
+            atomic_json(directory / "http_baseline.json", {"task_ids": [str(row["id"]) for row in baseline]})
+            self.client.assert_city(request.agency_id)
+            state.update(failure_phase="submitting", submission_state="unknown")
+            self.log("[账单] 运单完成日期和全城市范围已核对，正在提交导出")
+            started = time.perf_counter()
+            _, receipt = self.client.submit_once(EXPORT_URL, order_body(request, export=True),
+                                                directory / "http_submission.json",
+                                                {"agency_id": request.agency_id, "start": request.start,
+                                                 "end": request.end, "dataset": "issue_orders"})
+            self._mark(item, "submit", time.perf_counter() - started)
+            state.update(failure_phase="waiting_export", submission_state="submitted")
+            item.update(receipt=receipt, baseline_ids={str(row["id"]) for row in baseline},
+                        matched=None, deadline=time.monotonic() + self.timeout,
+                        submitted_at=time.monotonic())
+            return None
+        except Exception as exc:
+            self._fail_item(item, exc)
+
+    @measured("order_association_seconds")
+    def _associate(self, item):
+        request, state = item["request"], item["state"]
+        limit = time.monotonic() + min(30, self.timeout)
+        try:
+            while time.monotonic() < limit:
+                self.client.assert_city(request.agency_id)
+                current = self._tasks()
+                matched = new_task(item["baseline_ids"], current,
+                                   int(item["receipt"]["started_at"] * 1000),
+                                   int(item["receipt"]["finished_at"] * 1000))
+                if matched is not None:
+                    state["task_id"] = str(matched["id"])
+                    item["matched"] = matched
+                    atomic_json(item["directory"] / "task.json", {
+                        "task_id": state["task_id"], "agency_id": request.agency_id,
+                        "start": request.start, "end": request.end, "time_basis": "tracking_finish"})
+                    return
+                self._wait(limit, item["submitted_at"])
+            raise HttpTransportError("无法唯一关联本批新运单导出任务，已保留提交记录",
+                                     "waiting_export", "unknown")
+        except Exception as exc:
+            self._fail_item(item, exc)
+
+    def _poll_batches(self, active):
+        self.client.checkpoint()
+        started = time.perf_counter()
+        current = self._tasks()
+        elapsed = time.perf_counter() - started
+        finished = []
+        for index in sorted(active):
+            item = active[index]
+            self._mark(item, "poll", elapsed)
+            try:
+                rows = [row for row in current if str(row["id"]) == item["state"].get("task_id")]
+                if len(rows) != 1 or any(rows[0].get(key) != item["matched"].get(key)
+                                         for key in ("exportTime", "fileName")):
+                    raise BillCollectionError("本批运单任务身份发生变化，未下载其他记录")
+                matched = item["matched"] = rows[0]
+                if matched.get("statusDesc") in ("导出失败", "失败"):
+                    raise BillCollectionError("本批运单导出失败，已保留原任务")
+                if matched.get("statusDesc") == "导出成功":
+                    if type(matched.get("status")) is not int or matched["status"] != 1:
+                        raise BillCollectionError("运单导出成功状态与已核实协议不符")
+                    finished.append(index)
+                elif time.monotonic() >= item["deadline"]:
+                    raise HttpTransportError("本批运单生成超时，已保留原任务编号",
+                                             "waiting_export", "submitted")
+            except Exception as exc:
+                self._fail_item(item, exc)
+        return finished
+
+    def _download_batch(self, item):
+        request, directory, state = item["request"], item["directory"], item["state"]
+        try:
+            started = time.perf_counter()
+            file = self._download_waybill_file(state, directory / "waybills.xlsx")
+            self._mark(item, "download", time.perf_counter() - started)
+            started = time.perf_counter()
+            snapshot = self._live_snapshot(request, state, item["receipt"]["started_at"],
+                                           state["task_id"])
+            self._mark(item, "snapshot", time.perf_counter() - started)
+            if snapshot is not None:
+                state["live_day_snapshot"] = snapshot
+                atomic_json(directory / "query_state.json", {"status": "success",
+                            "agency_id": request.agency_id, "start": request.start,
+                            "end": request.end, **state})
+            files = {"waybills": file_info(file)}
+            if item["include_violations"]:
+                started = time.perf_counter()
+                files["violations"] = self._violations(request, directory, state)
+                self._mark(item, "violations", time.perf_counter() - started)
+            return self._success(item, files)
+        except Exception as exc:
+            self._fail_item(item, exc)
+
+    def orders_stream(self, plan, raw, selected, batches=None, *,
+                      concurrency=DEFAULT_ORDER_EXPORT_CONCURRENCY,
+                      allow_existing_batches=False):
+        """Yield completed batch manifests while up to `concurrency` exports wait."""
         if not selected or not set(selected) <= {"fraud", "problem"}:
             raise HttpTransportError("运单下载项无效")
-        batches, raw = date_batches(plan.start, plan.end), Path(raw)
-        # Never create a later batch if an earlier attempt already exists.
-        # Recovery must reconcile the retained task, not start another export.
+        try:
+            concurrency = int(concurrency)
+        except (TypeError, ValueError):
+            raise HttpTransportError("运单导出并发数无效") from None
+        if concurrency not in (1, 2):
+            raise HttpTransportError("运单导出并发数只能为 1 或 2")
+        raw = Path(raw)
+        batches = list(batches if batches is not None
+                       else date_batches(plan.start, plan.end, span=ORDER_BATCH_SPAN))
+        if not batches:
+            return
         if not allow_existing_batches and raw.exists() and any(raw.rglob("*submission.json")):
             raise HttpTransportError("本目录已有运单导出记录，请查询原任务，不能重复提交",
                                      "waiting_export", "unknown")
-        result = []
-        for number, (first, last) in enumerate(batches, 1):
-            self.client.checkpoint()
-            request, directory = OrderRequest(first, last, plan.agency_id), raw / (first + "_" + last)
-            directory.mkdir(parents=True, exist_ok=False)
-            state = {"failure_phase": "preparing", "submission_state": "not_submitted"}
-            manifest = {"dataset": "issue_orders", "transport": "http", "status": "preparing",
-                        "agency_id": request.agency_id, "start": first, "end": last,
-                        "time_basis": "tracking_finish", "merchant_group": "物流合作商",
-                        "all_city_riders": True}
-            path = directory / "manifest.json"
-            atomic_json(path, manifest)
-            self.log(f"[资料] 正在通过接口采集运单第 {number}/{len(batches)} 批：{first} 至 {last}")
-            try:
-                files = {"waybills": self._waybills(request, directory, state)}
-                if "problem" in selected:
-                    files["violations"] = self._violations(request, directory, state)
-                manifest.update(status="success", files={key: info["path"] for key, info in files.items()},
-                                file_checks=files, task_id=state.get("task_id"),
-                                expected_waybills=state["expected_waybills"],
-                                expected_waybills_by_date=state["expected_waybills_by_date"])
-                if "live_day_snapshot" in state:
-                    manifest["live_day_snapshot"] = state["live_day_snapshot"]
-                atomic_json(path, manifest)
-                result.append(manifest)
-            except Exception as exc:
-                manifest["task_id"] = state.get("task_id")
-                self._failure(exc, manifest, path, state["failure_phase"], state["submission_state"])
-        return result
+        include_violations = "problem" in selected
+        prepared, active = {}, {}
+        next_index = 0
+        try:
+            while next_index < len(batches) or active:
+                self.client.checkpoint()
+                while next_index < len(batches) and len(active) < concurrency:
+                    index = next_index
+                    first, last = batches[index]
+                    request = OrderRequest(first, last, plan.agency_id)
+                    directory = raw / (first + "_" + last)
+                    directory.mkdir(parents=True, exist_ok=False)
+                    manifest = self._order_manifest(request)
+                    path = directory / "manifest.json"
+                    atomic_json(path, manifest)
+                    item = {"index": index, "request": request, "directory": directory,
+                            "manifest": manifest, "path": path,
+                            "state": {"failure_phase": "preparing",
+                                      "submission_state": "not_submitted"},
+                            "timings": {}, "settled": False,
+                            "include_violations": include_violations}
+                    self.log(f"[资料] 正在通过接口采集运单第 {index + 1}/{len(batches)} 批：{first} 至 {last}")
+                    next_index += 1
+                    completed = self._prepare_batch(item, prepared, include_violations)
+                    if completed is not None:
+                        yield completed
+                    else:
+                        active[index] = item
+                        self._associate(item)
+                        if next_index < len(batches) and next_index not in prepared:
+                            first, last = batches[next_index]
+                            prepared[next_index] = self._prepare_counts(
+                                OrderRequest(first, last, plan.agency_id))
+                if active:
+                    finished = self._poll_batches(active)
+                    for index in finished:
+                        item = active.pop(index)
+                        yield self._download_batch(item)
+                    if not finished:
+                        earliest = min(item["submitted_at"] for item in active.values())
+                        deadline = min(item["deadline"] for item in active.values())
+                        self._wait(deadline, earliest)
+        except BaseException:
+            for item in active.values():
+                if not item["settled"]:
+                    self._interrupt(item)
+            raise
+
+    def orders(self, plan, raw, selected, *, allow_existing_batches=False):
+        manifests = list(self.orders_stream(
+            plan, raw, selected,
+            date_batches(plan.start, plan.end, span=ORDER_BATCH_SPAN),
+            concurrency=1, allow_existing_batches=allow_existing_batches))
+        return sorted(manifests, key=lambda manifest: manifest["start"])
 
     def all_city_send_product_id(self):
         """Resolve the 全城送 productId from the platform enumeration for the selected city."""

@@ -147,6 +147,32 @@ async def update_deduction_profiles(platform: str, request: Request):
         raise HTTPException(409, str(error)) from None
 
 
+@router.post('/deduction-profiles/{platform}/problem-rules/preview')
+async def preview_problem_rules(platform: str, request: Request):
+    from download_accounts import require_account
+    from station_directory import ready_directory
+    from deduction_confirmation import preview_problem_rules as preview
+    require_account(request)
+    payload = await request.json()
+    try:
+        return await asyncio.to_thread(preview, platform, ROOT, payload, ready_directory(platform))
+    except SourceError as error:
+        raise HTTPException(409, str(error)) from None
+
+
+@router.put('/deduction-profiles/{platform}/problem-rules')
+async def update_problem_rules(platform: str, request: Request):
+    from download_accounts import require_admin
+    from station_directory import ready_directory
+    from deduction_confirmation import save_problem_rules
+    require_admin(request)
+    payload = await request.json()
+    try:
+        return await asyncio.to_thread(save_problem_rules, platform, ROOT, payload, ready_directory(platform))
+    except SourceError as error:
+        raise HTTPException(409, str(error)) from None
+
+
 @router.get('/batches/{key}/deduction-review')
 async def deduction_review(key: str, request: Request, city_id: str = '', refresh: bool = False):
     from download_accounts import require_account

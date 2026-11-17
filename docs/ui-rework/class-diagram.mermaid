@@ -1,0 +1,154 @@
+%% 兼职运力与薪资结算调度中心 · 增量 UI 改造 · 类图
+%% 来源：docs/ui-rework/01-architecture.md §2.1
+%% 说明：CSS 分层用注释表达（classDiagram 不表达样式层），此处建模"单一数据源 + 组件分层"
+classDiagram
+  direction TB
+
+  class AppMeta {
+    +string APP_TITLE
+    +string SIDEBAR_BRAND
+    +string SIDEBAR_BRAND_HINT
+  }
+
+  class SystemMetaItem {
+    +SystemKey key
+    +string displayName
+    +string shortName
+    +string businessLine
+    +string description
+    +Surface surface
+    +boolean planned
+  }
+
+  class PlatformCatalog {
+    +SystemMetaItem[] SYSTEM_META
+    +systemMeta(key) SystemMetaItem
+    +systemLabel(key) string
+    +systemShortLabel(key) string
+    +connectionChips() SystemMetaItem[]
+    +collectionSystems() SystemMetaItem[]
+  }
+
+  class DownloadPlatformSpec {
+    +DownloadPlatform id
+    +string navLabel
+    +string badgeLabel
+    +string desc
+    +string iconKey
+  }
+
+  class StatusSemantics {
+    +Tone tone
+    +normalizeTone(legacyTone) Tone
+    +toneClass(tone) string
+    +taskTone(status) Tone
+    +payrollTone(status) Tone
+  }
+
+  class Breakpoints {
+    +number lg
+    +number md
+    +number sm
+  }
+
+  class ExecutionRailSummary {
+    +string cityLabel
+    +string periodText
+    +string periodSpanBadge
+    +string thirdRowLabel
+    +string thirdRowValue
+    +string estimateValue
+    +string estimateUnit
+    +string blockerHint
+    +boolean submitReady
+    +buildExecutionRailSummary(input) ExecutionRailSummary
+  }
+
+  class AppShell {
+    +boolean sidebarCollapsed
+    +boolean mobileNavOpen
+    +boolean dockOpen
+    +renderSidebar() void
+    +renderNavBand() void
+    +renderMain() void
+  }
+
+  class PlatformDock {
+    +boolean open
+    +number attentionCount
+    +onToggle() void
+  }
+
+  class CollectionWorkbench {
+    +string[] datasets
+    +string[] cities
+    +startDownload() void
+    +scrollToStep(step) void
+    +renderStepDatasets() void
+    +renderStepScope() void
+    +renderRail() void
+  }
+
+  class PayrollQueueWorkbench {
+    +PayrollQueueTask[] tasks
+    +boolean loading
+    +refresh() void
+    +renderEmptyState() void
+    +renderQueueTable() void
+  }
+
+  class DeductionManager {
+    +boolean onlyUnconfigured
+    +string error
+    +handleSave() void
+    +renderToolbar() void
+  }
+
+  class ApprovalPage {
+    +Task[] allRows
+    +Selection selection
+    +renderTodoSection() void
+    +renderResultSection() void
+  }
+
+  class TaskCenterPage {
+    +Record[] records
+    +renderTable() void
+  }
+
+  class EmptyState {
+    +Icon icon
+    +string reason
+    +Action[] actions
+  }
+
+  class SkeletonRows {
+    +number rows
+  }
+
+  AppShell *-- PlatformDock : 唯一入口
+  AppShell --> CollectionWorkbench
+  AppShell --> PayrollQueueWorkbench
+  AppShell --> ApprovalPage
+  CollectionWorkbench --> TaskCenterPage : 同一工作台 history 分支
+  PayrollQueueWorkbench --> DeductionManager : 子视图
+  CollectionWorkbench --> ExecutionRailSummary
+  CollectionWorkbench --> DownloadPlatformSpec
+  PayrollQueueWorkbench ..> EmptyState
+  ApprovalPage ..> EmptyState
+  TaskCenterPage ..> SkeletonRows
+  PlatformDock --> StatusSemantics
+  PlatformDock --> PlatformCatalog
+  AppShell --> AppMeta
+  AppShell --> Breakpoints
+  PlatformCatalog --> SystemMetaItem
+  DownloadPlatformSpec --> PlatformCatalog : label 派生
+
+  %% ── CSS 分层（加载顺序即级联顺序，无 @layer）──
+  %% L0 src/workbench.css          只读兼容层（1572 规则 / 21 个 !important，仅 2 处 token 手术）
+  %% L1 src/styles/tokens.css      --wbx-* 令牌 + 旧 --wb-* 桥接
+  %% L2 src/styles/base.css        排版 / wbx-spin / reduced-motion / focus
+  %% L3 src/styles/layout.css      外壳栅格 + 1280/1024/768
+  %% L4 src/styles/components.css  card/btn/pill/tabs/toolbar/table/empty/skeleton/field/scroll
+  %% L5 src/styles/pages.css → pages/collection|payroll|approval.css
+  %% 入口 src/index.css：@import tailwindcss → L1 → L2 → L3 → L4 → L5 → 旧覆盖规则

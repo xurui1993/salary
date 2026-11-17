@@ -7,6 +7,8 @@ import { datasetGroup, isGlobalDataset, type DownloadFetch } from '../lib/downlo
 import type { RecordModule } from '../lib/downloadModules';
 import { WorkbenchDrawer } from './WorkbenchDrawer';
 import { WorkbenchDatePicker } from './WorkbenchDatePicker';
+import { SkeletonRows } from './SkeletonRows';
+import { taskTone, toneClass } from '../lib/statusSemantics';
 
 interface File { id:string; run_id:string; name:string; city:string; bytes:number; available:boolean; unavailable_reason?:string }
 interface Task {
@@ -109,24 +111,65 @@ export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttemp
   const openPayroll=(r:Task)=>{setFocused(null);onOpenPayroll?.(r.batch_id!);};
   const openPrice=(r:Task)=>{setFocused(null);onOpenPrice?.(r.kind as 'approval'|'price-export',r.price_id);};
   const mainAction=(r:Task)=>r.kind==='payroll'?openPayroll(r):r.price_id?openPrice(r):open(r);
+  /** 任务进度百分比；无子项时返回 null（UI 显示「—」）。 */
+  const pctOf=(r:Task)=>r.total_items>0?Math.max(0,Math.min(100,Math.round((r.completed_items/r.total_items)*100))):null;
   const handoffs=focused?taskHandoffs(focused.kind,focused.datasets,focused.cities):null;
-  return <section className="tc-center" aria-label="任务中心列表">
-    <div className="tc-toolbar">
+  return <section className="tc-center wbx-taskcenter" aria-label="任务中心列表">
+    {/* @wbx:tc-toolbar-start 筛选与批量操作同一水平带 */}
+    <div className="wbx-toolbar wbx-taskcenter__bar">
+      <div className="wbx-toolbar__lead wbx-taskcenter__lead">
       <div className="wb-quick-filters" role="group" aria-label="任务状态">{[['','全部','all'],['active','进行中','active'],['attention','待处理','attention'],['success','已完成','success']].map(([key,label,count])=><button key={key} aria-pressed={status===key} onClick={()=>{setStatus(key);reset();}}>{label}<span className="tc-count">{counts[count]||0}</span></button>)}</div>
-      <div className="tc-detail-actions">
-        {!archived&&<button className="wb-button" disabled={busy} onClick={()=>void act(async()=>{const params=new URLSearchParams({q:query,system,kind,from,to,module:recordModule||''});const response=await request(`${API}/organize-preview?${params}`);const data=await response.json();if(data.records.length)setConfirm(data.records);else setNotice('当前筛选范围内没有可整理的已完成任务。');})}>整理已完成</button>}
-        <button className="wb-button" disabled={busy} onClick={()=>void showDirectory()}><FolderOpen size={16}/>打开生成根目录</button>
-        <button className={`wb-button ${archived?'tc-archive-active':''}`} onClick={()=>{setArchived(!archived);reset();}}><Archive size={15}/>{archived?'返回任务列表':'已移出'}</button>
+      </div>
+      <div className="wbx-toolbar__actions wbx-taskcenter__actions">
+        {!archived&&<button className="wbx-btn" disabled={busy} onClick={()=>void act(async()=>{const params=new URLSearchParams({q:query,system,kind,from,to,module:recordModule||''});const response=await request(`${API}/organize-preview?${params}`);const data=await response.json();if(data.records.length)setConfirm(data.records);else setNotice('当前筛选范围内没有可整理的已完成任务。');})}>整理已完成</button>}
+        <button className="wbx-btn" disabled={busy} onClick={()=>void showDirectory()}><FolderOpen size={16}/>打开生成根目录</button>
+        <button className={`wbx-btn${archived?' wbx-btn--secondary':''}`} onClick={()=>{setArchived(!archived);reset();}}><Archive size={15}/>{archived?'返回任务列表':'已移出'}</button>
       </div>
     </div>
-    <div className="tc-searchbar"><label className="tc-search"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="搜索任务、城市、文件名或编号" aria-label="搜索任务"/></label>
+    {/* 第二行：搜索 / 平台 / 类型 / 日期 / 刷新 */}
+    <div className="wbx-toolbar wbx-taskcenter__filters">
+      <label className="tc-search wbx-taskcenter__search"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="搜索任务、城市、文件名或编号" aria-label="搜索任务"/></label>
+
       {!recordModule&&<><select className="wb-select" aria-label="筛选平台" value={system} onChange={e=>{setSystem(e.target.value);reset();}}><option value="">全部平台</option>{Object.entries(SYSTEMS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select><select className="wb-select" aria-label="筛选任务类型" value={kind} onChange={e=>{setKind(e.target.value);reset();}}><option value="">全部类型</option>{Object.entries(KINDS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></>}
-      <details className="tc-filters"><summary className="wb-button">日期筛选{from||to?' · 已启用':''}</summary><div><div className="tc-filter-date-item"><span>创建日期从</span><WorkbenchDatePicker ariaLabel="创建日期从" value={from} rangeRole="start" rangeStart={from} rangeEnd={to} allowClear align="right" onChange={v=>{setFrom(v);reset();}}/></div><div className="tc-filter-date-item"><span>至</span><WorkbenchDatePicker ariaLabel="创建日期至" value={to} rangeRole="end" rangeStart={from} rangeEnd={to} allowClear align="right" onChange={v=>{setTo(v);reset();}}/></div><button className="wb-link" onClick={()=>{setFrom('');setTo('');reset();}}>清除日期</button></div></details><button className="wb-icon" aria-label="刷新任务列表" onClick={()=>setVersion(v=>v+1)}><RefreshCw size={17}/></button></div>
+            <details className="tc-filters"><summary className="wb-button">日期筛选{from||to?' · 已启用':''}</summary><div><div className="tc-filter-date-item"><span>创建日期从</span><WorkbenchDatePicker ariaLabel="创建日期从" value={from} rangeRole="start" rangeStart={from} rangeEnd={to} allowClear align="right" onChange={v=>{setFrom(v);reset();}}/></div><div className="tc-filter-date-item"><span>至</span><WorkbenchDatePicker ariaLabel="创建日期至" value={to} rangeRole="end" rangeStart={from} rangeEnd={to} allowClear align="right" onChange={v=>{setTo(v);reset();}}/></div><button className="wb-link" onClick={()=>{setFrom('');setTo('');reset();}}>清除日期</button></div></details>
+      <button className="wb-icon" aria-label="刷新任务列表" onClick={()=>setVersion(v=>v+1)}><RefreshCw size={17}/></button>
+    </div>
+    {/* @wbx:tc-toolbar-end */}
     {archived&&<p className="tc-info">已移出的任务仍保留文件和处理记录，恢复后所有同事同步可见。</p>}
     {pollError&&<p role="status" className="wb-notice">{pollError}现有记录保留。</p>}{error&&<p role="alert" className="wb-error">{error}</p>}{notice&&<p role="status" className="tc-info">{notice}</p>}
     {!!selected.length&&<div className="tc-batchbar"><strong>已选 {selected.length} 项（当前页）</strong><button className="wb-button" disabled={busy||!canBatch} title="最多20个有文件的资料或报表任务" onClick={()=>void act(async()=>{const response=await request(`${API}/bundle`,{ids:selected});saveDownloadBlob(await readDownloadResponse(response,'批量任务结果.zip'),'批量任务结果.zip');setNotice('已发起批量文件保存。');})}><Download size={15}/>批量下载</button><button className="wb-button" disabled={busy||!chosen.length} onClick={()=>setConfirm(chosen)}>{archived?'恢复显示':'移出列表'}</button><button className="wb-link" onClick={()=>setSelected([])}>取消选择</button></div>}
-    <div className="tc-table-scroll"><table className="tc-table"><thead><tr><th><input type="checkbox" aria-label="选择当前页任务" checked={records.length>0&&records.every(r=>selected.includes(r.id))} onChange={e=>setSelected(e.target.checked?records.map(r=>r.id):[])}/></th><th>任务内容</th><th>范围 / 账期</th><th>创建时间</th><th>状态</th><th>操作</th></tr></thead><tbody>{records.map(r=><React.Fragment key={r.id}><tr data-task-ids={r.member_ids.join(' ')}><td><input type="checkbox" aria-label={`选择${title(r)}`} checked={selected.includes(r.id)} onChange={e=>setSelected(v=>e.target.checked?[...v,r.id]:v.filter(id=>id!==r.id))}/></td><td className="tc-title"><button onClick={()=>open(r)} title={title(r)}>{title(r)}</button><small>{platform(r)} · {KINDS[r.kind]||'资料下载'} · {r.id.slice(-6).toUpperCase()}</small></td><td className="tc-scope"><span title={r.cities.join('、')}>{r.cities.length>2?`${r.cities.slice(0,2).join('、')}等${r.cities.length}城`:r.cities.join('、')}</span><small>{scope(r)}</small></td><td className="tc-time">{stamp(r.created_at)}</td><td><span className={`tc-status is-${r.status}`}>{taskGuidance(context(r)).label}</span><small>{r.files.length&&!r.available_files?'文件不可用':r.available_files?`${r.available_files} 个文件`:ACTIVE.has(r.status)?`${r.completed_items}/${r.total_items} 项`:''}</small></td><td><div className="tc-actions">{needsAction(r)?<button className="wb-primary" onClick={()=>mainAction(r)}>{actionLabel(r)}</button>:r.available_files>0?<button className="wb-primary" disabled={busy} onClick={()=>downloadResult(r)}>下载结果</button>:null}{r.files.length>1&&<button className="wb-link" aria-expanded={filesOpen===r.id} onClick={()=>setFilesOpen(filesOpen===r.id?'':r.id)}>文件<ChevronDown size={13}/></button>}<button className="wb-link" onClick={()=>open(r)}>详情</button>{!archived&&ACTIVE.has(r.status)&&<button className="wb-link" disabled={busy||['stopping','cancelling'].includes(r.status)} onClick={()=>void act(async()=>{await request(`${API}/stop`,{id:r.id});setVersion(v=>v+1);setNotice('已请求停止，确认停止前任务保留在列表。');})}>停止</button>}<button className="wb-link" disabled={busy} onClick={()=>setConfirm([r])}>{archived?'恢复':ACTIVE.has(r.status)?'停止并移出':'移出'}</button></div></td></tr>{filesOpen===r.id&&<tr className="tc-file-row"><td/><td colSpan={5}>{r.failed_items>0&&<p className="wb-notice">另有 {r.failed_items} 项未完成，已有文件可先领取。</p>}{files(r,r.files)}</td></tr>}</React.Fragment>)}</tbody></table></div>
-    {!records.length&&<div className="tc-empty">{loading?'正在读取任务…':pollError?'正在连接后台，稍后自动刷新。':archived?'暂无已移出的任务。':'没有符合条件的任务。'}</div>}
+    {/* @wbx:tc-table-start 列序：任务/平台 → 状态 → 进度 → 任务编号 → 创建时间 → 操作（sticky） */}
+    <div className="wbx-table-scroll wbx-taskcenter__scroll">
+      <table className="wbx-table tc-table wbx-taskcenter__table">
+        <thead><tr>
+          <th className="wbx-taskcenter__check"><input type="checkbox" aria-label="选择当前页任务" checked={records.length>0&&records.every(r=>selected.includes(r.id))} onChange={e=>setSelected(e.target.checked?records.map(r=>r.id):[])}/></th>
+          <th>任务 / 平台</th>
+          <th>状态</th>
+          <th>进度</th>
+          <th>任务编号</th>
+          <th>创建时间</th>
+          <th className="wbx-table__actions">操作</th>
+        </tr></thead>
+        <tbody>{records.map(r=><React.Fragment key={r.id}>
+          <tr data-task-ids={r.member_ids.join(' ')}>
+            <td><input type="checkbox" aria-label={`选择${title(r)}`} checked={selected.includes(r.id)} onChange={e=>setSelected(v=>e.target.checked?[...v,r.id]:v.filter(id=>id!==r.id))}/></td>
+            <td className="wbx-taskcenter__task">
+              <button type="button" className="wbx-taskcenter__title" onClick={()=>open(r)} title={title(r)}>{title(r)}</button>
+              <small className="wbx-taskcenter__sub">{platform(r)} · {KINDS[r.kind]||'资料下载'}</small>
+              <small className="wbx-taskcenter__sub wbx-taskcenter__scope" title={r.cities.join('、')}>{r.cities.length>2?`${r.cities.slice(0,2).join('、')}等${r.cities.length}城`:(r.cities.join('、')||'全部城市')} · {scope(r)}</small>
+            </td>
+            <td><span className={`wbx-pill ${toneClass(taskTone(r.status))}`}>{taskGuidance(context(r)).label}</span></td>
+            <td className="wbx-taskcenter__progress">{r.total_items>0&&ACTIVE.has(r.status)?<><span className="wbx-taskcenter__pct tabular-nums">{r.completed_items}/{r.total_items}</span><span className="wbx-progress" aria-hidden="true"><span className="wbx-progress__bar" style={{width:`${pctOf(r)||0}%`}}/></span></>:r.available_files>0?<span className="tabular-nums">{r.available_files} 个文件</span>:r.files.length>0?<span className="wbx-taskcenter__muted">文件不可用</span>:<span className="wbx-taskcenter__muted">—</span>}</td>
+            <td className="wbx-taskcenter__num tabular-nums">{r.id.slice(-6).toUpperCase()}</td>
+            <td className="wbx-taskcenter__time tabular-nums">{stamp(r.created_at)}</td>
+            <td className="wbx-table__actions"><div className="tc-actions wbx-taskcenter__ops">{needsAction(r)?<button type="button" className="wbx-btn wbx-btn--primary wbx-btn--sm" onClick={()=>mainAction(r)}>{actionLabel(r)}</button>:r.available_files>0?<button type="button" className="wbx-btn wbx-btn--primary wbx-btn--sm" disabled={busy} onClick={()=>downloadResult(r)}>下载结果</button>:null}{r.files.length>1&&<button type="button" className="wbx-btn wbx-btn--ghost wbx-btn--sm" aria-expanded={filesOpen===r.id} onClick={()=>setFilesOpen(filesOpen===r.id?'':r.id)}>文件<ChevronDown size={13}/></button>}<button type="button" className="wbx-btn wbx-btn--ghost wbx-btn--sm" onClick={()=>open(r)}>详情</button>{!archived&&ACTIVE.has(r.status)&&<button type="button" className="wbx-btn wbx-btn--ghost wbx-btn--sm" disabled={busy||['stopping','cancelling'].includes(r.status)} onClick={()=>void act(async()=>{await request(`${API}/stop`,{id:r.id});setVersion(v=>v+1);setNotice('已请求停止，确认停止前任务保留在列表。');})}>停止</button>}<button type="button" className="wbx-btn wbx-btn--ghost wbx-btn--sm" disabled={busy} onClick={()=>setConfirm([r])}>{archived?'恢复':ACTIVE.has(r.status)?'停止并移出':'移出'}</button></div></td>
+          </tr>
+          {filesOpen===r.id&&<tr className="tc-file-row"><td/><td colSpan={6}>{r.failed_items>0&&<p className="wb-notice">另有 {r.failed_items} 项未完成，已有文件可先领取。</p>}{files(r,r.files)}</td></tr>}
+        </React.Fragment>)}</tbody>
+      </table>
+    </div>
+    {/* @wbx:tc-table-end */}
+    {!records.length&&(loading?<div className="wbx-taskcenter__skeleton"><SkeletonRows rows={5} columns={6} label="任务列表加载中"/></div>:<div className="tc-empty">{pollError?'正在连接后台，稍后自动刷新。':archived?'暂无已移出的任务。':'没有符合条件的任务。'}</div>)}
     <footer className="tc-pagination"><span>共 {total} 条 · 每页 20 条</span><div><button className="wb-button" disabled={page<=1||loading} onClick={()=>{setPage(p=>p-1);setSelected([]);}}>上一页</button><span>{page} / {pages}</span><button className="wb-button" disabled={page>=pages||loading} onClick={()=>{setPage(p=>p+1);setSelected([]);}}>下一页</button></div></footer>
     {focused&&<WorkbenchDrawer title="任务详情" wide onClose={()=>setFocused(null)} bodyClassName="tc-detail"><div className="tc-detail-title"><h3>{title(focused)}</h3><span className={`tc-status is-${focused.status}`}>{statusLabel(focused.status)}</span></div><p className="wb-muted">{platform(focused)} · {focused.cities.join('、')} · {scope(focused)}</p><p className="wb-muted">{stamp(focused.created_at)} · 编号 {focused.id.slice(-8).toUpperCase()}</p>
       <TaskOutcome task={context(focused)}/>

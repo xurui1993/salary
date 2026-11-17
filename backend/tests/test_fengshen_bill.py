@@ -426,6 +426,17 @@ class FengshenBillTests(unittest.TestCase):
         self.assertEqual(validate_bill_file(path)["format"], "zip")
         self.assertFalse((self.root / "statement.xlsx").exists())
 
+    def test_unpacked_limit_can_be_raised_for_high_volume_exports(self):
+        path = self.root / "large.xlsx"
+        with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("[Content_Types].xml", b"x")
+            archive.writestr("xl/workbook.xml", b"x")
+            archive.writestr("xl/worksheets/sheet1.xml", b"0" * (12 * 1024 * 1024))
+        with self.assertRaisesRegex(BillCollectionError, "解压大小"):
+            validate_bill_file(path, max_bytes=1024 * 1024)
+        self.assertEqual(validate_bill_file(path, max_bytes=1024 * 1024,
+                                            max_unpacked=64 * 1024 * 1024)["format"], "xlsx")
+
     def test_login_page_is_not_exported(self):
         page = FakePage(daily_profile())
         page.url = "https://mozi-login.alibaba-inc.com/"

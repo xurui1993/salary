@@ -6,16 +6,17 @@ interface ControlPanelProps {
   onUploadFiles?: (files: { file: File; relativePath: string }[]) => Promise<void>;
   onOpenTemplates?: () => void;
   isRunning?: boolean;
+  separationOption?: React.ReactNode;
 }
 
 /**
  * 兼职核算上传区：仅负责拖拽 / 点选上传与模式说明。
  * 模式切换、辅助下载工具、认证入口由 CorePage 承担；执行态展示由 ExecutionCockpit 承担。
  */
-export function ControlPanel({ payrollSourceMode = 'fengshen', onUploadFiles, onOpenTemplates, isRunning = false }: ControlPanelProps) {
+export function ControlPanel({ payrollSourceMode = 'fengshen', onUploadFiles, onOpenTemplates, isRunning = false, separationOption }: ControlPanelProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState('');
-  const automatic = payrollSourceMode === 'fengshen';
+  const automatic = payrollSourceMode === 'fengshen' || payrollSourceMode === 'xiaoxiang';
   const fileInputRef = useRef<HTMLInputElement>(null);
   const multiFileInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { setError(''); setIsDragging(false); }, [payrollSourceMode]);
@@ -38,7 +39,7 @@ export function ControlPanel({ payrollSourceMode = 'fengshen', onUploadFiles, on
     if (automatic) {
       const items = Array.from(e.dataTransfer.items || []);
       if (items.some(item => item.webkitGetAsEntry?.()?.isDirectory)) {
-        setError('闪购自动仅支持上传申请表文件，请勿拖入文件夹。');
+        setError('自动核算仅支持上传申请表文件，请勿拖入文件夹。');
         return;
       }
       const files = Array.from(e.dataTransfer.files);
@@ -110,15 +111,16 @@ export function ControlPanel({ payrollSourceMode = 'fengshen', onUploadFiles, on
     }
   };
 
-  return <div className={`pq-upload ${isDragging ? 'dragging' : ''}`} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={processDrop}>
+  return <div className={`pq-upload wbx-toolbar wbx-payroll__upload ${isDragging ? 'dragging' : ''}`} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={processDrop}>
     {!automatic && <input ref={fileInputRef} type="file" className="hidden" webkitdirectory="true" {...({ directory: 'true' } as any)} onChange={handleFileInput} aria-label="选择资料文件夹" />}
     <input ref={multiFileInputRef} type="file" className="hidden" multiple accept={automatic?'.xlsx':'.xlsx,.xls,.csv,.txt'} onChange={handleFileInput} aria-label={automatic?'上传薪资申请表':'模板及补充资料'} />
-    <div className="pq-upload-copy"><UploadCloud size={24}/><div><h3>{payrollSourceMode === 'xiaoxiang' ? '添加小象核算资料' : automatic ? '添加核算模板' : '添加模板与核算资料'}</h3>
-    <p>{automatic ? '支持多份 .xlsx 标准模板，上传后按顺序自动执行。' : payrollSourceMode === 'manual' ? '上传多个 template 及其资料，按模板所在目录建立任务。' : '上传小象模板与日期命名的配送单。'}</p></div></div>
-    <div className="pq-upload-actions">
+    <div className="pq-upload-copy wbx-payroll__upload-copy"><UploadCloud size={24}/><div><h3>{automatic ? '添加核算模板' : '添加模板与核算资料'}</h3>
+    <p>{payrollSourceMode === 'xiaoxiang' ? '拖拽小象 .xlsx template 到此处，自动下载灯塔与价格档案并执行。' : automatic ? '拖拽 .xlsx 标准模板到此处，支持多份并按顺序自动执行。' : '上传多个 template 及其资料，按模板所在目录建立任务。'}</p></div></div>
+    <div className="pq-upload-actions wbx-payroll__upload-actions">
+      {separationOption}
       <button type="button" className="wb-primary" disabled={isRunning} onClick={handleClick}>{isRunning?'正在添加…':automatic?'选择模板':'选择文件'}</button>
       {!automatic && <button type="button" className="wb-button" disabled={isRunning} onClick={() => fileInputRef.current?.click()}>选择文件夹</button>}
-      {onOpenTemplates && <button type="button" className="wb-link" onClick={onOpenTemplates}>标准模板</button>}
+      {onOpenTemplates && <button type="button" className="wbx-btn wbx-btn--primary" onClick={onOpenTemplates}>标准模板</button>}
     </div>
     {error && <p className="wb-error" role="alert">{error}</p>}
   </div>;

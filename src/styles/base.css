@@ -1,0 +1,65 @@
+/*
+ * L2 基底层 —— 排版基座 / 焦点环 / 滚动条 / 动效契约（架构 §1.1 L2、§4.6）
+ *
+ * 约束：本文件禁止出现 important 强制标记。
+ * 无障碍降级统一走「双类提升特异性」写法（`.wbx-spin.wbx-spin`），
+ * 既满足 V19（新层 important 计数 = 0），又能覆盖普通声明。
+ */
+
+html, body {
+  margin: 0; padding: 0;
+  background: var(--wbx-bg); color: var(--wbx-text);
+  font-family: var(--wbx-font); font-size: var(--wbx-fs-body); line-height: var(--wbx-lh);
+  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility;
+}
+body { min-height: 100dvh; overflow-x: hidden; }
+#root { min-height: 100dvh; isolation: isolate; }
+
+h1, h2, h3, h4, h5, h6 { margin: 0; color: var(--wbx-text); font-weight: var(--wbx-fw-section); line-height: 1.3; }
+p { margin: 0; }
+button, input, select, textarea { font-family: inherit; color: inherit; }
+
+/* 统一焦点环：只在键盘可达时出现，不干扰鼠标点击 */
+:focus-visible { outline: 2px solid var(--wbx-primary); outline-offset: 2px; box-shadow: var(--wbx-focus); }
+
+/* 文本选区 */
+::selection { background: var(--wbx-primary-soft); color: var(--wbx-primary-hover); }
+
+/* 滚动条：细、浅、只在需要时明显 */
+* { scrollbar-width: thin; scrollbar-color: var(--wbx-border-strong) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--wbx-border-strong); border: 3px solid transparent;
+  border-radius: var(--wbx-r-pill); background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--wbx-neutral); background-clip: content-box; }
+
+/*
+ * 加载动效契约：`workbench.css` 的全局 animation 杀手已在 T1 外科手术中移除，
+ * 自此 `.animate-spin` 与 `.wbx-spin` 都会真正旋转；减弱动效的兜底由 L0 中
+ * 已存在的媒体查询块与下方 `.wbx-spin.wbx-spin` 双类规则共同负责。
+ */
+@keyframes wbx-spin { to { transform: rotate(1turn); } }
+@keyframes wbx-shimmer { 0% { opacity: 0.55; } 50% { opacity: 1; } 100% { opacity: 0.55; } }
+.wbx-spin { animation: wbx-spin var(--wbx-dur-spin) linear infinite; }
+
+/* 无障碍兜底：不写强制标记，靠双类特异性压过上面的单类声明 */
+@media (prefers-reduced-motion: reduce) {
+  .wbx-spin.wbx-spin { animation-duration: 0.01ms; animation-iteration-count: 1; }
+  .wbx-skeleton.wbx-skeleton { animation: none; }
+  html { scroll-behavior: auto; }
+}
+
+/* 仅供屏幕阅读器的隐藏文案 */
+.wbx-visually-hidden {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* 数字等宽：统计、金额、倒计时 */
+.wbx-num { font-size: var(--wbx-fs-num); font-weight: var(--wbx-fw-num); font-variant-numeric: tabular-nums; }
+
+/* 通用容器节奏 */
+.wbx-stack { display: flex; flex-direction: column; gap: var(--wbx-s4); min-width: 0; }
+.wbx-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--wbx-s2); min-width: 0; }

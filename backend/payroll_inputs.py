@@ -219,7 +219,7 @@ def create(source, wid, mode, download_owner=None, root=None):
     from payroll_business import inspect_payroll
     plan, template, mode = inspect_payroll(folder, mode)
     if mode == 'xiaoxiang':
-        result_folder, result_state = create_xiaoxiang(folder, plan, template, wid, root)
+        result_folder, result_state = create_xiaoxiang(folder, plan, template, wid, root, download_owner)
         result_state['performance'] = {'preparation_seconds': time.perf_counter() - preparation_started}
         upload_metrics = read_upload_timing(folder)
         if upload_metrics:result_state['performance']['upload'] = upload_metrics
@@ -275,7 +275,7 @@ def create(source, wid, mode, download_owner=None, root=None):
     return output, state
 
 
-def create_xiaoxiang(source, plan, template, wid, root=None):
+def _create_xiaoxiang_manual(source, plan, template, wid, root, download_owner):
     from payroll_business import xiaoxiang_delivery_files
     files = source_files(source)
     for path in source.rglob('*'):
@@ -297,9 +297,10 @@ def create_xiaoxiang(source, plan, template, wid, root=None):
         shutil.copy2(path, destination)
         all_files.append({'file': relative.as_posix(), 'sha256': digest(destination), 'origin': 'company_manual'})
     def item(label, selected):
+        names = {p.relative_to(source).as_posix() for p in selected}
         return {'label': label, 'status': 'ready' if selected else 'omitted',
-                'files': [entry for entry in all_files if entry['file'] in {p.relative_to(source).as_posix() for p in selected}]}
-    state = {'id': key, 'mode': 'xiaoxiang', 'download_owner': None, 'plan': asdict(plan),
+                'files': [entry for entry in all_files if entry['file'] in names]}
+    state = {'id': key, 'mode': 'xiaoxiang', 'download_owner': download_owner, 'plan': asdict(plan),
              'template_hash': digest(template), 'status': 'ready', 'jobs': [], 'audit': [],
              'created_at': __import__('datetime').datetime.now().isoformat(), 'all_files': all_files,
              'engine': 'company_20261016', 'items': {
@@ -313,7 +314,114 @@ def create_xiaoxiang(source, plan, template, wid, root=None):
     return folder, state
 
 
+def create_xiaoxiang(source, plan, template, wid, root=None, download_owner=None):
+    from payroll_business import xiaoxiang_delivery_files
+    files = source_files(source)
+    supplemental = [path for path in files if path != template and (
+        xiaoxiang_delivery_files([path], template) or '骑手订单明细' in path.name or
+        '价格档案' in path.name or 'merchantfreelancer' in path.name.lower() or '骑手支付绑定' in path.name)]
+    if supplemental:
+        return _create_xiaoxiang_manual(source, plan, template, wid, root, download_owner)
+    key = uuid.uuid4().hex
+    folder = directory(wid, key, root)
+    (folder / 'input').mkdir(parents=True)
+    relative = template.relative_to(source)
+    destination = folder / 'input' / relative
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(template, destination)
+    state = {'id': key, 'mode': 'xiaoxiang', 'download_owner': download_owner, 'plan': asdict(plan),
+             'template_hash': digest(template), 'status': 'pending_download', 'jobs': [], 'job_datasets': {},
+             'workflow': 'two_step_v1', 'audit': [],
+             'created_at': __import__('datetime').datetime.now().isoformat(), 'all_files': [],
+             'engine': 'company_20261016', 'items': {
+                'delivery_fee': {'label': '日维度骑手分析', 'status': 'pending', 'files': []},
+                'rider_orders': {'label': '骑手订单明细', 'status': 'pending', 'files': []},
+                'rider_archive': {'label': '骑手档案', 'status': 'pending', 'files': []},
+                'lanorange_part_price': {'label': '价格档案', 'status': 'pending', 'files': []},
+                'payment_binding': {'label': '商翼绑定', 'status': 'pending'},
+             }}
+    from baize_accounts import snapshot as baize_snapshot
+    account = baize_snapshot(force=True)
+    state['baize_account'] = account
+    if account.get('account_type') != 'xiaoxiang':
+        state['status'] = 'waiting_materials'
+        state['pause_reason'] = '商翼当前不是小象超市账户，请先在系统连接中切换到小象账户后重新发起任务'
+        save(folder, state)
+        return folder, state
+    save(folder, state)
+    return folder, state
+
+
+def _xiaoxiang_date_chunks(start, end, max_days=31):
+    from datetime import timedelta
+    chunks = []
+    cursor = start
+    while cursor <= end:
+        chunk_end = min(end, cursor + timedelta(days=max_days - 1))
+        chunks.append((cursor, chunk_end))
+        cursor = chunk_end + timedelta(days=1)
+    return chunks
+
+
+def start_xiaoxiang_download(folder, state, manager):
+    from datetime import date, datetime, timedelta
+    from fengshen_orders import SHANGHAI
+    from lanorange_catalog import ALL_CITIES
+    from download_service import validate_request, covered_months, ValidationError
+    plan = state['plan']
+    owner = state.get('download_owner')
+    if not owner:
+        raise SourceError('小象自动核算需要工作区下载身份，请刷新后重试')
+    from baize_accounts import snapshot as baize_snapshot
+    account = baize_snapshot(force=True)
+    state['baize_account'] = account
+    if account.get('account_type') != 'xiaoxiang':
+        state['status'] = 'waiting_materials'
+        state['pause_reason'] = '商翼当前不是小象超市账户，请先在系统连接中切换到小象账户后重新发起任务'
+        save(folder, state)
+        return
+    try:
+        first, last = date.fromisoformat(plan['start']), date.fromisoformat(plan['end'])
+    except (KeyError, TypeError, ValueError):
+        raise SourceError('小象模板申请日期无效') from None
+    available_last = datetime.now(SHANGHAI).date() - timedelta(days=1)
+    data_last = min(last, available_last)
+    if first > data_last:
+        raise SourceError('模板账期还没有可获取的灯塔历史数据，请确认申请起止日期')
+    months = covered_months(first, last)
+    configs = []
+    for start, end in _xiaoxiang_date_chunks(first, data_last):
+        configs.append(('rider_daily', {'cities': [ALL_CITIES], 'datasets': ['rider_daily'],
+                                        'start': start.isoformat(), 'end': end.isoformat()}))
+        configs.append(('rider_order_detail', {'cities': [ALL_CITIES], 'datasets': ['rider_order_detail'],
+                                               'start': start.isoformat(), 'end': end.isoformat()}))
+    configs.append(('rider_archive', {'cities': [ALL_CITIES], 'datasets': ['rider_archive'],
+                                      'start': datetime.now(SHANGHAI).date().isoformat(),
+                                      'end': datetime.now(SHANGHAI).date().isoformat()}))
+    configs.append(('lanorange_part_price', {'cities': [ALL_CITIES], 'datasets': ['lanorange_part_price'],
+                                             'start': first.isoformat(), 'end': last.isoformat(),
+                                             'lanorange_months': months}))
+    configs.append(('baize_employees', {'cities': [ALL_CITIES], 'datasets': ['baize_employees'],
+                                        'start': datetime.now(SHANGHAI).date().isoformat(),
+                                        'end': datetime.now(SHANGHAI).date().isoformat()}))
+    for index, (dataset, payload) in enumerate(configs):
+        try:
+            config = validate_request(payload)
+        except ValidationError as error:
+            raise SourceError(str(error)) from None
+        if dataset != 'baize_employees':
+            config.update(task_kind='payroll_source', parent_batch_id=state['id'],
+                          parent_workspace=folder.parent.name)
+        run = manager.create(owner, config, request_id='payroll_%s_%s_%s' % (state['id'], dataset, index))
+        if run['id'] not in state['jobs']:
+            state['jobs'].append(run['id'])
+        state.setdefault('job_datasets', {})[run['id']] = dataset
+    save(folder, state)
+
+
 def start_download(folder, state, manager):
+    if state.get('mode') == 'xiaoxiang':
+        return start_xiaoxiang_download(folder, state, manager)
     from download_service import validate_request
     plan = state['plan']
     config = validate_request({'cities': [plan['city']], 'start': plan['start'], 'end': plan['end'],
@@ -366,7 +474,83 @@ def start_download_resumable(folder, state, manager):
         raise SourceError('资料准备状态保存失败，请继续检查原下载任务；系统将沿用原批次编号，不重复提交导出') from exc
 
 
+XIAOXIANG_JOB_ITEMS = {
+    'rider_daily': 'delivery_fee',
+    'rider_order_detail': 'rider_orders',
+    'rider_archive': 'rider_archive',
+    'lanorange_part_price': 'lanorange_part_price',
+    'baize_employees': 'baize_source',
+}
+
+
+def collect_xiaoxiang(folder, state, manager):
+    staged, errors = {}, {}
+    for job_id in state.get('jobs', []):
+        run = manager.get_run(state['download_owner'], job_id)
+        for item in run['items']:
+            kind = XIAOXIANG_JOB_ITEMS.get(item['dataset'])
+            if not kind:
+                continue
+            if item['status'] != 'success':
+                errors[kind] = item.get('error') or '下载未完成'
+                continue
+            candidates = [f for f in run.get('files', [])
+                          if f.get('dataset') == item['dataset'] and not f.get('artifact_role')]
+            if len(candidates) != 1:
+                errors[kind] = '已完成任务缺少唯一成品'
+                continue
+            try:
+                path, _ = manager.get_file(state['download_owner'], job_id, candidates[0]['id'])
+            except Exception:
+                errors[kind] = '成品读取失败，请核对原任务文件完整性'
+                continue
+            staged.setdefault(kind, []).append((Path(path), job_id, candidates[0]['id']))
+    for kind in ('delivery_fee', 'rider_orders', 'rider_archive', 'lanorange_part_price'):
+        label = state['items'][kind]['label']
+        if kind in errors:
+            state['items'][kind] = {'label': label, 'status': 'failed', 'error': errors[kind], 'files': []}
+            continue
+        entries = []
+        used = set()
+        for index, (path, job_id, file_id) in enumerate(staged.get(kind, [])):
+            name = path.name
+            if name in used:
+                name = path.stem + '_' + str(index + 1) + path.suffix
+            used.add(name)
+            target = folder / 'input' / name
+            shutil.copy2(path, target)
+            entries.append({'file': name, 'sha256': digest(target),
+                            'origin': {'run_id': job_id, 'file_id': file_id}})
+        if not entries:
+            state['items'][kind] = {'label': label, 'status': 'failed', 'error': '未获取到可用资料', 'files': []}
+        else:
+            state['items'][kind] = {'label': label, 'status': 'ready', 'files': entries}
+    try:
+        if 'baize_source' in errors:
+            raise ValueError(errors['baize_source'])
+        source = staged.get('baize_source', [])
+        if not source:
+            raise ValueError('未获取到商翼员工资料')
+        target = folder / 'input' / '骑手支付绑定.xlsx'
+        from baize_binding import build_binding
+        count = build_binding(source[0][0], target,
+                              (state.get('baize_account') or {}).get('region_text', ''))
+        state['items']['payment_binding'] = {
+            'label': '商翼绑定', 'status': 'ready',
+            'file': target.name, 'sha256': digest(target),
+            'origin': {'run_id': source[0][1], 'file_id': source[0][2]},
+            'rows': count,
+        }
+    except Exception as error:
+        state['items']['payment_binding'] = {'label': '商翼绑定', 'status': 'failed',
+                                             'error': '商翼绑定生成失败：' + str(error), 'files': []}
+    readiness(state)
+    save(folder, state)
+
+
 def collect_finished(folder, state, manager):
+    if state.get('mode') == 'xiaoxiang' and state.get('workflow') == 'two_step_v1':
+        return collect_xiaoxiang(folder, state, manager)
     if state.get('input_policy')=='readable_delivery_v1':
         from payroll_readable_policy import collect
         return collect(folder,state,manager)
@@ -383,7 +567,7 @@ def collect_finished(folder, state, manager):
                     recovery_allowed=item.get('recovery', {}).get('mode') in ('resume_existing', 'retry_unsubmitted'),
                     run_id=job_id, recovery_reason=item.get('recovery', {}).get('reason', ''))
                 continue
-            candidates = [f for f in run['files'] if f['dataset'] == kind and f.get('artifact_role') != 'summary']
+            candidates = [f for f in run['files'] if f['dataset'] == kind and not f.get('artifact_role')]
             if len(candidates) != 1:
                 state['items'][kind].update(status='failed', error='已完成任务缺少唯一成品')
                 continue
@@ -413,7 +597,7 @@ def collect_scoped(folder, state, manager):
         entries = []; errors = []
         for (scope, dataset), (job_id, run, item) in latest.items():
             if dataset != kind: continue
-            candidates = [f for f in run['files'] if f['dataset'] == kind and f.get('artifact_role') != 'summary']
+            candidates = [f for f in run['files'] if f['dataset'] == kind and not f.get('artifact_role')]
             if item['status'] != 'success' or len(candidates) != 1:
                 errors.append((job_id, item));continue
             path, _ = manager.get_file(state['download_owner'], job_id, candidates[0]['id'])
@@ -599,7 +783,7 @@ async def _run_payroll_in_slot(config, request, *, context=None):
     import payroll_control as control
     wid = context[0] if context is not None else workspace(request)
     mode = config.payrollSourceMode
-    owner = (context[1] if context is not None else account(request)) if mode == 'fengshen' else None
+    owner = (context[1] if context is not None else account(request)) if mode in ('fengshen', 'xiaoxiang') else None
     if config.payrollPreparationId:
         folder, state = load(wid, config.payrollPreparationId, owner)
         if state['mode'] != mode:
@@ -618,6 +802,10 @@ async def _run_payroll_in_slot(config, request, *, context=None):
             state['workflow'] = 'two_step_v1'
             state['input_policy'] = 'readable_delivery_v1'
             if state['status'] == 'awaiting_confirmation': state['status'] = 'pending_download'
+        elif mode in ('manual', 'xiaoxiang'):
+            # New and historical material batches use the same automatic
+            # default-rule policy; no execution-time deduction confirmation.
+            state['workflow'] = 'two_step_v1'
         if state['status'] in ('cancelled', 'stopping', 'interrupted'):
             raise SourceError('本批次已停止或中断；资料保留，请核对原结果后发起新批次')
         event = control.acquire(folder)
@@ -662,7 +850,7 @@ async def _run_payroll(config, request, folder, state, cancelled, *, context=Non
     import tasks
     from payroll_control import checkpoint
     wid, mode = context[0] if context is not None else workspace(request), state['mode']
-    owner = (context[1] if context is not None else account(request)) if mode == 'fengshen' else None
+    owner = (context[1] if context is not None else account(request)) if mode in ('fengshen', 'xiaoxiang') else None
     automatic = state.get('workflow') == 'two_step_v1'
     relaxed = state.get('input_policy') == 'readable_delivery_v1'
     def log_event(message,level='INFO'):
@@ -684,7 +872,7 @@ async def _run_payroll(config, request, folder, state, cancelled, *, context=Non
         state['status'] = 'preparing'
         save(folder, state)
     yield 'data: ' + json.dumps({'type': 'payroll_preparation', 'preparation': public(state)}, ensure_ascii=False) + '\n\n'
-    if mode == 'fengshen' and state['status'] == 'preparing':
+    if mode in ('fengshen', 'xiaoxiang') and state['status'] == 'preparing':
         if relaxed and state.get('download_scope')=='single_selection':
             if 'exclude_separation' in state:
                 scope='普通站点（排除取分离）' if state['exclude_separation'] else '全部站点（含取分离）'
@@ -693,7 +881,7 @@ async def _run_payroll(config, request, folder, state, cancelled, *, context=Non
             yield log_event('下载范围：'+scope)
         from download_jobs import get_manager, ACTIVE_STATUSES
         manager = get_manager()
-        if automatic and not relaxed:
+        if mode == 'fengshen' and automatic and not relaxed:
             from payroll_automatic import prepare_scope
             yield log_event('正在识别本次申请范围，取分离资料按模板自动处理')
             try:
@@ -815,7 +1003,7 @@ async def _run_payroll(config, request, folder, state, cancelled, *, context=Non
             config.basePath, config.theme, config.enableInterceptor, config.enableCrossStationMerge,
             deductionRules=state['deductions']['rows'], taskQueue=[Path(plan['template']).name if relaxed else plan['template']], strict_inputs=True,
             manual_template_only=True, force_no_price=state['mode'] != 'xiaoxiang' and state['items']['lanorange_part_price']['status'] == 'omitted',
-            skip_binding_check=state['mode'] != 'xiaoxiang' and state['items']['payment_binding']['status'] == 'omitted',
+            skip_binding_check=state['items'].get('payment_binding', {}).get('status') == 'omitted',
             input_snapshot=public(state) if state['mode'] != 'xiaoxiang' else None,
             prepared_plan={**plan,'template':Path(plan['template']).name} if relaxed else plan, verified_inputs={} if relaxed else {str(path): value[0] for path, value in verified_hashes(folder, state).items()},
             output_root=str((Path(ROOT) / 'backend/.local_downloads/workspaces/payroll' / wid / state['id'] / ('attempt_' + str(state.get('calculation_attempt', 1)))).resolve()), cancelled=cancelled):

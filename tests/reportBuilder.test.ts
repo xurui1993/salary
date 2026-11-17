@@ -1,2 +1,415 @@
-// @ts-nocheck
-var __defProp=Object.defineProperty;var __name=(target,value)=>__defProp(target,"name",{value,configurable:true});import assert from"node:assert/strict";import test from"node:test";import React from"react";import{renderToStaticMarkup}from"react-dom/server";import{ReportBuilder}from"../src/components/ReportBuilder";import{monthBounds,reportRange}from"../src/lib/reportBuilder";import{isGenerator,registerGeneratorIds}from"../src/lib/taskCatalog";const monthly={id:"payment_binding",label:"\u9A91\u624B\u652F\u4ED8\u7ED1\u5B9A",scope:"city_month",description:"\u751F\u6210\u652F\u4ED8\u7ED1\u5B9A\u8868",sources:["\u6765\u6E90"],station_rule:"separation"};test("report periods preserve whole months, leap years and cross-year bounds",()=>{assert.deepEqual(reportRange(monthly,"2024-02-12","2024-02-20","2026-10-31"),{start:"2024-02-01",end:"2024-02-29",months:1});assert.deepEqual(reportRange(monthly,"2025-12-15","2026-01-01","2026-10-31"),{start:"2025-12-01",end:"2026-01-31",months:2});assert.deepEqual(monthBounds("2026-02"),{start:"2026-02-01",end:"2026-02-28"})});test("current month requests never send future dates and invalid ranges cannot submit",()=>{assert.deepEqual(reportRange(monthly,"2026-10-01","2026-10-31","2026-10-20"),{start:"2026-10-01",end:"2026-10-20",months:1});for(const[start,end]of[["","2026-10-01"],["2026-02-30","2026-03-01"],["2026-10-01","2026-09-01"],["2026-11-01","2026-11-30"]])assert.equal(reportRange(monthly,start,end,"2026-10-20"),null);assert.equal(reportRange({...monthly,scope:"city_range"},"2026-10-01","2026-10-21","2026-10-20"),null)});test("monthly report visibly exposes editable city/month controls instead of a summary only",()=>{const html=renderToStaticMarkup(React.createElement(ReportBuilder,props(monthly)));assert.match(html,/aria-labelledby="report-city-label"/);assert.match(html,/aria-label="报表开始月份"/);assert.match(html,/aria-label="报表结束月份"/);assert.match(html,/aria-label="报表站点范围"/);assert.doesNotMatch(html,/<details[^>]*open/)});test("global report displays real fixed scope without misleading city or date selectors",()=>{const global={...monthly,id:"abnormal_riders",scope:"all",station_rule:"none"};const html=renderToStaticMarkup(React.createElement(ReportBuilder,props(global)));assert.match(html,/全部城市/);assert.match(html,/不按日期筛选/);assert.doesNotMatch(html,/aria-label="报表开始月份"|aria-labelledby="report-city-label"|aria-label="报表站点范围"/);assert.deepEqual(reportRange(global,"invalid","invalid","2026-10-31"),{start:"",end:"",months:0})});test("server-registered reports can be classified without modifying page code",()=>{registerGeneratorIds(["future-business-report"]);assert.equal(isGenerator("future-business-report"),true);const future={...monthly,id:"future-business-report",label:"\u65B0\u4E1A\u52A1\u62A5\u8868"};assert.match(renderToStaticMarkup(React.createElement(ReportBuilder,props(future))),/新业务报表/)});function props(report){const noop=__name(()=>{},"noop");return{reports:[report],selectedId:report.id,onSelect:noop,cities:[{id:"1",name:"\u4E0A\u6D77"}],selectedCities:[],onCities:noop,start:"2026-09-01",end:"2026-09-30",today:"2026-10-31",onStart:noop,onEnd:noop,includeSeparation:false,onSeparation:noop,locked:false,creating:false,disabled:true,submitLabel:"\u751F\u6210\u62A5\u8868",onSubmit:noop,uncertain:false,duplicate:false,recollect:false,onRecollect:noop,refreshing:false,onRefreshCities:noop}}__name(props,"props");
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { ReportBuilder } from '../src/components/ReportBuilder';
+import {
+  buildGenerateBatchPayloads,
+  buildRecentReportMonths,
+  buildReportMonthChunks,
+  buildUnifiedSubmissionPayloads,
+  deriveSelectedMonthsFromRange,
+  monthBounds,
+  reportRange,
+  selectReportMonthRange,
+  summarizeSelectedReportsScope,
+  toggleReportMonthSelection,
+  toggleReportSelection,
+  type ReportDefinition,
+} from '../src/lib/reportBuilder';
+import { isGenerator, registerGeneratorIds } from '../src/lib/taskCatalog';
+
+const monthly: ReportDefinition = {
+  id: 'payment_binding',
+  label: '骑手支付绑定',
+  scope: 'city_month',
+  description: '生成支付绑定表',
+  systems: ['风神', '蓝橙', '商翼', '本来人力'],
+  sources: ['来源'],
+  station_rule: 'separation',
+};
+
+const followup: ReportDefinition = {
+  id: 'abnormal_followup',
+  label: '异常骑手跟进',
+  scope: 'city_month',
+  description: '以支付绑定为基准生成异常骑手跟进表',
+  systems: ['风神', '蓝橙', '商翼'],
+  sources: ['跟进来源'],
+  station_rule: 'separation',
+};
+
+const globalReportDef: ReportDefinition = {
+  id: 'abnormal_riders',
+  label: '异常骑手整理',
+  scope: 'all',
+  description: '整理蓝橙全量异常骑手资料',
+  systems: ['蓝橙'],
+  sources: ['蓝橙来源'],
+  station_rule: 'none',
+};
+
+test('report periods preserve whole months, leap years and cross-year bounds', () => {
+  assert.deepEqual(reportRange(monthly, '2024-02-12', '2024-02-20', '2026-10-31'), {
+    start: '2024-02-01',
+    end: '2024-02-29',
+    months: 1,
+  });
+  assert.deepEqual(reportRange(monthly, '2025-12-15', '2026-01-01', '2026-10-31'), {
+    start: '2025-12-01',
+    end: '2026-01-31',
+    months: 2,
+  });
+  assert.deepEqual(monthBounds('2026-02'), {
+    start: '2026-02-01',
+    end: '2026-02-28',
+  });
+});
+
+test('current month requests never send future dates and invalid ranges cannot submit', () => {
+  assert.deepEqual(reportRange(monthly, '2026-10-01', '2026-10-31', '2026-10-20'), {
+    start: '2026-10-01',
+    end: '2026-10-20',
+    months: 1,
+  });
+  for (const [start, end] of [
+    ['', '2026-10-01'],
+    ['2026-02-30', '2026-03-01'],
+    ['2026-10-01', '2026-09-01'],
+    ['2026-11-01', '2026-11-30'],
+  ]) {
+    assert.equal(reportRange(monthly, start, end, '2026-10-20'), null);
+  }
+  assert.equal(
+    reportRange({ ...monthly, scope: 'city_range' }, '2026-10-01', '2026-10-21', '2026-10-20'),
+    null,
+  );
+});
+
+test('buildRecentReportMonths and multi-month selection restrict choices to recent 3 months and split non-contiguous chunks', () => {
+  const recent = buildRecentReportMonths('2026-11-15', 3);
+  assert.deepEqual(
+    recent.map(m => [m.month, m.shortTag, m.start, m.end]),
+    [
+      ['2026-11', '本月', '2026-11-01', '2026-11-15'],
+      ['2026-10', '上月', '2026-10-01', '2026-10-31'],
+      ['2026-09', '前2月', '2026-09-01', '2026-09-30'],
+    ],
+  );
+
+  const allowed = recent.map(m => m.month);
+  assert.deepEqual(
+    deriveSelectedMonthsFromRange('2026-09-01', '2026-10-31', allowed),
+    ['2026-09', '2026-10'],
+  );
+
+  let selected = toggleReportMonthSelection(['2026-10'], '2026-11', allowed);
+  assert.deepEqual(selected, ['2026-10', '2026-11']);
+  selected = toggleReportMonthSelection(selected, '2026-09', allowed);
+  assert.deepEqual(selected, ['2026-09', '2026-10', '2026-11']);
+  selected = toggleReportMonthSelection(selected, '2026-10', allowed);
+  assert.deepEqual(selected, ['2026-09', '2026-11']);
+
+  assert.deepEqual(buildReportMonthChunks(['2026-09', '2026-10'], '2026-11-15'), [
+    { months: ['2026-09', '2026-10'], start: '2026-09-01', end: '2026-10-31' },
+  ]);
+  assert.deepEqual(buildReportMonthChunks(['2026-09', '2026-11'], '2026-11-15'), [
+    { months: ['2026-09'], start: '2026-09-01', end: '2026-09-30' },
+    { months: ['2026-11'], start: '2026-11-01', end: '2026-11-15' },
+  ]);
+
+  assert.deepEqual(
+    selectReportMonthRange('2026-10-01', '2026-10-31', '2026-11', 'single', allowed, '2026-11-15'),
+    { start: '2026-11-01', end: '2026-11-15' },
+  );
+  assert.equal(
+    selectReportMonthRange('2026-10-01', '2026-10-31', '2026-08', 'single', allowed, '2026-11-15'),
+    null,
+  );
+});
+
+test('monthly report renders multi-select dropdown, flat inline cities, Fengshen-style exclude_separation checkbox, and multi-select 3-month box without continuous range toggle', () => {
+  const html = renderToStaticMarkup(React.createElement(ReportBuilder, props(monthly)));
+  assert.match(html, /aria-haspopup="listbox"/);
+  assert.match(html, /aria-label="选择业务报表"/);
+  assert.match(html, /aria-labelledby="report-city-label"/);
+  assert.match(html, /aria-labelledby="report-month-label"/);
+  assert.match(html, /wb-date-rule-bar/);
+  assert.match(html, /type="checkbox" aria-label="排除取分离站点"/);
+  assert.match(html, /（不勾选则下载全部站点）/);
+  assert.match(html, /全选近3月/);
+  assert.doesNotMatch(html, /连续跨月|rb-mode-switch|rb-station-grid|仅取分离站点/);
+  assert.doesNotMatch(html, /<select/);
+  assert.doesNotMatch(html, /rb-city-trigger|rb-city-picker/);
+  assert.match(html, /上海/);
+  assert.match(html, /2026年10月/);
+  assert.match(html, /2026年09月/);
+  assert.match(html, /2026年08月/);
+  assert.doesNotMatch(html, /2026年07月/);
+  assert.doesNotMatch(html, /aria-label="报表开始月份"|aria-label="报表结束月份"/);
+  assert.doesNotMatch(html, /<details[^>]*open/);
+});
+
+test('global report displays real fixed scope without misleading city or date selectors', () => {
+  const globalReport: ReportDefinition = {
+    ...monthly,
+    id: 'abnormal_riders',
+    scope: 'all',
+    station_rule: 'none',
+  };
+  const html = renderToStaticMarkup(React.createElement(ReportBuilder, props(globalReport)));
+  assert.match(html, /全部授权城市/);
+  assert.match(html, /不按日期筛选/);
+  assert.doesNotMatch(
+    html,
+    /aria-labelledby="report-month-label"|aria-labelledby="report-city-label"|aria-label="报表站点范围"/,
+  );
+  assert.deepEqual(reportRange(globalReport, 'invalid', 'invalid', '2026-10-31'), {
+    start: '',
+    end: '',
+    months: 0,
+  });
+});
+
+test('multi-report and multi-month selection renders selected chips and builds independent backend payloads with exclude_separation', () => {
+  const ordered = ['payment_binding', 'abnormal_followup', 'abnormal_riders'];
+  let ids = toggleReportSelection(['payment_binding'], 'abnormal_riders', ordered);
+  assert.deepEqual(ids, ['payment_binding', 'abnormal_riders']);
+  ids = toggleReportSelection(ids, 'abnormal_followup', ordered);
+  assert.deepEqual(ids, ['payment_binding', 'abnormal_followup', 'abnormal_riders']);
+
+  const summary = summarizeSelectedReportsScope(
+    [monthly, globalReportDef],
+    '2026-09-01',
+    '2026-11-15',
+    '2026-11-15',
+    ['2026-09', '2026-11'],
+  );
+  assert.equal(summary.needsCity, true);
+  assert.equal(summary.needsDate, true);
+  assert.equal(summary.needsSeparation, true);
+  assert.equal(summary.allGlobal, false);
+  assert.equal(summary.contiguousMonths, false);
+  assert.equal(summary.monthChunks.length, 2);
+  assert.deepEqual(summary.systems, ['风神', '蓝橙', '商翼', '本来人力']);
+
+  const nonContiguousPayloads = buildGenerateBatchPayloads(
+    [monthly, globalReportDef],
+    ['上海', '广州'],
+    '2026-09-01',
+    '2026-11-15',
+    '2026-11-15',
+    { excludeSeparation: false, selectedMonths: ['2026-09', '2026-11'] },
+  );
+  assert.deepEqual(nonContiguousPayloads, [
+    {
+      task_kind: 'generate',
+      generation_target: 'payment_binding',
+      datasets: ['payment_binding'],
+      cities: ['上海', '广州'],
+      start: '2026-09-01',
+      end: '2026-09-30',
+      exclude_separation: false,
+    },
+    {
+      task_kind: 'generate',
+      generation_target: 'payment_binding',
+      datasets: ['payment_binding'],
+      cities: ['上海', '广州'],
+      start: '2026-11-01',
+      end: '2026-11-15',
+      exclude_separation: false,
+    },
+    {
+      task_kind: 'generate',
+      generation_target: 'abnormal_riders',
+      datasets: ['abnormal_riders'],
+      cities: ['全部城市'],
+      start: '2026-11-15',
+      end: '2026-11-15',
+      lanorange_full_delivery: true,
+    },
+  ]);
+
+  const multiHtml = renderToStaticMarkup(
+    React.createElement(ReportBuilder, {
+      ...props(monthly),
+      reports: [monthly, followup, globalReportDef],
+      selectedIds: ['payment_binding', 'abnormal_followup'],
+      onSelectIds: () => {},
+      selectedMonths: ['2026-08', '2026-10'],
+      excludeSeparation: false,
+    }),
+  );
+  assert.match(multiHtml, /已选 2 \/ 3 项/);
+  assert.match(multiHtml, /批量生成 2 份报表/);
+  assert.match(multiHtml, /全部站点（含取分离）/);
+  assert.match(multiHtml, /2026-08、2026-10/);
+  assert.match(multiHtml, /分 4 批/);
+});
+
+test('server-registered reports can be classified without modifying page code', () => {
+  registerGeneratorIds(['future-business-report']);
+  assert.equal(isGenerator('future-business-report'), true);
+  const future: ReportDefinition = { ...monthly, id: 'future-business-report', label: '新业务报表' };
+  assert.match(renderToStaticMarkup(React.createElement(ReportBuilder, props(future))), /新业务报表/);
+});
+
+test('buildUnifiedSubmissionPayloads partitions raw Fengshen downloads and generated reports into backend-compliant batches', () => {
+  const baseRawSelection = {
+    task_kind: 'download' as const,
+    cities: ['上海', '广州'],
+    datasets: ['delivery_fee'],
+    start: '2026-10-01',
+    end: '2026-10-31',
+    exclude_separation: true,
+  };
+
+  // 1. Single payment_binding report for one month -> 1 generate payload
+  const singleReportPayloads = buildUnifiedSubmissionPayloads({
+    selectedDatasets: ['payment_binding'],
+    availableGenerators: [monthly, followup, globalReportDef],
+    rawSelection: { ...baseRawSelection, datasets: [] },
+    rawMonthChunks: [{ months: ['2026-10'], start: '2026-10-01', end: '2026-10-31' }],
+    isMultiBatchRawMonth: false,
+    cities: ['上海', '广州'],
+    start: '2026-10-01',
+    end: '2026-10-31',
+    today: '2026-11-15',
+    excludeSeparation: true,
+    selectedMonths: ['2026-10'],
+    isGeneratorFn: id => ['payment_binding', 'abnormal_followup', 'abnormal_riders'].includes(id),
+  });
+  assert.deepEqual(singleReportPayloads, [
+    {
+      task_kind: 'generate',
+      generation_target: 'payment_binding',
+      datasets: ['payment_binding'],
+      cities: ['上海', '广州'],
+      start: '2026-10-01',
+      end: '2026-10-31',
+      exclude_separation: true,
+    },
+  ]);
+
+  // 2. Standalone abnormal_riders -> single global generate payload regardless of selected cities
+  const globalOnlyPayloads = buildUnifiedSubmissionPayloads({
+    selectedDatasets: ['abnormal_riders'],
+    availableGenerators: [monthly, followup, globalReportDef],
+    rawSelection: { ...baseRawSelection, cities: [], datasets: [] },
+    rawMonthChunks: [],
+    isMultiBatchRawMonth: false,
+    cities: [],
+    start: '2026-11-01',
+    end: '2026-11-15',
+    today: '2026-11-15',
+    excludeSeparation: true,
+    isGeneratorFn: id => ['payment_binding', 'abnormal_followup', 'abnormal_riders'].includes(id),
+  });
+  assert.deepEqual(globalOnlyPayloads, [
+    {
+      task_kind: 'generate',
+      generation_target: 'abnormal_riders',
+      datasets: ['abnormal_riders'],
+      cities: ['全部城市'],
+      start: '2026-11-15',
+      end: '2026-11-15',
+      lanorange_full_delivery: true,
+    },
+  ]);
+
+  // 3. Mixed ['delivery_fee', 'payment_binding', 'abnormal_riders'] across non-contiguous ['2026-09', '2026-11']
+  // -> 2 raw download payloads + 2 payment_binding generate payloads + 1 abnormal_riders generate payload = 5 payloads
+  const mixedPayloads = buildUnifiedSubmissionPayloads({
+    selectedDatasets: ['delivery_fee', 'payment_binding', 'abnormal_riders'],
+    availableGenerators: [monthly, followup, globalReportDef],
+    rawSelection: baseRawSelection,
+    rawMonthChunks: [
+      { months: ['2026-09'], start: '2026-09-01', end: '2026-09-30' },
+      { months: ['2026-11'], start: '2026-11-01', end: '2026-11-15' },
+    ],
+    isMultiBatchRawMonth: true,
+    cities: ['上海', '广州'],
+    start: '2026-09-01',
+    end: '2026-11-15',
+    today: '2026-11-15',
+    excludeSeparation: true,
+    selectedMonths: ['2026-09', '2026-11'],
+    isGeneratorFn: id => ['payment_binding', 'abnormal_followup', 'abnormal_riders'].includes(id),
+  });
+  assert.deepEqual(mixedPayloads, [
+    {
+      task_kind: 'download',
+      cities: ['上海', '广州'],
+      datasets: ['delivery_fee'],
+      start: '2026-09-01',
+      end: '2026-09-30',
+      exclude_separation: true,
+    },
+    {
+      task_kind: 'download',
+      cities: ['上海', '广州'],
+      datasets: ['delivery_fee'],
+      start: '2026-11-01',
+      end: '2026-11-15',
+      exclude_separation: true,
+    },
+    {
+      task_kind: 'generate',
+      generation_target: 'payment_binding',
+      datasets: ['payment_binding'],
+      cities: ['上海', '广州'],
+      start: '2026-09-01',
+      end: '2026-09-30',
+      exclude_separation: true,
+    },
+    {
+      task_kind: 'generate',
+      generation_target: 'payment_binding',
+      datasets: ['payment_binding'],
+      cities: ['上海', '广州'],
+      start: '2026-11-01',
+      end: '2026-11-15',
+      exclude_separation: true,
+    },
+    {
+      task_kind: 'generate',
+      generation_target: 'abnormal_riders',
+      datasets: ['abnormal_riders'],
+      cities: ['全部城市'],
+      start: '2026-11-15',
+      end: '2026-11-15',
+      lanorange_full_delivery: true,
+    },
+  ]);
+});
+
+function props(report: ReportDefinition) {
+  const noop = () => {};
+  return {
+    reports: [report],
+    selectedId: report.id,
+    onSelect: noop,
+    cities: [{ id: '1', name: '上海' }],
+    selectedCities: [],
+    onCities: noop,
+    start: '2026-09-01',
+    end: '2026-09-30',
+    today: '2026-10-31',
+    onStart: noop,
+    onEnd: noop,
+    excludeSeparation: true,
+    onExcludeSeparation: noop,
+    locked: false,
+    creating: false,
+    disabled: true,
+    submitLabel: '生成报表',
+    onSubmit: noop,
+    uncertain: false,
+    duplicate: false,
+    recollect: false,
+    onRecollect: noop,
+    refreshing: false,
+    onRefreshCities: noop,
+  };
+}

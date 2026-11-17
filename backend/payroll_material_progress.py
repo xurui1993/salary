@@ -52,7 +52,7 @@ def material_progress(state, runs):
             if status=='queued' and run.get('status')=='waiting_login':
                 status='waiting_login';detail='等待来源平台登录'
             groups.append({'scope':scope,'label':'普通资料' if scope=='normal' else '取分离资料','status':status,'detail':detail,
-                           'error':item.get('error',''),'files':[f['name'] for f in run.get('files',[]) if f['dataset']==kind and f.get('artifact_role')!='summary' and f.get('name')]})
+                           'error':item.get('error',''),'files':[f['name'] for f in run.get('files',[]) if f['dataset']==kind and not f.get('artifact_role') and f.get('name')]})
         statuses = [g['status'] for g in groups]
         verified = value['status']=='ready'
         if verified: status='ready';detail='已下载并校验'

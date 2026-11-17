@@ -8,6 +8,7 @@ import {
 } from '../lib/authPreflight';
 import { platformAuthRequest as fetchPlatformAuthJson } from '../lib/platformAuthApi';
 import { getPlatformCardBadge, getPlatformStatusCluster } from '../lib/workbench';
+import { systemLabel } from '../lib/platformCatalog';
 import { SourceLoginPanel } from './SourceLoginPanel';
 import { WorkbenchDrawer } from './WorkbenchDrawer';
 
@@ -43,12 +44,14 @@ function getCapabilitySummary(source: string, status: any) {
     : '已保存会话，功能权限尚未验证';
 }
 
+// 面板标题统一走 platformCatalog 的全名（xiaoxiang → 小象灯塔），
+// 与头部状态灯的短名（灯塔）不同源不重复，满足 V3「无两个灯塔」。
 const PLATFORM_DEFS = [
-  { key: 'fengshen', label: '风神', icon: Compass },
-  { key: 'lanorange', label: '蓝橙', icon: Layers },
-  { key: 'baize', label: '商翼', icon: UsersRound },
-  { key: 'xiaoxiang', label: '灯塔', icon: Radar },
-  { key: 'benlai', label: '本来人力', icon: Building2 },
+  { key: 'fengshen', label: systemLabel('fengshen'), icon: Compass },
+  { key: 'lanorange', label: systemLabel('lanorange'), icon: Layers },
+  { key: 'baize', label: systemLabel('baize'), icon: UsersRound },
+  { key: 'xiaoxiang', label: systemLabel('xiaoxiang'), icon: Radar },
+  { key: 'benlai', label: systemLabel('benlai'), icon: Building2 },
 ] as const;
 
 export function SystemConnections({
@@ -56,16 +59,29 @@ export function SystemConnections({
   fengshenStatus,
   onOpenFengshen,
   hideTrigger = false,
+  open,
+  onOpenChange,
 }: {
   apiFetch: (url: string, init?: RequestInit) => Promise<Response>;
   fengshenStatus?: any;
   onOpenFengshen: () => void;
+  /** 隐藏自带触发键（改由 `PlatformDock` 做唯一入口），仅保留受控面板。 */
   hideTrigger?: boolean;
+  /** 受控展开态；不传则退回内部 state（保持既有调用方零改动）。 */
+  open?: boolean;
+  /** 受控展开态变更回调。 */
+  onOpenChange?: (open: boolean) => void;
 }) {
   const fetchRef = useRef(apiFetch);
   fetchRef.current = apiFetch;
   const [statuses, setStatuses] = useState<Record<string, any>>({});
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [baizeAccount, setBaizeAccount] = useState<any>(null);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const drawerOpen = typeof open === 'boolean' ? open : internalOpen;
+  const setDrawerOpen = (next: boolean) => {
+    if (onOpenChange) onOpenChange(next);
+    else setInternalOpen(next);
+  };
   const [activeSessionKey, setActiveSessionKey] = useState('');
   const [pendingActions, setPendingActions] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -114,6 +130,10 @@ export function SystemConnections({
       [source]: err instanceof Error ? err.message : '操作未完成，请稍候再试。',
     }));
   }
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('workbench:platform-statuses', { detail: statuses }));
+  }, [statuses]);
 
   useEffect(() => {
     const openHandler = () => setDrawerOpen(true);
@@ -192,6 +212,20 @@ export function SystemConnections({
       timers.forEach(clearTimeout);
     };
   }, [drawerOpen, activeSessionKey]);
+
+  useEffect(() => {
+    if (!drawerOpen) return;
+    let cancelled = false;
+    void fetchPlatformAuthJson(
+      apiFetch,
+      '/api/fengshen-downloads/platform-auth/baize/accounts',
+      undefined,
+      15000,
+    )
+      .then(data => { if (!cancelled) setBaizeAccount(data); })
+      .catch(() => { if (!cancelled) setBaizeAccount(null); });
+    return () => { cancelled = true; };
+  }, [drawerOpen, statuses.baize?.session_version, apiFetch]);
 
   useEffect(() => {
     for (const { key } of PLATFORM_DEFS) {
@@ -350,13 +384,13 @@ export function SystemConnections({
 
   return (
     <>
-      {(!hideTrigger || busyAuthSource) && (
-        <div className="wb-connection-dropdown" ref={dropdownRef}>
+      <div className="wb-connection-dropdown" ref={dropdownRef} data-inert={hideTrigger ? 'true' : undefined}>
+        {(!hideTrigger || busyAuthSource) && (
           <button
             className="wb-connection-trigger"
             aria-label="管理系统连接"
             aria-expanded={drawerOpen}
-            onClick={() => setDrawerOpen(open => !open)}
+            onClick={() => setDrawerOpen(!drawerOpen)}
           >
             <span className="wb-connection-title">平台登录</span>
             <span className="wb-connection-sep" aria-hidden="true" />
@@ -383,8 +417,9 @@ export function SystemConnections({
               ))}
             </span>
           </button>
+        )}
 
-          {drawerOpen && (
+        {drawerOpen && (
             <div className="wb-connection-popover" role="dialog" aria-label="平台登录状态">
               <div className="wb-popover-header">
                 <span className="wb-popover-title">数据源平台通道</span>
@@ -397,6 +432,30 @@ export function SystemConnections({
                   <X size={15} />
                 </button>
               </div>
+              <div className="wb-connection-summary" role="list" aria-label="平台登录状态摘要">
+                {cluster.map(item => (
+                  <span
+                    key={item.key}
+                    role="listitem"
+                    className={`wb-connection-chip is-${item.tone}`}
+                    title={`${item.shortLabel}：${item.statusText}`}
+                  >
+                    <span
+                      className={`wb-dot ${
+                        item.tone === 'ready'
+                          ? 'ready'
+                          : item.tone === 'warn'
+                            ? 'offline'
+                            : item.tone === 'busy'
+                              ? 'busy'
+                              : ''
+                      }`}
+                    />
+                    <span>{item.shortLabel}</span>
+                  </span>
+                ))}
+              </div>
+
 
               <div className="wb-platform-overview-bar mb-2.5">
                 <div className="wb-platform-overview-stat">
@@ -462,6 +521,22 @@ export function SystemConnections({
                             <Icon size={17} />
                           </span>
                           <h3 className="wb-platform-name">{label}</h3>
+                          {key === 'baize' && (
+                            <span
+                              className={`wb-baize-account-badge is-${baizeAccount?.account_type || 'unknown'}`}
+                              title={baizeAccount?.account_type === 'shanggou'
+                                ? `当前闪购账户${baizeAccount.region_text ? ` · ${baizeAccount.region_text}` : ''}`
+                                : baizeAccount?.account_type === 'xiaoxiang'
+                                  ? `当前小象账户${baizeAccount.region_text ? ` · ${baizeAccount.region_text}` : ''}`
+                                  : '正在识别商翼账户类型，请稍候'}
+                            >
+                              {baizeAccount?.account_type === 'shanggou'
+                                ? '闪购'
+                                : baizeAccount?.account_type === 'xiaoxiang'
+                                  ? '小象'
+                                  : '待识别'}
+                            </span>
+                          )}
                         </div>
                         <div className="wb-platform-status-area">
                           <span className={`wb-status-badge is-${badge.tone}`}>
@@ -508,7 +583,7 @@ export function SystemConnections({
                           {[st.account_label, st.organization].filter(Boolean).join(' · ')}
                         </p>
                       )}
-                      {(errors[key] || st.offline) && (
+                                            {(errors[key] || st.offline) && (
                         <p role="alert" className="wb-error">
                           {errors[key] || '连接状态暂不可用，请稍候再试。'}
                         </p>
@@ -519,8 +594,7 @@ export function SystemConnections({
               </div>
             </div>
           )}
-        </div>
-      )}
+      </div>
 
       {!!activeDef && (
         <WorkbenchDrawer

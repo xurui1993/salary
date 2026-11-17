@@ -74,12 +74,10 @@ def inspect_payroll(folder, mode):
     template = templates[0]
     if xiaoxiang_template(template):
         if mode == 'fengshen':
-            raise SourceError('小象超市仅支持独立手动上传，请切换“小象超市（手动）”；不会调用风神或蓝橙下载')
-        if not xiaoxiang_delivery_files(files, template):
-            raise SourceError('小象须上传日期命名的配送单，如 2026-09-01.xlsx 或 20260901.xlsx；无需改名为配送费')
+            raise SourceError('小象超市仅支持独立自动核算，请切换“小象超市”；不会调用风神下载')
         return company_plan(template, folder), template, 'xiaoxiang'
     if mode == 'xiaoxiang':
-        raise SourceError('小象手动入口须上传文件名含“小象”和“template”的模板')
+        raise SourceError('小象自动入口须上传文件名含“小象”和“template”的模板')
     plan, template, _ = inspect_source(folder, require_agency=mode == 'fengshen')
     if mode == 'manual' and not any('配送费' in path.name for path in files if path != template):
         raise SourceError('普通业务手动核算必须上传 template 和配送费，其他资料可选')

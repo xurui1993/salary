@@ -667,10 +667,16 @@ async def run_calculation(config: ConfigRequest, request: Request):
     elif config.action in ('remove_problem_orders', 'raise_price', 'summary_parttime'):
         required = set()
     else:
-        # 手传资料（manual/xiaoxiang）不需要平台登录，仅自动采集模式设闸门。
-        required = {'fengshen', 'lanorange', 'baize'} if config.payrollSourceMode == 'fengshen' else set()
+        # 手动资料不需要平台登录；闪购自动与小象自动分别校验各自平台。
+        if config.payrollSourceMode == 'fengshen':
+            required = {'fengshen', 'lanorange', 'baize'}
+        elif config.payrollSourceMode == 'xiaoxiang':
+            required = {'xiaoxiang', 'lanorange', 'baize'}
+        else:
+            required = set()
     if required:
-        await asyncio.to_thread(ensure_ready, required)
+        await asyncio.to_thread(ensure_ready, required,
+                                deep_xiaoxiang=config.payrollSourceMode == 'xiaoxiang')
     from workbench import detached_events
     return StreamingResponse(detached_events(event_generator()), media_type="text/event-stream")
 

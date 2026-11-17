@@ -167,8 +167,17 @@ def select_records(records, hidden, filters):
         if tag and tag not in groups and {'lanorange': '蓝橙'}.get(tag) not in groups:
             return False
         module = filters.get('module', '')
-        if module and (r.get('kind') != 'generate' if module == 'generate' else r.get('kind') not in ('download', 'payroll_source') or module not in groups):
-            return False
+        if module:
+            if module == 'generate':
+                if r.get('kind') != 'generate':
+                    return False
+            elif module == 'fengshen':
+                from task_catalog import GENERATORS
+                is_fengshen_gen = r.get('kind') == 'generate' and any(key in GENERATORS for key in r.get('datasets', []))
+                if not is_fengshen_gen and (r.get('kind') not in ('download', 'payroll_source') or 'fengshen' not in groups):
+                    return False
+            elif r.get('kind') not in ('download', 'payroll_source') or module not in groups:
+                return False
         date = created_day(r)
         if filters.get('from') and date < filters['from'] or filters.get('to') and date > filters['to']:
             return False
