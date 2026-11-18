@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {FileSpreadsheet, Download, Square, FolderOpen, ChevronDown, ArchiveRestore, X, Loader2, Sparkles, FolderKanban, SlidersHorizontal, Search, FlaskConical, ShieldAlert} from 'lucide-react';
+import {FileSpreadsheet, Download, Square, FolderOpen, ChevronDown, ArchiveRestore, X, Loader2, Sparkles, FolderKanban, SlidersHorizontal, Search, ShieldAlert} from 'lucide-react';
 import type {CorePageProps} from './CorePage';
 import {ControlPanel} from './ControlPanel';
 import {PayrollReviewSummary} from './PayrollReviewSummary';
@@ -10,7 +10,7 @@ import {readDownloadResponse,saveDownloadBlob} from '../lib/outputDownload';
 import {businessLogEntries} from '../lib/payrollBusinessLogs';
 import {legacyPayrollTask,payrollElapsed,payrollModeName,payrollQueueRunning,payrollQueueStatus,type PayrollQueueTask} from '../lib/payrollQueue';
 import {paginateEntries} from '../lib/deductionCategories';
-import {createDemoPayrollQueueTasks,filterPayrollQueueTasks,type PayrollQueueFilterTab} from '../lib/workbenchDemoData';
+import {filterPayrollQueueTasks,type PayrollQueueFilterTab} from '../lib/workbenchFilters';
 
 type Props=Pick<CorePageProps,'config'|'onConfigChange'|'progress'|'progressText'|'logs'|'payrollPreparation'|'apiFetch'|'onPreparationChange'|'onUploadFiles'|'onRun'|'onOpenDownloads'|'onOpenConnections'|'onOpenFengshenLogin'|'onOpenDeductions'|'onOpenSettings'|'uploadExtracted'>&{isRunning:boolean;onOtherMode:(mode:'fengshen'|'manual'|'xiaoxiang')=>void};
 const API='/api/parttime/queue';
@@ -112,14 +112,10 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
   const [loading,setLoading]=useState(true),[uploading,setUploading]=useState(false),[busy,setBusy]=useState(false);
   const [error,setError]=useState(''),[loadError,setLoadError]=useState(''),[notice,setNotice]=useState(''),[templates,setTemplates]=useState(false),[hidden,setHidden]=useState(false);
   const [removeTargets,setRemoveTargets]=useState<PayrollQueueTask[]>([]),[skipLegacy,setSkipLegacy]=useState(false);
-  const [demoMode,setDemoMode]=useState(false);
-  const [demoTasks,setDemoTasks]=useState<PayrollQueueTask[]>(()=>createDemoPayrollQueueTasks());
-  const [demoHiddenIds,setDemoHiddenIds]=useState<Set<string>>(()=>new Set());
   const [queueFilterTab,setQueueFilterTab]=useState<PayrollQueueFilterTab>('all');
   const [queueSearch,setQueueSearch]=useState('');
   const [queuePage,setQueuePage]=useState(1);
   const [queuePageSize,setQueuePageSize]=useState(10);
-  const userToggledDemo=useRef(false);
   const api=useRef(apiFetch);api.current=apiFetch;
   const selectedRef=useRef(selectedId);selectedRef.current=selectedId;
   const guard=useRef(false),fetching=useRef(false),readController=useRef<AbortController|null>(null),mounted=useRef(true);
@@ -148,23 +144,16 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
       if(mounted.current&&!controller.signal.aborted){
         setTasks(result.tasks);
         setLoadError('');
-        if(result.tasks.length>0&&!userToggledDemo.current){setDemoMode(false);}
       }
       return result.tasks as PayrollQueueTask[];
     }catch(e){
       if(mounted.current&&!controller.signal.aborted){
         setLoadError(e instanceof Error?e.message:'任务队列暂时无法更新');
-        if(!userToggledDemo.current&&tasks.length===0&&!value){setDemoMode(true);}
       }
       return null;
     }
     finally{fetching.current=false;if(mounted.current)setLoading(false);}
-  },[hidden,tasks.length,value]);
-  useEffect(()=>{
-    if(!loading&&tasks.length===0&&!value&&!hidden&&!userToggledDemo.current){
-      setDemoMode(true);
-    }
-  },[loading,tasks.length,value,hidden]);
+  },[hidden]);
   /**
    * 队列轮询（P1-5 降噪）：可见时 2.5s，后台标签页降到 10s；
    * 切回可见时立刻刷新一次并重建定时器，避免"回前台还要等一个周期"。
@@ -183,12 +172,10 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
   },[refresh]);
   useEffect(()=>{void refresh();},[selectedId,refresh]);
   useEffect(()=>{const changed=()=>void refresh();window.addEventListener('payroll-queue:changed',changed);return()=>window.removeEventListener('payroll-queue:changed',changed);},[refresh]);
-  useEffect(()=>{setChecked([]);setSelectedId('');if(!demoMode){setTasks([]);setLoading(true);}},[hidden,demoMode]);
+  useEffect(()=>{setChecked([]);setSelectedId('');setTasks([]);setLoading(true);},[hidden]);
   useEffect(()=>{setSkipLegacy(false);},[value?.id]);
   const legacy=value&&!hidden&&!skipLegacy&&!tasks.some(task=>task.batch_id===value.id)?legacyPayrollTask(value,logs,progress,progressText):null;
-  const liveVisible=legacy?[legacy,...tasks]:tasks;
-  const demoVisible=useMemo(()=>demoTasks.filter(task=>(hidden?demoHiddenIds.has(task.id):!demoHiddenIds.has(task.id))),[demoTasks,demoHiddenIds,hidden]);
-  const visible=demoMode?demoVisible:liveVisible;
+  const visible=legacy?[legacy,...tasks]:tasks;
   const filteredVisible=useMemo(()=>filterPayrollQueueTasks(visible,queueFilterTab,queueSearch),[visible,queueFilterTab,queueSearch]);
   const pagedQueue=useMemo(()=>paginateEntries(filteredVisible,queuePage,queuePageSize),[filteredVisible,queuePage,queuePageSize]);
   const pagedTasks=pagedQueue.items;
@@ -211,41 +198,22 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
     try{
       if(mode==='fengshen'&&files.some(item=>!item.file.name.toLowerCase().endsWith('.xlsx')||!item.file.name.toLowerCase().includes('template')))throw Error('请选择文件名含 template 的 .xlsx 标准模板，可一次选择多份。');
       const previous=new Set(tasks.map(task=>task.id));await onUploadFiles(files);
-      userToggledDemo.current=true;setDemoMode(false);
       if(hidden){setHidden(false);return;}
       const next=await refresh();const added=next?.find(task=>!previous.has(task.id));if(added)setSelectedId(added.id);
     }catch(e){setError(e instanceof Error?e.message:'资料上传未完成');}finally{setUploading(false);}
   };
   const stop=(task:PayrollQueueTask)=>void act(async()=>{
-    if(demoMode){
-      setDemoTasks(prev=>prev.map(item=>item.id===task.id?{...item,status:'cancelled',current_action:'演示操作：已手动停止该核算批次'}:item));
-      setNotice(`已模拟停止「${task.template_name}」。`);
-      return;
-    }
     if(task.legacy){await request('/api/workbench/task-center/stop',{id:'payroll_'+task.batch_id});onPreparationChange(await(await request(`/api/parttime/preparations/${task.batch_id}`)).json());}
     else await request(`${API}/${task.id}/stop`,{});
     await refresh();
   });
   const download=(task:PayrollQueueTask)=>void act(async()=>{
-    if(demoMode){
-      const sampleJson=JSON.stringify({batch_id:task.batch_id,template_name:task.template_name,plan:task.plan,status:task.status},null,2);
-      saveDownloadBlob(new Blob([sampleJson],{type:'application/json;charset=utf-8'}),task.template_name.replace(/\.xlsx?$/i,'')+'_演示摘要.json');
-      setNotice(`已导出「${task.template_name}」演示核算摘要包。`);
-      return;
-    }
     const response=await request(`/api/fengshen-downloads/delivery-download?batch_id=${encodeURIComponent(task.batch_id!)}`);saveDownloadBlob(await readDownloadResponse(response,'薪资核算结果.zip'),task.template_name.replace(/\.xlsx?$/i,'')+'_核算结果.zip');
   });
   const directory=(task:PayrollQueueTask)=>void act(async()=>{
-    if(demoMode){setNotice(`演示目录路径：D:\\PayrollWorkspace\\outputs\\${task.batch_id || task.id}\\`);return;}
     await request('/api/workbench/task-center/directory/open',{record_id:'payroll_'+task.batch_id});
   });
   const restore=(entries:PayrollQueueTask[])=>void act(async()=>{
-    if(demoMode){
-      setDemoHiddenIds(prev=>{const next=new Set(prev);entries.forEach(item=>next.delete(item.id));return next;});
-      setChecked([]);
-      setNotice(`已从回收列表恢复 ${entries.length} 个演示批次。`);
-      return;
-    }
     await request(API+'/visibility',{ids:entries.map(task=>task.id),restore:true});setChecked([]);await refresh();
   });
   /** 行内详情（T6-1a A2）：承载原页面级 .pq-detail 的全部任务级信息，不再重复文件名。 */
@@ -351,10 +319,10 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
 
     {error&&<p className="pq-message is-error" role="alert">{error}</p>}
     {notice&&<p className="pq-message" role="status">{notice}</p>}
-    {loadError&&!demoMode&&<p className="pq-message" role="status">{loadError}；现有记录保留，系统会继续更新。</p>}
+    {loadError&&<p className="pq-message" role="status">{loadError}；现有记录保留，系统会继续更新。</p>}
 
     {/* 底部：常驻批次队列与齐套核验面板 */}
-    <section className="pq-queue" aria-label="核算任务队列" aria-busy={loading&&!demoMode}>
+    <section className="pq-queue" aria-label="核算任务队列" aria-busy={loading}>
       <header className="pq-queue-heading">
         <div className="pq-queue-title-group">
           <h3>
@@ -363,7 +331,7 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
           </h3>
           <p className="tabular-nums">
             {visible.length > 0
-              ? `${demoMode ? '示例队列' : '实时队列'} · ${running} 运行中 · ${waitingConfirmCount} 待确认 · ${completed} 已完成（点击行首箭头展开日志）`
+              ? `实时队列 · ${running} 运行中 · ${waitingConfirmCount} 待确认 · ${completed} 已完成（点击行首箭头展开日志）`
               : mode === 'fengshen'
                 ? '拖入或选择 .xlsx 标准薪资申请表即可启动自动算薪'
                 : '拖入或选择含模板与本地源表的资料目录即可启动核验'}
@@ -372,24 +340,9 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
         <div className="pq-queue-actions">
           {chosen.length>0&&<span className="pq-selection tabular-nums">已选 {chosen.length} 项</span>}
           {hidden?<>{chosen.length>0&&<button className="wb-button" disabled={busy} onClick={()=>restore(chosen)}>恢复已选</button>}</>:<>
-            {!!downloadable.length&&<button className="wbx-btn wbx-btn--primary" disabled={busy} onClick={()=>void act(async()=>{if(demoMode){const names=downloadable.map(t=>t.template_name).join('\n');saveDownloadBlob(new Blob([names],{type:'text/plain;charset=utf-8'}),'演示_批量核算结果清单.txt');setNotice(`已导出 ${downloadable.length} 个已完成批次的演示摘要清单。`);return;}if(downloadable.length===1){const response=await request(`/api/fengshen-downloads/delivery-download?batch_id=${encodeURIComponent(downloadable[0].batch_id!)}`);saveDownloadBlob(await readDownloadResponse(response,'薪资核算结果.zip'),'薪资核算结果.zip');}else{const queueEntries=downloadable.filter(task=>!task.legacy);if(queueEntries.length!==downloadable.length)throw Error('历史批次请在对应行单独下载；其余任务可勾选后批量下载。');const response=await request(API+'/bundle',{ids:queueEntries.map(task=>task.id)});saveDownloadBlob(await readDownloadResponse(response,'批量薪资核算结果.zip'),'批量薪资核算结果.zip');}})}><Download size={14}/>{chosen.length?'下载已选结果':'下载已完成'}（{downloadable.length}）</button>}
+            {!!downloadable.length&&<button className="wbx-btn wbx-btn--primary" disabled={busy} onClick={()=>void act(async()=>{if(downloadable.length===1){const response=await request(`/api/fengshen-downloads/delivery-download?batch_id=${encodeURIComponent(downloadable[0].batch_id!)}`);saveDownloadBlob(await readDownloadResponse(response,'薪资核算结果.zip'),'薪资核算结果.zip');}else{const queueEntries=downloadable.filter(task=>!task.legacy);if(queueEntries.length!==downloadable.length)throw Error('历史批次请在对应行单独下载；其余任务可勾选后批量下载。');const response=await request(API+'/bundle',{ids:queueEntries.map(task=>task.id)});saveDownloadBlob(await readDownloadResponse(response,'批量薪资核算结果.zip'),'批量薪资核算结果.zip');}})}><Download size={14}/>{chosen.length?'下载已选结果':'下载已完成'}（{downloadable.length}）</button>}
             {chosen.length>0&&<button className="wbx-btn wbx-btn--ghost" disabled={busy} onClick={()=>setRemoveTargets(chosen)}>移出已选</button>}
           </>}
-          <button
-            type="button"
-            className={`wbx-btn wbx-btn--sm ${demoMode?'wbx-btn--secondary':''}`}
-            onClick={()=>{
-              userToggledDemo.current=true;
-              setChecked([]);
-              setQueueFilterTab('all');
-              setQueueSearch('');
-              setQueuePage(1);
-              setDemoMode(prev=>!prev);
-            }}
-          >
-            <FlaskConical size={13}/>
-            {demoMode?'切回实时队列':'示例数据 (20)'}
-          </button>
           <button className="wb-link" onClick={()=>{setHidden(previous=>!previous);setQueuePage(1);}}>{hidden?'返回队列':'已移出'}</button>
         </div>
       </header>
@@ -451,7 +404,7 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
         </div>
       )}
 
-      {loading && !visible.length && !demoMode ? (
+      {loading && !visible.length ? (
         <div className="pq-empty">
           <Loader2 size={23} className="animate-spin" />
           <p>正在读取任务队列…</p>
@@ -557,7 +510,7 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
     </section>
 
     {templates&&<WorkbenchDrawer title="系统模板" wide onClose={()=>setTemplates(false)}><SystemTemplatesPanel onNavigatePayroll={()=>setTemplates(false)}/></WorkbenchDrawer>}
-    {!!removeTargets.length&&<WorkbenchDrawer title={removeTargets.some(payrollQueueRunning)?'停止并移出任务':'移出任务列表'} onClose={()=>setRemoveTargets([])}><p>{removeTargets.length} 项任务将从共享列表移出；文件和处理记录保留，可在“已移出”恢复。</p>{removeTargets.some(payrollQueueRunning)&&<p>执行中的任务会先停止。</p>}<div className="pq-dialog-actions"><button className="wb-button" disabled={busy} onClick={()=>setRemoveTargets([])}>取消</button><button className="wb-primary" disabled={busy} onClick={()=>void act(async()=>{if(demoMode){setDemoHiddenIds(prev=>{const next=new Set(prev);removeTargets.forEach(t=>next.add(t.id));return next;});setRemoveTargets([]);setChecked([]);setNotice(`已移出 ${removeTargets.length} 条演示批次，可在“已移出”恢复。`);return;}const current=removeTargets.filter(task=>!task.legacy),old=removeTargets.filter(task=>task.legacy);if(current.length)await request(API+'/visibility',{ids:current.map(task=>task.id),restore:false,stop_first:true});if(old.length){await request('/api/workbench/task-center/visibility',{ids:old.map(task=>'payroll_'+task.batch_id),restore:false,stop_first:true});setSkipLegacy(true);}setRemoveTargets([]);setChecked([]);await refresh();})}>确认移出，保留文件</button></div></WorkbenchDrawer>}
+    {!!removeTargets.length&&<WorkbenchDrawer title={removeTargets.some(payrollQueueRunning)?'停止并移出任务':'移出任务列表'} onClose={()=>setRemoveTargets([])}><p>{removeTargets.length} 项任务将从共享列表移出；文件和处理记录保留，可在“已移出”恢复。</p>{removeTargets.some(payrollQueueRunning)&&<p>执行中的任务会先停止。</p>}<div className="pq-dialog-actions"><button className="wb-button" disabled={busy} onClick={()=>setRemoveTargets([])}>取消</button><button className="wb-primary" disabled={busy} onClick={()=>void act(async()=>{const current=removeTargets.filter(task=>!task.legacy),old=removeTargets.filter(task=>task.legacy);if(current.length)await request(API+'/visibility',{ids:current.map(task=>task.id),restore:false,stop_first:true});if(old.length){await request('/api/workbench/task-center/visibility',{ids:old.map(task=>'payroll_'+task.batch_id),restore:false,stop_first:true});setSkipLegacy(true);}setRemoveTargets([]);setChecked([]);await refresh();})}>确认移出，保留文件</button></div></WorkbenchDrawer>}
   </div>;
 }
 

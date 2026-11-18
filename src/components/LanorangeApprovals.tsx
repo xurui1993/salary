@@ -3,9 +3,9 @@ import React,{useEffect,useMemo,useRef,useState} from 'react';
 import {ApprovalScopeFilters} from './ApprovalScopeFilters';
 import {WorkbenchDrawer} from './WorkbenchDrawer';
 import {toneClass, normalizeTone} from '../lib/statusSemantics';
-import {RefreshCw, ArrowRightLeft, KeyRound, Search, FlaskConical, CheckCircle2, ClipboardList, Download} from 'lucide-react';
+import {RefreshCw, ArrowRightLeft, KeyRound, Search, CheckCircle2, ClipboardList, Download} from 'lucide-react';
 import {platformAuthRequest,PlatformAuthError} from '../lib/platformAuthApi';
-import {createDemoApprovalData,filterApprovalTasks,getDemoApprovalPriceDetail,type ApprovalEligibilityFilter} from '../lib/workbenchDemoData';
+import {filterApprovalTasks,type ApprovalEligibilityFilter} from '../lib/workbenchFilters';
 
 type Fetcher=(url:string,init?:RequestInit)=>Promise<Response>;
 type Query={city:string;station:string;period:string};
@@ -46,15 +46,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
   const [activeViewTab,setActiveViewTab]=useState<'pending'|'results'>('pending');
   const [receiptStatusFilter,setReceiptStatusFilter]=useState<'all'|'success'|'issue'>('all');
 
-  const initialDemo = useMemo(() => createDemoApprovalData(), []);
-  const [demoMode,setDemoMode]=useState(false);
-  const [demoRows,setDemoRows]=useState<Task[]>(initialDemo.rows);
-  const [demoBatches,setDemoBatches]=useState<Batch[]>(initialDemo.batches);
-  const [demoBatch,setDemoBatch]=useState<Batch|null>(initialDemo.batches[0]||null);
-  const [demoActor]=useState(initialDemo.actor_label);
-  const userToggledDemo=useRef(false);
-  const listSettledRef=useRef(false),historySettledRef=useRef(false);
-
+  
   const listSequence=useRef(0),inflight=useRef(false),versionRef=useRef(''),batchRef=useRef<Batch|null>(null),alive=useRef(true);
   batchRef.current=batch;
   const attemptKey=`lanorange-approval-attempt:${workspaceId}`;
@@ -67,21 +59,17 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
     if(!focusId)return;
     let disposed=false;
     setActiveViewTab('results');
-    void request<Batch>(`/batches/${encodeURIComponent(focusId)}`).then(value=>{if(!disposed){setBatch(value);setActiveViewTab('results');}}).catch(err=>{if(!disposed&&!demoMode)setError(err instanceof Error?err.message:'指定记录读取失败');});
+    void request<Batch>(`/batches/${encodeURIComponent(focusId)}`).then(value=>{if(!disposed){setBatch(value);setActiveViewTab('results');}}).catch(err=>{if(!disposed)setError(err instanceof Error?err.message:'指定记录读取失败');});
     return()=>{disposed=true;};
-  },[focusId,workspaceId,demoMode]);
+  },[focusId,workspaceId]);
   async function readHistory(){
     try{
       const value=await request<{batches:Batch[]}>('/batches');if(!alive.current)return;
-      historySettledRef.current=true;
       setHistory(value.batches);onActiveCount(value.batches.filter(b=>ACTIVE.has(b.status)).length);
       setBatch(current=>value.batches.find(b=>b.id===current?.id) || current || value.batches[0] || null);
-      if(value.batches.length>0&&!userToggledDemo.current){setDemoMode(false);}
     }catch(err){
       if(alive.current){
-        historySettledRef.current=true;
-        if(!userToggledDemo.current&&allRows.length===0){setDemoMode(true);}
-        else if(!demoMode){setError(message(err));}
+        setError(message(err));
       }
     }
   }
@@ -93,46 +81,28 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
       if(!alive.current || sequence!==listSequence.current)return;
       const loggedIn=Boolean(auth?.saved && !['signed_out','login_required'].includes(auth.state||''));
       if(!loggedIn){
-        listSettledRef.current=true;
         setAllRows([]);
         setSelection({});
         setPreview(null);
-        if(!userToggledDemo.current){
-          setDemoMode(true);
-          setError('');
-        }else if(!demoMode){
-          setError('请先登录蓝橙，再读取本人待办');
-        }
+        setError('请先登录蓝橙，再读取本人待办');
         return;
       }
       const value=await request<{rows:Task[];total:number;actor_label:string;session_version:string}>('/pending-scope');
       if(!alive.current || sequence!==listSequence.current)return;
-      listSettledRef.current=true;
       if(versionRef.current && versionRef.current!==value.session_version){setSelection({});setPreview(null);setError('蓝橙会话已变化，已清除旧勾选，请重新选择。');}
       versionRef.current=value.session_version;setSessionVersion(value.session_version);setAllRows(value.rows);setSelection({});setPreview(null);setActor(value.actor_label);
-      if(value.rows.length>0&&!userToggledDemo.current){setDemoMode(false);}
-      else if(value.rows.length===0&&historySettledRef.current&&!userToggledDemo.current){setDemoMode(true);}
     })().catch(err=>{
       if(alive.current && sequence===listSequence.current){
-        listSettledRef.current=true;
         setAllRows([]);
-        if(!userToggledDemo.current){setDemoMode(true);setError('');}
-        else if(!demoMode){setError(message(err));}
+        setError(message(err));
       }
     }).finally(()=>{if(alive.current && sequence===listSequence.current)setListBusy(false);});
   },[refresh,workspaceId]);
 
-  useEffect(()=>{
-    if(listSettledRef.current&&historySettledRef.current&&!allRows.length&&!history.length&&!userToggledDemo.current){
-      setDemoMode(true);
-      setError('');
-    }
-  },[allRows.length,history.length]);
-
-  const effectiveRows=demoMode?demoRows:allRows;
-  const effectiveHistory=demoMode?demoBatches:history;
-  const effectiveBatch=demoMode?demoBatch:batch;
-  const effectiveActor=demoMode?demoActor:actor;
+  const effectiveRows=allRows;
+  const effectiveHistory=history;
+  const effectiveBatch=batch;
+  const effectiveActor=actor;
 
   const scopeFiltered=useMemo(()=>filterApprovalTasks(effectiveRows,{scopeCities,scopeMonths,scopeSite,eligibility:'all',keyword:''}),[effectiveRows,scopeCities,scopeMonths,scopeSite]);
   const filtered=useMemo(()=>filterApprovalTasks(effectiveRows,{scopeCities,scopeMonths,scopeSite,eligibility:eligibilityFilter,keyword}),[effectiveRows,scopeCities,scopeMonths,scopeSite,eligibilityFilter,keyword]);
@@ -150,22 +120,9 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
     if(Object.keys(next).length>200){setError('每批最多选择200条，请分批处理。');return;}setSelection(next);
   }
   async function showDetail(task:Task){
-    if(demoMode){setDetail({task,price:getDemoApprovalPriceDetail(task)});return;}
     await perform('detail',async()=>setDetail(await request<{task:Task;price:Price}>(`/pending/${encodeURIComponent(task.id)}?session_version=${encodeURIComponent(sessionVersion)}`)));
   }
   async function makePreview(){
-    if(demoMode){
-      setPreview({
-        id:'demo-preview-'+Date.now(),
-        actor_label:demoActor,
-        expires_at:Math.floor(Date.now()/1000)+900,
-        eligible_count:selected.filter(t=>!t.reason).length,
-        opinion:'同意',
-        filters:query,
-        items:selected.map(task=>({eligible:!task.reason,reason:task.reason,task,price:getDemoApprovalPriceDetail(task)})),
-      });
-      return;
-    }
     await perform('preview',async()=>{
       const value=await request<Preview>('/previews',{selected:selected.map(t=>({id:t.id,revision:t.revision})),filters:query,session_version:sessionVersion},180000);
       if(alive.current)setPreview(value);
@@ -180,27 +137,6 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
   });}
   async function submit(){
     if(!preview)return;
-    if(demoMode){
-      const approvedTasks=preview.items.filter(item=>item.eligible).map(item=>item.task);
-      const newBatch:Batch={
-        id:`demo-apr-batch-${Date.now()}`,
-        actor_label:demoActor,
-        status:'completed',
-        created:Math.floor(Date.now()/1000),
-        counts:{success:approvedTasks.length,failed:0,changed:0,uncertain:0,not_sent:0,pending:0},
-        items:approvedTasks.map(task=>({task,status:'success',status_label:'已同意',message:`演示提交：节点「${task.nodeName || '当前节点'}」已同意`})),
-      };
-      const approvedIds=new Set(approvedTasks.map(t=>t.id));
-      setDemoBatches(prev=>[newBatch,...prev]);
-      setDemoBatch(newBatch);
-      setDemoRows(prev=>prev.filter(t=>!approvedIds.has(t.id)));
-      setSelection({});
-      setPreview(null);
-      setReceiptStatusFilter('all');
-      setActiveViewTab('results');
-      setNotice(`演示提交完成：已模拟同意 ${approvedTasks.length} 条价格提审流程。`);
-      return;
-    }
     await sendAttempt(attempt?.preview_id===preview.id?attempt:{preview_id:preview.id,request_id:crypto.randomUUID()});
   }
   async function findAttempt(){if(!attempt)return;await perform('find',async()=>{
@@ -209,16 +145,6 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
   });}
   async function downloadResult(){
     if(!effectiveBatch)return;
-    if(demoMode){
-      const header='业务编号,城市,站点,结算周期,状态,说明';
-      const lines=effectiveBatch.items.map(item=>[code(item.task),item.task.cityName||'',item.task.siteName||'',period(item.task),item.status_label,item.message].map(v=>`"${String(v).replaceAll('"','""')}"`).join(','));
-      const blob=new Blob(['\ufeff'+[header,...lines].join('\n')],{type:'text/csv;charset=utf-8'});
-      const url=URL.createObjectURL(blob),link=document.createElement('a');
-      link.href=url;link.download=`蓝橙价格审批结果_演示_${effectiveBatch.id.slice(-6)}.csv`;link.click();
-      setTimeout(()=>URL.revokeObjectURL(url),1000);
-      setNotice(`已导出批次「${effectiveBatch.id.slice(-6)}」共 ${effectiveBatch.items.length} 条审批回执 CSV。`);
-      return;
-    }
     await perform('export',async()=>{
       const response=await fetchRef.current(`${BASE}/batches/${effectiveBatch.id}/result.csv`);if(!response.ok)throw new Error('结果下载失败，请稍后重试');
       const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=url;link.download=`蓝橙价格审批结果_${effectiveBatch.id.slice(0,8)}.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -235,7 +161,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
       <div className="wbx-approval__compact-lead">
         <span className={`wbx-approval__session-status ${effectiveActor ? 'is-ready' : 'is-warn'}`}>
           <span className="wbx-dot" />
-          {demoMode ? `示例预览 · ${effectiveActor}` : effectiveActor ? `已连接 · ${effectiveActor}` : '待登录蓝橙平台'}
+          {effectiveActor ? `已连接 · ${effectiveActor}` : '待登录蓝橙平台'}
         </span>
         <span className="wbx-approval__compact-meta tabular-nums">
           待办 {effectiveRows.length} · 可同意 {eligibleScopeCount} · 阻断 {blockedScopeCount}
@@ -247,38 +173,10 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
           type="button"
           className="wbx-btn wbx-btn--ghost wbx-btn--sm"
           disabled={listBusy || !!command}
-          onClick={() => {
-            if (demoMode) {
-              const fresh = createDemoApprovalData();
-              setDemoRows(fresh.rows);
-              setDemoBatches(fresh.batches);
-              setDemoBatch(fresh.batches[0] || null);
-              setSelection({});
-              setPreview(null);
-              setNotice('已重置 20 条多场景示例待办与 3 条审批回执批次。');
-            } else {
-              setPage(1); setRefresh(v => v + 1);
-            }
-          }}
+          onClick={() => { setPage(1); setRefresh(v => v + 1); }}
         >
           <RefreshCw size={13} className={listBusy ? 'wbx-spin' : ''} />
-          <span>{demoMode ? '重置示例数据' : listBusy ? '正在同步…' : '同步本人待办'}</span>
-        </button>
-        <button
-          type="button"
-          className={`wbx-btn wbx-btn--sm ${demoMode ? 'wbx-btn--secondary' : 'wbx-btn--ghost'}`}
-          onClick={() => {
-            userToggledDemo.current = true;
-            setSelection({});
-            setPreview(null);
-            setPage(1);
-            setError('');
-            setNotice('');
-            setDemoMode(prev => !prev);
-          }}
-        >
-          <FlaskConical size={13} />
-          <span>{demoMode ? '切回实时待办' : '示例数据 (20)'}</span>
+          <span>{listBusy ? '正在同步…' : '同步本人待办'}</span>
         </button>
         <button
           type="button"
@@ -378,12 +276,12 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
         }}
         onRefresh={() => {
           setPage(1);
-          if (!demoMode) setRefresh(v => v + 1);
+          setRefresh(v => v + 1);
         }}
       />
     )}
 
-    {!demoMode && error && (
+    {error && (
       <div className="wb-error wb-error-with-action" role="alert">
         <div className="wbx-approval__alert-copy">
           <strong>{error.includes('登录') ? '需先完成蓝橙平台登录授权' : '操作提示'}</strong>
@@ -415,7 +313,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
       </div>
     )}
 
-    {attempt && !demoMode && (
+    {attempt && (
       <div className="wb-approval-notice" role="status">
         <p>本次提交尚待确认。请先查找批次，避免重复审批。</p>
         <button className="wb-button" disabled={!!command} onClick={() => void findAttempt()}>
@@ -462,7 +360,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
           <button
             type="button"
             className="wb-primary"
-            disabled={!selected.length || !!command || (!demoMode && active) || (!demoMode && !!attempt) || listBusy}
+            disabled={!selected.length || !!command || active || !!attempt || listBusy}
             onClick={() => void makePreview()}
           >
             {command === 'preview' ? '正在核对明细…' : `预览已选 (${selected.length})`}
@@ -507,7 +405,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
       {filtered.length > 200 && (
         <p className="wb-muted mt-2">每批最多审批200条，请缩小城市、月份或站点范围，或按页勾选。</p>
       )}
-      {!demoMode && active && (
+      {active && (
         <p className="wb-muted mt-2">已有批次执行中，可在下方查看进度；离开此页仍会继续。</p>
       )}
 
@@ -569,7 +467,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
                     <td className="wbx-table__actions">
                       <button
                         className="wb-button"
-                        disabled={!!command || (!demoMode && !!task.reason)}
+                        disabled={!!command || !!task.reason}
                         onClick={() => void showDetail(task)}
                       >
                         查看明细
@@ -590,7 +488,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
             </button>
           </div>
         </>
-      ) : listBusy && !demoMode ? (
+      ) : listBusy ? (
         <p className="wbx-hint py-6 text-center" role="status">正在读取蓝橙本人待办…</p>
       ) : scopeFiltered.length > 0 ? (
         <div className="pq-empty">
@@ -647,8 +545,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
                   onChange={e => {
                     const found = effectiveHistory.find(b => b.id === e.target.value) || null;
                     setReceiptStatusFilter('all');
-                    if (demoMode) setDemoBatch(found);
-                    else setBatch(found);
+                    setBatch(found);
                   }}
                 >
                   {effectiveBatch && !effectiveHistory.some(b => b.id === effectiveBatch.id) && (
@@ -668,15 +565,12 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
               type="button"
               className="wbx-btn wbx-btn--sm"
               disabled={!!command}
-              onClick={() => {
-                if (demoMode) setNotice('已刷新演示审批批次结果。');
-                else void readHistory();
-              }}
+              onClick={() => void readHistory()}
             >
               <RefreshCw size={13} />
               刷新结果
             </button>
-            {effectiveBatch && ACTIVE.has(effectiveBatch.status) && !demoMode && (
+            {effectiveBatch && ACTIVE.has(effectiveBatch.status) && (
               <button
                 type="button"
                 className="wbx-btn wbx-btn--sm wbx-btn--danger"
@@ -697,26 +591,6 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
                 className="wbx-btn wbx-btn--sm"
                 disabled={!!command}
                 onClick={() => {
-                  if (demoMode) {
-                    const resolved: Batch = {
-                      ...effectiveBatch,
-                      status: 'completed',
-                      counts: {
-                        ...effectiveBatch.counts,
-                        success: (effectiveBatch.counts.success || 0) + (effectiveBatch.counts.uncertain || 0),
-                        uncertain: 0,
-                      },
-                      items: effectiveBatch.items.map(it =>
-                        it.status === 'uncertain'
-                          ? { ...it, status: 'success', status_label: '已同意', message: '演示查证完成：网关已确认该条审批成功落地' }
-                          : it,
-                      ),
-                    };
-                    setDemoBatches(prev => prev.map(b => (b.id === resolved.id ? resolved : b)));
-                    setDemoBatch(resolved);
-                    setNotice('已查证并更新待核实审批项。');
-                    return;
-                  }
                   void perform('recheck', async () => {
                     setBatch(await request<Batch>(`/batches/${effectiveBatch.id}/recheck`, {}, 120000));
                     void readHistory();
@@ -905,8 +779,8 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
       <div className="wb-approval-preview"><p><strong>蓝橙账号：{preview.actor_label}</strong></p><p>本批可提交{preview.eligible_count}条，需另行处理{preview.items.length-preview.eligible_count}条；审批意见统一为“同意”。</p><p className="wb-muted">仅同意本人当前节点，不更改单价。沿用官方默认抄送及站内通知；预览有效至{new Date(preview.expires_at*1000).toLocaleTimeString('zh-CN')}。</p>
       {error && <p className="wb-error" role="alert">{error}</p>}
       <div className="wb-approval-table"><table><thead><tr><th>业务编号</th><th>城市 / 站点</th><th>结算周期</th><th>人数</th><th>本批处理</th><th>明细</th></tr></thead><tbody>{preview.items.map(item=><tr key={item.task.id}><td>{code(item.task)}</td><td>{item.task.cityName} / {item.task.siteName}</td><td>{period(item.task)}</td><td>{item.task.rider_count ?? '—'}</td><td>{item.eligible?'同意当前节点':item.reason}</td><td>{item.price && <button className="wb-button" onClick={()=>setDetail({task:item.task,price:item.price!})}>价格明细</button>}</td></tr>)}</tbody></table></div>
-      <div className="wb-approval-preview-actions"><button className="wb-button" disabled={!!command} onClick={()=>setPreview(null)}>返回调整</button><button className="wb-primary" disabled={!preview.eligible_count || !!command || (!demoMode && active) || (!demoMode && !!attempt)} onClick={()=>void submit()}>{command==='submit'?'正在创建批次…':`同意并提交${preview.eligible_count}条`}</button></div>
-      {attempt && !demoMode && <button className="wb-button" disabled={!!command} onClick={()=>void findAttempt()}>查找本次提交</button>}</div>
+      <div className="wb-approval-preview-actions"><button className="wb-button" disabled={!!command} onClick={()=>setPreview(null)}>返回调整</button><button className="wb-primary" disabled={!preview.eligible_count || !!command || active || !!attempt} onClick={()=>void submit()}>{command==='submit'?'正在创建批次…':`同意并提交${preview.eligible_count}条`}</button></div>
+      {attempt && <button className="wb-button" disabled={!!command} onClick={()=>void findAttempt()}>查找本次提交</button>}</div>
     </WorkbenchDrawer>}
     {detail && <WorkbenchDrawer title="价格明细" wide onClose={()=>setDetail(null)}><h3>{code(detail.task)} · {detail.task.cityName} / {detail.task.siteName}</h3><p>{period(detail.task)}</p><PriceTable key={detail.task.id} price={detail.price}/></WorkbenchDrawer>}
   </div>;

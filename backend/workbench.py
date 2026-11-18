@@ -44,8 +44,8 @@ async def detached_events(generator):
 
 
 def validate_rows(rows):
-    if not isinstance(rows, list) or not rows or len(rows) > 10000:
-        raise SourceError('扣款配置需要 1 至 10000 个站点')
+    if not isinstance(rows, list) or len(rows) > 10000:
+        raise SourceError('扣款配置不能超过 10000 个站点')
     seen = set()
     for row in rows:
         if not isinstance(row, dict) or not str(row.get('城市') or '').strip() or not str(row.get('团队名称') or '').strip():

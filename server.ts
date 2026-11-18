@@ -64,46 +64,7 @@ function ensureConfigExists() {
 
   const configPath = path.join(dataDir, "config.json");
   if (!fs.existsSync(configPath)) {
-    console.log("config.json not found. Creating a beautiful default config.json...");
-    
-    // Default config data
-    const defaultRows = [
-      {
-        "城市": "上海",
-        "团队名称": "浦东耀华站",
-        "团队ID": "SH-PD-01",
-        "安全基金": 50,
-        "非蜂卡扣款": 100,
-        "装备扣款": 150,
-        "投诉": 100,
-        "差评": 50,
-        "违规虚假": 200,
-        "物流责": 50,
-        "不准时单": 20,
-        "超时": 10,
-        "T10": 30,
-        "提前点送达": 50
-      },
-      {
-        "城市": "北京",
-        "团队名称": "朝阳大屯站",
-        "团队ID": "BJ-CY-01",
-        "安全基金": 50,
-        "非蜂卡扣款": 100,
-        "装备扣款": 150,
-        "投诉": 100,
-        "差评": 50,
-        "违规虚假": 200,
-        "物流责": 50,
-        "不准时单": 20,
-        "超时": 10,
-        "T10": 30,
-        "提前点送达": 50
-      }
-    ];
-
-    fs.writeFileSync(configPath, JSON.stringify(defaultRows, null, 2), "utf-8");
-    console.log("Successfully created default config.json at:", configPath);
+    fs.writeFileSync(configPath, JSON.stringify([]), "utf-8");
   }
 
   const localDownloadsDir = path.resolve("backend", ".local_downloads");

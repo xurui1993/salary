@@ -47,7 +47,7 @@ class DeductionVersionTests(unittest.TestCase):
         snapshot['rows'][0]['投诉'] = 999
         with self.assertRaisesRegex(inputs.SourceError, '校验失败'):
             workbench.deduction_snapshot({'deductions': snapshot}, self.root)
-        for rows in ([], [self.rows[0], self.rows[0]], [{'城市': '测试'}], [{**self.rows[0], '投诉': float('nan')}], [{**self.rows[0], '投诉': {}}]):
+        for rows in ([self.rows[0], self.rows[0]], [{'城市': '测试'}], [{**self.rows[0], '投诉': float('nan')}], [{**self.rows[0], '投诉': {}}]):
             with self.assertRaises(inputs.SourceError):
                 workbench.validate_rows(rows)
 

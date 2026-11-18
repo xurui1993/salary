@@ -1,6 +1,6 @@
 import { taskGuidance, taskHandoffs } from '../lib/taskGuidance';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Clock, Download, FolderOpen, RefreshCw, Search, ChevronDown, Archive, Inbox, RotateCcw, FlaskConical } from 'lucide-react';
+import { Clock, Download, FolderOpen, RefreshCw, Search, ChevronDown, Archive, Inbox, RotateCcw } from 'lucide-react';
 import { readDownloadResponse, saveDownloadBlob, downloadErrorMessage } from '../lib/outputDownload';
 import {
   computeTaskElapsedSeconds,
@@ -16,7 +16,6 @@ import { WorkbenchDatePicker } from './WorkbenchDatePicker';
 import { SkeletonRows } from './SkeletonRows';
 import { EmptyState } from './EmptyState';
 import { taskTone, toneClass } from '../lib/statusSemantics';
-import { createDemoTaskCenterRecords, filterTaskCenterRecords } from '../lib/workbenchDemoData';
 
 interface File { id:string; run_id:string; name:string; city:string; bytes:number; available:boolean; unavailable_reason?:string }
 interface Task {
@@ -59,12 +58,8 @@ export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttemp
   const [confirm,setConfirm]=useState<Task[]|null>(null);
   const [directory,setDirectory]=useState<{path:string;exists:boolean;can_open:boolean;record_id?:string}|null>(null);
 
-  const [demoMode,setDemoMode]=useState(false);
-  const [demoRecords,setDemoRecords]=useState<Task[]>(()=>createDemoTaskCenterRecords());
-  const [demoArchivedIds,setDemoArchivedIds]=useState<Set<string>>(()=>new Set());
   const [nowMs,setNowMs]=useState(()=>Date.now());
   const [syncMs,setSyncMs]=useState(()=>Date.now());
-  const userToggledDemo=useRef(false);
 
   const busyRef=useRef(false),focusRef=useRef<Task|null>(null),selectedRef=useRef<string[]>([]);
   focusRef.current=focused;selectedRef.current=selected;
@@ -80,27 +75,20 @@ export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttemp
         if(controller.signal.aborted)return;
         setRecords(previous=>selectedRef.current.length?previous.map(r=>data.records.find((next:Task)=>next.id===r.id)||r):data.records);setSyncMs(Date.now());setTotal(data.total);setPages(data.pages);setPage(data.page);setCounts(data.counts);setLoading(false);setPollError((data.warnings||[]).join('；'));
         setFocused(previous=>previous?(data.focused?.id===previous.id?data.focused:data.records.find((r:Task)=>r.id===previous.id)||previous):null);
-        if(data.total>0&&!userToggledDemo.current){setDemoMode(false);}
-        else if(data.total===0&&!query&&!status&&!system&&!kind&&!from&&!to&&!archived&&!userToggledDemo.current){setDemoMode(true);}
       }catch(e){
         if(!controller.signal.aborted){
           setPollError(pollErrorMessage(e));setLoading(false);
-          if(!userToggledDemo.current&&records.length===0){setDemoMode(true);}
         }
       }
       if(!controller.signal.aborted)timer=setTimeout(poll,5000);
     };setLoading(true);void poll();return()=>{controller.abort();clearTimeout(timer);};
   },[page,query,status,system,kind,from,to,archived,recordModule,version,refreshVersion]);
 
-  const demoFiltered=useMemo(()=>filterTaskCenterRecords(demoRecords,{q:query,status,system,kind,from,to,archivedIds:demoArchivedIds,archivedOnly:archived}),[demoRecords,query,status,system,kind,from,to,demoArchivedIds,archived]);
-  const demoTotal=demoFiltered.items.length;
-  const demoPages=Math.max(1,Math.ceil(demoTotal/20));
-  const demoPageSafe=Math.min(page,demoPages);
-  const effectiveRecords=demoMode?demoFiltered.items.slice((demoPageSafe-1)*20,demoPageSafe*20):records;
-  const effectiveTotal=demoMode?demoTotal:total;
-  const effectivePages=demoMode?demoPages:pages;
-  const effectivePage=demoMode?demoPageSafe:page;
-  const effectiveCounts=demoMode?demoFiltered.counts:counts;
+  const effectiveRecords=records;
+  const effectiveTotal=total;
+  const effectivePages=pages;
+  const effectivePage=page;
+  const effectiveCounts=counts;
 
   const hasActiveTasks=useMemo(
     ()=>effectiveRecords.some(r=>ACTIVE.has(r.status))||(focused?ACTIVE.has(focused.status):false),
@@ -115,16 +103,15 @@ export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttemp
 
   useEffect(()=>{
     if(!initialRunId)return;
-    const pool=demoMode?demoRecords:records;
-    const record=pool.find(r=>r.member_ids.includes(initialRunId)||r.action_run_id===initialRunId);
+    const record=records.find(r=>r.member_ids.includes(initialRunId)||r.action_run_id===initialRunId);
     if(record){setFocused(record);onInitialFocusHandled?.();}
-  },[initialRunId,records,demoMode,demoRecords,onInitialFocusHandled]);
+  },[initialRunId,records,onInitialFocusHandled]);
   const title=(r:Task)=>r.title||(r.kind==='payroll'?'兼职薪资核算':r.datasets.map(datasetLabel).join('、').replaceAll('（生成表）',''));
   const platform=(r:Task)=>r.price_id?'蓝橙':r.kind==='payroll'?'风神 / 蓝橙':[...new Set(r.datasets.map(id=>SYSTEMS[datasetGroup(id)]))].filter(Boolean).join(' / ') || '风神';
   const scope=(r:Task)=>!r.datasets.length?'详见业务记录':r.datasets.every(isGlobalDataset)?'全量':r.datasets.every(id=>id==='rider_archive')?'当前快照':`${r.start} 至 ${r.end}`;
   const open=(r:Task)=>{
     setFocused(r);
-    if(!demoMode&&r.action_run_id){onOpenAttempt(r.action_run_id);}
+    if(r.action_run_id){onOpenAttempt(r.action_run_id);}
   };
   const request=async(url:string,payload?:unknown)=>{
     const response=await api.current(url,payload===undefined?{signal:AbortSignal.timeout(120000)}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(120000)});
@@ -135,13 +122,6 @@ export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttemp
     try{await work();}catch(e){setError(downloadErrorMessage(e));}finally{busyRef.current=false;setBusy(false);}
   };
   const download=(r:Task,file?:File,sources=false)=>act(async()=>{
-    if(demoMode){
-      const label=file?.name||`${sources?'来源核对':'演示任务结果'}_${r.id.slice(-6)}.txt`;
-      const summary=[`任务标题：${title(r)}`,`所属平台：${platform(r)}`,`城市范围：${r.cities.join('、')||'全部城市'}`,`时间范围：${scope(r)}`,`当前状态：${statusLabel(r.status)}`,'',...(r.files.length?['关联结果文件清单：',...r.files.map(f=>`- ${f.name}（${f.city} · ${f.available?size(f.bytes):f.unavailable_reason||'不可用'}）`)]:['当前暂无可导出结果文件'])].join('\n');
-      saveDownloadBlob(new Blob([summary],{type:'text/plain;charset=utf-8'}),label.replace(/\.xlsx?$/i,'_演示摘要.txt'));
-      setNotice(`已导出「${file?.name||title(r)}」演示文件清单，可在浏览器下载记录中查看。`);
-      return;
-    }
     let url:string,filename:string;
     if(r.kind==='payroll'){url=`/api/fengshen-downloads/delivery-download?batch_id=${encodeURIComponent(r.batch_id||'')}`;filename='薪资核算结果.zip';}
     else if(r.kind==='approval'){url=`/api/fengshen-downloads/lanorange-approvals/batches/${r.price_id}/result.csv`;filename='蓝橙价格审批回执.csv';}
@@ -155,29 +135,9 @@ export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttemp
   });
   const downloadResult=(r:Task)=>{const files=r.files.filter(f=>f.available);void download(r,files.length===1?files[0]:undefined);};
   const showDirectory=(r?:Task)=>act(async()=>{
-    if(demoMode){
-      setDirectory({
-        path:`D:\\WorkbenchOutputs\\${workspaceId || 'default'}${r?`\\${r.id}_${r.created_at.slice(0,10)}`:''}`,
-        exists:true,
-        can_open:false,
-        record_id:r?.id,
-      });
-      return;
-    }
     const response=await request(`${API}/directory${r?`?record_id=${encodeURIComponent(r.id)}`:''}`);const info=await response.json();setDirectory({...info,record_id:r?.id});if(info.exists&&info.can_open)await request(`${API}/directory/open`,{record_id:r?.id});
   });
   const changeVisibility=(rows:Task[])=>act(async()=>{
-    if(demoMode){
-      const ids=new Set(rows.map(r=>r.id));
-      setDemoArchivedIds(prev=>{
-        const next=new Set(prev);
-        ids.forEach(id=>{if(archived)next.delete(id);else next.add(id);});
-        return next;
-      });
-      setConfirm(null);setSelected([]);setFocused(null);
-      setNotice(archived?`已从演示归档恢复 ${rows.length} 个任务。`:`已将 ${rows.length} 个演示任务移出列表（文件已保留，可在“已移出”恢复）。`);
-      return;
-    }
     await request(`${API}/visibility`,{ids:rows.map(r=>r.id),restore:archived,stop_first:true});setConfirm(null);setSelected([]);setFocused(null);setVersion(v=>v+1);
     setNotice(archived?`已恢复 ${rows.length} 个任务，所有同事同步可见。`:'已提交移出请求，进行中任务确认停止后移出。文件保留，可在“已移出”恢复。');
   });
@@ -198,25 +158,9 @@ export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttemp
       <div className="wb-quick-filters" role="group" aria-label="任务状态">{[['','全部','all'],['active','进行中','active'],['attention','待处理','attention'],['success','已完成','success']].map(([key,label,count])=><button key={key} aria-pressed={status===key} onClick={()=>{setStatus(key);reset();}}>{label}<span className="tc-count tabular-nums">{effectiveCounts[count]||0}</span></button>)}</div>
       </div>
       <div className="wbx-toolbar__actions wbx-taskcenter__actions">
-        {!archived&&<button className="wbx-btn" disabled={busy} onClick={()=>{if(demoMode){const completedDemo=demoFiltered.items.filter(r=>r.status==='success');if(completedDemo.length)setConfirm(completedDemo);else setNotice('当前筛选范围内没有可整理的已完成任务。');return;}void act(async()=>{const params=new URLSearchParams({q:query,system,kind,from,to,module:recordModule||''});const response=await request(`${API}/organize-preview?${params}`);const data=await response.json();if(data.records.length)setConfirm(data.records);else setNotice('当前筛选范围内没有可整理的已完成任务。');});}}>整理已完成</button>}
+        {!archived&&<button className="wbx-btn" disabled={busy} onClick={()=>void act(async()=>{const params=new URLSearchParams({q:query,system,kind,from,to,module:recordModule||''});const response=await request(`${API}/organize-preview?${params}`);const data=await response.json();if(data.records.length)setConfirm(data.records);else setNotice('当前筛选范围内没有可整理的已完成任务。');})}>整理已完成</button>}
         <button className="wbx-btn" disabled={busy} onClick={()=>void showDirectory()}><FolderOpen size={16}/>打开生成根目录</button>
         <button className={`wbx-btn${archived?' wbx-btn--secondary':''}`} onClick={()=>{setArchived(!archived);reset();}}><Archive size={15}/>{archived?'返回任务列表':'已移出'}</button>
-        <button
-          type="button"
-          className={`wbx-btn ${demoMode?'wbx-btn--secondary':''}`}
-          onClick={()=>{
-            userToggledDemo.current=true;
-            reset();
-            setError('');
-            setNotice('');
-            setFocused(null);
-            setSyncMs(Date.now());
-            setDemoMode(prev=>!prev);
-          }}
-        >
-          <FlaskConical size={15}/>
-          {demoMode?'切回实时任务':'示例数据 (20)'}
-        </button>
       </div>
     </div>
     {/* 第二行：搜索 / 平台 / 类型 / 日期 / 刷新 */}
@@ -225,12 +169,12 @@ export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttemp
 
       {!recordModule&&<><select className="wb-select" aria-label="筛选平台" value={system} onChange={e=>{setSystem(e.target.value);reset();}}><option value="">全部平台</option>{Object.entries(SYSTEMS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select><select className="wb-select" aria-label="筛选任务类型" value={kind} onChange={e=>{setKind(e.target.value);reset();}}><option value="">全部类型</option>{Object.entries(KINDS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></>}
             <details className="tc-filters"><summary className="wb-button">日期筛选{from||to?' · 已启用':''}</summary><div><div className="tc-filter-date-item"><span>创建日期从</span><WorkbenchDatePicker ariaLabel="创建日期从" value={from} rangeRole="start" rangeStart={from} rangeEnd={to} allowClear align="right" onChange={v=>{setFrom(v);reset();}}/></div><div className="tc-filter-date-item"><span>至</span><WorkbenchDatePicker ariaLabel="创建日期至" value={to} rangeRole="end" rangeStart={from} rangeEnd={to} allowClear align="right" onChange={v=>{setTo(v);reset();}}/></div><button className="wb-link" onClick={()=>{setFrom('');setTo('');reset();}}>清除日期</button></div></details>
-      <button className="wb-icon" aria-label="刷新任务列表" onClick={()=>{if(demoMode){setDemoRecords(createDemoTaskCenterRecords());setDemoArchivedIds(new Set());setSyncMs(Date.now());setNotice('已重置 20 条跨平台多状态任务示例数据。');}else{setVersion(v=>v+1);}}}><RefreshCw size={17}/></button>
+      <button className="wb-icon" aria-label="刷新任务列表" onClick={()=>{setVersion(v=>v+1);}}><RefreshCw size={17}/></button>
     </div>
     {/* @wbx:tc-toolbar-end */}
     {archived&&<p className="tc-info">已移出的任务仍保留文件和处理记录，恢复后所有同事同步可见。</p>}
-    {!demoMode&&pollError&&<p role="status" className="wb-notice">{pollError}现有记录保留。</p>}{error&&<p role="alert" className="wb-error">{error}</p>}{notice&&<p role="status" className="tc-info">{notice}</p>}
-    {!!selected.length&&<div className="tc-batchbar"><strong className="tabular-nums">已选 {selected.length} 项（当前页）</strong><button className="wb-button" disabled={busy||!canBatch} title="最多20个有文件的资料或报表任务" onClick={()=>void act(async()=>{if(demoMode){const manifest=chosen.map(r=>`${title(r)} (${r.files.length} 个文件)`).join('\n');saveDownloadBlob(new Blob([manifest],{type:'text/plain;charset=utf-8'}),'演示_批量任务清单.txt');setNotice(`已导出 ${chosen.length} 个任务的演示文件清单。`);return;}const response=await request(`${API}/bundle`,{ids:selected});saveDownloadBlob(await readDownloadResponse(response,'批量任务结果.zip'),'批量任务结果.zip');setNotice('已发起批量文件保存。');})}><Download size={15}/>批量下载</button><button className="wb-button" disabled={busy||!chosen.length} onClick={()=>setConfirm(chosen)}>{archived?'恢复显示':'移出列表'}</button><button className="wb-link" onClick={()=>setSelected([])}>取消选择</button></div>}
+    {pollError&&<p role="status" className="wb-notice">{pollError}现有记录保留。</p>}{error&&<p role="alert" className="wb-error">{error}</p>}{notice&&<p role="status" className="tc-info">{notice}</p>}
+    {!!selected.length&&<div className="tc-batchbar"><strong className="tabular-nums">已选 {selected.length} 项（当前页）</strong><button className="wb-button" disabled={busy||!canBatch} title="最多20个有文件的资料或报表任务" onClick={()=>void act(async()=>{const response=await request(`${API}/bundle`,{ids:selected});saveDownloadBlob(await readDownloadResponse(response,'批量任务结果.zip'),'批量任务结果.zip');setNotice('已发起批量文件保存。');})}><Download size={15}/>批量下载</button><button className="wb-button" disabled={busy||!chosen.length} onClick={()=>setConfirm(chosen)}>{archived?'恢复显示':'移出列表'}</button><button className="wb-link" onClick={()=>setSelected([])}>取消选择</button></div>}
     {/* @wbx:tc-table-start 列序：任务/平台 → 状态 → 进度与耗时 → 任务编号 → 创建时间 → 操作（sticky） */}
     <div className="wbx-table-scroll wbx-taskcenter__scroll">
       <table className="wbx-table tc-table wbx-taskcenter__table">
@@ -313,9 +257,9 @@ export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttemp
                 );
               })()}
             </td>
-            <td className="wbx-taskcenter__num tabular-nums">{r.id.startsWith('demo-')?r.id.slice(5).toUpperCase():r.id.slice(-6).toUpperCase()}</td>
+            <td className="wbx-taskcenter__num tabular-nums">{r.id.slice(-6).toUpperCase()}</td>
             <td className="wbx-taskcenter__time tabular-nums">{stamp(r.created_at)}</td>
-            <td className="wbx-table__actions"><div className="tc-actions wbx-taskcenter__ops">{needsAction(r)?<button type="button" className="wbx-btn wbx-btn--primary wbx-btn--sm" onClick={()=>mainAction(r)}>{actionLabel(r)}</button>:r.available_files>0?<button type="button" className="wbx-btn wbx-btn--primary wbx-btn--sm" disabled={busy} onClick={()=>downloadResult(r)}>下载结果</button>:null}{r.files.length>1&&<button type="button" className="wbx-btn wbx-btn--ghost wbx-btn--sm" aria-expanded={filesOpen===r.id} onClick={()=>setFilesOpen(filesOpen===r.id?'':r.id)}>文件<ChevronDown size={13}/></button>}<button type="button" className="wbx-btn wbx-btn--ghost wbx-btn--sm" onClick={()=>open(r)}>详情</button>{!archived&&ACTIVE.has(r.status)&&<button type="button" className="wbx-btn wbx-btn--ghost wbx-btn--sm" disabled={busy||['stopping','cancelling'].includes(r.status)} onClick={()=>{if(demoMode){setDemoRecords(prev=>prev.map(item=>item.id===r.id?{...item,status:'cancelled'}:item));setNotice(`已模拟停止「${title(r)}」。`);return;}void act(async()=>{await request(`${API}/stop`,{id:r.id});setVersion(v=>v+1);setNotice('已请求停止，确认停止前任务保留在列表。');});}}>停止</button>}<button type="button" className="wbx-btn wbx-btn--ghost wbx-btn--sm" disabled={busy} onClick={()=>setConfirm([r])}>{archived?'恢复':ACTIVE.has(r.status)?'停止并移出':'移出'}</button></div></td>
+            <td className="wbx-table__actions"><div className="tc-actions wbx-taskcenter__ops">{needsAction(r)?<button type="button" className="wbx-btn wbx-btn--primary wbx-btn--sm" onClick={()=>mainAction(r)}>{actionLabel(r)}</button>:r.available_files>0?<button type="button" className="wbx-btn wbx-btn--primary wbx-btn--sm" disabled={busy} onClick={()=>downloadResult(r)}>下载结果</button>:null}{r.files.length>1&&<button type="button" className="wbx-btn wbx-btn--ghost wbx-btn--sm" aria-expanded={filesOpen===r.id} onClick={()=>setFilesOpen(filesOpen===r.id?'':r.id)}>文件<ChevronDown size={13}/></button>}<button type="button" className="wbx-btn wbx-btn--ghost wbx-btn--sm" onClick={()=>open(r)}>详情</button>{!archived&&ACTIVE.has(r.status)&&<button type="button" className="wbx-btn wbx-btn--ghost wbx-btn--sm" disabled={busy||['stopping','cancelling'].includes(r.status)} onClick={()=>{void act(async()=>{await request(`${API}/stop`,{id:r.id});setVersion(v=>v+1);setNotice('已请求停止，确认停止前任务保留在列表。');});}}>停止</button>}<button type="button" className="wbx-btn wbx-btn--ghost wbx-btn--sm" disabled={busy} onClick={()=>setConfirm([r])}>{archived?'恢复':ACTIVE.has(r.status)?'停止并移出':'移出'}</button></div></td>
           </tr>
           {filesOpen===r.id&&<tr className="tc-file-row"><td/><td colSpan={6}>{r.failed_items>0&&<p className="wb-notice">另有 {r.failed_items} 项未完成，已有文件可先领取。</p>}{files(r,r.files)}</td></tr>}
         </React.Fragment>)}</tbody>
@@ -323,16 +267,16 @@ export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttemp
     </div>
     {/* @wbx:tc-table-end */}
     {!effectiveRecords.length && (
-      loading && !demoMode ? (
+      loading ? (
         <div className="wbx-taskcenter__skeleton">
           <SkeletonRows rows={5} columns={6} label="任务列表加载中" />
         </div>
       ) : (
         <EmptyState
           icon={Inbox}
-          title={!demoMode && pollError ? '正在连接后台服务' : archived ? '暂无已移出的归档任务' : '当前条件下暂无匹配任务'}
+          title={pollError ? '正在连接后台服务' : archived ? '暂无已移出的归档任务' : '当前条件下暂无匹配任务'}
           description={
-            !demoMode && pollError
+            pollError
               ? '正在同步最新任务记录，请稍候自动刷新或手动点击刷新。'
               : archived
                 ? '被移出列表的历史任务会保存在此处，文件与处理记录均完整保留。'
@@ -371,7 +315,7 @@ export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttemp
         />
       )
     )}
-    <footer className="tc-pagination"><span className="tabular-nums">共 {effectiveTotal} 条 · 每页 20 条</span><div><button className="wb-button" disabled={effectivePage<=1||(!demoMode&&loading)} onClick={()=>{setPage(p=>p-1);setSelected([]);}}>上一页</button><span className="tabular-nums">{effectivePage} / {effectivePages}</span><button className="wb-button" disabled={effectivePage>=effectivePages||(!demoMode&&loading)} onClick={()=>{setPage(p=>p+1);setSelected([]);}}>下一页</button></div></footer>
+    <footer className="tc-pagination"><span className="tabular-nums">共 {effectiveTotal} 条 · 每页 20 条</span><div><button className="wb-button" disabled={effectivePage<=1||loading} onClick={()=>{setPage(p=>p-1);setSelected([]);}}>上一页</button><span className="tabular-nums">{effectivePage} / {effectivePages}</span><button className="wb-button" disabled={effectivePage>=effectivePages||loading} onClick={()=>{setPage(p=>p+1);setSelected([]);}}>下一页</button></div></footer>
     {focused&&<WorkbenchDrawer title="任务详情" wide onClose={()=>setFocused(null)} bodyClassName="tc-detail wbx-tc-detail">
       <div className="wbx-tc-detail__head">
         <div className="wbx-tc-detail__title-row">
@@ -384,7 +328,7 @@ export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttemp
           <span>{scope(focused)}</span>
           <span>{stamp(focused.created_at)}</span>
           <span>{ACTIVE.has(focused.status)?'已耗时':'总耗时'} {formatTaskDuration(computeTaskElapsedSeconds(focused,nowMs,syncMs))}</span>
-          <span>编号 {focused.id.startsWith('demo-')?focused.id.slice(5).toUpperCase():focused.id.slice(-8).toUpperCase()}</span>
+          <span>编号 {focused.id.slice(-8).toUpperCase()}</span>
         </div>
         {(()=>{
           const meta=computeTaskProgressMeta(focused);
@@ -437,22 +381,15 @@ export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttemp
         {files(focused,focused.source_files)}
       </section>}
 
-      {(focused.action_run_id||demoMode)&&<section className="wbx-tc-detail__section">
+      {focused.action_run_id&&<section className="wbx-tc-detail__section">
         <h4>执行记录</h4>
-        {demoMode?(
-          <div className="wbx-tc-detail__exec">
-            <span className="wbx-hint tabular-nums">子项进度：{focused.completed_items}/{focused.total_items}{focused.failed_items>0?`（待补 ${focused.failed_items} 项）`:''}</span>
-            <div className="tc-attempts">{focused.attempts.map((a,i)=><span key={a.id} className="wbx-pill wbx-pill--neutral">{i?'后续处理':'首次执行'} · {statusLabel(a.status)}</span>)}</div>
-          </div>
-        ):(
-          <div className="wbx-tc-detail__exec">
-            {focused.attempts.length>1&&<div className="tc-attempts">{focused.attempts.map((a,i)=><button key={a.id} className="wbx-btn wbx-btn--sm" aria-pressed={selectedRunId===a.id} onClick={()=>{onOpenAttempt(a.id);}}>{i?'后续处理':'首次下载'} · {statusLabel(a.status)}</button>)}</div>}
-            {focused.member_ids.includes(selectedRunId)?execution:<button className="wb-link" onClick={()=>open(focused)}>加载处理记录</button>}
-          </div>
-        )}
+        <div className="wbx-tc-detail__exec">
+          {focused.attempts.length>1&&<div className="tc-attempts">{focused.attempts.map((a,i)=><button key={a.id} className="wbx-btn wbx-btn--sm" aria-pressed={selectedRunId===a.id} onClick={()=>{onOpenAttempt(a.id);}}>{i?'后续处理':'首次下载'} · {statusLabel(a.status)}</button>)}</div>}
+          {focused.member_ids.includes(selectedRunId)?execution:<button className="wb-link" onClick={()=>open(focused)}>加载处理记录</button>}
+        </div>
       </section>}
     </WorkbenchDrawer>}
-    {directory&&<WorkbenchDrawer title="生成文件目录" onClose={()=>setDirectory(null)}><p className="wb-muted">这是运行本系统的电脑上的目录，浏览器下载位置由浏览器设置决定。</p><label className="tc-path">{directory.record_id?'本次任务目录':'生成根目录'}<textarea readOnly value={directory.path} onFocus={e=>e.target.select()}/></label>{!directory.exists&&<p className="wb-notice">目录尚未生成或已被移动。</p>}<div className="tc-detail-actions"><button className="wb-primary" disabled={busy||!directory.exists||!directory.can_open} onClick={()=>void act(async()=>{await request(`${API}/directory/open`,{record_id:directory.record_id});setNotice('已打开资源管理器。');})}><FolderOpen size={16}/>打开文件夹</button><button className="wb-button" onClick={()=>void act(async()=>{await navigator.clipboard.writeText(directory.path);setNotice('目录路径已复制。');})}>复制路径</button></div>{!directory.can_open&&<p className="wb-muted">{demoMode?'示例模式下可点击“复制路径”查看目录规范结构。':'远程访问请下载文件，或使用管理员提供的共享路径。'}</p>}{error&&<p className="wb-error" role="alert">{error}</p>}<details><summary>新任务目录结构</summary><pre className="tc-tree">{'任务名称_生成时间_编号 /\n  汇总报表.xlsx\n  城市_报表.xlsx\n  文件清单.csv\n\n成品直接平铺；原始资料单独保留，需要时领取复核资料包。'}</pre></details></WorkbenchDrawer>}
-    {confirm&&<WorkbenchDrawer title={archived?'恢复任务显示':'移出任务列表'} onClose={()=>setConfirm(null)}><p>将{archived?'恢复':'移出'} {confirm.length} 个任务，对共享工作台所有同事生效。</p><p className="wb-muted">进行中的任务确认停止后移出。文件、处理记录和业务资料均保留。{archived?'':'之后可在“已移出”中恢复。'}</p><ul className="tc-confirm-list">{confirm.slice(0,30).map(r=><li key={r.id}>{title(r)} · {r.id.startsWith('demo-')?r.id.slice(5).toUpperCase():r.id.slice(-6).toUpperCase()}</li>)}</ul>{error&&<p className="wb-error" role="alert">{error}</p>}<div className="tc-detail-actions"><button className="wb-button" onClick={()=>setConfirm(null)}>取消</button><button className="wb-primary" disabled={busy} onClick={()=>void changeVisibility(confirm)}>{busy?'处理中…':archived?'确认恢复':'确认移出，保留文件'}</button></div></WorkbenchDrawer>}
+    {directory&&<WorkbenchDrawer title="生成文件目录" onClose={()=>setDirectory(null)}><p className="wb-muted">这是运行本系统的电脑上的目录，浏览器下载位置由浏览器设置决定。</p><label className="tc-path">{directory.record_id?'本次任务目录':'生成根目录'}<textarea readOnly value={directory.path} onFocus={e=>e.target.select()}/></label>{!directory.exists&&<p className="wb-notice">目录尚未生成或已被移动。</p>}<div className="tc-detail-actions"><button className="wb-primary" disabled={busy||!directory.exists||!directory.can_open} onClick={()=>void act(async()=>{await request(`${API}/directory/open`,{record_id:directory.record_id});setNotice('已打开资源管理器。');})}><FolderOpen size={16}/>打开文件夹</button><button className="wb-button" onClick={()=>void act(async()=>{await navigator.clipboard.writeText(directory.path);setNotice('目录路径已复制。');})}>复制路径</button></div>{!directory.can_open&&<p className="wb-muted">远程访问请下载文件，或使用管理员提供的共享路径。</p>}{error&&<p className="wb-error" role="alert">{error}</p>}<details><summary>新任务目录结构</summary><pre className="tc-tree">{'任务名称_生成时间_编号 /\n  汇总报表.xlsx\n  城市_报表.xlsx\n  文件清单.csv\n\n成品直接平铺；原始资料单独保留，需要时领取复核资料包。'}</pre></details></WorkbenchDrawer>}
+    {confirm&&<WorkbenchDrawer title={archived?'恢复任务显示':'移出任务列表'} onClose={()=>setConfirm(null)}><p>将{archived?'恢复':'移出'} {confirm.length} 个任务，对共享工作台所有同事生效。</p><p className="wb-muted">进行中的任务确认停止后移出。文件、处理记录和业务资料均保留。{archived?'':'之后可在“已移出”中恢复。'}</p><ul className="tc-confirm-list">{confirm.slice(0,30).map(r=><li key={r.id}>{title(r)} · {r.id.slice(-6).toUpperCase()}</li>)}</ul>{error&&<p className="wb-error" role="alert">{error}</p>}<div className="tc-detail-actions"><button className="wb-button" onClick={()=>setConfirm(null)}>取消</button><button className="wb-primary" disabled={busy} onClick={()=>void changeVisibility(confirm)}>{busy?'处理中…':archived?'确认恢复':'确认移出，保留文件'}</button></div></WorkbenchDrawer>}
   </section>;
 }

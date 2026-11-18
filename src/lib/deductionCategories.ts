@@ -488,17 +488,6 @@ export function buildConfigExportRows(
     rows.push(row);
   }
 
-  if (rows.length === 0) {
-    const sample: Record<string, string | number | boolean | null> = {
-      城市: '示例城市',
-      团队名称: '示例站点_新专送',
-    };
-    for (const col of ruleCols) {
-      sample[col] = 0;
-    }
-    rows.push(sample);
-  }
-
   return rows;
 }
 
