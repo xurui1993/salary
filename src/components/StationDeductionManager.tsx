@@ -11,7 +11,8 @@ import {
   buildProblemRuleExportRows,
   buildUnifiedConfigWorkbookData,
   classifyImportedWorkbookSheets,
-  CONFIG_RULE_COLUMNS,
+  CONFIG_RULE_COLUMNS_WITH_THRESHOLDS,
+  columnDisplayLabel,
   groupDeductionsByCity,
   resolveCityChipAction,
   summarizeCitiesProgress,
@@ -62,6 +63,7 @@ export function StationDeductionManager({
   onSaved: () => void;
 }) {
   const [currentPlatform, setCurrentPlatform] = useState<'fengshen' | 'xiaoxiang'>(platform);
+  const [pendingPlatform, setPendingPlatform] = useState<'fengshen' | 'xiaoxiang' | null>(null);
   const [profile, setProfile] = useState<any>(null);
   const [entries, setEntries] = useState<any[]>([]);
   const [cities, setCities] = useState<any[]>([]);
@@ -121,7 +123,7 @@ export function StationDeductionManager({
   );
 
   const activeColumns: string[] = useMemo(
-    () => (profile?.columns?.length ? profile.columns : [...CONFIG_RULE_COLUMNS]),
+    () => (profile?.columns?.length ? profile.columns : [...CONFIG_RULE_COLUMNS_WITH_THRESHOLDS]),
     [profile?.columns],
   );
 
@@ -188,6 +190,41 @@ export function StationDeductionManager({
     setExpandedStations(new Set());
   };
 
+  const switchPlatform = (next: 'fengshen' | 'xiaoxiang') => {
+    setPendingPlatform(null);
+    setDirty(false);
+    setUndoEntries(null);
+    setProblemDirty(false);
+    setPendingProblemRows(null);
+    setProblemPreview(null);
+    setProblemError('');
+    setProblemNotice('');
+    setProfile(null);
+    setEntries([]);
+    setCities([]);
+    setCityFilter('');
+    setCitySearch('');
+    setSearch('');
+    setOnlyPendingCities(false);
+    setOnlyUnconfigured(false);
+    setActiveCategory('all');
+    setExpandedCities(new Set());
+    setExpandedStations(new Set());
+    setSelectedStations(new Set());
+    setError('');
+    setNotice('');
+    setCurrentPlatform(next);
+  };
+
+  const requestPlatform = (next: 'fengshen' | 'xiaoxiang') => {
+    if (next === currentPlatform || saving) return;
+    if (dirty) {
+      setPendingPlatform(next);
+      return;
+    }
+    switchPlatform(next);
+  };
+
   async function handleSave() {
     if (!profile) return;
     setSaving(true);
@@ -195,9 +232,12 @@ export function StationDeductionManager({
     try {
       const editedEntries = entries.filter(item => item.edited);
       const editedCities = cities.filter(item => item.edited);
-      const hasProblemUpdates = Boolean(pendingProblemRows?.length) || problemDirty;
+      const hasProblemUpdates =
+        currentPlatform !== 'xiaoxiang' && (Boolean(pendingProblemRows?.length) || problemDirty);
       const effectiveProblemRows =
-        pendingProblemRows || (problemDirty ? buildProblemRuleExportRows(cities, entries) : null);
+        currentPlatform === 'xiaoxiang'
+          ? null
+          : pendingProblemRows || (problemDirty ? buildProblemRuleExportRows(cities, entries) : null);
       if (!editedEntries.length && !editedCities.length && !hasProblemUpdates) {
         throw new Error('请先配置金额，或明确确认零扣款');
       }
@@ -248,9 +288,11 @@ export function StationDeductionManager({
       setUndoEntries(null);
       setReloadKey(val => val + 1);
       setNotice(
-        hasProblemUpdates
-          ? '默认扣款与问题单关键词规则已统一保存，后续核算按站点规则优先、城市默认其次执行。'
-          : '默认扣款已保存，后续核算按站点例外优先、城市默认其次沿用。',
+        currentPlatform === 'xiaoxiang'
+          ? '小象超市保险费、循环物资使用费、附加险已保存，后续核算按站点例外优先、城市默认其次沿用。'
+          : hasProblemUpdates
+            ? '默认扣款与问题单关键词规则已统一保存，后续核算按站点规则优先、城市默认其次执行。'
+            : '默认扣款已保存，后续核算按站点例外优先、城市默认其次沿用。',
       );
       onSaved();
     } catch (err) {
@@ -272,16 +314,25 @@ export function StationDeductionManager({
         : XLSX.utils.aoa_to_sheet([workbook.itemHeaders]);
       XLSX.utils.book_append_sheet(book, itemSheet, workbook.itemSheetName);
 
-      const problemSheet = workbook.problemRows.length
-        ? XLSX.utils.json_to_sheet(workbook.problemRows, { header: workbook.problemHeaders })
-        : XLSX.utils.aoa_to_sheet([workbook.problemHeaders]);
-      XLSX.utils.book_append_sheet(book, problemSheet, workbook.problemSheetName);
+      if (currentPlatform !== 'xiaoxiang') {
+        const problemSheet = workbook.problemRows.length
+          ? XLSX.utils.json_to_sheet(workbook.problemRows, { header: workbook.problemHeaders })
+          : XLSX.utils.aoa_to_sheet([workbook.problemHeaders]);
+        XLSX.utils.book_append_sheet(book, problemSheet, workbook.problemSheetName);
+      }
 
-      XLSX.writeFile(book, `站点扣款规则配置_${currentPlatform}.xlsx`);
+      XLSX.writeFile(
+        book,
+        currentPlatform === 'xiaoxiang'
+          ? '小象超市扣款规则配置.xlsx'
+          : `站点扣款规则配置_${currentPlatform}.xlsx`,
+      );
       setNotice(
-        entries.length > 0
-          ? `已导出 Excel 配置：包含「${workbook.itemSheetName}」${workbook.itemRows.length} 行、「${workbook.problemSheetName}」${workbook.problemRows.length} 条。`
-          : '已导出标准 2 表合一 Excel 配置模板（含扣款项与问题单关键词表）。',
+        currentPlatform === 'xiaoxiang'
+          ? `已导出小象超市扣款配置：包含「${workbook.itemSheetName}」${workbook.itemRows.length} 行。`
+          : entries.length > 0
+            ? `已导出 Excel 配置：包含「${workbook.itemSheetName}」${workbook.itemRows.length} 行、「${workbook.problemSheetName}」${workbook.problemRows.length} 条。`
+            : '已导出标准 2 表合一 Excel 配置模板（含扣款项与问题单关键词表）。',
       );
     } catch (err) {
       setError(readErrorMessage(err, '导出 Excel 配置文件失败'));
@@ -320,8 +371,14 @@ export function StationDeductionManager({
         problemRows = classified.problemRows;
       }
 
+      if (currentPlatform === 'xiaoxiang') problemRows = [];
+
       if (!itemRows.length && !problemRows.length) {
-        throw new Error('导入文件中没有可识别的扣款项或问题单关键词规则行');
+        throw new Error(
+          currentPlatform === 'xiaoxiang'
+            ? '导入文件中没有可识别的保险费、循环物资使用费或附加险扣款项行'
+            : '导入文件中没有可识别的扣款项或问题单关键词规则行',
+        );
       }
 
       let nextCities = cities;
@@ -442,10 +499,34 @@ export function StationDeductionManager({
       <div className="wbx-toolbar wbx-deduction-head">
         <div className="wbx-toolbar__lead wbx-deduction-head__lead">
           <div>
-            <h3 className="wbx-deduction-head__title">站点扣款规则配置</h3>
+            <h3 className="wbx-deduction-head__title">
+              {currentPlatform === 'xiaoxiang' ? '小象超市扣款规则配置' : '站点扣款规则配置'}
+            </h3>
             <p className="wbx-hint tabular-nums">
-              {citySummaries.length} 城 / {entries.length} 站 · 已配 {configuredCount} · 待配 {pendingCount} · 风神/闪购（{activeColumns.length} 项）
+              {citySummaries.length} 城 / {entries.length} 站 · 已配 {configuredCount} · 待配 {pendingCount} ·{' '}
+              {currentPlatform === 'xiaoxiang' ? '小象超市' : '风神/闪购'}（{activeColumns.length} 项）
             </p>
+          </div>
+          <div className="wbx-row gap-2 items-center">
+            <div className="wb-segment" role="group" aria-label="扣款业务切换">
+              <button
+                type="button"
+                aria-pressed={currentPlatform === 'fengshen'}
+                disabled={saving}
+                onClick={() => requestPlatform('fengshen')}
+              >
+                风神
+              </button>
+              <button
+                type="button"
+                aria-pressed={currentPlatform === 'xiaoxiang'}
+                disabled={saving}
+                onClick={() => requestPlatform('xiaoxiang')}
+              >
+                小象超市
+              </button>
+            </div>
+            {dirty && <span className="wbx-hint">有未保存修改</span>}
           </div>
         </div>
         <div className="wbx-toolbar__actions">
@@ -453,7 +534,9 @@ export function StationDeductionManager({
             type="button"
             className="wbx-btn wbx-btn--sm"
             disabled={saving}
-            title="支持导入含「城市与站点扣款项」及「问题单关键词扣款」的多表 Excel（.xlsx/.xls）"
+            title={currentPlatform === 'xiaoxiang'
+              ? '支持导入含「城市与站点扣款项」的 Excel（保险费/循环物资使用费/附加险）'
+              : '支持导入含「城市与站点扣款项」及「问题单关键词扣款」的多表 Excel（.xlsx/.xls）'}
             onClick={() => configUpload.current?.click()}
           >
             <Upload size={14} />
@@ -463,7 +546,9 @@ export function StationDeductionManager({
             type="button"
             className="wbx-btn wbx-btn--sm"
             disabled={saving}
-            title="导出含城市/站点扣款项与问题单关键词明细的多表 Excel"
+            title={currentPlatform === 'xiaoxiang'
+              ? '导出小象超市城市/站点 3 项扣款配置 Excel'
+              : '导出含城市/站点扣款项与问题单关键词明细的多表 Excel'}
             onClick={() => void handleExportConfigExcel()}
           >
             <FileSpreadsheet size={14} />
@@ -482,7 +567,9 @@ export function StationDeductionManager({
           type="file"
           accept=".xlsx,.xls"
           className="hidden"
-          aria-label="导入站点扣款与问题单关键词配置 Excel 文件"
+          aria-label={currentPlatform === 'xiaoxiang'
+            ? '导入小象超市站点扣款配置 Excel 文件'
+            : '导入站点扣款与问题单关键词配置 Excel 文件'}
           onChange={event => {
             const file = event.target.files?.[0];
             event.target.value = '';
@@ -490,6 +577,30 @@ export function StationDeductionManager({
           }}
         />
       </div>
+
+      {pendingPlatform && (
+        <div role="alert" className="wb-inline-confirm-bar">
+          <span>
+            当前业务有未保存的扣款调整，切换到「{pendingPlatform === 'xiaoxiang' ? '小象超市' : '风神'}」将放弃这些修改。
+          </span>
+          <div className="wb-row gap-2">
+            <button
+              type="button"
+              className="wb-button text-xs py-1 px-2.5 min-h-[30px]"
+              onClick={() => setPendingPlatform(null)}
+            >
+              继续编辑
+            </button>
+            <button
+              type="button"
+              className="wb-primary text-xs py-1 px-3 min-h-[30px] bg-rose-600 border-rose-600 hover:bg-rose-700"
+              onClick={() => switchPlatform(pendingPlatform)}
+            >
+              放弃并切换
+            </button>
+          </div>
+        </div>
+      )}
 
       {errorMessage && (
         <div className="wbx-deduction-alert" role="alert">
@@ -520,7 +631,9 @@ export function StationDeductionManager({
             <strong>全部类目</strong>
             <span className="tabular-nums">{activeColumns.length} 项</span>
           </div>
-          <p className="wbx-category-card__fields">展示全部 3 大类目扣款金额与天数阈值</p>
+          <p className="wbx-category-card__fields">
+            展示全部 {categorySpecs.length} 个类目扣款金额{currentPlatform === 'xiaoxiang' ? '' : '与天数阈值'}
+          </p>
         </button>
         {categorySpecs.map(cat => {
           const isSelected = activeCategory === cat.id;
@@ -536,7 +649,7 @@ export function StationDeductionManager({
                 <span className="tabular-nums">{cat.columns.length} 项 · {cat.unitHint}</span>
               </div>
               <p className="wbx-category-card__fields">
-                {cat.columns.map(col => col.replace('_maxDays', '天数')).join(' · ')}
+                {cat.columns.map(col => columnDisplayLabel(col)).join(' · ')}
               </p>
             </button>
           );
@@ -684,8 +797,10 @@ export function StationDeductionManager({
         <section className="wbx-panel wbx-deduction-offline-panel">
           <EmptyState
             icon={FolderCog}
-            title="等待读取平台城市与站点目录"
-            description="已按标准 config 规则模板就绪 3 大扣款类目卡片、共 13 个配置字段。登录风神/闪购平台并同步目录后，将按「城市折叠面板 → 站点分组卡片」展开全部 14+ 城市与下属站点。"
+            title={currentPlatform === 'xiaoxiang' ? '等待读取小象超市城市与站点目录' : '等待读取平台城市与站点目录'}
+            description={currentPlatform === 'xiaoxiang'
+              ? '小象超市扣款规则包含保险费、循环物资使用费、附加险 3 项。登录小象平台并同步目录后，将按「城市折叠面板 → 站点分组卡片」展开城市与下属站点。'
+              : '已按标准 config 规则模板就绪 3 大扣款类目卡片、共 13 个配置字段。登录风神/闪购平台并同步目录后，将按「城市折叠面板 → 站点分组卡片」展开全部 14+ 城市与下属站点。'}
             actions={[
               {
                 label: '登录平台同步城市站点',
@@ -814,8 +929,8 @@ export function StationDeductionManager({
         </div>
       )}
 
-      {/* 5. 问题单关键词扣款汇总面板（已整合入上方统一 Excel 导入/导出） */}
-      {profile && (
+      {/* 5. 问题单关键词扣款汇总面板（小象超市仅 3 项扣款，不展示） */}
+      {profile && currentPlatform !== 'xiaoxiang' && (
         <section className="wbx-problem-panel" aria-label="问题单关键词扣款明细">
           <header className="wbx-problem-panel__head">
             <div className="wbx-problem-panel__title">

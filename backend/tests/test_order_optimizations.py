@@ -207,6 +207,42 @@ class CacheAndPipelineTests(unittest.TestCase):
         self.assertEqual(prepared.proof(0)["start"], plan.start)
         self.assertEqual(prepared.proof(1)["end"], plan.end)
 
+    def test_local_prepare_failure_does_not_skip_remaining_batches(self):
+        plan = SimpleNamespace(city="泉州", agency_id="2", start=(self.today-dt.timedelta(days=8)).isoformat(),
+                               end=(self.today-dt.timedelta(days=1)).isoformat())
+
+        class StreamRunner:
+            def __init__(self): self.calls = []
+            def orders_stream(self, _plan, raw, selected, segments):
+                self.calls = list(segments)
+                for index, (first, last) in enumerate(segments):
+                    directory = Path(raw) / (first + "_" + last)
+                    directory.mkdir(parents=True)
+                    days = [(dt.date.fromisoformat(first) + dt.timedelta(days=n)).isoformat()
+                            for n in range((dt.date.fromisoformat(last)-dt.date.fromisoformat(first)).days+1)]
+                    rows = [dict(waybill(waybill_id=day), 运单完成时间=day + " 12:00:00") for day in days]
+                    write_csv(directory / "waybills.csv", WAYBILL_COLUMNS, rows)
+                    write_csv(directory / "violations.csv", VIOLATION_COLUMNS)
+                    files = {"waybills": "waybills.csv", "violations": "violations.csv"}
+                    checks = file_checks(directory, files)
+                    if index == 0:
+                        checks["waybills"]["sha256"] = "0" * 64
+                    yield {"dataset": "issue_orders", "status": "success", "agency_id": _plan.agency_id,
+                           "start": first, "end": last, "time_basis": "tracking_finish",
+                           "merchant_group": "物流合作商", "all_city_riders": True, "files": files,
+                           "file_checks": checks, "expected_waybills": len(rows),
+                           "expected_waybills_by_date": {day: 1 for day in days}}
+
+        pipeline = OrderPipeline(self.root / "broken", plan, {"fraud", "problem"},
+                                 self.root / "cache.sqlite", threading.Event())
+        runner = StreamRunner()
+        with self.assertRaises(BillCollectionError) as raised:
+            pipeline.collect(runner)
+        self.assertEqual(len(runner.calls), 2)
+        for first, last in runner.calls:
+            self.assertTrue((pipeline.raw / "issue_orders" / (first + "_" + last) / "waybills.csv").is_file())
+        self.assertIn("本地预处理失败", str(raised.exception))
+
     def test_cancelled_pipeline_does_not_collect(self):
         plan = SimpleNamespace(city="泉州", agency_id="2", start=self.today.isoformat(), end=self.today.isoformat())
         cancelled = threading.Event(); cancelled.set()

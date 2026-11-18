@@ -335,17 +335,80 @@ class ConfirmationTests(unittest.TestCase):
         self.state.update(deductions=deduction,deduction_confirmation=receipt)
         review.require_confirmation(self.state,deduction['version'])
 
-    def test_config_rule_columns_and_categories_cover_all_13_fields(self):
+    def test_config_rule_columns_and_categories_cover_all_fields(self):
         self.directory['cities']=[{'id':'001','name':'测试城'}]
         cols=review.columns_for('fengshen',self.root)
-        expected=('投诉','差评','违规虚假','物流责','不准时单','超时','T10','工具费','代领费率','安全基金','使用费','非蜂卡','月费')
+        expected=('投诉','差评','违规虚假','物流责','不准时单','超时','T10','工具费','代领费率',
+                  '安全基金','安全基金_maxDays','使用费','使用费_maxDays','非蜂卡','月费')
         self.assertEqual(tuple(cols[:len(expected)]),expected)
         draft=review.station_drafts('fengshen',self.root,self.directory)
         self.assertEqual(draft['columns'],cols)
         self.assertEqual([c['id'] for c in draft['categories']],['violation','tools','fund_monthly'])
         self.assertEqual(draft['categories'][0]['columns'],['投诉','差评','违规虚假','物流责','不准时单','超时','T10'])
         self.assertEqual(draft['categories'][1]['columns'],['工具费','代领费率'])
-        self.assertEqual(draft['categories'][2]['columns'],['安全基金','使用费','非蜂卡','月费'])
+        self.assertEqual(draft['categories'][2]['columns'],
+                         ['安全基金','安全基金_maxDays','使用费','使用费_maxDays','非蜂卡','月费'])
+
+    def test_fengshen_thresholds_are_saved_and_zero_disables_them(self):
+        self.directory['cities']=[{'id':'001','name':'测试城'}]
+        draft=review.station_drafts('fengshen',self.root,self.directory)
+        entry=copy.deepcopy(draft['entries'][0])
+        for col in draft['columns']:
+            if col.endswith('_maxDays'):
+                entry['row'][col]=None
+            elif col=='招聘来源':
+                entry['row'][col]=''
+            else:
+                entry['row'][col]=0
+        entry['row']['安全基金']=1
+        entry['row']['安全基金_maxDays']=15
+        entry['row']['使用费_maxDays']=0
+        entry['edited']=True
+        saved=review.save_profile('fengshen',self.root,
+                                  {'version':draft['version'],'entries':[entry],'cities':[]},self.directory)
+        row=saved['entries'][entry['key']]['row']
+        self.assertEqual(row['安全基金_maxDays'],15)
+        self.assertIsNone(row['使用费_maxDays'])
+
+        entry['row']['安全基金_maxDays']=-1
+        with self.assertRaisesRegex(SourceError,'不能为负数'):
+            review.save_profile('fengshen',self.root,
+                                 {'version':saved['version'],'entries':[entry],'cities':[]},self.directory)
+
+    def test_xiaoxiang_supermarket_uses_three_columns_and_drops_legacy_data(self):
+        station={'platform':'xiaoxiang','city':'测试城','city_id':'001','id':'2155','name':'一站'}
+        self.directory={'platform':'xiaoxiang','session_version':'session-v1','cities':[{'id':'001','name':'测试城'}],
+                        'stations':[station]}
+        profile_dir=self.root/'data/deduction_profiles';profile_dir.mkdir(parents=True,exist_ok=True)
+        key=review.station_key(station)
+        legacy_row={'城市':'测试城','团队名称':'一站','团队ID':'2155','安全基金':10,'使用费':2,
+                    '非蜂卡':1,'月费':3,'招聘来源':'内部'}
+        (profile_dir/'xiaoxiang.json').write_text(json.dumps({
+            'entries':{key:{'row':legacy_row,'zero_confirmed':True}},
+            'cities':{},
+            'problem_rules':{key:[{'problem_type':'虚假送达','reason_keyword':'','amount':50}]},
+        },ensure_ascii=False),encoding='utf-8')
+
+        self.assertEqual(review.columns_for('xiaoxiang',self.root),['保险费','循环物资使用费','附加险'])
+        draft=review.station_drafts('xiaoxiang',self.root,self.directory)
+        self.assertEqual(draft['columns'],['保险费','循环物资使用费','附加险'])
+        self.assertEqual([c['id'] for c in draft['categories']],['xiaoxiang_fees'])
+        self.assertEqual(draft['categories'][0]['columns'],['保险费','循环物资使用费','附加险'])
+        self.assertFalse(draft['entries'][0]['configured'])
+        self.assertEqual(draft['entries'][0]['problem_rules'],[])
+        self.assertEqual(review.profile('xiaoxiang',self.root)['problem_rules'],{})
+        with self.assertRaisesRegex(SourceError,'小象超市'):
+            review.preview_problem_rules('xiaoxiang',self.root,{'version':draft['version'],'rows':[]},self.directory)
+
+        entry=draft['entries'][0]
+        entry['row'].update({'保险费':1,'循环物资使用费':2,'附加险':30})
+        entry['edited']=True
+        saved=review.save_profile('xiaoxiang',self.root,{'version':draft['version'],'entries':[entry],'cities':[]},self.directory)
+        self.assertEqual(set(saved['entries'][key]['row']),
+                         {'城市','团队名称','团队ID','保险费','循环物资使用费','附加险'})
+        self.assertEqual(saved['entries'][key]['row']['保险费'],1)
+        self.assertEqual(saved['entries'][key]['row']['循环物资使用费'],2)
+        self.assertEqual(saved['entries'][key]['row']['附加险'],30)
 
 
 if __name__=='__main__':unittest.main()

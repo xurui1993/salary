@@ -266,7 +266,7 @@ class SpiderEngine:
             if bad_unit_url == "":
                 self.log_cb("该周期无坏单数据")
                 empty_df = pd.DataFrame(columns=new_column)
-                empty_df.to_excel(file_path_xlsx, index=False, engine='xlsxwriter', engine_kwargs={'options': {'constant_memory': True}})
+                empty_df.to_excel(file_path_xlsx, index=False, engine='xlsxwriter')
                 return file_path_xlsx
             else:
                 bad_unit_res = requests.get(bad_unit_url)
@@ -287,7 +287,7 @@ class SpiderEngine:
         bad_unit_df["违规时间"] = pd.to_datetime(bad_unit_df["违规时间"]).dt.date
         bad_unit_df.rename(columns={'违规时间': '日期'}, inplace=True)
         bad_unit_df = bad_unit_df[new_column]
-        bad_unit_df.to_excel(file_path_xlsx,index=False, engine='xlsxwriter', engine_kwargs={'options': {'constant_memory': True}})
+        bad_unit_df.to_excel(file_path_xlsx,index=False, engine='xlsxwriter')
         os.remove(file_path_csv)
         return file_path_xlsx
 
@@ -562,7 +562,7 @@ class DBWriter:
     def excel_save(self,type_name,data):
         # 处理逻辑：将处理完毕的数据格式化后输出写入到外部Excel或CSV文件
         data_path = self.file_path(type_name)
-        data.to_excel(data_path,index=False, engine='xlsxwriter', engine_kwargs={'options': {'constant_memory': True}})
+        data.to_excel(data_path,index=False, engine='xlsxwriter')
 
     def run(self,df_dict):
         # 处理逻辑：作为核心异步任务入口，负责启动具体的业务流程计算
@@ -615,7 +615,7 @@ class MergerFiles:
             return
 
         merged_df = pd.concat(df_list, ignore_index=True)
-        merged_df.to_excel(output_filename, index=False, engine='xlsxwriter', engine_kwargs={'options': {'constant_memory': True}})
+        merged_df.to_excel(output_filename, index=False, engine='xlsxwriter')
         log_cb(f"合并完成！结果已保存至: {output_filename}", "INFO")
         log_cb(f"共合并 {len(merged_df)} 行数据。", "INFO")
         return merged_df
@@ -673,7 +673,7 @@ class MergePenaltyRecords:
             fraud_ids = None
 
         written = 0
-        with pd.ExcelWriter(self.output_path, engine='xlsxwriter', engine_kwargs={'options': {'constant_memory': True}}) as writer:
+        with pd.ExcelWriter(self.output_path, engine='xlsxwriter') as writer:
             for sheet_name, data in sheet_dict.items():
                 if sheet_name == "欺诈单":
                     continue
@@ -739,7 +739,7 @@ class MergePenaltyRecords:
 
     def save_sum_data(self, sheet_dict):
         sum_data = self.build_sum_data(sheet_dict)
-        sum_data.to_excel(self.output_path_sum,index=False, engine='xlsxwriter', engine_kwargs={'options': {'constant_memory': True}})
+        sum_data.to_excel(self.output_path_sum,index=False, engine='xlsxwriter')
         format_excel_file(self.output_path_sum)
 
 

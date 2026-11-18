@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import deduction_stations as stations
+import xiaoxiang_lighthouse
 from fengshen_http import AGENCIES_URL, TEAMS_URL, HttpTransportError
 
 
@@ -253,12 +254,16 @@ class LighthouseProtocolTests(unittest.TestCase):
         self.assertEqual(self.session.headers['mall-login-type'],'passport')
         self.assertTrue(self.session.__exit__.called)
 
-    def test_missing_supplier_context_never_uses_default_supplier(self):
+    def test_missing_supplier_context_falls_back_to_verified_default_supplier(self):
         self.state['origins']=[]
-        with self.assertRaises(HTTPException) as caught:
-            stations.catalog('xiaoxiang')
-        self.assertEqual(caught.exception.status_code,401)
-        self.post.assert_not_called()
+        with patch('xiaoxiang_rider_archive.operator_mis',return_value='synthetic.operator'):
+            result=stations.catalog('xiaoxiang')
+        self.assertEqual(len(result['stations']),1)
+        self.post.assert_called_once_with(
+            'https://maicaipeisong.meituan.com/api/s/peisong/supplier/dept/list',
+            json={'needManagementCityInfo':True,'supplierId':str(xiaoxiang_lighthouse.SUPPLIER_ID),
+                  'checkSupplierAccess':True,'operator':'synthetic.operator'},
+            timeout=(3,8))
 
     def test_authentication_and_permission_failures_are_distinct_and_never_cached(self):
         for http_status,body,expected in [(401,{},401),(403,{},403),(200,{'code':5},401),

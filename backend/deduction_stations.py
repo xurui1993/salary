@@ -174,7 +174,7 @@ def _fengshen(city, version, include_separation=False):
 
 
 def _lighthouse_context(state):
-    """Use the active supplier saved by the official RSS page, never a fixed account."""
+    """Prefer the RSS page supplier; fall back to the deployment supplier when the page was not visited."""
     import xiaoxiang_lighthouse as lighthouse
     storage = {}
     for origin in lighthouse.scoped_state(state)['origins']:
@@ -187,6 +187,10 @@ def _lighthouse_context(state):
                     raise HTTPException(409, '灯塔保存的合作商上下文不一致，请重新登录后获取站点')
                 storage[key] = value
     supplier = storage.get('rss_supplier_id')
+    if not supplier:
+        # 登录来源可能未经过 RSS 站点页，localStorage 不会写入合作商；
+        # 使用部署默认合作商，接口仍带 checkSupplierAccess 校验，无权限会直接失败。
+        supplier = str(lighthouse.SUPPLIER_ID)
     if not isinstance(supplier, str) or not re.fullmatch(r'\d{1,24}', supplier):
         raise HTTPException(401, '灯塔会话未保存当前合作商，请重新登录后获取站点')
     operator = storage.get('rss_supplier_operator_mis')

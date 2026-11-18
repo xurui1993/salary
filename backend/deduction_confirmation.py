@@ -20,11 +20,19 @@ CONFIG_RULE_COLUMNS = (
     '投诉', '差评', '违规虚假', '物流责', '不准时单', '超时', 'T10',
     '工具费', '代领费率', '安全基金', '使用费', '非蜂卡', '月费',
 )
-LEGACY_MONEY_COLUMNS = ('保险费', '循环物资使用费', '附加险')
+XIAOXIANG_COLUMNS = ('保险费', '循环物资使用费', '附加险')
+LEGACY_MONEY_COLUMNS = XIAOXIANG_COLUMNS
+FENGSHEN_COLUMNS = (
+    '投诉', '差评', '违规虚假', '物流责', '不准时单', '超时', 'T10',
+    '工具费', '代领费率',
+    '安全基金', '安全基金_maxDays', '使用费', '使用费_maxDays', '非蜂卡', '月费',
+)
 DEDUCTION_CATEGORY_DEFS = (
     ('violation', '违规与时效扣款', ('投诉', '差评', '违规虚假', '物流责', '不准时单', '超时', 'T10')),
     ('tools', '工具与代领费率', ('工具费', '代领费率')),
-    ('fund_monthly', '保障基金与月费', ('安全基金', '使用费', '非蜂卡', '月费')),
+    ('fund_monthly', '保障基金与月费',
+     ('安全基金', '安全基金_maxDays', '使用费', '使用费_maxDays', '非蜂卡', '月费')),
+    ('xiaoxiang_fees', '小象超市费用', XIAOXIANG_COLUMNS),
 )
 DEFAULT_COLUMNS = CONFIG_RULE_COLUMNS
 MONEY_COLUMNS = {*CONFIG_RULE_COLUMNS, *LEGACY_MONEY_COLUMNS}
@@ -54,6 +62,35 @@ def station_codes(station):
     return {str(station.get(key) or '') for key in ('id', 'poi_id')} - {''}
 
 
+def _xiaoxiang_row(row):
+    if not isinstance(row, dict):
+        return {}
+    return {key: value for key, value in row.items() if key in META or key in XIAOXIANG_COLUMNS}
+
+
+def _xiaoxiang_configured(row):
+    return any(row.get(column) not in (None, '') for column in XIAOXIANG_COLUMNS)
+
+
+def _reset_xiaoxiang(data):
+    # 小象超市改为独立业务：旧 4 列配置和问题单关键词规则全部作废旧数据，从空白重新配置。
+    entries = {}
+    for key, entry in (data.get('entries') or {}).items():
+        if not isinstance(entry, dict):
+            continue
+        row = _xiaoxiang_row(entry.get('row'))
+        if _xiaoxiang_configured(row):
+            entries[key] = {**entry, 'row': row}
+    cities = {}
+    for key, entry in (data.get('cities') or {}).items():
+        if not isinstance(entry, dict):
+            continue
+        row = _xiaoxiang_row(entry.get('row'))
+        if _xiaoxiang_configured(row):
+            cities[key] = {**entry, 'row': row}
+    return {**data, 'entries': entries, 'cities': cities, 'problem_rules': {}}
+
+
 def profile(platform, root):
     if platform not in ('fengshen', 'xiaoxiang'):
         raise SourceError('扣款平台无效')
@@ -73,6 +110,8 @@ def profile(platform, root):
             raise SourceError('站点扣款默认配置无法读取，请检查原文件') from None
     else:
         data = {'entries': {}}
+    if platform == 'xiaoxiang':
+        data = _reset_xiaoxiang(data)
     rules = data.get('problem_rules', {})
     return {**data, 'cities': data.get('cities', {}), 'problem_rules': rules,
             'version': digest([data['entries'], data.get('cities', {}), rules])}
@@ -90,7 +129,9 @@ def legacy_rows(platform, root):
 
 
 def columns_for(platform, root):
-    columns = list(DEFAULT_COLUMNS if platform != 'xiaoxiang' else ('安全基金', '使用费', '非蜂卡', '月费'))
+    if platform == 'xiaoxiang':
+        return list(XIAOXIANG_COLUMNS)
+    columns = list(FENGSHEN_COLUMNS)
     for row in legacy_rows(platform, root):
         for key in row:
             if (key in SUPPORTED or (key.endswith('_maxDays') and key[:-8] in SUPPORTED)) and key not in columns:
@@ -122,7 +163,7 @@ def station_drafts(platform, root, directory):
     defaults = profile(platform, root)
     legacy = legacy_rows(platform, root)
     columns = columns_for(platform, root)
-    problem_rules = defaults.get('problem_rules', {})
+    problem_rules = {} if platform == 'xiaoxiang' else defaults.get('problem_rules', {})
     result = []
     for station in directory['stations']:
         key = station_key(station)
@@ -167,7 +208,15 @@ def validate_entry(entry, station, columns, retained=None):
         raise SourceError('扣款列已变化，请重新加载后确认')
     for col in columns:
         value = row[col]
-        if col.endswith('_maxDays') and value is None:
+        if col.endswith('_maxDays'):
+            if value is None or value == '':
+                continue
+            if type(value) not in (int, float) or not math.isfinite(value):
+                raise SourceError('天数阈值必须为数字')
+            if value < 0:
+                raise SourceError('天数阈值不能为负数')
+            if value == 0:
+                row[col] = None
             continue
         if col == '招聘来源' or (col not in MONEY_COLUMNS and isinstance(value, (str, bool))):
             if value is None:
@@ -175,7 +224,7 @@ def validate_entry(entry, station, columns, retained=None):
         elif value is None or value == '' or type(value) not in (int, float) or not math.isfinite(value):
             raise SourceError('请填写全部扣款值；未配置的站点不能自动视为零扣款')
     monetary = [row[c] for c in columns if c in MONEY_COLUMNS and type(row[c]) in (int, float)]
-    keyword_charge = str(row.get('招聘来源') or '').strip() not in ('', '0', '0.0')
+    keyword_charge = '招聘来源' in columns and str(row.get('招聘来源') or '').strip() not in ('', '0', '0.0')
     if not any(monetary) and not keyword_charge and entry.get('zero_confirmed') is not True:
         raise SourceError('全零扣款站点需要明确确认零扣款')
     return {'row': row, 'zero_confirmed': entry.get('zero_confirmed') is True}
@@ -216,7 +265,7 @@ def save_profile(platform, root, payload, directory):
             backup.parent.mkdir(parents=True, exist_ok=True)
             atomic_json(backup, json.loads(path.read_text(encoding='utf-8')))
         atomic_json(path, {'entries': current['entries'], 'cities': current['cities'],
-                           'problem_rules': current.get('problem_rules', {})})
+                           'problem_rules': {} if platform == 'xiaoxiang' else current.get('problem_rules', {})})
         return profile(platform, root)
 
 
@@ -342,6 +391,8 @@ def _problem_diff(platform, current, imported, directory):
 
 
 def preview_problem_rules(platform, root, payload, directory):
+    if platform == 'xiaoxiang':
+        raise SourceError('小象超市仅配置保险费、循环物资使用费和附加险，不支持问题单关键词规则')
     if not isinstance(payload, dict):
         raise SourceError('问题单扣款导入参数无效')
     with LOCK:

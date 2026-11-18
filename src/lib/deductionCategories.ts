@@ -1,6 +1,6 @@
 import type { DeductionEntry } from '../components/DeductionAmounts';
 
-export type DeductionCategoryId = 'all' | 'violation' | 'tools' | 'fund_monthly' | 'extended';
+export type DeductionCategoryId = 'all' | 'violation' | 'tools' | 'fund_monthly' | 'xiaoxiang_fees' | 'extended';
 
 export interface DeductionCategorySpec {
   id: Exclude<DeductionCategoryId, 'all'>;
@@ -26,6 +26,47 @@ export const CONFIG_RULE_COLUMNS = [
   '月费',
 ] as const;
 
+export const CONFIG_RULE_COLUMNS_WITH_THRESHOLDS = [
+  '投诉',
+  '差评',
+  '违规虚假',
+  '物流责',
+  '不准时单',
+  '超时',
+  'T10',
+  '工具费',
+  '代领费率',
+  '安全基金',
+  '安全基金_maxDays',
+  '使用费',
+  '使用费_maxDays',
+  '非蜂卡',
+  '月费',
+] as const;
+
+export const COLUMN_DISPLAY_LABELS: Record<string, string> = {
+  安全基金_maxDays: '安全基金天数阈值',
+  使用费_maxDays: '使用费天数阈值',
+};
+
+export function columnDisplayLabel(column: string): string {
+  return COLUMN_DISPLAY_LABELS[column] || column;
+}
+
+export function normalizeConfigColumnKey(key: unknown): string {
+  const text = String(key ?? '').trim();
+  const matched = Object.entries(COLUMN_DISPLAY_LABELS).find(([, label]) => label === text);
+  return matched ? matched[0] : text;
+}
+
+function normalizeConfigRecord(row: Record<string, unknown>): Record<string, unknown> {
+  const normalized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(row)) {
+    normalized[normalizeConfigColumnKey(key)] = value;
+  }
+  return normalized;
+}
+
 export const DEDUCTION_CATEGORY_TEMPLATES: DeductionCategorySpec[] = [
   {
     id: 'violation',
@@ -46,7 +87,14 @@ export const DEDUCTION_CATEGORY_TEMPLATES: DeductionCategorySpec[] = [
     label: '保障基金与月费',
     description: '安全基金、平台使用费、非蜂卡及固定月费日常扣款口径',
     unitHint: '元/天或元/月',
-    columns: ['安全基金', '使用费', '非蜂卡', '月费'],
+    columns: ['安全基金', '安全基金_maxDays', '使用费', '使用费_maxDays', '非蜂卡', '月费'],
+  },
+  {
+    id: 'xiaoxiang_fees',
+    label: '小象超市费用',
+    description: '小象超市保险费、循环物资使用费及附加险扣款口径',
+    unitHint: '元/天或元/月',
+    columns: ['保险费', '循环物资使用费', '附加险'],
   },
 ];
 
@@ -68,9 +116,14 @@ export const DEDUCTION_COLUMN_UNIT: Record<string, string> = {
   工具费: '元',
   代领费率: '费率/比例',
   安全基金: '元/天',
+  安全基金_maxDays: '天',
   使用费: '元/天',
+  使用费_maxDays: '天',
   非蜂卡: '元/天',
   月费: '元/月',
+  保险费: '元/天',
+  循环物资使用费: '元/天',
+  附加险: '元/月',
 };
 
 export function normalizeStationName(value: unknown): string {
@@ -357,6 +410,10 @@ export interface ConfigImportResult {
 function parseImportValue(rawValue: unknown, column: string): string | number | boolean | null {
   if (rawValue === undefined || rawValue === null || rawValue === '') return null;
   if (typeof rawValue === 'boolean') return rawValue;
+  if (column.endsWith('_maxDays')) {
+    const num = typeof rawValue === 'number' ? rawValue : Number(String(rawValue).trim());
+    return Number.isFinite(num) && num > 0 ? num : null;
+  }
   if (column === '招聘来源') return String(rawValue).trim();
   const num = typeof rawValue === 'number' ? rawValue : Number(String(rawValue).trim());
   if (Number.isFinite(num)) return num;
@@ -380,7 +437,7 @@ export function applyConfigRuleRows(
       unmatchedRows.push({ index: idx + 1, city: '', teamName: '', reason: '行数据格式无效' });
       return;
     }
-    const record = raw as Record<string, unknown>;
+    const record = normalizeConfigRecord(raw as Record<string, unknown>);
     const cityName = String(record['城市'] ?? '').trim();
     const teamName = String(record['团队名称'] ?? record['站点名称'] ?? '').trim();
     const teamId = String(record['团队ID'] ?? record['站点ID'] ?? '').trim();
@@ -394,7 +451,9 @@ export function applyConfigRuleRows(
       for (const col of columns) {
         if (col in record) {
           const parsed = parseImportValue(record[col], col);
-          if (parsed !== null) {
+          if (col.endsWith('_maxDays')) {
+            targetRow[col] = parsed;
+          } else if (parsed !== null) {
             targetRow[col] = parsed;
           }
         }
@@ -455,6 +514,14 @@ export function applyConfigRuleRows(
   };
 }
 
+function exportConfigCell(column: string, value: unknown): string | number | boolean | null {
+  if (column.endsWith('_maxDays')) {
+    const num = Number(value);
+    return value == null || value === '' || !Number.isFinite(num) || num <= 0 ? '' : num;
+  }
+  return (value as string | number | boolean | null) ?? 0;
+}
+
 export function buildConfigExportRows(
   cities: DeductionEntry[],
   entries: DeductionEntry[],
@@ -471,7 +538,7 @@ export function buildConfigExportRows(
       团队ID: '*',
     };
     for (const col of ruleCols) {
-      row[col] = city.row[col] ?? 0;
+      row[columnDisplayLabel(col)] = exportConfigCell(col, city.row[col]);
     }
     rows.push(row);
   }
@@ -483,7 +550,7 @@ export function buildConfigExportRows(
       团队ID: entry.station.id,
     };
     for (const col of ruleCols) {
-      row[col] = entry.row[col] ?? 0;
+      row[columnDisplayLabel(col)] = exportConfigCell(col, entry.row[col]);
     }
     rows.push(row);
   }
@@ -563,7 +630,7 @@ export function buildUnifiedConfigWorkbookData(
   const ruleCols = columns.length ? columns : [...CONFIG_RULE_COLUMNS];
   return {
     itemSheetName: '城市与站点扣款项',
-    itemHeaders: ['城市', '团队名称', '团队ID', ...ruleCols],
+    itemHeaders: ['城市', '团队名称', '团队ID', ...ruleCols.map(columnDisplayLabel)],
     itemRows: buildConfigExportRows(cities, entries, ruleCols),
     problemSheetName: '问题单关键词扣款',
     problemHeaders: [...PROBLEM_RULE_COLUMNS],
@@ -592,7 +659,7 @@ export function classifyImportedWorkbookSheets(
 
     const sampleKeys = new Set<string>();
     validRows.slice(0, 5).forEach(row => {
-      Object.keys(row).forEach(k => sampleKeys.add(k.trim()));
+      Object.keys(row).forEach(k => sampleKeys.add(normalizeConfigColumnKey(k)));
     });
 
     const looksLikeProblem =
@@ -609,7 +676,7 @@ export function classifyImportedWorkbookSheets(
     if (looksLikeProblem) {
       problemRows.push(...validRows);
     } else if (looksLikeItems) {
-      itemRows.push(...validRows);
+      itemRows.push(...validRows.map(normalizeConfigRecord));
     }
   }
 

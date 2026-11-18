@@ -139,6 +139,32 @@ class PayrollIdentityTests(unittest.TestCase):
         finally:
             book.close()
 
+    def test_xiaoxiang_three_fee_columns_use_daily_and_monthly_rules(self):
+        source = self.fixture(xiaoxiang=True)
+        results, logs = [], []
+        rules = [{'城市': '测试城市', '团队名称': '测试站', '团队ID': 'T001',
+                  '保险费': 1, '循环物资使用费': 2, '附加险': 30}]
+        processor.process_rider_data(
+            '测试城市', '半月结', str(source), '', lambda message, *_: logs.append(message),
+            lambda *_: None, lambda *value: results.append(value), fixtures.THEME,
+            output_root=str(source / 'output'), strict_inputs=True, skip_binding_check=True,
+            force_no_price=True, deductionRules=rules,
+        )
+        self.assertEqual(results[-1][0], 'success', '\n'.join(logs))
+        output = Path(results[-1][1])
+        main = next(path for path in output.glob('*.xlsx') if '蓝橙无单价&未绑名单' not in path.name)
+        book = load_workbook(main)
+        try:
+            values = list(book['保险费'].iter_rows(values_only=True))
+            headers = list(values[0])
+            rows = [dict(zip(headers, row)) for row in values[1:] if row[0]]
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]['保险费'], 2)
+            self.assertEqual(rows[0]['循环物资使用费'], 4)
+            self.assertEqual(rows[0]['附加险'], 30)
+        finally:
+            book.close()
+
     def test_missing_application_name_uses_latest_source_name(self):
         source = self.fixture()
         template = source / '兼职-template.xlsx'

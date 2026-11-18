@@ -467,9 +467,38 @@ def _problem_details(kinds, include):
 
 
 def _write_xlsx(frame, path, sheet):
-    with pd.ExcelWriter(path, engine="xlsxwriter",
-                        engine_kwargs={"options": {"constant_memory": True}}) as writer:
+    # pandas 与 xlsxwriter 的 constant_memory 模式组合会丢弃非末行除首列外的单元格。
+    with pd.ExcelWriter(path, engine="xlsxwriter") as writer:
         frame.to_excel(writer, index=False, sheet_name=sheet)
+
+
+def _nonempty_counts(frame):
+    counts = []
+    for column in frame.columns:
+        values = frame[column]
+        counts.append(int(values.map(
+            lambda value: pd.notna(value) and str(value).strip() != "").sum()))
+    return counts
+
+
+def _verify_sheet(path, sheet, frame):
+    book = load_workbook(path, read_only=True, data_only=True)
+    try:
+        if sheet not in book.sheetnames:
+            raise BillCollectionError("问题单写入缺少工作表，已停止发布")
+        rows = book[sheet].iter_rows(values_only=True)
+        header = next(rows, ())
+        if list(header) != [str(column) for column in frame.columns]:
+            raise BillCollectionError("问题单写入表头不完整，已停止发布")
+        counts = [0] * len(header)
+        for row in rows:
+            for index, value in enumerate(row):
+                if value is not None and str(value).strip() != "":
+                    counts[index] += 1
+        if counts != _nonempty_counts(frame):
+            raise BillCollectionError("问题单写入内容不完整，已停止发布")
+    finally:
+        book.close()
 
 
 def _write_problem_deliverables(summary, details, targets):
@@ -479,13 +508,15 @@ def _write_problem_deliverables(summary, details, targets):
     try:
         write_order_csv(summary, temporary["csv"])
         _write_xlsx(summary, temporary["summary"], "问题单汇总")
-        with pd.ExcelWriter(temporary["detail"], engine="xlsxwriter",
-                            engine_kwargs={"options": {"constant_memory": True}}) as writer:
+        with pd.ExcelWriter(temporary["detail"], engine="xlsxwriter") as writer:
             if details:
                 for name, data in details:
                     data.to_excel(writer, index=False, sheet_name=name)
             else:
                 pd.DataFrame().to_excel(writer, index=False, sheet_name="Sheet1")
+        _verify_sheet(temporary["summary"], "问题单汇总", summary)
+        for name, data in details:
+            _verify_sheet(temporary["detail"], name, data)
         for key in temporary:
             os.replace(temporary[key], targets[key])
     except Exception:

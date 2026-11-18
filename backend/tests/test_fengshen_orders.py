@@ -333,6 +333,27 @@ class OrderTests(unittest.TestCase):
             summary.close()
             detail.close()
 
+    def test_every_problem_row_keeps_all_columns(self):
+        penalties = [violation(f"v{number}", rider_id=str(990 + number)) for number in range(1, 5)]
+        late = [waybill(f"00012345678901234567{number}", rider_id="777", late="是") for number in range(1, 4)]
+        record, raw, inputs, plan = self.bundle(late, penalties)
+        prepare_order_files([record], raw, inputs, plan, [("2026-08-16", "2026-08-20")])
+        summary = load_workbook(inputs / "泉州-问题单汇总_auto.xlsx")
+        detail = load_workbook(inputs / "泉州-问题单明细_auto.xlsx")
+        try:
+            summary_rows = list(summary.active.iter_rows(min_row=2, values_only=True))
+            self.assertEqual(len(summary_rows), 7)
+            self.assertTrue(all(row[2] and row[3] and row[5] for row in summary_rows))
+            detail_rows = list(detail["差评"].iter_rows(min_row=2, values_only=True))
+            self.assertEqual(len(detail_rows), 4)
+            self.assertTrue(all(row[1] and row[2] and row[5] for row in detail_rows))
+            late_rows = list(detail["不准时单"].iter_rows(min_row=2, values_only=True))
+            self.assertEqual(len(late_rows), 3)
+            self.assertTrue(all(row[7] and row[15] and row[16] for row in late_rows))
+        finally:
+            summary.close()
+            detail.close()
+
     def test_problem_summary_and_raw_detail_workbooks_keep_only_data_types(self):
         penalties = [violation("v1"), violation("v2", rider_id="998")]
         penalties[1].update({"违规分类": "投诉", "违规类型": "投诉"})

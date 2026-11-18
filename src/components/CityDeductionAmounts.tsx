@@ -50,6 +50,7 @@ function DeductionSubcard({
               value !== '' &&
               !Number.isFinite(Number(value)));
           const unit = DEDUCTION_COLUMN_UNIT[column];
+          const isThreshold = column.endsWith('_maxDays');
           const fieldLabel = column.replace('_maxDays', '天数阈值');
 
           return (
@@ -82,23 +83,27 @@ function DeductionSubcard({
                   step="any"
                   disabled={disabled}
                   aria-label={`${entry.station.name} ${column}`}
-                  placeholder={column.endsWith('_maxDays') ? '沿用空白' : '待填写'}
+                  placeholder={isThreshold ? '留空不启用' : '待填写'}
                   value={value ?? ''}
-                  onChange={e =>
+                  onChange={e => {
+                    const raw = e.target.value;
+                    let nextValue: string | number | null;
+                    if (isThreshold) {
+                      const num = raw === '' ? NaN : Number(raw);
+                      nextValue = Number.isFinite(num) && num > 0 ? num : null;
+                    } else {
+                      nextValue = isText ? raw : raw === '' ? null : Number(raw);
+                    }
                     onUpdateEntry({
                       ...entry,
                       edited: true,
                       zero_confirmed: false,
                       row: {
                         ...entry.row,
-                        [column]: isText
-                          ? e.target.value
-                          : e.target.value === ''
-                            ? null
-                            : Number(e.target.value),
+                        [column]: nextValue,
                       },
-                    })
-                  }
+                    });
+                  }}
                 />
               )}
             </label>

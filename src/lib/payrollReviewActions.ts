@@ -21,7 +21,7 @@ const MONEY = new Set([
 export function deductionIssues(entry, columns) {
   const fields = columns.filter(c => {
     const value = entry.row[c];
-    if (c.endsWith('_maxDays') && value === null) return false;
+    if (c.endsWith('_maxDays') && (value === null || value === undefined || value === '')) return false;
     if (c === '招聘来源') return value == null;
     if (!MONEY.has(c) && (typeof value === 'string' || typeof value === 'boolean')) return false;
     return typeof value !== 'number' || !Number.isFinite(value);

@@ -175,6 +175,9 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
         "循环物资使用费": "非蜂卡",
         "附加险": "月费",
     }
+    # 保险费、循环物资使用费按出勤天数折算且不启用天数阈值；附加险按月固定。
+    XIAOXIANG_COLUMNS = ("保险费", "循环物资使用费", "附加险")
+    MONTHLY_FEE_COLUMNS = ("月费", "附加险")
 
     def find_wb_col(columns, default_idx=None):
         # 处理逻辑：find_wb_col 的主要执行逻辑
@@ -2019,6 +2022,8 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                             max_d = float(max_days)
                         except (ValueError, TypeError):
                             return att_days * val
+                        if max_d <= 0:
+                            return att_days * val
 
                         total_days = att_days + past_days
                         if total_days < max_d:
@@ -2031,10 +2036,10 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                                 return max(0, (cur_days_in_month - past_days) * val)
 
                     for d_col in custom_deductions:
-                        max_col = f"{d_col}_maxDays"
+                        max_col = None if d_col in XIAOXIANG_COLUMNS else f"{d_col}_maxDays"
                         is_kw_col = f"{d_col}_isKw"
                     
-                        if d_col == '月费':
+                        if d_col in MONTHLY_FEE_COLUMNS:
                             def apply_fee_logic(row, d_name=d_col):
                                 # 处理逻辑：当出勤天数为0时，月费值需修改为0，因为主站中已扣除，辅站中无需二次扣除
                                 if row.get('往期月费是否已扣') == '是':
@@ -3495,6 +3500,8 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                         max_d = float(max_days)
                     except (ValueError, TypeError):
                         return att_days * val
+                    if max_d <= 0:
+                        return att_days * val
 
                     total_days = att_days + past_days
                     if total_days < max_d:
@@ -3507,10 +3514,10 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                             return max(0, (cur_days_in_month - past_days) * val)
 
                 for d_col in custom_deductions:
-                    max_col = f"{d_col}_maxDays"
+                    max_col = None if d_col in XIAOXIANG_COLUMNS else f"{d_col}_maxDays"
                     is_kw_col = f"{d_col}_isKw"
                     
-                    if d_col == '月费':
+                    if d_col in MONTHLY_FEE_COLUMNS:
                         def apply_fee_logic(row, d_name=d_col):
                             # 处理逻辑：当出勤天数为0时，月费值需修改为0，因为主站中已扣除，辅站中无需二次扣除
                             if row.get('往期月费是否已扣') == '是':

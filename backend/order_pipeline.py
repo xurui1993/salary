@@ -342,14 +342,76 @@ class OrderPipeline:
                         "collection_seconds": 0, "cache_seconds": 0}
         self.started = time.perf_counter()
         self.references, self.downloads, self.futures = [], [], []
+        self.jobs, self.results, self.failures = {}, {}, {}
 
     def emit(self, stage=None):
         if stage:
             self.metrics["stage"] = stage
-        ready = [future.result() for future in self.futures if future.done() and not future.cancelled()]
+        ready = []
+        for future in self.futures:
+            if not future.done() or future.cancelled():
+                continue
+            try:
+                result = self.results.get(future)
+                if result is None:
+                    result = future.result()
+                    self.results[future] = result
+                ready.append(result)
+            except Exception as exc:
+                if self.cancelled.is_set():
+                    raise
+                self.failures.setdefault(future, exc)
         self.metrics.update(processed=len(ready), processed_rows=sum(x["proof"]["waybills"] for x in ready),
                             elapsed_seconds=round(time.perf_counter() - self.started, 1))
         self.progress(dict(self.metrics))
+
+    def _settle(self, future):
+        """Record a finished local batch without aborting the platform collection."""
+        try:
+            value = self._wait(future)
+        except Exception as exc:
+            if self.cancelled.is_set():
+                raise
+            self.failures.setdefault(future, exc)
+        else:
+            self.results.setdefault(future, value)
+
+    def _reference(self, future):
+        if future in self.failures:
+            return self._retry_prepare(future)
+        try:
+            value = self._wait(future)
+        except Exception as exc:
+            if self.cancelled.is_set():
+                raise
+            self.failures[future] = exc
+            return self._retry_prepare(future)
+        self.results.setdefault(future, value)
+        return value
+
+    def _retry_prepare(self, future):
+        """Retry a failed local batch after every platform export has been collected."""
+        job = self.jobs.get(future)
+        if job is None:
+            error = self.failures[future]
+            detail = str(error) if isinstance(error, BillCollectionError) else type(error).__name__
+            raise BillCollectionError(f"运单本地预处理失败：{detail}") from None
+        label, args = job
+        if self.cancelled.is_set():
+            raise BillCollectionError("任务已取消")
+        try:
+            value = _worker_prepare(*args)
+        except BillCollectionError as exc:
+            raise BillCollectionError(
+                f"运单批次 {label} 本地预处理失败：{exc}；"
+                "平台原始文件已全部下载，重新继续任务即可复用，无需重复导出") from None
+        except Exception as exc:
+            raise BillCollectionError(
+                f"运单批次 {label} 本地预处理失败（{type(exc).__name__}）；"
+                "平台原始文件已全部下载，重新继续任务即可复用，无需重复导出") from None
+        self.results[future] = value
+        self.failures.pop(future, None)
+        return value
 
     def segments(self):
         segments = []
@@ -382,9 +444,9 @@ class OrderPipeline:
                     raise BillCollectionError("任务已取消")
                 pending = [future for future in self.futures if not future.done()]
                 if len(pending) >= 2:
-                    self._wait(pending[0])
+                    self._settle(pending[0])
                 self.metrics["batch"] = number
-                self.emit("collecting")  # Also surfaces a completed worker failure before another export.
+                self.emit("collecting")
                 plan = SimpleNamespace(**{**vars(self.plan), "start": first, "end": last})
                 if cached:
                     cache_started = time.perf_counter()
@@ -424,7 +486,7 @@ class OrderPipeline:
                                 raise BillCollectionError("任务已取消")
                             pending = [future for future in self.futures if not future.done()]
                             if len(pending) >= 2:
-                                self._wait(pending[0])
+                                self._settle(pending[0])
                             self.metrics["batch"] = min(len(segments), self.metrics["obtained"] + 1)
                             started = time.perf_counter()
                             try:
@@ -445,7 +507,7 @@ class OrderPipeline:
                         raise BillCollectionError("任务已取消")
                     pending = [future for future in self.futures if not future.done()]
                     if len(pending) >= 2:
-                        self._wait(pending[0])
+                        self._settle(pending[0])
                     self.metrics["batch"] = number
                     plan = SimpleNamespace(**{**vars(self.plan), "start": first, "end": last})
                     self.emit("collecting")
@@ -457,7 +519,7 @@ class OrderPipeline:
                         raise BillCollectionError("流水处理批次与平台下载不一致")
                     self._queue_stream(manifests[0], executor)
                     self.emit()
-            self.references = [self._wait(future) for future in self.futures]
+            self.references = [self._reference(future) for future in self.futures]
             self.downloads.sort(key=lambda value: value["start"])
             self.references.sort(key=lambda value: value["proof"]["start"])
         finally:
@@ -477,8 +539,16 @@ class OrderPipeline:
         self.metrics["download_bytes"] += sum(value["bytes"] for value in manifest["file_checks"].values())
         self.metrics["obtained"] += 1
         plan = SimpleNamespace(**{**vars(self.plan), "start": manifest["start"], "end": manifest["end"]})
-        self.futures.append(executor.submit(_worker_prepare, manifest, str(self.raw), vars(plan),
-            self.include_violations, str(self.spool), str(self.cache.path), self.cache.today, str(self.cancel_path)))
+        args = (manifest, str(self.raw), vars(plan), self.include_violations, str(self.spool),
+                str(self.cache.path), self.cache.today, str(self.cancel_path))
+        label = manifest["start"] + " 至 " + manifest["end"]
+        try:
+            future = executor.submit(_worker_prepare, *args)
+        except Exception as exc:
+            future = Future()
+            future.set_exception(exc)
+        self.futures.append(future)
+        self.jobs[future] = (label, args)
 
     def load_prepared(self):
         # Validate all receipts now; validate each file again at its actual use.

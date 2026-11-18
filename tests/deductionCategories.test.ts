@@ -7,6 +7,7 @@ import {
   buildConfigExportRows,
   buildDeductionCategories,
   CONFIG_RULE_COLUMNS,
+  CONFIG_RULE_COLUMNS_WITH_THRESHOLDS,
   hasNonZeroDeduction,
   paginateEntries,
   summarizeCitiesProgress,
@@ -51,15 +52,97 @@ test('buildDeductionCategories organizes the 13 config fields plus extended fiel
   const categories = buildDeductionCategories(cols);
   assert.deepEqual(
     categories.map(c => c.id),
-    ['violation', 'tools', 'fund_monthly', 'extended'],
+    ['violation', 'tools', 'fund_monthly', 'xiaoxiang_fees'],
   );
   assert.deepEqual(categories[0].columns, ['投诉', '差评', '违规虚假', '物流责', '不准时单', '超时', 'T10']);
   assert.deepEqual(categories[1].columns, ['工具费', '代领费率']);
-  assert.deepEqual(categories[2].columns, ['安全基金', '使用费', '非蜂卡', '月费']);
-  assert.deepEqual(categories[3].columns, ['安全基金_maxDays', '保险费']);
+  assert.deepEqual(categories[2].columns, ['安全基金', '安全基金_maxDays', '使用费', '非蜂卡', '月费']);
+  assert.deepEqual(categories[3].columns, ['保险费']);
 
   assert.deepEqual(visibleColumnsForCategory(cols, 'all'), cols);
   assert.deepEqual(visibleColumnsForCategory(cols, 'tools'), ['工具费', '代领费率']);
+});
+
+test('xiaoxiang supermarket exposes only the three dedicated deduction columns', () => {
+  const cols = ['保险费', '循环物资使用费', '附加险'];
+  const categories = buildDeductionCategories(cols);
+  assert.deepEqual(categories.map(c => c.id), ['xiaoxiang_fees']);
+  assert.deepEqual(categories[0].columns, cols);
+  assert.equal(categories[0].label, '小象超市费用');
+  assert.deepEqual(visibleColumnsForCategory(cols, 'xiaoxiang_fees'), cols);
+
+  const entry = makeEntry('001', '测试城', '2155', '一站', {
+    station: { platform: 'xiaoxiang', city_id: '001', city: '测试城', id: '2155', name: '一站' },
+  });
+  entry.row['保险费'] = 1;
+  entry.row['循环物资使用费'] = 2;
+  entry.row['附加险'] = 30;
+
+  const html = renderToStaticMarkup(
+    React.createElement(CityDeductionAmounts, {
+      entries: [entry],
+      columns: cols,
+      disabled: false,
+      onChange: () => {},
+      onApplyToStations: () => {},
+    }),
+  );
+  assert.match(html, /小象超市费用/);
+  assert.match(html, /保险费/);
+  assert.match(html, /循环物资使用费/);
+  assert.match(html, /附加险/);
+  assert.doesNotMatch(html, /安全基金/);
+  assert.doesNotMatch(html, /非蜂卡/);
+  assert.doesNotMatch(html, /招聘来源/);
+});
+
+test('fengshen day thresholds stay in the fund group and round-trip through Excel headers', () => {
+  const cols = [...CONFIG_RULE_COLUMNS_WITH_THRESHOLDS];
+  const categories = buildDeductionCategories(cols);
+  const fund = categories.find(c => c.id === 'fund_monthly');
+  assert.deepEqual(fund?.columns, [
+    '安全基金',
+    '安全基金_maxDays',
+    '使用费',
+    '使用费_maxDays',
+    '非蜂卡',
+    '月费',
+  ]);
+
+  const entry = makeEntry('001', '广州市', 'st-1', '天河站');
+  entry.row['安全基金'] = 3;
+  entry.row['使用费'] = 2;
+  const workbook = buildUnifiedConfigWorkbookData([], [entry], cols);
+  assert.ok(workbook.itemHeaders.includes('安全基金天数阈值'));
+  assert.ok(workbook.itemHeaders.includes('使用费天数阈值'));
+  assert.equal(workbook.itemRows[0]['安全基金天数阈值'], '');
+  assert.equal(workbook.itemRows[0]['使用费天数阈值'], '');
+
+  const cities = [makeEntry('001', '广州市', '*', '城市统一扣款')];
+  const imported = applyConfigRuleRows(
+    [
+      {
+        城市: '广州',
+        团队名称: '城市统一扣款',
+        安全基金: 3,
+        安全基金天数阈值: 15,
+        使用费: 2,
+        使用费天数阈值: '',
+      },
+    ],
+    cities,
+    [],
+    cols,
+  );
+  assert.equal(imported.matchedCityCount, 1);
+  assert.equal(imported.updatedCities[0].row['安全基金_maxDays'], 15);
+  assert.equal(imported.updatedCities[0].row['使用费_maxDays'], null);
+
+  entry.row['安全基金_maxDays'] = 15;
+  entry.row['使用费_maxDays'] = 0;
+  const exported = buildConfigExportRows([], [entry], cols);
+  assert.equal(exported[0]['安全基金天数阈值'], 15);
+  assert.equal(exported[0]['使用费天数阈值'], '');
 });
 
 test('summarizeCitiesProgress and paginateEntries handle 15 cities x 12 stations = 180 stations', () => {
