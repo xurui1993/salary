@@ -105,13 +105,13 @@ export function PlatformDock({
         <ChevronDown size={13} className={`text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
-      {isOpen && (
-        <div
-          className="wbx-popover"
-          role="dialog"
-          aria-modal="false"
-          aria-label="平台登录与连接状态"
-        >
+      <div
+        className="wbx-popover"
+        role="dialog"
+        aria-modal="false"
+        aria-label="平台登录与连接状态"
+        style={isOpen ? undefined : { display: 'none' }}
+      >
           <div className="wbx-popover__head">
             <div>
               <span className="wbx-popover__title">五大业务平台连接中心</span>
@@ -130,7 +130,6 @@ export function PlatformDock({
           </div>
           {children}
         </div>
-      )}
     </div>
   );
 }
