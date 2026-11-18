@@ -147,7 +147,8 @@ class PayrollQueue:
                 actual_mode='xiaoxiang' if mode=='manual' and xiaoxiang_template(template) else mode
                 task={'id':key,'wid':wid,'owner':owner,'mode':actual_mode,'source_path':str(folder),'template_path':template.relative_to(folder).as_posix(),
                       'template_name':template.name,'status':'queued','progress':0,'current_action':'排队中','created_at':now(),
-                      'batch_id':None,'plan':None,'preparation':None,'logs':[],'hidden':False,'config':{**config,'payrollSourceMode':actual_mode},'stop_requested':False}
+                      'submission_id':request_id,'approval_code':'','batch_id':None,'plan':None,'preparation':None,'logs':[],'hidden':False,
+                      'config':{**config,'payrollSourceMode':actual_mode},'stop_requested':False}
                 db.execute('INSERT INTO tasks VALUES (?,?,?,?,?,?,?)',(key,wid,owner,'queued',0,time.time(),json.dumps(task,ensure_ascii=False)))
                 ids.append(key);tasks.append(self._public(task))
             db.execute('INSERT INTO submissions VALUES (?,?,?,?,?)',(wid,owner,request_id,fingerprint,json.dumps(ids)))
@@ -303,6 +304,20 @@ class PayrollQueue:
                 task['hidden']=not restore;self._write(db,task)
         return [self.get(wid,owner,key) for key in ids]
 
+    def set_approval(self,wid,owner,key,value):
+        if not isinstance(value,str):raise SourceError('核算审批编号必须为文本')
+        code=value.strip()
+        if len(code)>64 or any(ord(char)<32 or ord(char)==127 for char in code):
+            raise SourceError('核算审批编号不能超过64个字符，也不能包含换行或控制字符')
+        with self.lock,self.connection() as db:
+            task=self._find(db,wid,owner,key)
+            changed=0
+            if task.get('approval_code','')!=code:
+                task['approval_code']=code
+                self._write(db,task)
+                changed=1
+            return {'updated':changed,'tasks':[self._public(task)]}
+
     def continue_task(self,wid,owner,key,version=''):
         from payroll_inputs import load
         from deduction_confirmation import require_confirmation
@@ -401,9 +416,6 @@ def list_tasks(request:Request,hidden:bool=False,detail_id:str=''):
 @router.post('')
 async def add_tasks(request:Request):
     wid,owner=identity(request);data=await payload(request)
-    if data.get('mode','fengshen')=='fengshen':
-        from auth_preflight import ensure_ready
-        await asyncio.to_thread(ensure_ready,{'fengshen','lanorange','baize'})
     tasks=await asyncio.to_thread(call,get_queue().enqueue,wid,owner,data.get('source_path',''),data.get('mode','fengshen'),data.get('config',{}),data.get('request_id'))
     return {'tasks':tasks}
 
@@ -419,6 +431,12 @@ async def bundle_tasks(request:Request):
     wid,owner=identity(request);data=await payload(request)
     file=await asyncio.to_thread(call,get_queue().bundle,wid,owner,data.get('ids'))
     return FileResponse(file,filename='薪资核算结果.zip',media_type='application/zip',background=BackgroundTask(file.unlink,missing_ok=True))
+
+
+@router.post('/{key}/approval')
+async def set_approval(key:str,request:Request):
+    wid,owner=identity(request);data=await payload(request)
+    return call(get_queue().set_approval,wid,owner,key,data.get('approval_code'))
 
 
 @router.post('/{key}/stop')

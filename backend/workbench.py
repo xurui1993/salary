@@ -349,13 +349,13 @@ def task_records(request: Request):
     from download_accounts import require_account
     from download_jobs import get_manager
     from download_records import list_records
-    from payroll_inputs import workspace, public
+    from payroll_inputs import workspace
     user = require_account(request)
     wid = workspace(request)
     root = (Path(ROOT) / 'uploads').resolve()
-    known_jobs, known_batches, payroll = set(), set(), []
-    # Only manifests are inspected. Source workbooks and business rows are not
-    # read to build the task list, and other workspaces' batches stay private.
+    known_jobs, known_batches = set(), set()
+    # Payroll batches stay in the payroll queue. Their manifests are only read
+    # to hide the source downloads that belong to them from the task center.
     for path in root.glob('*/payroll_*/manifest.json'):
         if not path.resolve().is_relative_to(root):
             continue
@@ -371,26 +371,7 @@ def task_records(request: Request):
             with batch_lock(path.parent):
                 state = json.loads(path.read_text(encoding='utf-8'))
                 reconcile(path.parent, state)
-            value = public(state)
-            output = state.get('result', {}).get('output') or ''
-            try:
-                available = bool(output and Path(output).exists())
-            except OSError:
-                available = False
-            mapped = {'calculating': 'running', 'calculated': 'success'}.get(state['status'], state['status'])
-            payroll.append({
-                'id': 'payroll_' + state['id'], 'kind': 'payroll', 'batch_id': state['id'],
-                'cities': [state['plan']['city']], 'datasets': ['payroll'],
-                'start': state['plan']['start'], 'end': state['plan']['end'],
-                'created_at': state.get('created_at', ''), 'updated_at': state.get('created_at', ''),
-                'status': mapped, 'batch_status': state['status'], 'files': [],
-                'available_files': int(available), 'output': output,
-                'completed_items': sum(item['status'] in ('ready', 'omitted') for item in state['items'].values()),
-                'total_items': len(state['items']), 'applicants': state['plan'].get('applicants', 0),
-                'failed_items': sum(item['status'] == 'failed' for item in state['items'].values()),
-                'member_ids': [], 'attempts': [], 'action_run_id': '',
-                'deductions': value.get('deductions'), 'jobs': state.get('jobs', []),
-            })
+            known_jobs.update(state.get('jobs', []))
         except (OSError, ValueError, KeyError, TypeError):
             continue
     downloads = list_records(get_manager(), None if user['role'] == 'admin' else user['owner'])
@@ -404,7 +385,7 @@ def task_records(request: Request):
             record['source_files'] = [file for file in record['files'] if file['dataset'] not in targets]
             record['files'] = [file for file in record['files'] if file['dataset'] in targets]
             record['available_files'] = sum(file.get('available', True) for file in record['files'])
-    return {'records': sorted([*visible, *payroll], key=lambda item: item.get('updated_at', ''), reverse=True)}
+    return {'records': sorted(visible, key=lambda item: item.get('updated_at', ''), reverse=True)}
 
 
 @router.get('/batches/{key}/deductions')

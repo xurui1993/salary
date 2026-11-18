@@ -164,4 +164,36 @@ class SharedListTests(unittest.TestCase):
         self.assertEqual([r['id'] for r in lanorange], ['lan_1'])
 
 
+class PayrollDirectoryTests(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.folder=Path(self.temp.name)/'payroll'
+        self.folder.mkdir()
+        self.batch='a'*32
+        self.record_id='payroll_'+self.batch
+
+    def resolve(self,state):
+        with patch.object(center,'collect',return_value=([],[])), \
+             patch('download_accounts.require_account',return_value={'owner':'download_shared','role':'user'}), \
+             patch('payroll_inputs.workspace',return_value='shared'), \
+             patch('payroll_inputs.load',return_value=(self.folder,state)), \
+             patch('payroll_inputs.publish_result',return_value=self.folder/'published') as publish:
+            result=center.directory(request(),self.record_id)
+        return result,publish
+
+    def test_completed_batch_opens_without_task_center_payroll_record(self):
+        state={'id':self.batch,'status':'calculated','result':{'output':str(self.folder/'out')}}
+        result,publish=self.resolve(state)
+        self.assertEqual(result,self.folder/'published')
+        publish.assert_called_once_with('shared',self.folder,state)
+
+    def test_unfinished_or_missing_result_is_rejected(self):
+        for state in ({'id':self.batch,'status':'ready','result':{}},
+                      {'id':self.batch,'status':'calculated','result':{}}):
+            with self.assertRaises(HTTPException) as error:
+                self.resolve(state)
+            self.assertEqual(error.exception.status_code,404)
+
+
 if __name__=='__main__':unittest.main()

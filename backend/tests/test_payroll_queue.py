@@ -6,7 +6,7 @@ import tempfile
 import threading
 import time
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import uuid
 
 from fastapi import HTTPException
@@ -53,6 +53,24 @@ class QueueTests(TestCase):
             saved=self.raw(q,task['id']);self.assertIs(saved['config']['payrollExcludeSeparation'],False)
             self.assertEqual(saved['config']['theme']['msg_start'],['original'])
         with self.assertRaises(SourceError):self.enqueue(q,config={'payrollExcludeSeparation':True})
+
+    def test_approval_code_is_manual_editable_per_task(self):
+        self.template('one-template.xlsx');self.template('two-template.xlsx')
+        q=self.queue();tasks=self.enqueue(q)
+        self.assertEqual({task['submission_id'] for task in tasks},{'request_001'})
+        self.assertEqual({task['approval_code'] for task in tasks},{''})
+        result=q.set_approval('shared','download_shared',tasks[0]['id'],' 2618001 ')
+        self.assertEqual(result['updated'],1)
+        self.assertEqual([task['approval_code'] for task in q.list('shared','download_shared')],
+                         ['2618001',''])
+        q.set_approval('shared','download_shared',tasks[1]['id'],'2618002')
+        self.assertEqual([task['approval_code'] for task in q.list('shared','download_shared')],
+                         ['2618001','2618002'])
+        q._update(tasks[0]['id'],{'status':'completed'})
+        q.set_approval('shared','download_shared',tasks[0]['id'],'')
+        self.assertEqual(q.get('shared','download_shared',tasks[0]['id'])['approval_code'],'')
+        for invalid in (None,'x'*65,'bad\ncode'):
+            with self.assertRaises(SourceError):q.set_approval('shared','download_shared',tasks[1]['id'],invalid)
 
     def test_queue_scope_never_reads_other_workspaces_or_accounts(self):
         self.template();q=self.queue();key=self.enqueue(q)[0]['id']
@@ -128,6 +146,22 @@ class QueueTests(TestCase):
         self.assertTrue(all(r['status']=='completed' for r in rows))
         self.assertNotIn('waiting_confirmation',[r['status'] for r in rows])
         q.autostart=False;q.closing.set();q.wake.set();q.thread.join(2)
+
+    def test_http_enqueue_accepts_templates_before_platform_login_is_ready(self):
+        from payroll_queue import add_tasks
+        async def receive():
+            return {'type':'http.request','body':json.dumps({'source_path':'uploads/shared/upload_fixture','mode':'fengshen','config':{},'request_id':'request_pending'}).encode(),'more_body':False}
+        request=Request({'type':'http','method':'POST','path':'/api/parttime/queue','scheme':'http',
+            'headers':[(b'host',b'127.0.0.1:3000'),(b'content-type',b'application/json')],
+            'server':('127.0.0.1',3000),'client':('127.0.0.1',1234),'query_string':b''},receive)
+        queue=Mock();queue.enqueue.return_value=[{'id':'a'*32,'status':'queued'}]
+        with patch('payroll_queue.identity',return_value=('shared','download_shared')), \
+             patch('payroll_queue.get_queue',return_value=queue), \
+             patch('auth_preflight.ensure_ready') as preflight:
+            result=asyncio.run(add_tasks(request))
+        preflight.assert_not_called()
+        self.assertEqual(result['tasks'][0]['status'],'queued')
+        queue.enqueue.assert_called_once_with('shared','download_shared','uploads/shared/upload_fixture','fengshen',{},'request_pending')
 
     def test_http_identity_keeps_same_origin_write_boundary(self):
         headers=[(b'host',b'127.0.0.1:3000'),(b'x-workspace-id',b'shared'),(b'content-type',b'application/json'),(b'origin',b'https://wrong.invalid')]

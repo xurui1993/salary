@@ -7,6 +7,7 @@ The existing DPAPI vault and broker remain shared with legacy collectors.
 import ast
 import html
 import json
+from pathlib import Path
 import queue
 import re
 import threading
@@ -16,7 +17,7 @@ from urllib.parse import quote, urlencode, urljoin, urlsplit
 import requests
 
 from fengshen_auth import AuthError, BROKER, START_LOCK, allowed_host
-from fengshen_bill import AuthenticationRequired
+from fengshen_bill import AuthenticationRequired, atomic_json
 
 
 LOGIN_ORIGIN = "https://mozi-login.alibaba-inc.com"
@@ -27,8 +28,39 @@ LOGIN_URL = LOGIN_ORIGIN + "/?" + urlencode({
 SEND_URL = LOGIN_ORIGIN + "/rpc/sms/send_login_sms_code.json"
 VERIFY_URL = LOGIN_ORIGIN + "/rpc/login/doLogin.json"
 EXPORT_SMS_URL = "https://app2-edu.ele.me/kunkka-svr/exportStaff/sendVerifyCode"
+EXPORT_VERIFICATION_TTL = 2 * 60 * 60
+EXPORT_VERIFICATION_STATE = Path(__file__).with_name('.local_auth') / 'export_verification.json'
 MAX_LOGIN_BODY = 2 * 1024 * 1024
 EXTRA_MESSAGE = "风神要求额外安全验证，当前短信接口无法完成；任务已暂停，未启动浏览器或绕过验证"
+
+
+def _export_verification_records():
+    try:
+        value = json.loads(EXPORT_VERIFICATION_STATE.read_text(encoding='utf-8'))
+    except (OSError, ValueError, UnicodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def export_verification_remaining(owner, clock=time.time):
+    if not owner:
+        return 0
+    item = _export_verification_records().get(owner)
+    verified = item.get('verified_at') if isinstance(item, dict) else None
+    if type(verified) not in (int, float):
+        return 0
+    return max(0, int(verified + EXPORT_VERIFICATION_TTL - clock()))
+
+
+def mark_export_verified(owner, clock=time.time):
+    if not owner:
+        return
+    records = {key: value for key, value in _export_verification_records().items()
+               if isinstance(value, dict) and type(value.get('verified_at')) in (int, float)
+               and value['verified_at'] + EXPORT_VERIFICATION_TTL > clock()}
+    records[owner] = {'verified_at': clock()}
+    EXPORT_VERIFICATION_STATE.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(EXPORT_VERIFICATION_STATE, records)
 
 
 class ExtraVerificationRequired(AuthError):
@@ -230,11 +262,13 @@ class MoziSmsProtocol:
 
 
 class HTTPAuth:
-    def __init__(self, client, broker=BROKER, cancelled=None, log=lambda _: None, timeout=1800, protocol=None, wait_export_indefinitely=False):
+    def __init__(self, client, broker=BROKER, cancelled=None, log=lambda _: None, timeout=1800, protocol=None, wait_export_indefinitely=False, wait_login_indefinitely=False, owner=None):
         self.client, self.broker = client, broker
         self.cancelled = cancelled if cancelled is not None else client.cancelled
         self.log, self.timeout = log, timeout
         self.wait_export_indefinitely = wait_export_indefinitely
+        self.wait_login_indefinitely = wait_login_indefinitely
+        self.owner = owner
         self.protocol = protocol if protocol is not None else MoziSmsProtocol(client)
 
     def export_code(self, client=None):
@@ -298,6 +332,17 @@ class HTTPAuth:
                     self.broker.active["purpose"] = "login"
 
 
+    def mark_export_verified(self):
+        """Persist the platform session after a successful export verification."""
+        try:
+            self.broker.save(self.client.storage_state())
+            mark_export_verified(self.owner)
+            self.log("[验证] 平台导出认证已保存，2 小时内可复用")
+            return True
+        except Exception as error:
+            self.log("[验证] 平台导出验证状态未能保存，稍后可能需要重新验证：" + str(error))
+            return False
+
     def ensure(self, force=False):
         with self.broker.lock:
             if not self.broker.active:
@@ -313,9 +358,9 @@ class HTTPAuth:
                 return True
         self.broker.update("login_required", "风神会话已失效，请在当前页面获取短信验证码")
         self.log("[登录] 等待页面内短信认证，不会自动发送验证码")
-        deadline = time.monotonic() + self.timeout
+        deadline = None if self.wait_login_indefinitely else time.monotonic() + self.timeout
         blocked = False
-        while time.monotonic() < deadline:
+        while deadline is None or time.monotonic() < deadline:
             if self.cancelled.is_set():
                 raise AuthError("登录已取消，任务已停止")
             try:

@@ -280,6 +280,19 @@ class BrokerWorkerTests(unittest.TestCase):
         self.thread.join(2)
         self.assertEqual(self.result,'123456')
 
+    def test_payroll_login_keeps_waiting_past_login_timeout_without_sending_sms(self):
+        self.worker.wait_login_indefinitely=True
+        self.worker.timeout=.02
+        self.start()
+        self.thread.join(.08)
+        self.assertTrue(self.thread.is_alive())
+        self.protocol.send.assert_not_called()
+        self.assertTrue(self.command('send','13800138000')['ok'])
+        self.client.identity.side_effect=None
+        self.assertTrue(self.command('verify','123456')['ok'])
+        self.thread.join(2)
+        self.assertTrue(self.result)
+
     def test_export_uses_a_fresh_challenge_after_a_previously_hidden_login(self):
         original=self.broker.operation
         challenges=[]
@@ -299,6 +312,30 @@ class BrokerWorkerTests(unittest.TestCase):
         self.stop()
         self.assertFalse(self.broker.vault.path.exists())
         self.assertIsInstance(self.errors[0], AuthError)
+
+
+class ExportVerificationCacheTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.path = Path(self.temp.name) / 'export_verification.json'
+        patcher = patch.object(auth, 'EXPORT_VERIFICATION_STATE', self.path)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_verification_is_reused_for_two_hours_and_scoped_by_owner(self):
+        auth.mark_export_verified('download_shared', clock=lambda: 1000)
+        self.assertEqual(auth.export_verification_remaining('download_shared', clock=lambda: 1000), 7200)
+        self.assertEqual(auth.export_verification_remaining('download_shared', clock=lambda: 8199), 1)
+        self.assertEqual(auth.export_verification_remaining('download_shared', clock=lambda: 8200), 0)
+        self.assertEqual(auth.export_verification_remaining('another', clock=lambda: 1000), 0)
+        self.assertTrue(self.path.exists())
+
+    def test_expired_owner_records_are_pruned(self):
+        auth.mark_export_verified('old', clock=lambda: 1000)
+        auth.mark_export_verified('new', clock=lambda: 9000)
+        records = json.loads(self.path.read_text(encoding='utf-8'))
+        self.assertEqual(set(records), {'new'})
 
 
 class HttpRouteTests(unittest.TestCase):

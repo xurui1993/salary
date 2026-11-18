@@ -237,16 +237,6 @@ export default function App() {
     setDownloadPlatform(platform);try{localStorage.setItem('workbench_download_platform',platform);}catch{}
     setHistoryAll(false);setTaskKind('download');navigateWorkspace('create');
   };
-  const openPayrollBatch = async (id: string) => {
-    if (isRunning && payrollPreparation?.id !== id) { showToast('当前核算正在执行，请完成后切换核算批次', 'warn'); return; }
-    try {
-      const response = await fetchWithAuth(`/api/parttime/preparations/${id}`);
-      const value = await response.json(); if (!response.ok) throw new Error(value.detail || '核算批次读取失败');
-      setPayrollPreparation(value); setPayrollResumeVersion(version => version + 1); localStorage.setItem(`payroll_preparation_${workspaceId}`, value.id);
-      setAppConfig(previous => ({...previous, city: value.plan.city, payrollSourceMode: value.mode}));
-      setPayrollSubView('batches'); setTaskKind('payroll'); navigateWorkspace('create');
-    } catch (error) { showToast(error instanceof Error ? error.message : '核算批次读取失败', 'error'); }
-  };
   const [downloadNavigation, setDownloadNavigation] = useState({ view: 'create' as 'create' | 'history', version: 0 });
   const uploadSubmission = useRef(false);
   const [payrollPreparation, setPayrollPreparation] = useState<PayrollPreparationState | null>(null);
@@ -1555,9 +1545,7 @@ export default function App() {
                 onTaskKindChange={(nextKind) => setTaskKind(nextKind === 'generate' ? 'download' : nextKind)}
                 onViewChange={setWorkspaceView}
                 onFormLock={setTaskFormLocked}
-                onOpenPayroll={id => void openPayrollBatch(id)}
                 onNavigateGenerate={handleNavigateGenerate}
-                onNavigatePayroll={handleNavigatePayroll}
                 onOpenPrice={(view,id)=>{setPriceRecordId(id);navigateWorkspace(view);}}
                 prefill={downloadPrefill}
                 onActiveCountChange={setActiveDownloadCount}
@@ -1571,7 +1559,6 @@ export default function App() {
                 <CorePage
                   onOpenDeductions={(defaultOnly = false) => { setDeductionDefaultOnly(defaultOnly); setPayrollSubView('deductions'); }}
                   onOpenConnections={() => window.dispatchEvent(new CustomEvent('workbench:connections'))}
-                  onOpenDownloads={() => { setHistoryAll(true); navigateWorkspace('history'); }}
                   onNavigateDownloadCenter={() => { setTaskKind('download'); navigateWorkspace('create'); }}
                   deductionVersion={deductionVersion}
                   appTheme={appTheme}

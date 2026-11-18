@@ -439,7 +439,9 @@ def _open_runner(config, log, cancelled, notify):
                 client = FengshenHttpClient(BROKER.vault.load(), cancelled=cancelled)
                 clients.append(client)
                 auth = HTTPAuth(client, BROKER, cancelled, lane_log,
-                                wait_export_indefinitely=config.get('task_kind') == 'payroll_source')
+                                wait_export_indefinitely=config.get('task_kind') == 'payroll_source',
+                                wait_login_indefinitely=config.get('task_kind') == 'payroll_source',
+                                owner=config.get('owner'))
                 auth.ensure()
                 client.auth_handler = lambda: auth.ensure(force=True)
                 refresh_lock, export_lock = threading.Lock(), threading.Lock()
@@ -464,6 +466,10 @@ def _open_runner(config, log, cancelled, notify):
                         with export_lock:
                             return self.base.export_code(client)
 
+                    def mark_export_verified(self):
+                        with export_lock:
+                            return self.base.mark_export_verified()
+
                 class HTTPRunner:
                     parallel_sources = True
                     batch_sources = True
@@ -484,7 +490,9 @@ def _open_runner(config, log, cancelled, notify):
                             extra = FengshenHttpClient(client.storage_state(), cancelled=cancelled)
                             clients.append(extra)
                             extra_auth = HTTPAuth(extra, BROKER, cancelled, lane_log,
-                                                  wait_export_indefinitely=config.get('task_kind') == 'payroll_source')
+                                                  wait_export_indefinitely=config.get('task_kind') == 'payroll_source',
+                                                  wait_login_indefinitely=config.get('task_kind') == 'payroll_source',
+                                                  owner=config.get('owner'))
                             extra.auth_handler = lambda extra=extra: refresh_lane(extra)
                             runners.append(HTTPRunner(extra, extra_auth))
                         return runners[:count]

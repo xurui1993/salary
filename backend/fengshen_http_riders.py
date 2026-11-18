@@ -387,6 +387,7 @@ class RiderHttpCollector:
         if not isinstance(check, dict) or type(check.get("data")) is not bool:
             raise _fail("骑手信息导出验证状态无效；未发送验证码")
         body = {"departmentIds": [int(key) for key in sorted(teams)]}
+        verified = False
         if check["data"]:
             if not callable(getattr(self.auth, "export_code", None)):
                 raise _fail("骑手信息导出需要额外短信验证，请在系统中完成导出验证", "waiting_manual")
@@ -394,10 +395,14 @@ class RiderHttpCollector:
             if not isinstance(code, str) or not re.fullmatch(r"\d{4,8}", code):
                 raise _fail("骑手信息导出验证码格式无效", "waiting_manual")
             body["verifyCode"] = code
+            verified = True
         try:
-            return self._download_sync("rider_info", plan, output, body=body, teams=teams,
-                                       agencies=agencies,
-                                       cross_city=len(set(agencies.values())) > 1)
+            result = self._download_sync("rider_info", plan, output, body=body, teams=teams,
+                                         agencies=agencies,
+                                         cross_city=len(set(agencies.values())) > 1)
+            if verified and callable(getattr(self.auth, "mark_export_verified", None)):
+                self.auth.mark_export_verified()
+            return result
         finally:
             body.pop("verifyCode", None)
 
@@ -425,6 +430,7 @@ class RiderHttpCollector:
             if not isinstance(check, dict) or type(check.get("data")) is not bool:
                 raise _fail("骑手信息导出验证状态无效；未发送验证码")
             body = {"departmentIds": [int(key) for key in sorted(teams)]}
+            verified = False
             if check["data"]:
                 if not callable(getattr(self.auth, "export_code", None)):
                     raise _fail("骑手信息导出需要额外短信验证，请在系统中完成导出验证", "waiting_manual")
@@ -432,8 +438,12 @@ class RiderHttpCollector:
                 if not isinstance(code, str) or not re.fullmatch(r"\d{4,8}", code):
                     raise _fail("骑手信息导出验证码格式无效", "waiting_manual")
                 body["verifyCode"] = code
+                verified = True
             try:
-                return self._download_sync(kind, plan, output, body=body, teams=teams, agencies=agencies)
+                result = self._download_sync(kind, plan, output, body=body, teams=teams, agencies=agencies)
+                if verified and callable(getattr(self.auth, "mark_export_verified", None)):
+                    self.auth.mark_export_verified()
+                return result
             finally:
                 body.pop("verifyCode", None)
         return self._detail(plan, output, teams, agencies)

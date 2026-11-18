@@ -5,6 +5,7 @@ from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
 import tempfile
 import threading
@@ -162,7 +163,7 @@ def select_records(records, hidden, filters):
             return False
         if filters.get('kind') and r.get('kind') != filters['kind']:
             return False
-        groups = r.get('systems') or (['fengshen','lanorange'] if r.get('kind') == 'payroll' else [dataset_group(key) for key in r['datasets']])
+        groups = r.get('systems') or [dataset_group(key) for key in r['datasets']]
         tag = filters.get('system', '')
         if tag and tag not in groups and {'lanorange': '蓝橙'}.get(tag) not in groups:
             return False
@@ -316,16 +317,24 @@ def directory(request, record_id=None):
     user = require_account(request)
     if record_id is None:
         return configured_output_root()
+    if record_id.startswith('payroll_'):
+        match = re.fullmatch(r'payroll_([a-f0-9]{32})', record_id)
+        if not match:
+            raise HTTPException(404, '核算批次编号无效')
+        from payroll_inputs import workspace,load,publish_result
+        wid=workspace(request)
+        try:
+            folder,state=load(wid,match.group(1),user['owner'])
+        except Exception:
+            raise HTTPException(404, '本任务尚无结果目录') from None
+        if state.get('status')!='calculated' or not state.get('result',{}).get('output'):
+            raise HTTPException(404, '本任务尚未完成核算，暂无结果目录')
+        try:
+            return publish_result(wid,folder,state)
+        except Exception:
+            raise HTTPException(404, '核算结果目录不可用或已被移动') from None
     manager = get_manager()
     owner = None if user['role'] == 'admin' else user['owner']
-    if record_id.startswith('payroll_'):
-        records, _ = collect(request)
-        record = next((r for r in records if r['id'] == record_id), None)
-        if not record or not record.get('output'):
-            raise HTTPException(404, '本任务尚无结果目录')
-        from payroll_inputs import workspace,load,publish_result
-        wid=workspace(request);folder,state=load(wid,record['batch_id'],user['owner'])
-        return publish_result(wid,folder,state)
     if record_id.startswith('price-export:'):
         from lanorange_price_export import manager as prices, owner as price_owner
         try:

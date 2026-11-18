@@ -36,16 +36,16 @@ const pollErrorMessage=(error:unknown)=>{
   if(error instanceof TypeError)return '后台连接暂时中断，正在自动重试…';
   return downloadErrorMessage(error);
 };
-const KINDS:Record<string,string>={download:'资料下载',generate:'业务报表',payroll:'薪资核算',approval:'价格审批','price-export':'每日价格'};
+const KINDS:Record<string,string>={download:'资料下载',generate:'业务报表',approval:'价格审批','price-export':'每日价格'};
 const SYSTEMS:Record<string,string>={fengshen:'风神',lanorange:'蓝橙',baize:'商翼',benlai:'本来人力',xiaoxiang:'灯塔'};
 const stamp=(v:string)=>v?new Date(v).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'—';
 const size=(n:number)=>n>=1048576?`${(n/1048576).toFixed(1)} MB`:`${Math.max(1,Math.ceil(n/1024))} KB`;
 
-export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttempt,execution,datasetLabel,refreshVersion=0,recordModule,onOpenPayroll,onNavigateGenerate,onNavigatePayroll,onOpenPrice,initialRunId,onInitialFocusHandled}:{
+export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttempt,execution,datasetLabel,refreshVersion=0,recordModule,onNavigateGenerate,onOpenPrice,initialRunId,onInitialFocusHandled}:{
   initialRunId?:string; onInitialFocusHandled?:()=>void;
   apiFetch:DownloadFetch; workspaceId:string; selectedRunId:string; onOpenAttempt:(id:string)=>void; execution:React.ReactNode;
-  datasetLabel:(id:string)=>string; refreshVersion?:number; unified?:boolean; recordModule?:RecordModule; onOpenPayroll?:(id:string)=>void;
-  onNavigateGenerate?:(cities:string[],start:string,end:string)=>void; onNavigatePayroll?:(city?:string)=>void; onOpenPrice?:(view:'approval'|'price-export',id?:string)=>void;
+  datasetLabel:(id:string)=>string; refreshVersion?:number; unified?:boolean; recordModule?:RecordModule;
+  onNavigateGenerate?:(cities:string[],start:string,end:string)=>void; onOpenPrice?:(view:'approval'|'price-export',id?:string)=>void;
 }) {
   const api=useRef(apiFetch);api.current=apiFetch;
   const [records,setRecords]=useState<Task[]>([]),[total,setTotal]=useState(0),[page,setPage]=useState(1),[pages,setPages]=useState(1);
@@ -106,8 +106,8 @@ export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttemp
     const record=records.find(r=>r.member_ids.includes(initialRunId)||r.action_run_id===initialRunId);
     if(record){setFocused(record);onInitialFocusHandled?.();}
   },[initialRunId,records,onInitialFocusHandled]);
-  const title=(r:Task)=>r.title||(r.kind==='payroll'?'兼职薪资核算':r.datasets.map(datasetLabel).join('、').replaceAll('（生成表）',''));
-  const platform=(r:Task)=>r.price_id?'蓝橙':r.kind==='payroll'?'风神 / 蓝橙':[...new Set(r.datasets.map(id=>SYSTEMS[datasetGroup(id)]))].filter(Boolean).join(' / ') || '风神';
+  const title=(r:Task)=>r.title||r.datasets.map(datasetLabel).join('、').replaceAll('（生成表）','');
+  const platform=(r:Task)=>r.price_id?'蓝橙':[...new Set(r.datasets.map(id=>SYSTEMS[datasetGroup(id)]))].filter(Boolean).join(' / ') || '风神';
   const scope=(r:Task)=>!r.datasets.length?'详见业务记录':r.datasets.every(isGlobalDataset)?'全量':r.datasets.every(id=>id==='rider_archive')?'当前快照':`${r.start} 至 ${r.end}`;
   const open=(r:Task)=>{
     setFocused(r);
@@ -123,8 +123,7 @@ export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttemp
   };
   const download=(r:Task,file?:File,sources=false)=>act(async()=>{
     let url:string,filename:string;
-    if(r.kind==='payroll'){url=`/api/fengshen-downloads/delivery-download?batch_id=${encodeURIComponent(r.batch_id||'')}`;filename='薪资核算结果.zip';}
-    else if(r.kind==='approval'){url=`/api/fengshen-downloads/lanorange-approvals/batches/${r.price_id}/result.csv`;filename='蓝橙价格审批回执.csv';}
+    if(r.kind==='approval'){url=`/api/fengshen-downloads/lanorange-approvals/batches/${r.price_id}/result.csv`;filename='蓝橙价格审批回执.csv';}
     else if(r.kind==='price-export'){url=`/api/fengshen-downloads/lanorange-prices/exports/${r.price_id}/result.xlsx`;filename='蓝橙待审每日价格.xlsx';}
     else{url=file?`/api/fengshen-downloads/runs/${file.run_id}/files/${file.id}`:`/api/fengshen-downloads/records/${r.id}/bundle${sources?'?purpose=sources':''}`;filename=file?.name||`${sources?'来源':'结果'}_${r.id.slice(0,8)}.zip`;}
     const response=await request(url);
@@ -147,9 +146,8 @@ export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttemp
   const needsAction=(r:Task)=>taskGuidance(context(r)).needsAction;
   const actionLabel=(r:Task)=>taskGuidance(context(r)).action;
   const files=(r:Task,list:File[])=> <ul className="tc-files">{list.map(f=><li key={`${f.run_id}:${f.id}`}><div><span>{f.name}</span><small>{f.city} · {f.available?size(f.bytes):f.unavailable_reason||'文件不可用'}</small></div><button className="wb-button" disabled={busy||!f.available} onClick={()=>void download(r,f)}><Download size={14}/>下载</button></li>)}</ul>;
-  const openPayroll=(r:Task)=>{setFocused(null);onOpenPayroll?.(r.batch_id!);};
   const openPrice=(r:Task)=>{setFocused(null);onOpenPrice?.(r.kind as 'approval'|'price-export',r.price_id);};
-  const mainAction=(r:Task)=>r.kind==='payroll'?openPayroll(r):r.price_id?openPrice(r):open(r);
+  const mainAction=(r:Task)=>r.price_id?openPrice(r):open(r);
   const handoffs=focused?taskHandoffs(focused.kind,focused.datasets,focused.cities):null;
   return <section className="tc-center wbx-taskcenter" aria-label="任务中心列表">
     {/* @wbx:tc-toolbar-start 筛选与批量操作同一水平带 */}
@@ -359,12 +357,10 @@ export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttemp
 
       <div className="tc-detail-actions wbx-tc-detail__actions">
         {focused.available_files>0&&<button className="wbx-btn wbx-btn--primary" disabled={busy} onClick={()=>downloadResult(focused)}><Download size={14}/>下载结果</button>}
-        {focused.kind==='payroll'&&<button className="wbx-btn" onClick={()=>openPayroll(focused)}>打开核算批次</button>}
         {focused.price_id&&<button className="wbx-btn" onClick={()=>openPrice(focused)}>查看{focused.kind==='approval'?'审批':'价格导出'}记录</button>}
         {['download','generate','payroll_source'].includes(focused.kind)&&ENDED.has(focused.status)&&<button className="wbx-btn" disabled={busy} onClick={()=>void download(focused,undefined,true)}><Download size={14}/>下载复核资料包</button>}
         <button className="wbx-btn" disabled={busy} onClick={()=>void showDirectory(focused)}><FolderOpen size={14}/>打开任务目录</button>
         {focused.status==='success'&&handoffs?.generate&&onNavigateGenerate&&<button className="wbx-btn" onClick={()=>{setFocused(null);onNavigateGenerate(handoffs.cities,focused.start,focused.end);}}>生成专项报表</button>}
-        {focused.status==='success'&&handoffs?.payroll&&onNavigatePayroll&&<button className="wbx-btn" onClick={()=>{setFocused(null);onNavigatePayroll(handoffs.cities[0]);}}>准备薪资核算</button>}
         <button className="wbx-btn wbx-btn--ghost" disabled={busy} onClick={()=>setConfirm([focused])}>{archived?'恢复显示':ACTIVE.has(focused.status)?'停止并移出':'移出列表'}</button>
       </div>
 

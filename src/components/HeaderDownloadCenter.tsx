@@ -67,7 +67,6 @@ const SYSTEMS: Record<string, string> = {
 const KINDS: Record<string, string> = {
   download: '资料采集',
   generate: '专项报表',
-  payroll: '薪资核算',
   approval: '价格审批',
   'price-export': '每日价格',
 };
@@ -209,19 +208,15 @@ export function HeaderDownloadCenter({
 
   const recordTitle = (r: HeaderTaskRecord) =>
     r.title ||
-    (r.kind === 'payroll'
-      ? '兼职薪资核算'
-      : r.datasets
-          .map(datasetLabel)
-          .join('、')
-          .replaceAll('（生成表）', ''));
+    r.datasets
+      .map(datasetLabel)
+      .join('、')
+      .replaceAll('（生成表）', '');
 
   const recordPlatform = (r: HeaderTaskRecord) =>
     r.price_id
       ? '蓝橙'
-      : r.kind === 'payroll'
-        ? '风神 / 蓝橙'
-        : [...new Set(r.datasets.map(id => SYSTEMS[datasetGroup(id)] || '风神'))].join(' / ');
+      : [...new Set(r.datasets.map(id => SYSTEMS[datasetGroup(id)] || '风神'))].join(' / ');
 
   const triggerDownload = async (r: HeaderTaskRecord, file?: HeaderTaskFile) => {
     if (downloadingId) return;
@@ -231,10 +226,7 @@ export function HeaderDownloadCenter({
     try {
       let url = '';
       let filename = '';
-      if (r.kind === 'payroll') {
-        url = `/api/fengshen-downloads/delivery-download?batch_id=${encodeURIComponent(r.batch_id || '')}`;
-        filename = '薪资核算结果.zip';
-      } else if (r.kind === 'approval') {
+      if (r.kind === 'approval') {
         url = `/api/fengshen-downloads/lanorange-approvals/batches/${r.price_id}/result.csv`;
         filename = '蓝橙价格审批回执.csv';
       } else if (r.kind === 'price-export') {

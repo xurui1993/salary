@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {FileSpreadsheet, Download, Square, FolderOpen, ChevronDown, ArchiveRestore, X, Loader2, Sparkles, FolderKanban, SlidersHorizontal, Search, ShieldAlert} from 'lucide-react';
+import {FileSpreadsheet, Download, Square, FolderOpen, ChevronDown, ArchiveRestore, X, Loader2, Check, Pencil, Sparkles, FolderKanban, SlidersHorizontal, Search, ShieldAlert} from 'lucide-react';
 import type {CorePageProps} from './CorePage';
 import {ControlPanel} from './ControlPanel';
 import {PayrollReviewSummary} from './PayrollReviewSummary';
@@ -12,7 +12,7 @@ import {legacyPayrollTask,payrollElapsed,payrollModeName,payrollQueueRunning,pay
 import {paginateEntries} from '../lib/deductionCategories';
 import {filterPayrollQueueTasks,type PayrollQueueFilterTab} from '../lib/workbenchFilters';
 
-type Props=Pick<CorePageProps,'config'|'onConfigChange'|'progress'|'progressText'|'logs'|'payrollPreparation'|'apiFetch'|'onPreparationChange'|'onUploadFiles'|'onRun'|'onOpenDownloads'|'onOpenConnections'|'onOpenFengshenLogin'|'onOpenDeductions'|'onOpenSettings'|'uploadExtracted'>&{isRunning:boolean;onOtherMode:(mode:'fengshen'|'manual'|'xiaoxiang')=>void};
+type Props=Pick<CorePageProps,'config'|'onConfigChange'|'progress'|'progressText'|'logs'|'payrollPreparation'|'apiFetch'|'onPreparationChange'|'onUploadFiles'|'onRun'|'onOpenConnections'|'onOpenFengshenLogin'|'onOpenDeductions'|'onOpenSettings'|'uploadExtracted'>&{isRunning:boolean;onOtherMode:(mode:'fengshen'|'manual'|'xiaoxiang')=>void};
 const API='/api/parttime/queue';
 
 const PAYROLL_WORKBENCH_MODES = [
@@ -30,10 +30,51 @@ const PAYROLL_WORKBENCH_MODES = [
   },
 ] as const;
 
-export function PayrollQueueTable({tasks,selectedId,expandedId,checked,onSelect,onToggleExpand,onCheck,onCheckAll,onStop,onRemove,onDownload,onOpenDirectory,onRestore,renderDetail,busy=false,hidden=false}:{
+function payrollPeriod(value:string){
+  const match=/^(\d{4})-(\d{2})-(\d{2})/.exec(value||'');
+  return match?`${match[2]}.${match[3]}`:value||'';
+}
+function payrollScope(plan?:PayrollQueueTask['plan']){
+  if(!plan)return '';
+  const start=payrollPeriod(plan.start),end=payrollPeriod(plan.end);
+  const period=start&&end?`${start}-${end}`:start||end;
+  return [period,plan.cycle].filter(Boolean).join(' · ');
+}
+function taskLabel(task:PayrollQueueTask){
+  return (task.approval_code||'').trim()||'未填写审批编号的任务';
+}
+function ApprovalCell({task,onSave}:{task:PayrollQueueTask;onSave:(task:PayrollQueueTask,code:string)=>Promise<void>}){
+  const [editing,setEditing]=useState(false),[draft,setDraft]=useState(task.approval_code||''),[saving,setSaving]=useState(false);
+  useEffect(()=>{if(!editing)setDraft(task.approval_code||'');},[task.approval_code,editing]);
+  const code=(task.approval_code||'').trim();
+  const cancel=()=>{setDraft(task.approval_code||'');setEditing(false);};
+  const commit=async()=>{
+    const next=draft.trim();
+    if(next===code){setEditing(false);return;}
+    setSaving(true);
+    try{await onSave(task,next);setEditing(false);}
+    catch{/* Keep the editor open so the number can be corrected. */}
+    finally{setSaving(false);}
+  };
+  if(task.legacy)return <span className={`pq-approval-value${code?'':' is-empty'}`} title="历史批次审批编号请在原批次维护">{code||'待填写审批编号'}</span>;
+  if(editing)return <div className="pq-approval-edit" onClick={event=>event.stopPropagation()}>
+    <input autoFocus value={draft} maxLength={64} placeholder="填写审批编号" aria-label="核算审批编号"
+      onChange={event=>setDraft(event.target.value)}
+      onKeyDown={event=>{if(event.key==='Enter')void commit();else if(event.key==='Escape')cancel();}}/>
+    <button type="button" className="pq-icon-button" title={saving?'保存中':'保存审批编号'} aria-label="保存审批编号" disabled={saving} onClick={()=>void commit()}>{saving?<Loader2 size={13} className="animate-spin"/>:<Check size={14}/>}</button>
+    <button type="button" className="pq-icon-button" title="取消修改" aria-label="取消修改审批编号" disabled={saving} onClick={cancel}><X size={14}/></button>
+  </div>;
+  return <div className="pq-approval" onClick={event=>event.stopPropagation()}>
+    <button type="button" className={`pq-approval-value${code?'':' is-empty'}`} title={code||'点击填写核算审批编号'} onClick={()=>setEditing(true)}>{code||'待填写审批编号'}</button>
+    <button type="button" className="pq-icon-button pq-approval-edit-btn" title={code?'修改审批编号':'填写审批编号'} aria-label={`${code?'修改':'填写'} ${taskLabel(task)}`} onClick={()=>setEditing(true)}><Pencil size={13}/></button>
+  </div>;
+}
+
+export function PayrollQueueTable({tasks,selectedId,expandedId,checked,onSelect,onToggleExpand,onCheck,onCheckAll,onStop,onRemove,onDownload,onOpenDirectory,onRestore,onApproval,renderDetail,busy=false,hidden=false}:{
   tasks:PayrollQueueTask[];selectedId?:string;expandedId?:string;checked:string[];onSelect:(id:string)=>void;onToggleExpand:(id:string)=>void;onCheck:(id:string)=>void;onCheckAll:()=>void;
   onStop:(task:PayrollQueueTask)=>void;onRemove:(tasks:PayrollQueueTask[])=>void;onDownload:(task:PayrollQueueTask)=>void;
-  onOpenDirectory:(task:PayrollQueueTask)=>void;onRestore:(tasks:PayrollQueueTask[])=>void;renderDetail?:(task:PayrollQueueTask)=>React.ReactNode;busy?:boolean;hidden?:boolean;
+  onOpenDirectory:(task:PayrollQueueTask)=>void;onRestore:(tasks:PayrollQueueTask[])=>void;onApproval:(task:PayrollQueueTask,code:string)=>Promise<void>;
+  renderDetail?:(task:PayrollQueueTask)=>React.ReactNode;busy?:boolean;hidden?:boolean;
 }){
   const allChecked=tasks.length>0&&tasks.every(task=>checked.includes(task.id));
   return <div className="pq-table-scroll wbx-table-scroll wbx-payroll__scroll"><table className="pq-table wbx-table wbx-payroll__table"><thead><tr>
@@ -48,23 +89,22 @@ export function PayrollQueueTable({tasks,selectedId,expandedId,checked,onSelect,
     const progressDesc=task.current_action||errorHint;
     return <React.Fragment key={task.id}>
     <tr className={`pq-row${index%2===1?' is-alt':''}${task.id===selectedId?' is-selected':''}${expanded?' is-expanded':''}`} onClick={()=>onSelect(task.id)}>
-      <td className="pq-check"><input type="checkbox" aria-label={`选择任务 ${task.template_name}`} checked={checked.includes(task.id)} disabled={busy} onClick={event=>event.stopPropagation()} onChange={()=>onCheck(task.id)}/></td>
+      <td className="pq-check"><input type="checkbox" aria-label={`选择任务 ${taskLabel(task)}`} checked={checked.includes(task.id)} disabled={busy} onClick={event=>event.stopPropagation()} onChange={()=>onCheck(task.id)}/></td>
       <td className="pq-task-cell">
         <div className="pq-task-row">
           <button
             type="button"
             className="pq-expand-toggle"
             aria-expanded={expanded}
-            aria-label={expanded?`收起 ${task.template_name} 详情`:`展开 ${task.template_name} 详情`}
+            aria-label={expanded?`收起 ${taskLabel(task)} 详情`:`展开 ${taskLabel(task)} 详情`}
             onClick={event=>{event.stopPropagation();onToggleExpand(task.id);}}
           >
             <ChevronDown size={15}/>
           </button>
-          <button className="pq-task-name" aria-pressed={task.id===selectedId} onClick={()=>onSelect(task.id)}><FileSpreadsheet size={16}/><span title={task.template_name}>{task.template_name}</span></button>
+          <ApprovalCell task={task} onSave={onApproval}/>
         </div>
-        <small>{payrollModeName(task.mode)}{task.legacy?' · 历史批次':''}</small>
       </td>
-      <td className="pq-scope-cell"><strong>{task.plan?.city||(task.status==='queued'?'待识别':'识别模板中')}</strong><small>{task.plan?`${task.plan.start} 至 ${task.plan.end}`:'按上传顺序执行'}</small></td>
+      <td className="pq-scope-cell"><strong>{task.plan?.city||(task.status==='queued'?'待识别':'识别模板中')}</strong><small>{task.plan?payrollScope(task.plan):'按上传顺序执行'}</small></td>
       <td className="pq-applicants">{task.plan?.applicants??'—'}</td>
       <td className="pq-progress-cell">
         <span className={`wbx-pill ${toneClass(state.tone)}`}>{running&&task.status!=='stopping'?<Loader2 size={13} className="animate-spin"/>:<span className="wbx-pill__dot" aria-hidden="true"/>}{state.label}</span>
@@ -78,9 +118,9 @@ export function PayrollQueueTable({tasks,selectedId,expandedId,checked,onSelect,
         {!!task.elapsed_seconds&&<small className="pq-elapsed tabular-nums">已用时 {payrollElapsed(task.elapsed_seconds)}</small>}
       </td>
       <td className="pq-ops-cell"><div className="pq-row-actions" onClick={event=>event.stopPropagation()}>{hidden?<button className="wb-link" disabled={busy} onClick={()=>onRestore([task])}><ArchiveRestore size={14}/>恢复</button>:<>
-        {done&&task.batch_id&&<><button className="pq-icon-button" title="下载核算成品包" aria-label={`下载 ${task.template_name} 核算成品包`} disabled={busy} onClick={()=>onDownload(task)}><Download size={15}/></button><button className="pq-icon-button" title="打开结果目录" aria-label={`打开 ${task.template_name} 结果目录`} disabled={busy} onClick={()=>onOpenDirectory(task)}><FolderOpen size={16}/></button></>}
-        {running&&<button className="wb-link" title={task.status==='stopping'?'停止中':'停止'} aria-label={task.status==='stopping'?'停止中':`停止 ${task.template_name}`} disabled={busy||task.status==='stopping'} onClick={()=>onStop(task)}><Square size={12}/>{task.status==='stopping'?'停止中':'停止'}</button>}
-        <button className="pq-icon-button" title={running?'停止并移出':'移出任务'} aria-label={`${running?'停止并移出':'移出'} ${task.template_name}`} disabled={busy||task.status==='stopping'} onClick={()=>onRemove([task])}><X size={15}/></button>
+        {done&&task.batch_id&&<><button className="pq-icon-button" title="下载核算成品包" aria-label={`下载 ${taskLabel(task)} 核算成品包`} disabled={busy} onClick={()=>onDownload(task)}><Download size={15}/></button><button className="pq-icon-button" title="打开结果目录" aria-label={`打开 ${taskLabel(task)} 结果目录`} disabled={busy} onClick={()=>onOpenDirectory(task)}><FolderOpen size={16}/></button></>}
+        {running&&<button className="wb-link" title={task.status==='stopping'?'停止中':'停止'} aria-label={task.status==='stopping'?'停止中':`停止 ${taskLabel(task)}`} disabled={busy||task.status==='stopping'} onClick={()=>onStop(task)}><Square size={12}/>{task.status==='stopping'?'停止中':'停止'}</button>}
+        <button className="pq-icon-button" title={running?'停止并移出':'移出任务'} aria-label={`${running?'停止并移出':'移出'} ${taskLabel(task)}`} disabled={busy||task.status==='stopping'} onClick={()=>onRemove([task])}><X size={15}/></button>
       </>}</div></td>
     </tr>
     {expanded&&renderDetail&&<tr className="pq-row-detail"><td colSpan={6}><div className="pq-row-detail__inner">{renderDetail(task)}</div></td></tr>}
@@ -105,7 +145,7 @@ function formatLogTime(value:string){
   return value.match(/(?:T|\s)(\d{2}:\d{2}(?::\d{2})?)/)?.[1]||value;
 }
 
-export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,progressText,logs,payrollPreparation:value,apiFetch,onPreparationChange,onUploadFiles,onOpenDownloads,onOpenConnections,onOpenFengshenLogin,onOpenDeductions,onOpenSettings,onOtherMode}:Props){
+export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,progressText,logs,payrollPreparation:value,apiFetch,onPreparationChange,onUploadFiles,onOpenConnections,onOpenFengshenLogin,onOpenDeductions,onOpenSettings,onOtherMode}:Props){
   const [tasks,setTasks]=useState<PayrollQueueTask[]>([]),[selectedId,setSelectedId]=useState(''),[checked,setChecked]=useState<string[]>([]);
   /** 行内展开的任务 id（T6-1a A2）：详情从页面级 section 搬进表格行 */
   const [expandedId,setExpandedId]=useState('');
@@ -199,8 +239,24 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
       if(mode==='fengshen'&&files.some(item=>!item.file.name.toLowerCase().endsWith('.xlsx')||!item.file.name.toLowerCase().includes('template')))throw Error('请选择文件名含 template 的 .xlsx 标准模板，可一次选择多份。');
       const previous=new Set(tasks.map(task=>task.id));await onUploadFiles(files);
       if(hidden){setHidden(false);return;}
-      const next=await refresh();const added=next?.find(task=>!previous.has(task.id));if(added)setSelectedId(added.id);
+      const next=await refresh();const added=next?.filter(task=>!previous.has(task.id))||[];
+      if(added.length){
+        setSelectedId(added[0].id);
+        setQueueFilterTab('all');
+        setQueueSearch('');
+        setQueuePage(Math.max(1, Math.ceil((next?.length||0)/queuePageSize)));
+        setNotice(`已加入 ${added.length} 个核算任务，请逐行填写审批编号。`);
+      }
     }catch(e){setError(e instanceof Error?e.message:'资料上传未完成');}finally{setUploading(false);}
+  };
+  const updateApproval=async(task:PayrollQueueTask,code:string)=>{
+    setError('');setNotice('');
+    try{
+      const response=await request(`${API}/${task.id}/approval`,{approval_code:code});
+      await response.json().catch(()=>({}));
+      setNotice('审批编号已更新');
+      await refresh();
+    }catch(e){setError(e instanceof Error?e.message:'审批编号保存失败');throw e;}
   };
   const stop=(task:PayrollQueueTask)=>void act(async()=>{
     if(task.legacy){await request('/api/workbench/task-center/stop',{id:'payroll_'+task.batch_id});onPreparationChange(await(await request(`/api/parttime/preparations/${task.batch_id}`)).json());}
@@ -220,6 +276,7 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
   const renderRowDetail=(task:PayrollQueueTask)=><div className="wbx-payroll__detail">
     <div className="wbx-payroll__detail-head">
       <span className={`wbx-pill ${toneClass(payrollQueueStatus(task.status).tone)}`}>{payrollQueueStatus(task.status).label}</span>
+      <span className="wbx-hint" title={task.template_name}>模板：{task.template_name}</span>
       <span className="wbx-hint">{payrollModeName(task.mode)}{task.legacy?' · 历史批次':''}</span>
       {!!task.elapsed_seconds&&<span className="wbx-hint">已用时 {payrollElapsed(task.elapsed_seconds)}</span>}
     </div>
@@ -276,14 +333,6 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
         >
           <FileSpreadsheet size={14} />
           标准模板
-        </button>
-        <button
-          type="button"
-          className="wbx-btn wbx-btn--ghost wbx-btn--sm"
-          onClick={onOpenDownloads}
-        >
-          <FolderOpen size={14} />
-          历史批次
         </button>
       </div>
     </section>
@@ -441,6 +490,7 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
             onDownload={download}
             onOpenDirectory={directory}
             onRestore={restore}
+            onApproval={updateApproval}
             busy={busy}
             hidden={hidden}
           />

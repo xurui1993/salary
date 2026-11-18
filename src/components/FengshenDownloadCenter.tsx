@@ -144,9 +144,7 @@ interface Props {
   onTaskKindChange?: (kind: 'download' | 'generate') => void;
   onViewChange?: (view: 'create' | 'history') => void;
   onFormLock?: (locked: boolean) => void;
-  onOpenPayroll?: (id: string) => void;
   onNavigateGenerate?: (cities: string[], start: string, end: string) => void;
-  onNavigatePayroll?: (city?: string) => void;
   onOpenPrice?: (view: 'approval' | 'price-export', id?: string) => void;
   prefill?: {
     cities?: string[];
@@ -261,7 +259,7 @@ export function FengshenDownloadCenter(props: Props) {
   return <DownloadAccountPanel apiFetch={props.apiFetch} onAccountChange={props.onAccountChange}>{(user, authenticatedFetch) => <AuthorizedDownloadCenter key={user.id} {...props} apiFetch={authenticatedFetch} user={user} />}</DownloadAccountPanel>;
 }
 
-function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, onActiveCountChange, fengshenAuthStatus, user, embedded, navigation, taskKind = 'download', platform, recordModule, hideNavigation, onSelectPlatform, onTaskKindChange, onViewChange, onFormLock, onOpenPayroll, onNavigateGenerate, onNavigatePayroll, onOpenPrice, prefill }: Props & { user: DownloadUser }) {
+function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, onActiveCountChange, fengshenAuthStatus, user, embedded, navigation, taskKind = 'download', platform, recordModule, hideNavigation, onSelectPlatform, onTaskKindChange, onViewChange, onFormLock, onNavigateGenerate, onOpenPrice, prefill }: Props & { user: DownloadUser }) {
   const apiRef = useRef(apiFetch);
   apiRef.current = apiFetch;
   const [options, setOptions] = useState<DownloadOptions | null>(null);
@@ -2923,9 +2921,8 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
             )}
             <div className={recordModule ? 'wb-stage-history-body' : undefined}>
               <DownloadRecords initialRunId={historyFocusId} onInitialFocusHandled={()=>setHistoryFocusId('')} key={recordModule||'all'} recordModule={recordModule} apiFetch={apiFetch} workspaceId={workspaceId} selectedRunId={selectedId}
-                datasetLabel={id => id === 'payroll' ? '兼职薪资核算' : datasetLabel(id)} refreshVersion={navigation?.version} unified onOpenPayroll={onOpenPayroll}
+                datasetLabel={datasetLabel} refreshVersion={navigation?.version} unified
                 onNavigateGenerate={onNavigateGenerate}
-                onNavigatePayroll={onNavigatePayroll}
                 onOpenPrice={onOpenPrice}
         onOpenAttempt={id => {
           setRequestError('');

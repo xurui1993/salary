@@ -23,7 +23,6 @@ export interface CorePageProps {
   onOpenSettings?: () => void;
   onOpenDeductions: (defaultOnly?: boolean) => void;
   onOpenConnections: () => void;
-  onOpenDownloads: () => void;
   onNavigateDownloadCenter?: () => void;
   deductionVersion: number;
   resumeVersion: number;

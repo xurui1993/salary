@@ -78,7 +78,7 @@ class UnifiedTaskTests(unittest.TestCase):
             value['items'].append({'city': '泉州', 'dataset': item, 'start': value['start'], 'end': value['end'], 'status': 'success'})
             value['files'].append({'id': key + str(index), 'name': item+'.csv', 'city': '泉州', 'dataset': item, 'start': value['start'], 'end': value['end'], 'available': True, 'bytes': 1})
         return value
-    def test_payroll_sources_hidden_under_parent_and_other_workspaces_not_exposed(self):
+    def test_payroll_batches_stay_out_of_task_center_and_sources_stay_hidden(self):
         output = self.root / 'output'; output.mkdir()
         self.manifest('tester', 'a'*32, 'source', str(output))
         self.manifest('other', 'b'*32, 'private_source')
@@ -87,11 +87,9 @@ class UnifiedTaskTests(unittest.TestCase):
         manager = SimpleNamespace(record_snapshots=lambda owner: [source, retry, ordinary, private])
         with patch.object(workbench, 'ROOT', self.root), patch('download_jobs.get_manager', return_value=manager):
             result = workbench.task_records(request(owner='tester'))['records']
-        self.assertEqual(len(result), 2)
-        self.assertEqual({item['kind'] for item in result}, {'download', 'payroll'})
-        payroll = next(item for item in result if item['kind'] == 'payroll')
-        self.assertEqual(payroll['batch_id'], 'a'*32)
-        self.assertEqual(payroll['available_files'], 1)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]['kind'], 'download')
+        self.assertEqual(result[0]['id'], 'ordinary')
         self.assertNotIn('b'*32, json.dumps(result))
 
     def test_generation_results_and_sources_are_separated(self):
