@@ -107,6 +107,7 @@ interface DownloadRun {
   waybill_all_city_send?: boolean;
   include_separation?: boolean;
   exclude_separation?: boolean;
+  xiaoxiang_all_dates?: boolean;
   order_progress?: { batches?: number; batch?: number; obtained?: number; downloaded?: number; processed?: number;
     cached_days?: number; download_bytes?: number; processed_rows?: number; elapsed_seconds?: number; stage?: string };
   summary_progress?: { stage?: 'merging' | 'completed' | 'failed'; current?: number; total?: number; city?: string; month?: string };
@@ -312,10 +313,11 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       : defaultMonthRange(platform === 'xiaoxiang').start.slice(0, 7),
   ]);
   const [lanorangeMonths, setLanorangeMonths] = useState<string[]>(() => [defaultMonthRange(platform === 'xiaoxiang').start.slice(0, 7)]);
+  const [xiaoxiangAllDates, setXiaoxiangAllDates] = useState(false);
   const [blueCities, setBlueCities] = useState<string[]>([]);
   const [includeSeparation, setIncludeSeparation] = useState(false);
   const [excludeSeparation, setExcludeSeparation] = useState(true);
-  const scopeSelections = useRef<Record<string, {cities:string[];start:string;end:string;selectedMonths:string[];includeSeparation:boolean;excludeSeparation:boolean}>>({});
+  const scopeSelections = useRef<Record<string, {cities:string[];start:string;end:string;selectedMonths:string[];includeSeparation:boolean;excludeSeparation:boolean;allDates:boolean}>>({});
   const [runs, setRuns] = useState<DownloadRun[]>([]);
   const [cityPickerOpen, setCityPickerOpen] = useState(false);
   const [citySearch, setCitySearch] = useState('');
@@ -340,7 +342,9 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       selectedMonths: prefillMonths,
       includeSeparation,
       excludeSeparation,
+      allDates: false,
     };
+    setXiaoxiangAllDates(false);
     if (prefill.cities && prefill.cities.length) {
       setCities(prefill.cities);
     }
@@ -441,17 +445,17 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   useEffect(() => {
     if (previousKind.current === selectionScope || createAttempt.current) return;
     const previous = previousKind.current; previousKind.current = selectionScope;
-    scopeSelections.current[previous] = {cities:[...cities],start,end,selectedMonths:[...selectedMonths],includeSeparation,excludeSeparation};
+    scopeSelections.current[previous] = {cities:[...cities],start,end,selectedMonths:[...selectedMonths],includeSeparation,excludeSeparation,allDates:xiaoxiangAllDates};
     const savedScope = scopeSelections.current[selectionScope];
     if (savedScope) {
-      setCities(savedScope.cities); setStart(savedScope.start); setEnd(savedScope.end); setSelectedMonths(savedScope.selectedMonths); setLanorangeMonths(savedScope.selectedMonths); setIncludeSeparation(savedScope.includeSeparation); setExcludeSeparation(savedScope.excludeSeparation);
+      setCities(savedScope.cities); setStart(savedScope.start); setEnd(savedScope.end); setSelectedMonths(savedScope.selectedMonths); setLanorangeMonths(savedScope.selectedMonths); setIncludeSeparation(savedScope.includeSeparation); setExcludeSeparation(savedScope.excludeSeparation); setXiaoxiangAllDates(savedScope.allDates);
     } else if (taskKind === 'generate') {
       const period = computeBillingPeriodRange('last_full_month', shanghaiToday());
-      setCities([]); setStart(period.start); setEnd(period.end); setSelectedMonths([period.start.slice(0, 7)]); setIncludeSeparation(false); setExcludeSeparation(true);
+      setCities([]); setStart(period.start); setEnd(period.end); setSelectedMonths([period.start.slice(0, 7)]); setIncludeSeparation(false); setExcludeSeparation(true); setXiaoxiangAllDates(false);
     } else {
       const range = defaultMonthRange(platform === 'xiaoxiang');
       const initialMonth = range.start.slice(0, 7);
-      setCities([]); setStart(range.start); setEnd(range.end); setSelectedMonths([initialMonth]); setLanorangeMonths([initialMonth]); setIncludeSeparation(false); setExcludeSeparation(true);
+      setCities([]); setStart(range.start); setEnd(range.end); setSelectedMonths([initialMonth]); setLanorangeMonths([initialMonth]); setIncludeSeparation(false); setExcludeSeparation(true); setXiaoxiangAllDates(false);
     }
     if (!platform) {
       setDatasets(values => {
@@ -472,11 +476,12 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       selectedMonths: [...selectedMonths],
       includeSeparation,
       excludeSeparation,
+      allDates: xiaoxiangAllDates,
     };
-  }, [selectionScope, cities, start, end, selectedMonths, includeSeparation, excludeSeparation]);
+  }, [selectionScope, cities, start, end, selectedMonths, includeSeparation, excludeSeparation, xiaoxiangAllDates]);
   useEffect(() => {
     const previous = createAttempt.current?.payload;
-    if (previous) { setCities(previous.cities); setDatasets(previous.datasets); setStart(previous.start); setEnd(previous.end); setRefreshHistory(!!previous.refresh_history); setWaybillAllCitySend(!!previous.waybill_all_city_send); const restoredMonths = Array.isArray(previous.lanorange_months) ? previous.lanorange_months : []; setLanorangeMonths(restoredMonths); if (restoredMonths.length) setSelectedMonths(restoredMonths); setBlueCities(previous.datasets?.every(isLanorange) && !previous.datasets.includes('abnormal_riders') ? (previous.cities || []).filter(city => city !== '全部城市') : []); setIncludeSeparation(!!previous.include_separation); setExcludeSeparation(previous.exclude_separation??true); }
+    if (previous) { setCities(previous.cities); setDatasets(previous.datasets); setStart(previous.start); setEnd(previous.end); setRefreshHistory(!!previous.refresh_history); setWaybillAllCitySend(!!previous.waybill_all_city_send); setXiaoxiangAllDates(!!previous.xiaoxiang_all_dates); const restoredMonths = Array.isArray(previous.lanorange_months) ? previous.lanorange_months : []; setLanorangeMonths(restoredMonths); if (restoredMonths.length) setSelectedMonths(restoredMonths); setBlueCities(previous.datasets?.every(isLanorange) && !previous.datasets.includes('abnormal_riders') ? (previous.cities || []).filter(city => city !== '全部城市') : []); setIncludeSeparation(!!previous.include_separation); setExcludeSeparation(previous.exclude_separation??true); }
   }, []);
   const [uncertainRetry, setUncertainRetry] = useState(!!retryAttempt.current);
   const [retryPending, setRetryPending] = useState(false);
@@ -669,7 +674,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
 
   const getPlatformScope = (plat: DownloadPlatform) => {
     if (plat === selectionScope) {
-      return { cities, start, end, selectedMonths, includeSeparation, excludeSeparation };
+      return { cities, start, end, selectedMonths, includeSeparation, excludeSeparation, allDates: xiaoxiangAllDates };
     }
     const saved = scopeSelections.current[plat];
     if (saved) return saved;
@@ -681,6 +686,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       selectedMonths: [defRange.start.slice(0, 7)],
       includeSeparation: false,
       excludeSeparation: true,
+      allDates: false,
     };
   };
 
@@ -703,6 +709,10 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const xiaoxiangOnly: boolean = platform ? platform === 'xiaoxiang' : activeDatasets.length > 0 && activeDatasets.every(isXiaoxiang);
   const archiveOnly: boolean = xiaoxiangOnly && activeDatasets.length > 0 && activeDatasets.every(isRiderArchive);
   const xiaoxiangDated: boolean = xiaoxiangOnly && !archiveOnly;
+  const xiaoxiangAllDatesActive = xiaoxiangDated && xiaoxiangAllDates;
+  useEffect(() => {
+    if (!xiaoxiangDated && xiaoxiangAllDates) setXiaoxiangAllDates(false);
+  }, [xiaoxiangDated, xiaoxiangAllDates]);
   const yesterday = new Date(shanghaiToday() + 'T00:00:00Z'); yesterday.setUTCDate(yesterday.getUTCDate() - 1);
   const dailyDate = yesterday.toISOString().slice(0, 10);
   const blueOnly: boolean =
@@ -727,7 +737,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     return monthRange.start <= monthRange.end && !(hasAttendance && (monthRange.end < attendanceFirst || monthRange.start > attendanceLast)) && expectedStart <= expectedEnd;
   });
   const activeSelectedMonths = selectedMonths.filter(month => enabledMonthOptions.includes(month));
-  const monthRunChunks = activeSelectedMonths.length > 0
+  const monthRunChunks = !xiaoxiangAllDatesActive && activeSelectedMonths.length > 0
     ? buildMultiMonthRunRanges(activeSelectedMonths, shanghaiToday(), {
         capAtYesterday: xiaoxiangOnly,
         minDate: hasAttendance ? attendanceFirst : undefined,
@@ -745,17 +755,20 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     !blueOnly &&
     !payoutOnly &&
     !archiveOnly &&
+    !xiaoxiangAllDatesActive &&
     !abnormalRidersOnly &&
     rawSelectedDatasets.length > 0 &&
     activeSelectedMonths.length > 0 &&
     monthRunChunks.length > 1;
   const xiaoxiangSpanDays = validDates ? Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86400000) + 1 : 0;
-  const xiaoxiangDateValid = activeSelectedMonths.length > 0
-    ? monthRunChunks.length > 0 && monthRunChunks.every(chunk => {
-        const chunkSpan = computeDateRangeSpanDays(chunk.start, chunk.end) ?? 0;
-        return chunk.end <= dailyDate && chunkSpan <= 31;
-      })
-    : validDates && end <= dailyDate && xiaoxiangSpanDays <= 31;
+  const xiaoxiangDateValid = xiaoxiangAllDatesActive
+    ? xiaoxiangFirst <= dailyDate
+    : activeSelectedMonths.length > 0
+      ? monthRunChunks.length > 0 && monthRunChunks.every(chunk => {
+          const chunkSpan = computeDateRangeSpanDays(chunk.start, chunk.end) ?? 0;
+          return chunk.end <= dailyDate && chunkSpan <= 31;
+        })
+      : validDates && end <= dailyDate && xiaoxiangSpanDays <= 31;
   const billingPeriodRange=(preset:BillingPeriodPreset)=>{
     const range=xiaoxiangDated
       ? computeLighthousePeriodRange(preset,shanghaiToday())
@@ -766,7 +779,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   };
   const activeSelectedMonthsKey = activeSelectedMonths.join(',');
   useEffect(()=>{
-    if(!xiaoxiangOnly)return;
+    if(!xiaoxiangOnly || xiaoxiangAllDatesActive)return;
     if(activeSelectedMonths.length > 0){
       const chunks = buildMultiMonthRunRanges(activeSelectedMonths, shanghaiToday(), { capAtYesterday: true, maxDaysPerRun: 31 });
       if (chunks.length > 0) {
@@ -795,7 +808,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
         setEnd(fallback.end);
       }
     }
-  },[xiaoxiangOnly,dailyDate,activeSelectedMonthsKey]);
+  },[xiaoxiangOnly,xiaoxiangAllDatesActive,dailyDate,activeSelectedMonthsKey]);
   const merchantDateValid=merchantSnapshotOnly||(validDates&&start>=attendanceFirst&&end<=attendanceLast);
   const invalidBaizeMix = !platform && datasets.some(isPayoutPlatform) && !datasets.every(isPayoutPlatform);
   const invalidBenlaiMix = false;
@@ -886,18 +899,23 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     ...(rawSelectedDatasets.some(isLanorange) || blueOnly ? { lanorange_full_delivery: true } : {}),
     start: archiveOnly
       ? shanghaiToday()
-      : xiaoxiangDated
-        ? (monthRunChunks[0]?.start || start)
-        : blueOnly || payoutOnly || merchantSnapshotOnly
-          ? shanghaiToday()
-          : (monthRunChunks[0]?.start || start),
+      : xiaoxiangAllDatesActive
+        ? xiaoxiangFirst
+        : xiaoxiangDated
+          ? (monthRunChunks[0]?.start || start)
+          : blueOnly || payoutOnly || merchantSnapshotOnly
+            ? shanghaiToday()
+            : (monthRunChunks[0]?.start || start),
     end: archiveOnly
       ? shanghaiToday()
-      : xiaoxiangDated
-        ? (monthRunChunks[monthRunChunks.length - 1]?.end || end)
-        : blueOnly || payoutOnly || merchantSnapshotOnly
-          ? shanghaiToday()
-          : (monthRunChunks[monthRunChunks.length - 1]?.end || end),
+      : xiaoxiangAllDatesActive
+        ? dailyDate
+        : xiaoxiangDated
+          ? (monthRunChunks[monthRunChunks.length - 1]?.end || end)
+          : blueOnly || payoutOnly || merchantSnapshotOnly
+            ? shanghaiToday()
+            : (monthRunChunks[monthRunChunks.length - 1]?.end || end),
+    ...(xiaoxiangAllDatesActive ? { xiaoxiang_all_dates: true } : {}),
     ...(refreshHistory && rawSelectedDatasets.some(dataset => ['fraud', 'problem'].includes(dataset)) ? { refresh_history: true } : {}),
     ...(waybillAllCitySend && rawSelectedDatasets.includes('delivery_waybill') ? { waybill_all_city_send: true } : {}),
     ...(blueOnly && rawSelectedDatasets.includes('lanorange_part_price') ? { lanorange_months: resolvedLanorangeMonths } : {}),
@@ -955,23 +973,29 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
 
       if (plat === 'xiaoxiang') {
         const xArchiveOnly = platDatasets.every(isRiderArchive);
+        const xAllDates = !!pScope.allDates && !xArchiveOnly;
         const xMonths = pScope.selectedMonths.filter(m => priceMonthOptions.includes(m));
-        const xChunks = !xArchiveOnly && xMonths.length > 0
+        const xChunks = !xArchiveOnly && !xAllDates && xMonths.length > 0
           ? buildMultiMonthRunRanges(xMonths, today, { capAtYesterday: true, maxDaysPerRun: 31 })
           : [];
+        const xAllStartDate = new Date(`${today}T00:00:00Z`); xAllStartDate.setUTCDate(xAllStartDate.getUTCDate() - 365);
+        const xAllEndDate = new Date(`${today}T00:00:00Z`); xAllEndDate.setUTCDate(xAllEndDate.getUTCDate() - 1);
+        const xAllStart = xAllStartDate.toISOString().slice(0, 10);
+        const xAllEnd = xAllEndDate.toISOString().slice(0, 10);
         const xRaw: CreateSelection = {
           task_kind: 'download',
           cities: pScope.cities.length > 0 ? pScope.cities : ['全部城市'],
           datasets: platDatasets,
-          start: xArchiveOnly ? today : (xChunks[0]?.start || pScope.start),
-          end: xArchiveOnly ? today : (xChunks[xChunks.length - 1]?.end || pScope.end),
+          start: xArchiveOnly ? today : xAllDates ? xAllStart : (xChunks[0]?.start || pScope.start),
+          end: xArchiveOnly ? today : xAllDates ? xAllEnd : (xChunks[xChunks.length - 1]?.end || pScope.end),
+          ...(xAllDates ? { xiaoxiang_all_dates: true } : {}),
         };
         const xPayloads = buildUnifiedSubmissionPayloads({
           selectedDatasets: platDatasets,
           availableGenerators: options?.generators || [],
           rawSelection: xRaw,
           rawMonthChunks: xChunks,
-          isMultiBatchRawMonth: !xArchiveOnly && xChunks.length > 1,
+          isMultiBatchRawMonth: !xArchiveOnly && !xAllDates && xChunks.length > 1,
           cities: xRaw.cities,
           start: xRaw.start,
           end: xRaw.end,
@@ -1094,9 +1118,28 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     if (formLocked) return;
     const range = billingPeriodRange(preset);
     if (range.blocked) return;
+    setXiaoxiangAllDates(false);
     setStart(range.start);
     setEnd(range.end);
     setDuplicateApproval('');
+  };
+  const toggleXiaoxiangAllDates = (next: boolean) => {
+    if (formLocked) return;
+    setXiaoxiangAllDates(next);
+    if (next) {
+      setSelectedMonths([]);
+      setStart(xiaoxiangFirst);
+      setEnd(dailyDate);
+    } else {
+      const range = defaultMonthRange(true);
+      const month = range.start.slice(0, 7);
+      setSelectedMonths([month]);
+      setLanorangeMonths([month]);
+      setStart(range.start);
+      setEnd(range.end);
+    }
+    setDuplicateApproval('');
+    setRequestError('');
   };
   const syncMonthSelection = (nextMonths: string[]) => {
     const valid = [...new Set(nextMonths.filter(m => enabledMonthOptions.includes(m)))].sort();
@@ -1107,6 +1150,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       maxDate: hasAttendance ? attendanceLast : undefined,
       maxDaysPerRun: xiaoxiangDated ? 31 : undefined,
     });
+    setXiaoxiangAllDates(false);
     setSelectedMonths(fallback);
     setLanorangeMonths(fallback);
     if (chunks.length > 0) {
@@ -1147,7 +1191,8 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     setRefreshHistory(false);
     setWaybillAllCitySend(run.waybill_all_city_send === true);
     setLanorangeMonths(Array.isArray(run.lanorange_months) ? run.lanorange_months : []);
-    setSelectedMonths(runMonths);
+    setXiaoxiangAllDates(run.xiaoxiang_all_dates === true);
+    setSelectedMonths(run.xiaoxiang_all_dates === true ? [] : runMonths);
     setIncludeSeparation(false);
     setExcludeSeparation(run.exclude_separation??true);
     setDuplicateApproval('');
@@ -2469,7 +2514,11 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                 <p id="download-dates-label" className="wb-step-title m-0">
                                   处理月份与账期
                                 </p>
-                                {activeSelectedMonths.length > 1 ? (
+                                {xiaoxiangAllDatesActive ? (
+                                  <span className="wb-step-count-pill tabular-nums">
+                                    不限日期（近12个月）
+                                  </span>
+                                ) : activeSelectedMonths.length > 1 ? (
                                   <span className="wb-step-count-pill tabular-nums">
                                     已选 {activeSelectedMonths.length} 个月（{activeSelectedMonths.join('、')}）
                                   </span>
@@ -2484,7 +2533,19 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                 ) : null}
                               </div>
                               <div className="wb-city-preset-group">
-                                {enabledMonthOptions.length > 1 && (
+                                {xiaoxiangDated && (
+                                  <label className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-600">
+                                    <input
+                                      type="checkbox"
+                                      checked={xiaoxiangAllDatesActive}
+                                      disabled={formLocked}
+                                      onChange={event => toggleXiaoxiangAllDates(event.target.checked)}
+                                      className="accent-sky-700 h-3.5 w-3.5 rounded border-slate-300"
+                                    />
+                                    <span>不限日期（近12个月）</span>
+                                  </label>
+                                )}
+                                {!xiaoxiangAllDatesActive && enabledMonthOptions.length > 1 && (
                                   <button
                                     type="button"
                                     className={`wb-city-preset-btn ${allMonthsSelected ? 'is-active' : ''}`}
@@ -2494,7 +2555,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                     {allMonthsSelected ? '仅选最新月' : `全选近${enabledMonthOptions.length}月`}
                                   </button>
                                 )}
-                                {!blueOnly && (
+                                {!blueOnly && !xiaoxiangAllDatesActive && (
                                   <WorkbenchDatePicker
                                     mode="range"
                                     compact
@@ -2511,6 +2572,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                     today={shanghaiToday()}
                                     disabled={formLocked}
                                     onChange={nextDate => {
+                                      setXiaoxiangAllDates(false);
                                       setSelectedMonths([]);
                                       setStart(nextDate);
                                       setEnd(nextDate);
@@ -2518,6 +2580,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                       setDuplicateApproval('');
                                     }}
                                     onRangeChange={(nextStart, nextEnd) => {
+                                      setXiaoxiangAllDates(false);
                                       setSelectedMonths([]);
                                       setStart(nextStart);
                                       setEnd(nextEnd);
@@ -2531,7 +2594,8 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                           );
                         })()}
 
-                        <div className="wb-month-grid-3" role="group" aria-label="处理月份列表（支持多选）">
+                        {!xiaoxiangAllDatesActive && (
+                          <div className="wb-month-grid-3" role="group" aria-label="处理月份列表（支持多选）">
                           {priceMonthOptions.map(month => {
                             const monthRange = computeMonthSelectionRange(month, shanghaiToday(), { capAtYesterday: xiaoxiangOnly });
                             const invalidSpan = monthRange.start > monthRange.end;
@@ -2561,7 +2625,19 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                               </button>
                             );
                           })}
-                        </div>
+                          </div>
+                        )}
+                        {xiaoxiangAllDatesActive && (
+                          <div className="wb-baize-inline-banner mt-3" role="status">
+                            <div className="wb-baize-banner-pill">
+                              <span className="wb-city-check-box shrink-0" aria-hidden="true">✓</span>
+                              <span className="wb-baize-banner-title">近12个月全量</span>
+                            </div>
+                            <span className="wb-baize-banner-desc">
+                              {xiaoxiangFirst} 至 {dailyDate}，系统自动逐日抓取并合并，每类资料输出一个文件。
+                            </span>
+                          </div>
+                        )}
                         {blueOnly && (
                           <p className="mt-2.5 text-xs leading-relaxed text-slate-500">
                             已选月份：{resolvedLanorangeMonths.join('、')}；勾选「价格档案」时按所选月份导出，其余人事表导出全量最新档案。
@@ -2576,7 +2652,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                         )}
 
                         {!validDates && <p role="alert" className="mt-2.5 text-xs text-rose-700">开始日期不能晚于结束日期，请选择有效日期。</p>}
-                        {xiaoxiangOnly && activeSelectedMonths.length === 0 && validDates && !xiaoxiangDateValid && <p role="alert" className="mt-2.5 text-xs text-rose-700">灯塔资料只能选择昨天及更早的日期，且区间最长31天。</p>}
+                        {xiaoxiangOnly && !xiaoxiangAllDatesActive && activeSelectedMonths.length === 0 && validDates && !xiaoxiangDateValid && <p role="alert" className="mt-2.5 text-xs text-rose-700">灯塔资料只能选择昨天及更早的日期，且区间最长31天。</p>}
                         {monthPreview.length > 0 && <p className="mt-2.5 text-xs leading-relaxed text-sky-700">整月资料自动下载：{monthPreview.join('、')}。</p>}
                         {(activeDatasets.some(dataset => ['fraud', 'problem'].includes(dataset)) || activeDatasets.includes('delivery_waybill')) && (
                           <div className="wb-date-rule-bar">

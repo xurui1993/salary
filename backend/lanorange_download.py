@@ -165,15 +165,23 @@ def validate_original(path, cancelled, city=None):
             count = 0
             city_columns = [i for i, value in enumerate(header) if value in ('城市', '城市名称')]
             selected_rows = other_rows = 0
+            target = city.removesuffix('市') if city else None
             for row in rows:
                 if cancelled.is_set():
                     raise BillCollectionError('蓝橙资料校验已取消，原始文件已保留')
-                if any(value is not None for value in row):
-                    count += 1
-                    if city and sheet.sheet_state == 'visible':
-                        if not city_columns: raise BillCollectionError('蓝橙原始业务表缺少城市字段，未发布城市资料')
-                        if all(str(row[i] or '').removesuffix('市') == city.removesuffix('市') for i in city_columns): selected_rows += 1
-                        else: other_rows += 1
+                if not any(value is not None and str(value).strip() for value in row):
+                    continue
+                names = []
+                if city and sheet.sheet_state == 'visible':
+                    if not city_columns: raise BillCollectionError('蓝橙原始业务表缺少城市字段，未发布城市资料')
+                    names = [str(row[i]).strip().removesuffix('市') if row[i] is not None else '' for i in city_columns]
+                    # Official exports pad the sheet with city-less rows that may
+                    # retain stray dates; they are not business records.
+                    if not any(names): continue
+                count += 1
+                if city and sheet.sheet_state == 'visible':
+                    if all(name == target for name in names): selected_rows += 1
+                    else: other_rows += 1
             sheets.append({'name': sheet.title, 'rows': count, 'columns': len(header),
                            'state': sheet.sheet_state,
                            **({'selected_rows':selected_rows,'other_city_rows':other_rows} if city else {})})

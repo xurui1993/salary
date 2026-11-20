@@ -244,6 +244,23 @@ class ManagerTests(unittest.TestCase):
         with self.assertRaises(jobs.DownloadRequestConflict):
             manager.create("tester", CONFIG, request_id="refresh_history_01")
 
+    def test_xiaoxiang_all_dates_survives_durable_config(self):
+        seen = []
+        def executor(config, run_dir, log, cancelled, update_item):
+            seen.append(dict(config))
+            file = make_file(run_dir, config, dataset='rider_daily', name='rider_daily.xlsx')
+            update_item({**file, 'status': 'success'})
+            return [file]
+        manager = self.manager(executor)
+        config = {**CONFIG, 'cities': ['全部城市'], 'datasets': ['rider_daily'],
+                  'start': '2025-10-31', 'end': '2026-10-30',
+                  'months': ['2025-10', '2026-10'], 'xiaoxiang_all_dates': True}
+        run = manager.create('tester', config, request_id='xiaoxiang_all_dates_01')
+        finished = self.wait_run(manager, run['id'])
+        self.assertTrue(run['xiaoxiang_all_dates'])
+        self.assertTrue(finished['xiaoxiang_all_dates'])
+        self.assertTrue(seen[0]['xiaoxiang_all_dates'])
+
     def test_order_export_concurrency_survives_durable_config(self):
         seen = []
         def execute(config, *args):

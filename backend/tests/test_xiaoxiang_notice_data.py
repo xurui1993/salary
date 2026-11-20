@@ -60,6 +60,17 @@ def attend_row(dt, rider, name, hours):
             '10001462', str(rider), name, '是', hours, '12.2408333333', '1']
 
 
+NEW_ATTEND_HEADER = [name for name in ATTEND_HEADER if name != '运力方']
+NEW_ATTEND_HEADER.insert(NEW_ATTEND_HEADER.index('xxx.city_name') + 1, '运力方')
+NEW_ATTEND_HEADER = ['是否有效出勤' if name == 'xxx.是否有效出勤' else name
+                     for name in NEW_ATTEND_HEADER]
+
+
+def variant_attend_row(dt, rider, name, hours):
+    values = dict(zip(ATTEND_HEADER, attend_row(dt, rider, name, hours)))
+    return [values.get(column, values.get('xxx.' + column)) for column in NEW_ATTEND_HEADER]
+
+
 def write_workbook(path, header, rows):
     book = Workbook()
     sheet = book.active
@@ -170,6 +181,15 @@ class CollectTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
+        self.attendance_spec = {
+            **_DATASET_SPECS[ATTENDANCE_DATASET],
+            'canonical_header': tuple(ATTEND_HEADER),
+            'column_aliases': {'是否有效出勤': 'xxx.是否有效出勤'},
+        }
+        spec_patch = patch.dict(notice_data._DATASET_SPECS,
+                                {ATTENDANCE_DATASET: self.attendance_spec})
+        spec_patch.start()
+        self.addCleanup(spec_patch.stop)
         self.downloads = {}
 
         def fake_download(url, target):
@@ -208,6 +228,33 @@ class CollectTests(unittest.TestCase):
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0][header.index('配送单量')], '12')
 
+    def test_same_notice_keeps_multiple_order_rows_for_same_rider_day_and_site(self):
+        self.register_order('s3://a', [order_row('A站', '2026-10-26', 1, '甲', 10),
+                                       order_row('A站', '2026-10-26', 1, '甲', 2)])
+        session = self.session_with([
+            list_response(1, [notice(1, '10.26-11.1骑手订单明细', NOV2_MS)]),
+            detail_response([{'fileName': 'a【商配送】骑手订单明细-1.xlsx', 'fileUrl': 's3://a'}]),
+        ])
+        header, records = notice_data.collect_notice_rows(
+            session, _DATASET_SPECS[ORDER_DATASET], date(2026, 10, 26), date(2026, 11, 1))
+        self.assertEqual(len(records), 2)
+        self.assertEqual([row[header.index('配送单量')] for row in records], ['10', '2'])
+
+    def test_latest_notice_replaces_older_rows_but_keeps_its_multiple_rows(self):
+        self.register_order('s3://old', [order_row('A站', '2026-10-26', 1, '甲', 10)])
+        self.register_order('s3://new', [order_row('A站', '2026-10-26', 1, '甲', 12),
+                                         order_row('A站', '2026-10-26', 1, '甲', 3)])
+        session = self.session_with([
+            list_response(2, [notice(1, '10.19-10.25骑手订单明细', NOV2_MS - 7 * 86400 * 1000),
+                              notice(2, '10.26-11.1骑手订单明细', NOV2_MS)]),
+            detail_response([{'fileName': 'a【商配送】骑手订单明细-1.xlsx', 'fileUrl': 's3://old'}]),
+            detail_response([{'fileName': 'b【商配送】骑手订单明细-2.xlsx', 'fileUrl': 's3://new'}]),
+        ])
+        header, records = notice_data.collect_notice_rows(
+            session, _DATASET_SPECS[ORDER_DATASET], date(2026, 10, 26), date(2026, 11, 1))
+        self.assertEqual(len(records), 2)
+        self.assertEqual([row[header.index('配送单量')] for row in records], ['12', '3'])
+
     def test_missing_attendance_notice_is_skipped(self):
         self.register_attendance('s3://a', [attend_row('20261030', 1, '甲', '13')])
         session = self.session_with([
@@ -231,6 +278,96 @@ class CollectTests(unittest.TestCase):
         header, records = notice_data.collect_notice_rows(
             session, _DATASET_SPECS[ORDER_DATASET], date(2026, 10, 26), date(2026, 11, 1))
         self.assertEqual(len(records), 1)
+
+    def test_attendance_title_variants_are_matched(self):
+        self.register_attendance('s3://a', [attend_row('20260923', 1, '甲', '13')])
+        self.register_attendance('s3://b', [attend_row('20260924', 1, '甲', '13'),
+                                            attend_row('20260925', 1, '甲', '13'),
+                                            attend_row('20260926', 1, '甲', '13')])
+        self.register_attendance('s3://c', [attend_row('20260927', 1, '甲', '13')])
+        session = self.session_with([
+            list_response(3, [notice(1, '0923数据分发', NOV2_MS),
+                              notice(2, '0924~0926数据分发', NOV2_MS),
+                              notice(3, '0927数据分发', NOV2_MS)]),
+            detail_response([{'fileName': 'a_骑手出勤明细_1.xlsx', 'fileUrl': 's3://a'}]),
+            detail_response([{'fileName': 'b_骑手出勤明细_2.xlsx', 'fileUrl': 's3://b'}]),
+            detail_response([{'fileName': 'c_骑手出勤明细_3.xlsx', 'fileUrl': 's3://c'}]),
+        ])
+        header, records = notice_data.collect_notice_rows(
+            session, _DATASET_SPECS[ATTENDANCE_DATASET], date(2026, 9, 23), date(2026, 9, 27))
+        self.assertEqual(len(records), 5)
+        self.assertEqual([row[header.index('xxx.dt')] for row in records],
+                         ['20260923', '20260924', '20260925', '20260926', '20260927'])
+
+    def test_out_of_range_attachment_with_different_header_is_skipped(self):
+        self.register_attendance('s3://a', [attend_row('20260923', 1, '甲', '13')])
+        changed = ATTEND_HEADER[:-1]
+        self.downloads['s3://b'] = (changed, [attend_row('20260930', 1, '甲', '13')[:-1]])
+        session = self.session_with([
+            list_response(2, [notice(1, '0923数据分发', NOV2_MS),
+                              notice(2, '合作商数据下发-1001', NOV2_MS)]),
+            detail_response([{'fileName': 'a_骑手出勤明细_1.xlsx', 'fileUrl': 's3://a'}]),
+            detail_response([{'fileName': 'b_骑手出勤明细_2.xlsx', 'fileUrl': 's3://b'}]),
+        ])
+        header, records = notice_data.collect_notice_rows(
+            session, _DATASET_SPECS[ATTENDANCE_DATASET], date(2026, 9, 23), date(2026, 9, 23))
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0][header.index('xxx.dt')], '20260923')
+
+    def test_attendance_new_header_is_normalized_to_fixed_old_header(self):
+        self.downloads['s3://a'] = (NEW_ATTEND_HEADER,
+                                    [variant_attend_row('20261113', 1, '甲', '13')])
+        session = self.session_with([
+            list_response(1, [notice(1, '11月12日数据下发', NOV2_MS + 20 * 86400 * 1000)]),
+            detail_response([{'fileName': 'a_骑手出勤明细_1.xlsx', 'fileUrl': 's3://a'}]),
+        ])
+        header, records = notice_data.collect_notice_rows(
+            session, _DATASET_SPECS[ATTENDANCE_DATASET], date(2026, 11, 13), date(2026, 11, 13))
+        self.assertEqual(header, ATTEND_HEADER)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0][header.index('xxx.dt')], '20261113')
+        self.assertEqual(records[0][header.index('运力方')], '麻豆人')
+        self.assertEqual(records[0][header.index('xxx.是否有效出勤')], '是')
+
+    def test_attendance_unknown_column_fails(self):
+        changed = NEW_ATTEND_HEADER + ['新增未知列']
+        self.downloads['s3://a'] = (changed,
+                                    [variant_attend_row('20261113', 1, '甲', '13') + ['x']])
+        session = self.session_with([
+            list_response(1, [notice(1, '11月12日数据下发', NOV2_MS + 20 * 86400 * 1000)]),
+            detail_response([{'fileName': 'a_骑手出勤明细_1.xlsx', 'fileUrl': 's3://a'}]),
+        ])
+        with self.assertRaisesRegex(LighthouseError, '标准表头不一致'):
+            notice_data.collect_notice_rows(
+                session, _DATASET_SPECS[ATTENDANCE_DATASET], date(2026, 11, 13), date(2026, 11, 13))
+
+    def test_attendance_missing_dates_export_remaining_and_warn(self):
+        self.register_attendance('s3://a', [attend_row('20260923', 1, '甲', '13')])
+        session = self.session_with([
+            list_response(1, [notice(1, '0923数据分发', NOV2_MS)]),
+            detail_response([{'fileName': 'a_骑手出勤明细_1.xlsx', 'fileUrl': 's3://a'}]),
+        ])
+        logs, coverage = [], {}
+        header, records = notice_data.collect_notice_rows(
+            session, _DATASET_SPECS[ATTENDANCE_DATASET], date(2026, 9, 23), date(2026, 9, 25),
+            log=logs.append, coverage=coverage)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(coverage['missing'], [date(2026, 9, 24), date(2026, 9, 25)])
+        self.assertTrue(any('缺失 2 天' in line and '已导出其余日期' in line for line in logs))
+
+    def test_attendance_missing_dates_marked_in_filename(self):
+        rows = [attend_row('20260923', 1, '甲', '13')]
+        def fake_collect(_session, _spec, _start, _end, *args, **kwargs):
+            kwargs['coverage'].update(missing=[date(2026, 9, 24), date(2026, 9, 25)])
+            return ATTEND_HEADER, rows
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.object(notice_data, '_session', return_value=Mock()), \
+                patch.object(notice_data, 'collect_notice_rows', side_effect=fake_collect), \
+                patch.object(notice_data, 'write_notice_workbook',
+                             return_value={'rows': 1, 'columns': len(ATTEND_HEADER)}):
+            target = notice_data.generate_notice_merge(
+                ATTENDANCE_DATASET, '2026-09-23', '2026-09-25', Path(folder))
+            self.assertEqual(target.name, '骑手出勤明细_2026-09-23_2026-09-25（缺09-24~09-25）.xlsx')
 
     def test_interior_date_gap_rejects_delivery(self):
         self.register_order('s3://a', [order_row('A站', '2026-10-26', 1, '甲', 10),
@@ -256,6 +393,32 @@ class CollectTests(unittest.TestCase):
             log=logs.append)
         self.assertEqual(len(records), 1)
         self.assertTrue(any('暂无数据' in line for line in logs))
+
+    def test_all_dates_allows_leading_gap_before_first_available_day(self):
+        self.register_order('s3://a', [order_row('A站', '2026-10-31', 1, '甲', 10),
+                                       order_row('A站', '2026-11-01', 2, '乙', 5)])
+        session = self.session_with([
+            list_response(1, [notice(1, '10.26-11.1骑手订单明细', NOV2_MS)]),
+            detail_response([{'fileName': 'a【商配送】骑手订单明细-1.xlsx', 'fileUrl': 's3://a'}]),
+        ])
+        header, records = notice_data.collect_notice_rows(
+            session, _DATASET_SPECS[ORDER_DATASET], date(2026, 10, 20), date(2026, 11, 1),
+            all_dates=True)
+        self.assertEqual(len(records), 2)
+        self.assertEqual([row[header.index('业务日期')] for row in records],
+                         ['2026-10-31', '2026-11-01'])
+
+    def test_all_dates_names_workbook_by_actual_data_range(self):
+        rows = [order_row('A站', '2026-10-31', 1, '甲', 10),
+                order_row('A站', '2026-11-01', 2, '乙', 5)]
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.object(notice_data, '_session', return_value=Mock()), \
+                patch.object(notice_data, 'collect_notice_rows', return_value=(ORDER_HEADER, rows)), \
+                patch.object(notice_data, 'write_notice_workbook',
+                             return_value={'rows': 2, 'columns': len(ORDER_HEADER)}):
+            target = notice_data.generate_notice_merge(
+                ORDER_DATASET, '2026-10-20', '2026-11-01', Path(folder), all_dates=True)
+            self.assertEqual(target.name, '骑手订单明细_2026-10-31_2026-11-01.xlsx')
 
     def test_no_rows_in_range_raises(self):
         self.register_order('s3://a', [order_row('A站', '2026-09-01', 1, '甲', 10)])

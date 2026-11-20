@@ -469,14 +469,14 @@ def write_daily_range_workbook(days, metas, target, cancelled=None):
                                         for code, _ in columns])
 
 
-def generate_rider_daily_range(start, end, directory, log=None, cancelled=None):
-    """逐日查询并汇总原始数据；不计算同比，仅按日期追加。"""
+def generate_rider_daily_range(start, end, directory, log=None, cancelled=None, all_dates=False):
+    """逐日查询并汇总原始数据；全量模式允许多月区间并输出单个文件。"""
     log = log or (lambda message, *args, **kwargs: None)
     start = start if isinstance(start, date) else date.fromisoformat(str(start))
     end = end if isinstance(end, date) else date.fromisoformat(str(end))
     if start > end:
         raise LighthouseError('开始日期不能晚于结束日期')
-    if (end - start).days + 1 > DAILY_RANGE_LIMIT:
+    if not all_dates and (end - start).days + 1 > DAILY_RANGE_LIMIT:
         raise LighthouseError('区间日维度骑手分析最长 {} 天'.format(DAILY_RANGE_LIMIT))
     try:
         state = xiaoxiang_lighthouse.load_state()
@@ -524,7 +524,8 @@ def generate_rider_daily_range(start, end, directory, log=None, cancelled=None):
     if not days:
         raise LighthouseError('所选日期内均无骑手分析数据{}'.format(
             '（{}）'.format('、'.join(skipped)) if skipped else ''))
-    target = Path(directory) / '日维度骑手分析{}-{}.xlsx'.format(start.isoformat(), end.isoformat())
+    name_start, name_end = (days[0][0], days[-1][0]) if all_dates else (start, end)
+    target = Path(directory) / '日维度骑手分析{}-{}.xlsx'.format(name_start.isoformat(), name_end.isoformat())
     info = write_daily_range_workbook(days, canonical[0], target, cancelled)
     log('[校验] 区间日维度骑手分析：{} 行 / {} 列{}'.format(
         info['rows'], info['columns'],
@@ -706,8 +707,8 @@ def write_detail_workbook(spec, records, target, cancelled=None):
     return {'rows': len(records), 'columns': len(spec['columns'])}
 
 
-def generate_detail(kind, start, end, directory, log=None, cancelled=None):
-    """逐日查询配送明细并合并为区间工作簿，返回文件路径。"""
+def generate_detail(kind, start, end, directory, log=None, cancelled=None, all_dates=False):
+    """逐日查询配送明细并合并为区间工作簿；全量模式输出单个文件。"""
     spec = DETAIL_TABLES[kind]
     title = spec['title']
     log = log or (lambda message, *args, **kwargs: None)
@@ -715,7 +716,7 @@ def generate_detail(kind, start, end, directory, log=None, cancelled=None):
     end = end if isinstance(end, date) else date.fromisoformat(str(end))
     if start > end:
         raise LighthouseError('开始日期不能晚于结束日期')
-    if (end - start).days + 1 > DETAIL_RANGE_LIMIT:
+    if not all_dates and (end - start).days + 1 > DETAIL_RANGE_LIMIT:
         raise LighthouseError('{}日期区间最长 {} 天'.format(title, DETAIL_RANGE_LIMIT))
     try:
         state = xiaoxiang_lighthouse.load_state()
@@ -733,6 +734,7 @@ def generate_detail(kind, start, end, directory, log=None, cancelled=None):
         raise LighthouseError('{}已取消'.format(title))
     session = board_session(state)
     records, skipped = [], []
+    data_start = data_end = None
     try:
         site_ids = query_site_ids(session, start, end)
         log('[进度] 账号站点 {} 个'.format(len(site_ids)))
@@ -745,6 +747,8 @@ def generate_detail(kind, start, end, directory, log=None, cancelled=None):
                 skipped.append(day.isoformat())
                 log('[跳过] {} 没有{}数据'.format(day.isoformat(), title))
             else:
+                data_start = data_start or day
+                data_end = day
                 records.extend(detail_row_values(spec, day, row) for row in rows)
                 log('[进度] {}：{} 行'.format(day.isoformat(), len(rows)))
             day += timedelta(days=1)
@@ -759,10 +763,11 @@ def generate_detail(kind, start, end, directory, log=None, cancelled=None):
     if not records:
         raise LighthouseError('所选日期内均无{}数据{}'.format(
             title, '（{}）'.format('、'.join(skipped)) if skipped else ''))
-    if start == end:
-        target = Path(directory) / '{}{}.xlsx'.format(start.isoformat(), title)
+    name_start, name_end = (data_start, data_end) if all_dates else (start, end)
+    if name_start == name_end:
+        target = Path(directory) / '{}{}.xlsx'.format(name_start.isoformat(), title)
     else:
-        target = Path(directory) / '{}-{}{}.xlsx'.format(start.isoformat(), end.isoformat(), title)
+        target = Path(directory) / '{}-{}{}.xlsx'.format(name_start.isoformat(), name_end.isoformat(), title)
     info = write_detail_workbook(spec, records, target, cancelled)
     log('[校验] {}：{} 行 / {} 列{}'.format(
         title, info['rows'], info['columns'],

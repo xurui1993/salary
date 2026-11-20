@@ -1,4 +1,4 @@
-import React,{useEffect,useState} from 'react';
+import React from 'react';
 import type {AppConfig,LogEntry} from '../types';
 import type {RunResult} from './RunResultCard';
 import type {PayrollPreparationState} from './PayrollPreparation';
@@ -53,19 +53,13 @@ export interface CorePageProps {
 }
 
 export function CorePage(props:CorePageProps) {
-  const [newUpload,setNewUpload]=useState(false);
-  useEffect(()=>setNewUpload(false),[props.payrollPreparation?.id,props.resumeVersion]);
   const isRunning=props.runningTask==='core'||props.runningTask==='download_rider_sources'||props.runningTask==='download_shangyi_employees'||props.isRiderSourceUploading;
   return (
     <div className="wbx-core-stage">
       <FlashPayrollWorkbench
         {...props}
         isRunning={isRunning}
-        payrollPreparation={newUpload ? null : props.payrollPreparation}
-        onOtherMode={mode => {
-          setNewUpload(true);
-          props.onConfigChange({ payrollSourceMode: mode, payrollPreparationId: '' });
-        }}
+        payrollPreparation={props.payrollPreparation}
       />
     </div>
   );

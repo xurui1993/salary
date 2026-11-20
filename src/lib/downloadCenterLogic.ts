@@ -2,7 +2,7 @@ export interface DownloadUser { id: string; username: string; role: string; enab
 export type DownloadFetch = (url: string, init?: RequestInit) => Promise<Response>;
 export interface ItemSelection { city: string; dataset: string; start: string; end: string }
 export interface Recovery { mode: 'resume_existing' | 'retry_unsubmitted' | 'blocked'; reason: string }
-export interface CreateSelection { cities: string[]; datasets: string[]; start: string; end: string; refresh_history?: boolean; waybill_all_city_send?: boolean; lanorange_months?: string[]; include_separation?: boolean; exclude_separation?: boolean; merchant_by_city?: boolean; lanorange_by_city?: boolean; lanorange_full_delivery?: boolean; task_kind?: 'download' | 'generate'; generation_target?: string }
+export interface CreateSelection { cities: string[]; datasets: string[]; start: string; end: string; refresh_history?: boolean; waybill_all_city_send?: boolean; lanorange_months?: string[]; include_separation?: boolean; exclude_separation?: boolean; merchant_by_city?: boolean; lanorange_by_city?: boolean; lanorange_full_delivery?: boolean; xiaoxiang_all_dates?: boolean; task_kind?: 'download' | 'generate'; generation_target?: string }
 export interface RequestAttempt<T> { request_id: string; payload: T }
 // abnormal_riders（异常骑手整理生成表）只依赖蓝橙成品，交付口径与蓝橙一致。
 export const isBaize = (id: string) => id === 'baize_employees';
@@ -40,7 +40,7 @@ export function selectionKey(value: CreateSelection) {
   if (value.datasets.length === 1 && isBaize(value.datasets[0])) return JSON.stringify({datasets: ['baize_employees'], scope: 'all'});
   if (value.datasets.length === 1 && isBenlai(value.datasets[0])) return JSON.stringify({datasets: ['benlai_employees'], scope: 'all'});
   if (value.datasets.length > 1 && value.datasets.every(isPayoutPlatform)) return JSON.stringify({datasets: [...value.datasets].sort(), scope: 'all'});
-  if (value.datasets.length && value.datasets.every(isXiaoxiang)) return JSON.stringify({datasets: [...value.datasets].sort(), scope: 'all', start: value.start, end: value.end});
+  if (value.datasets.length && value.datasets.every(isXiaoxiang)) return JSON.stringify({datasets: [...value.datasets].sort(), scope: 'all', start: value.start, end: value.end, ...(value.xiaoxiang_all_dates ? {xiaoxiang_all_dates: true} : {})});
   if (value.datasets.length && value.datasets.every(isLanorange)) {
     if (value.lanorange_full_delivery) {
       return JSON.stringify({

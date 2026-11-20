@@ -96,6 +96,7 @@ def group_records(runs):
             'incomplete_lineage': bool(root.get('retry_of') or root.get('recovery_of')),
             'summary_issue': bool(summary_failures),
             'lanorange_full_delivery': root.get('lanorange_full_delivery', False),
+            'xiaoxiang_all_dates': root.get('xiaoxiang_all_dates', False),
             'result_layout': root.get('result_layout', 1),
         })
     return sorted(records, key=lambda record: record['updated_at'], reverse=True)

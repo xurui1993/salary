@@ -48,6 +48,7 @@ XIAOXIANG_ATTENDANCE_DATASET = "xiaoxiang_attendance_detail"
 XIAOXIANG_DATASETS = (RIDER_DAILY_DATASET,) + DETAIL_DATASETS
 XIAOXIANG_SELECTION = XIAOXIANG_DATASETS + (RIDER_ARCHIVE_DATASET,
                                             RIDER_ORDER_DETAIL_DATASET, XIAOXIANG_ATTENDANCE_DATASET)
+XIAOXIANG_ALL_DATES_DAYS = 365
 DATASETS = {
     **MERCHANT_LABELS,
     BAIZE_DATASET: "白泽员工资料（全量）",
@@ -170,6 +171,8 @@ def validate_request(payload, today=None):
         raise ValidationError("运单导出并发数只能为 1 或 2")
     if "waybill_all_city_send" in payload and type(payload["waybill_all_city_send"]) is not bool:
         raise ValidationError("运单全城送筛选选项必须为布尔值")
+    if "xiaoxiang_all_dates" in payload and type(payload["xiaoxiang_all_dates"]) is not bool:
+        raise ValidationError("灯塔不限日期选项必须为布尔值")
     if "lanorange_months" in payload:
         from lanorange_catalog import clean_months
         try:
@@ -210,8 +213,12 @@ def validate_request(payload, today=None):
                     'start': today.isoformat(), 'end': today.isoformat(),
                     'months': [today.strftime('%Y-%m')]}
         label = DATASETS[dated[0]] if len(dated) == 1 else '小象灯塔资料'
+        all_dates = payload.get('xiaoxiang_all_dates') is True
         last = today - dt.timedelta(days=1)
-        if payload.get('start') is None and payload.get('end') is None:
+        if all_dates:
+            # 全量口径固定为近 12 个月且截止昨天，忽略前端残留的日期区间。
+            first = today - dt.timedelta(days=XIAOXIANG_ALL_DATES_DAYS)
+        elif payload.get('start') is None and payload.get('end') is None:
             first = last
         else:
             try:
@@ -228,7 +235,8 @@ def validate_request(payload, today=None):
             if (last - first).days + 1 > 31:
                 raise ValidationError('{}日期区间最长31天'.format(label))
         return {**task_intent, 'cities': [ALL_CITIES], 'datasets': keys,
-                'start': first.isoformat(), 'end': last.isoformat(), 'months': covered_months(first, last)}
+                'start': first.isoformat(), 'end': last.isoformat(), 'months': covered_months(first, last),
+                **({'xiaoxiang_all_dates': True} if all_dates else {})}
     if isinstance(selected, list) and (BAIZE_DATASET in selected or BENLAI_DATASET in selected):
         if len(selected) != 1 or selected[0] not in (BAIZE_DATASET, BENLAI_DATASET) or task_intent.get('task_kind', 'download') != 'download':
             raise ValidationError('全量员工资料仅支持独立下载，请单独选择白泽或本来人力资料')
@@ -1140,6 +1148,7 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
             _checkpoint(cancelled)
             set_phase('waiting_collection')
         try:
+            all_dates = config.get('xiaoxiang_all_dates') is True
             for description in requested:
                 def rider_daily_download(description=description):
                     directory = root / '小象灯塔来源'
@@ -1153,7 +1162,8 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                                                             log=progress_log, cancelled=cancelled)
                         else:
                             workbook = generate_rider_daily_range(description['start'], description['end'], directory,
-                                                                  log=progress_log, cancelled=cancelled)
+                                                                  log=progress_log, cancelled=cancelled,
+                                                                  all_dates=all_dates)
                     elif description['dataset'] == RIDER_ARCHIVE_DATASET:
                         from xiaoxiang_rider_archive import generate_rider_archive
                         workbook = generate_rider_archive(directory, log=progress_log, cancelled=cancelled)
@@ -1161,10 +1171,17 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                         from xiaoxiang_notice_data import generate_notice_merge
                         workbook = generate_notice_merge(description['dataset'], description['start'],
                                                          description['end'], directory,
-                                                         log=progress_log, cancelled=cancelled)
+                                                         log=progress_log, cancelled=cancelled,
+                                                         all_dates=all_dates)
                     else:
                         workbook = generate_detail(description['dataset'], description['start'], description['end'],
-                                                   directory, log=progress_log, cancelled=cancelled)
+                                                   directory, log=progress_log, cancelled=cancelled,
+                                                   all_dates=all_dates)
+                    if description['dataset'] != RIDER_ARCHIVE_DATASET and (
+                            all_dates or description['dataset'] in (
+                                RIDER_ORDER_DETAIL_DATASET, XIAOXIANG_ATTENDANCE_DATASET)):
+                        # 通知附件允许带“缺日期”标记，直接沿用生成文件名。
+                        description['filename'] = workbook.name
                     return [publish(workbook, root, description)]
                 run_step([description], rider_daily_download)
         finally:

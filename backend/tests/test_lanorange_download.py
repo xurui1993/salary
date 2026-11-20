@@ -85,6 +85,17 @@ class LanorangeTests(unittest.TestCase):
         self.assertEqual(len(sheets), 2); self.assertEqual(sheets[1]['state'], 'hidden')
         self.assertEqual(file.read_bytes(), before)
 
+    def test_city_validation_ignores_city_less_padding_rows(self):
+        book = Workbook(); sheet = book.active; sheet.title = '骑手兼全职变更'
+        sheet.append(['项目编码', '城市名称', '骑手ID', '生效时间'])
+        sheet.append(['饿了么', '三亚市', '1', None])
+        sheet.append(['', '', None, dt.datetime(2026, 6, 24)])
+        sheet.append(['', '', None, None])
+        file = self.root / 'padding.xlsx'; book.save(file); book.close()
+        sheets = validate_original(file, threading.Event(), '三亚')
+        self.assertEqual(sheets[0], {'name': '骑手兼全职变更', 'rows': 1, 'columns': 4,
+                                     'state': 'visible', 'selected_rows': 1, 'other_city_rows': 0})
+
     def test_all_city_fast_validation_matches_strict_parser(self):
         book = Workbook(); sheet = book.active; sheet.title = '数据'
         sheet.append(['城市', '数量', '公式', '备注'])

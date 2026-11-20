@@ -117,6 +117,37 @@ def ready_directory(platform, city='', refresh=False):
     return data
 
 
+XIAOXIANG_TASK_WAIT_SECONDS = 60.0
+XIAOXIANG_RETRY_SECONDS = 10.0
+
+
+def wait_xiaoxiang_directory(timeout=None):
+    """Task execution waits for Xiaoxiang's background whole-account scan."""
+    from parttime_source import SourceError
+    deadline = time.monotonic() + (XIAOXIANG_TASK_WAIT_SECONDS if timeout is None else timeout)
+    data = snapshot('xiaoxiang')
+    with _lock:
+        worker = _workers.get('xiaoxiang')
+    if not worker and data.get('status') != 'ready':
+        data = snapshot('xiaoxiang', refresh=True)
+    last_refresh = time.monotonic()
+    while data.get('status') != 'ready':
+        message = str(data.get('message') or '')
+        if data.get('status') == 'unavailable' and ('请先完成平台登录' in message or '权限' in message):
+            raise SourceError(message or '小象站点目录暂不可用，请检查平台连接后重试')
+        if time.monotonic() >= deadline:
+            raise SourceError('小象站点目录仍在同步，请稍后继续；本次资料已保留')
+        time.sleep(0.5)
+        data = snapshot('xiaoxiang')
+        if data.get('status') == 'unavailable':
+            with _lock:
+                worker = _workers.get('xiaoxiang')
+            if not worker and time.monotonic() - last_refresh >= XIAOXIANG_RETRY_SECONDS:
+                last_refresh = time.monotonic()
+                data = snapshot('xiaoxiang', refresh=True)
+    return data
+
+
 def current_city_directory(platform, city, refresh=False):
     """Payroll reads its own city directly; unrelated full-directory scans are optional."""
     from deduction_stations import catalog

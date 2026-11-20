@@ -153,22 +153,36 @@ class BindingSources:
 
     def employees(self):
         if 'baize' in self.results: return self.results['baize']
+        region = '小象超市'
         with authenticated('baize', self.log, self.cancelled) as session:
             user = identity('baize', session).get('user', {})
             merchant = user.get('userRelateId')
             if not isinstance(merchant, (str, int)) or not str(merchant).isdigit():
-                raise BillCollectionError('白泽企业身份未确认，不能导出全量员工资料')
-            params = {'merId': str(merchant), 'pageNum': 1, 'pageSize': 10}
+                raise BillCollectionError('白泽企业身份未确认，不能导出员工资料')
+            groups = query(session, 'baize', 'web/merchantGroup/queryList',
+                           {'pageNum': 1, 'pageSize': 500}).get('data')
+            if not isinstance(groups, list):
+                raise BillCollectionError('白泽区域目录未确认，未提交导出')
+            matches = [row for row in groups
+                       if isinstance(row, dict) and str(row.get('groupName') or '').strip() == region]
+            if len(matches) != 1:
+                raise BillCollectionError('白泽区域名称“' + region + '”未唯一匹配，未提交导出')
+            group_id = str(matches[0].get('id') or '').strip()
+            if not group_id.isdigit():
+                raise BillCollectionError('白泽小象超市区域编号无效，未提交导出')
+            params = {'merId': str(merchant), 'groupId': group_id, 'pageNum': 1, 'pageSize': 10}
             file = self.root / 'baize' / 'merchantFreelancer_白泽全量.xlsx'
             if retained_employee_export(file, params):
                 self.log('[恢复] 白泽已保留原表与回执哈希一致，继续使用，不重复导出')
             else:
                 query(session, 'baize', 'web/merchantFreelancer/checkSecrecy')
-                self.log('[下载] 正在通过白泽 HTTP 接口导出最新全量员工资料')
+                self.log(f'[下载] 正在通过白泽 HTTP 接口导出区域“{region}”员工资料，其他筛选为空')
                 file = export_once(session, 'baize', 'web/merchantFreelancer/export', params,
                                    file, self.cancelled)
             proof = validate_employees(file)
-            atomic_json(file.parent / 'manifest.json', {'status': 'success', 'scope': 'all', 'transport': 'http', **proof})
+            atomic_json(file.parent / 'manifest.json', {**proof, 'status': 'success', 'scope': region,
+                                                       'region': region, 'group_id': group_id,
+                                                       'transport': 'http'})
             self.results['baize'] = file
             return file
 

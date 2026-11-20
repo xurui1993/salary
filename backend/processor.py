@@ -47,6 +47,10 @@ XIAOXIANG_STATION_KEYWORD_MAP = {
     "小象超市-仲恺站-HZ1015": "仲恺站",
 }
 
+from station_names import (station_clean as _station_clean, station_code as _station_code,
+                           station_core as _station_core, station_key as _station_key,
+                           station_match as _station_match)
+
 def safe_read_excel(io, **kwargs):
     # 处理逻辑：safe_read_excel 的主要执行逻辑
     try:
@@ -295,6 +299,7 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
         price_mapping_idcard = {}
         price_mapping_id = {}
         price_mapping_name = {}
+        price_site_by_date_core = {}
 
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         
@@ -964,7 +969,7 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                             _xx_rid = _xx_matched['骑手id'].astype(str).str.replace('.0', '', regex=False).str.strip()
                             _xx_site = _xx_matched['站点名称'].astype(str).str.replace(' ', '', regex=False).str.replace('\u3000', '', regex=False).str.replace('\xa0', '', regex=False).str.strip()
                             _xx_keep = pd.Series([
-                                (_r in apply_team_set) and (_s in apply_team_set[_r])
+                                (_r in apply_team_set) and any(_station_match(_s, _team) for _team in apply_team_set[_r])
                                 for _r, _s in zip(_xx_rid, _xx_site)
                             ], index=_xx_matched.index)
                             _xx_n_drop = int((~_xx_keep).sum())
@@ -977,6 +982,10 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                     # 写入骑手订单明细表（清空旧数据行，保留模板表头）
                     _xx_out = _xx_matched[_xx_target_cols].copy()
                     _xx_out['业务日期'] = _xx_out['业务日期'].dt.date
+                    if is_xiaoxiang and '站点名称' in _xx_out.columns:
+                        _xx_out['站点名称'] = _xx_out['站点名称'].map(
+                            lambda _name: re.sub(r'站(?=-[A-Za-z])', '店', str(_name))
+                            if _name not in (None, '') and str(_name).lower() not in ('nan', 'none') else _name)
                     _ws_xx = wb1['骑手订单明细']
                     _center = Alignment(horizontal='center', vertical='center')
                     if _ws_xx.max_row > 1:
@@ -1170,6 +1179,12 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                         full_path = os.path.join(root, file_name)
                         if (full_path, "价格档案") not in files_to_process:
                             files_to_process.append((full_path, "价格档案"))
+                        continue
+                    # 日维度骑手分析是单行表头的标准数据源，不能进入“两行标题”合并流程。
+                    if "日维度骑手分析" in file_name:
+                        full_path = os.path.join(root, file_name)
+                        if (full_path, "配送费") not in files_to_process:
+                            files_to_process.append((full_path, "配送费"))
                         continue
                     # 文件名中包含日期片段（允许前后缀）即视为小象配送单日期文件，
                     # 如 配送费_2026-06-01.xlsx / 2026-06-01_配送单.xlsx / 20260601.xlsx
@@ -1427,6 +1442,9 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                             if not date_val or not station_val or not price_val or price_val.lower() == 'nan':
                                 continue
 
+                            _price_core = _station_core(station_val)
+                            if _price_core:
+                                price_site_by_date_core.setdefault(date_val, {}).setdefault(_price_core, set()).add(station_val)
                             if idcard_val: price_mapping_idcard[f"{date_val}_{station_val}_{idcard_val}"] = price_val
                             if r_id: price_mapping_id[f"{date_val}_{station_val}_{r_id}"] = price_val
                             if r_name: price_mapping_name[f"{date_val}_{station_val}_{r_name}"] = price_val
@@ -1440,7 +1458,7 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                     progress_callback(current_progress, f"正在清洗规则与参数映射：{wb_name[:12]} ({processed_count}/{total_files})")
                     continue
 
-                match_key = next((k for k in dict1.keys() if k in wb_name), None)
+                match_key = "配送费" if kw == "配送费" else next((k for k in dict1.keys() if k in wb_name), None)
                 if match_key:
                     cols = list(dict1[match_key])
                     col_names_lower = [str(c).replace('\n', '').strip().lower() for c in df_source.columns]
@@ -1515,7 +1533,11 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                             _vf = df_source[_fc].apply(clean_wb_str)
                             dictp_fraud.update(_vf[_vf != ""].tolist())
 
-                elif "配送费" in wb_name:
+                elif match_key == "配送费" or "配送费" in wb_name:
+                    if is_xiaoxiang:
+                        df_source.columns = [str(c).strip() for c in df_source.columns]
+                        if "日维度骑手分析" in wb_name:
+                            df_source = df_source.rename(columns={"骑手名称": "骑手姓名", "配送站点name": "所属站点"})
                     ws_sht0 = wb1[delivery_sheet_name]
                     ws_sht1 = _resolve_delivery_sheet(wb1)
                     fund_sheet_name = "保险费" if is_xiaoxiang else "安全基金"
@@ -1686,7 +1708,7 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                             _rid_series = df_source[_rid_col].astype(str).str.replace('.0', '', regex=False).str.strip()
                             _site_series = df_source[_site_col].astype(str).str.replace(' ', '', regex=False).str.replace('\u3000', '', regex=False).str.replace('\xa0', '', regex=False).str.strip()
                             _keep = pd.Series([
-                                (_r in apply_team_set) and (_s in apply_team_set[_r])
+                                (_r in apply_team_set) and any(_station_match(_s, _team) for _team in apply_team_set[_r])
                                 for _r, _s in zip(_rid_series, _site_series)
                             ], index=df_source.index)
                             _n_drop = int((~_keep).sum())
@@ -1708,6 +1730,30 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                             if _n_zero > 0:
                                 df_source = df_source[_qty_num > 0].copy()
                                 log(f"-> 🎯 日维度单量过滤：剔除「配送完成单量<=0」行 {_n_zero} 条，剩余 {len(df_source)} 行", "INFO")
+
+                    if is_xiaoxiang:
+                        def _rate_text(value):
+                            if value is None:
+                                return ""
+                            text = str(value).strip()
+                            if not text or text.lower() in ("nan", "none"):
+                                return ""
+                            try:
+                                number = float(text[:-1]) / 100 if text.endswith("%") else float(text.replace(",", ""))
+                            except (TypeError, ValueError):
+                                return text
+                            if 0 <= number <= 1:
+                                percent = number * 100
+                            elif number <= 100:
+                                percent = number
+                            else:
+                                return text
+                            return f"{percent:.2f}%"
+                        _rate_cols = [c for c in df_source.columns if "率" in str(c)]
+                        for _rate_col in _rate_cols:
+                            df_source[_rate_col] = df_source[_rate_col].map(_rate_text)
+                        if _rate_cols:
+                            log("-> 📊 日维度率值列已按两位小数文本%输出：" + "、".join(str(c) for c in _rate_cols), "INFO")
 
                     # 写入「配送单」子表：按 账单时间(日号) 级联拆分，子表名 = 配送单 + 数据行数(不含表头)
                     split_write_sheet(wb1, delivery_sheet_name, df_source, log_cb=log, date_col="账单时间")
@@ -1800,7 +1846,7 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                     if is_xiaoxiang and len(df_source) > 0:
                         # 精准列名匹配：团队名称/站点名称、骑手ID、骑手姓名
                         # （与普通城市一致，最终匹配键 = 日期 + 骑手ID + 站点名称）
-                        team_col = next((c for c in df_source.columns if str(c).strip() in ["团队名称", "站点名称"]), None)
+                        team_col = next((c for c in df_source.columns if str(c).strip() in ["团队名称", "站点名称", "所属站点"]), None)
                         rid_col = next((c for c in df_source.columns if str(c).strip().lower() == "骑手id"), None)
                         rname_col = next((c for c in df_source.columns if str(c).strip() == "骑手姓名"), None)
                         if not (team_col and rid_col and rname_col):
@@ -1984,9 +2030,14 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                         
                         def _match_cfg_team(tid):
                             tid_str = re.sub(r'_?新专送', '', str(tid).strip())
+                            _id_col = next((c for c in df_rules_sub.columns if '团队ID' in str(c)), None)
+                            if _id_col:
+                                for _, _rule in df_rules_sub.iterrows():
+                                    if str(_rule[_id_col]).replace('.0', '').strip() == tid_str:
+                                        return _rule['_cfg_team']
                             for c_team in df_rules_sub['_cfg_team']:
                                 c_team_clean = re.sub(r'_?新专送', '', str(c_team).strip())
-                                if c_team_clean == tid_str:
+                                if c_team_clean == tid_str or (is_xiaoxiang and _station_match(c_team, tid)):
                                     return c_team
                             log(f"Debug: Match failed for tid='{tid_str}'. Config teams sample: {list(df_rules_sub['_cfg_team'])[:5]}...", "WARN")
                             return str(tid).strip()
@@ -2195,7 +2246,7 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
 
                     # import copy
 
-                    if num_riders > 0:
+                    if not is_xiaoxiang and num_riders > 0:
                         # import re
                         formula_regex = re.compile(r'(?<![a-zA-Z0-9_])(\$?)([a-zA-Z]{1,3})(\$?)([1-9][0-9]{0,6})(?![a-zA-Z0-9_])')
                         def fast_shift(clean_f, delta):
@@ -2602,7 +2653,7 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                         log(f"尝试读取【绑定情况】表失败，回退使用默认表: {e}", "WARN")
                         df_bind_status = df_source.copy()
 
-                    city_col_candidates = [c for c in df_bind_status.columns if any(k in str(c) for k in ["城市", "业务城市", "站点", "团队"])]
+                    city_col_candidates = [c for c in df_bind_status.columns if any(k in str(c) for k in ["城市", "业务城市", "站点", "团队", "区域"])]
                 
                     target_city_col = None
                     valid_mask = None
@@ -3070,7 +3121,8 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
 
             # 小象站点「关键字匹配」：日维度站点(小象超市-XX站-CODE) -> 价格档案站点(XX站)
             # 原有精准匹配仍保留；仅当精准匹配未命中时，按关键字映射表回退再匹配一次。
-            team_name_kw = XIAOXIANG_STATION_KEYWORD_MAP.get(team_name, team_name)
+            _core_sites = price_site_by_date_core.get(b_date, {}).get(_station_core(team_name), set())
+            team_name_kw = next(iter(_core_sites)) if len(_core_sites) == 1 else XIAOXIANG_STATION_KEYWORD_MAP.get(team_name, team_name)
 
             price = None
             match_type = ""
@@ -3332,7 +3384,8 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                     gd['_qty'] = pd.to_numeric(gd['配送完成单量'].astype(str).str.replace(r'[^\d.\-+eE]', '', regex=True), errors='coerce').fillna(0)
                     gd['_d'] = gd['日期'].astype(str).str.strip().str[:10]
                     gd['_r'] = gd['骑手ID'].astype(str).str.replace('.0', '', regex=False).str.strip()
-                    gd['_t'] = gd['所属站点'].astype(str).str.strip()
+                    gd['_t'] = (gd['配送站点ID'].astype(str).str.replace('.0', '', regex=False).str.strip()
+                                if '配送站点ID' in gd.columns else gd['所属站点'].astype(str).str.strip())
                     valid_keys = set(zip(
                         gd.loc[gd['_qty'] > 0, '_d'].tolist(),
                         gd.loc[gd['_qty'] > 0, '_r'].tolist()
@@ -3462,9 +3515,14 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
 
                     def _match_cfg_team(tid):
                         tid_str = re.sub(r'_?新专送', '', str(tid).strip())
+                        _id_col = next((c for c in df_rules_sub.columns if '团队ID' in str(c)), None)
+                        if _id_col:
+                            for _, _rule in df_rules_sub.iterrows():
+                                if str(_rule[_id_col]).replace('.0', '').strip() == tid_str:
+                                    return _rule['_cfg_team']
                         for c_team in df_rules_sub['_cfg_team']:
                             c_team_clean = re.sub(r'_?新专送', '', str(c_team).strip())
-                            if c_team_clean == tid_str:
+                            if c_team_clean == tid_str or (is_xiaoxiang and _station_match(c_team, tid)):
                                 return c_team
                         log(f"Debug2: Match failed for tid='{tid_str}'. Config teams sample: {list(df_rules_sub['_cfg_team'])[:5]}...", "WARN")
                         return str(tid).strip()
@@ -3572,6 +3630,13 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                         df_sht2 = df_sht2.drop(columns=_src_cols)
                     custom_deductions = [c for c in custom_deductions if c not in XIAOXIANG_FEE_DISPLAY_MAP.values()]
 
+                _team_display = {}
+                if is_xiaoxiang and global_df_delivery is not None and not global_df_delivery.empty and {'配送站点ID', '所属站点'}.issubset(global_df_delivery.columns):
+                    for _, _gr in global_df_delivery[['配送站点ID', '所属站点']].dropna().drop_duplicates().iterrows():
+                        _gtid = str(_gr['配送站点ID']).replace('.0', '').strip()
+                        _gsite = str(_gr['所属站点']).strip()
+                        if _gtid and _gsite:
+                            _team_display[_gtid] = _gsite
                 temp_tid = df_sht2['_tid'].copy() if '_tid' in df_sht2.columns else None
                 temp_rid = df_sht2['_rid'].copy() if '_rid' in df_sht2.columns else None
                 temp_rname = df_sht2['rname'].copy() if 'rname' in df_sht2.columns else None
@@ -3580,7 +3645,8 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                 df_sht2.drop(columns=[c for c in cols_to_drop if c in df_sht2.columns], inplace=True, errors='ignore')
                 df_sht2.drop(columns=[c for c in df_sht2.columns if c.startswith('团队名称_') or c.startswith('骑手ID_') or c.startswith('骑手姓名_')], inplace=True, errors='ignore')
                 
-                if temp_tid is not None: df_sht2['团队名称'] = temp_tid
+                if temp_tid is not None:
+                    df_sht2['团队名称'] = temp_tid.map(lambda _v: _team_display.get(str(_v).replace('.0', '').strip(), _v))
                 if temp_rid is not None: df_sht2['骑手ID'] = temp_rid
                 if temp_rname is not None: df_sht2['骑手姓名'] = temp_rname
                 
@@ -3590,7 +3656,7 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                     xiaoxiang_extra_cols = ["保险费", "循环物资使用费", "附加险", "招聘来源"]
                     # 招聘来源按 (团队名称+骑手ID) 从申请名单「入职来源/招聘来源」匹配填充（与配送所得表口径一致）；
                     # 未命中或申请名单留空 → 空单元格，不再整列兜底填 0。
-                    _fee_src_map = {}
+                    _fee_src_rows = []
                     if df_apply is not None and len(df_apply) > 0:
                         _fa_team_col = next((i for i, c in enumerate(df_apply.columns) if any(k in str(c) for k in ("团队名称", "团队"))), 0)
                         _fa_rid_col = next((i for i, c in enumerate(df_apply.columns) if any(k in str(c) for k in ("骑手ID", "ID", "id"))), 1)
@@ -3603,13 +3669,16 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                                     if _fat and _farid and _farid.lower() not in ('nan', 'none', ''):
                                         _fav = _far[_fa_src_col]
                                         _fav = None if _fav is None or str(_fav).strip() in ('', 'nan', 'None') else str(_fav).strip()
-                                        _fee_src_map[(_fat, _farid)] = _fav
+                                        _fee_src_rows.append((_fat, _farid, _fav))
                                 except Exception:
                                     continue
                     def _fee_source_of(row):
                         _fbt = str(row.get('团队名称', '')).strip()
                         _fbrid = str(row.get('骑手ID', '')).replace('.0', '').strip()
-                        return _fee_src_map.get((_fbt, _fbrid))
+                        for _fat, _farid, _fav in _fee_src_rows:
+                            if _farid == _fbrid and _station_match(_fat, _fbt):
+                                return _fav
+                        return None
                     df_sht2['招聘来源'] = df_sht2.apply(_fee_source_of, axis=1)
                     _fee_matched = int(df_sht2['招聘来源'].notna().sum())
                     log(f"-> 🎯 保险费表招聘来源已按申请名单(团队名称+骑手ID)匹配填入 {_fee_matched}/{len(df_sht2)} 行", "INFO")
@@ -3724,6 +3793,8 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                        'LOOKUP(9^9,FIND({"SZ","HZ","CZ","ST"},' in _cell_val:
                         # 将 LOOKUP 数组公式替换为等价嵌套 IF（非数组公式，openpyxl 可正确位移）
                         _cell_val = '=IF(ISNUMBER(FIND("SZ",B4)),"深圳",IF(ISNUMBER(FIND("HZ",B4)),"惠州",IF(ISNUMBER(FIND("CZ",B4)),"潮州",IF(ISNUMBER(FIND("ST",B4)),"汕头",""))))'
+                    if is_xiaoxiang and isinstance(_cell_val, str) and '日维度单量!D:D' in _cell_val:
+                        _cell_val = _cell_val.replace('日维度单量!D:D', '日维度单量!E:E')
                     template_row_info.append({
                         'val': _cell_val, 'style': copy.copy(cell._style) if cell.has_style else None,
                         'col_letter': get_column_letter(c_idx)
@@ -4282,10 +4353,47 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                         if _code in s:
                             return _name
                     return ""
+                _team_site, _site_city, _team_city = {}, [], {}
+                if is_xiaoxiang:
+                    try:
+                        if df_rules is not None and len(df_rules) > 0 and '团队ID' in df_rules.columns and '城市' in df_rules.columns:
+                            for _, _rr in df_rules.iterrows():
+                                _rtid = str(_rr['团队ID']).replace('.0', '').strip()
+                                _rcity = str(_rr['城市']).strip()
+                                if _rtid and _rcity and _rcity.lower() not in ('nan', 'none'):
+                                    _team_city[_rtid] = _rcity
+                        if global_df_delivery is not None and not global_df_delivery.empty and {'配送站点ID', '所属站点'}.issubset(global_df_delivery.columns):
+                            for _, _gr in global_df_delivery[['配送站点ID', '所属站点']].dropna().drop_duplicates().iterrows():
+                                _tid = str(_gr['配送站点ID']).replace('.0', '').strip()
+                                _site = str(_gr['所属站点']).strip()
+                                if _tid and _site:
+                                    _team_site[_tid] = _site
+                        if df_apply is not None and len(df_apply) > 0:
+                            _tc = get_col_idx(df_apply, ['团队名称', '团队'], 0)
+                            _cc = get_col_idx(df_apply, ['业务城市', '城市'], None)
+                            if _cc is not None:
+                                for _, _ar in df_apply.iterrows():
+                                    _at = str(_ar.iloc[_tc]).strip()
+                                    _ac = str(_ar.iloc[_cc]).strip()
+                                    if _at and _ac and _ac.lower() not in ('nan', 'none'):
+                                        _site_city.append((_at, _ac))
+                    except Exception as _map_error:
+                        log(f"业务城市映射准备失败: {_map_error}", "WARN")
                 _maxr = _ws_inc.max_row
                 for _r in range(4, _maxr + 1):
-                    _ws_inc.cell(row=_r, column=1).value = _city_of(_ws_inc.cell(row=_r, column=2).value)
-                log(">>> 📌 配送所得表业务城市(A列)已按站点名称静态计算写入，打开即显示，无需F9", "INFO")
+                    _b = _ws_inc.cell(row=_r, column=2).value
+                    _city = ""
+                    if is_xiaoxiang and _b not in (None, ""):
+                        _b_key = str(_b).replace('.0', '').strip()
+                        _city = _team_city.get(_b_key, "")
+                        if not _city:
+                            _site = _team_site.get(_b_key)
+                            if _site:
+                                _city = next((name for team, name in _site_city if _station_match(team, _site)), "")
+                    if not _city:
+                        _city = _city_of(_b)
+                    _ws_inc.cell(row=_r, column=1).value = _city
+                log(">>> 📌 配送所得表业务城市(A列)已按团队ID/站点名称静态计算写入，打开即显示，无需F9", "INFO")
         except Exception as e:
             log(f"业务城市静态化失败(不影响其余功能): {e}", "WARN")
 
@@ -4299,7 +4407,7 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                     _a_team_col = get_col_idx(df_apply, ["团队名称", "团队"], 0)
                     _a_rid_col = get_col_idx(df_apply, ["骑手ID", "ID", "id"], 1)
                     _a_sal_col = get_col_idx(df_apply, ["薪资方案"], None)
-                    _apply_sal_map = {}
+                    _apply_sal_rows = []
                     if _a_sal_col is not None:
                         for _ar in df_apply.itertuples(index=False):
                             try:
@@ -4307,7 +4415,7 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                                 _arid = str(_ar[_a_rid_col]).replace('.0', '').strip()
                                 _asal = _ar[_a_sal_col]
                                 if _at and _arid and _arid.lower() not in ('nan', 'none', ''):
-                                    _apply_sal_map[(_at, _arid)] = _asal
+                                    _apply_sal_rows.append((_at, _arid, _asal))
                             except Exception:
                                 continue
                         # 在配送所得表表头(兼容 row2 月份前缀 / row3 纯列名)定位薪资方案列
@@ -4317,8 +4425,12 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                             for _r in range(4, _ws_inc2.max_row + 1):
                                 _bt = str(_ws_inc2.cell(row=_r, column=2).value or '').strip()
                                 _brid = str(_ws_inc2.cell(row=_r, column=3).value or '').replace('.0', '').strip()
-                                if (_bt, _brid) in _apply_sal_map:
-                                    _val = _apply_sal_map[(_bt, _brid)]
+                                _val, _found = None, False
+                                for _at, _arid, _asal in _apply_sal_rows:
+                                    if _arid == _brid and _station_match(_at, _bt):
+                                        _val, _found = _asal, True
+                                        break
+                                if _found:
                                     try:
                                         if _val is not None and str(_val).strip() not in ('', 'nan', 'None'):
                                             _val = float(_val)
@@ -4410,14 +4522,14 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                     _a_rid_col = get_col_idx(df_apply, ["骑手ID", "ID", "id"], 1)
                     _a_src_col = get_col_idx(df_apply, ["入职来源", "招聘来源"], None)
                     if _a_src_col is not None:
-                        _apply_src_map = {}
+                        _apply_src_rows = []
                         for _ar in df_apply.itertuples(index=False):
                             try:
                                 _at = str(_ar[_a_team_col]).strip()
                                 _arid = str(_ar[_a_rid_col]).replace('.0', '').strip()
                                 _asrc = _ar[_a_src_col]
                                 if _at and _arid and _arid.lower() not in ('nan', 'none', ''):
-                                    _apply_src_map[(_at, _arid)] = _asrc
+                                    _apply_src_rows.append((_at, _arid, _asrc))
                             except Exception:
                                 continue
                         _src_col_idx = None
@@ -4431,8 +4543,12 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                             for _r in range(4, _ws_inc3.max_row + 1):
                                 _bt = str(_ws_inc3.cell(row=_r, column=2).value or '').strip()
                                 _brid = str(_ws_inc3.cell(row=_r, column=3).value or '').replace('.0', '').strip()
-                                if (_bt, _brid) in _apply_src_map:
-                                    _val = _apply_src_map[(_bt, _brid)]
+                                _val, _found = None, False
+                                for _at, _arid, _asrc in _apply_src_rows:
+                                    if _arid == _brid and _station_match(_at, _bt):
+                                        _val, _found = _asrc, True
+                                        break
+                                if _found:
                                     if _val is None or str(_val).strip() in ('', 'nan', 'None'):
                                         _val = ''
                                     _ws_inc3.cell(row=_r, column=_src_col_idx).value = _val
@@ -4515,6 +4631,14 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
                                     _tb.autoFilter.ref = _new_ref
                     except Exception as _te:
                         log(f"管理费超级表区域扩展失败(不影响其余功能): {_te}", "WARN")
+                    _mg_max_col = min(20, _ws_mg.max_column)
+                    for _mg_r in range(1, _ws_mg.max_row + 1):
+                        for _mg_c in range(1, _mg_max_col + 1):
+                            _mg_cell = _ws_mg.cell(row=_mg_r, column=_mg_c)
+                            _mg_align = copy.copy(_mg_cell.alignment)
+                            _mg_align.horizontal = "center"
+                            _mg_align.vertical = "center"
+                            _mg_cell.alignment = _mg_align
                     log(f">>> 📌 管理费表 团队名称/骑手ID/骑手姓名/入职来源 已按配送所得表顺序复制 {_n_mg} 行，D~I 取数公式已逐行补齐", "INFO")
         except Exception as e:
             log(f"管理费表四列复制失败(不影响其余功能): {e}", "WARN")

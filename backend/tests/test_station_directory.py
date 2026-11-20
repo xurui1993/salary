@@ -74,10 +74,47 @@ class DirectoryTests(unittest.TestCase):
                'stations':[{'id':'1','name':'一站','city':'甲','city_id':'001','platform':'xiaoxiang'},
                            {'id':'2','name':'二站','city':'乙','city_id':'002','platform':'xiaoxiang'}]}
         with patch('deduction_stations.catalog',return_value=value) as calls:
-            directory.ready_directory('xiaoxiang','小象')
+            directory.snapshot('xiaoxiang')
             with directory._lock: worker=directory._workers.get('xiaoxiang')
             if worker: worker.join(3)
+            directory.ready_directory('xiaoxiang','小象')
             data=directory.snapshot('xiaoxiang')
         calls.assert_called_once_with('xiaoxiang')
         self.assertEqual([c['status'] for c in data['cities']],['ready','ready'])
         self.assertEqual(len(data['stations']),2)
+    def test_xiaoxiang_task_wait_finishes_after_background_sync(self):
+        calls=[]
+        def fake_snapshot(platform,refresh=False):
+            calls.append((platform,refresh))
+            if len(calls)<3:
+                return {'platform':'xiaoxiang','status':'loading','cities':[],'stations':[]}
+            return {'platform':'xiaoxiang','status':'ready','cities':[{'id':'1','name':'甲','status':'ready','station_count':1}],'stations':[{'id':'1','name':'一站','city':'甲','city_id':'1','platform':'xiaoxiang'}]}
+        with patch.object(directory,'snapshot',side_effect=fake_snapshot),patch.object(directory.time,'sleep',lambda _:None):
+            data=directory.wait_xiaoxiang_directory(timeout=5)
+        self.assertEqual(data['status'],'ready')
+        self.assertTrue(calls[1][1])
+    def test_xiaoxiang_task_wait_timeout_keeps_materials_and_is_actionable(self):
+        from parttime_source import SourceError
+        loading={'platform':'xiaoxiang','status':'loading','cities':[],'stations':[]}
+        clock={'t':0.0}
+        def now():return clock['t']
+        def sleep(seconds):clock['t']+=seconds
+        with patch.object(directory,'snapshot',return_value=loading),patch.object(directory.time,'monotonic',side_effect=now),patch.object(directory.time,'sleep',side_effect=sleep):
+            with self.assertRaisesRegex(SourceError,'仍在同步'):
+                directory.wait_xiaoxiang_directory(timeout=1)
+    def test_xiaoxiang_task_wait_retries_transient_unavailable(self):
+        replies=[
+            {'platform':'xiaoxiang','status':'loading','cities':[],'stations':[],'message':''},
+            {'platform':'xiaoxiang','status':'unavailable','cities':[],'stations':[],'message':'此平台正在检测或切换，请稍候'},
+            {'platform':'xiaoxiang','status':'ready','cities':[{'id':'1','name':'甲','status':'ready','station_count':1}],'stations':[{'id':'1','name':'一站','city':'甲','city_id':'1','platform':'xiaoxiang'}],'message':''},
+        ]
+        def fake_snapshot(platform,refresh=False):return replies.pop(0) if len(replies)>1 else replies[0]
+        with patch.object(directory,'snapshot',side_effect=fake_snapshot),patch.object(directory.time,'sleep',lambda _:None):
+            data=directory.wait_xiaoxiang_directory(timeout=5)
+        self.assertEqual(data['status'],'ready')
+    def test_xiaoxiang_task_wait_stops_on_login_required(self):
+        from parttime_source import SourceError
+        unavailable={'platform':'xiaoxiang','status':'unavailable','cities':[],'stations':[],'message':'请先完成平台登录后刷新'}
+        with patch.object(directory,'snapshot',return_value=unavailable),patch.object(directory.time,'sleep',lambda _:None):
+            with self.assertRaisesRegex(SourceError,'登录'):
+                directory.wait_xiaoxiang_directory(timeout=5)

@@ -533,8 +533,7 @@ def collect_xiaoxiang(folder, state, manager):
             raise ValueError('未获取到商翼员工资料')
         target = folder / 'input' / '骑手支付绑定.xlsx'
         from baize_binding import build_binding
-        count = build_binding(source[0][0], target,
-                              (state.get('baize_account') or {}).get('region_text', ''))
+        count = build_binding(source[0][0], target, '小象超市')
         state['items']['payment_binding'] = {
             'label': '商翼绑定', 'status': 'ready',
             'file': target.name, 'sha256': digest(target),
@@ -966,7 +965,7 @@ async def _run_payroll(config, request, folder, state, cancelled, *, context=Non
     if automatic:
         from payroll_automatic import capture_rules
         from deduction_confirmation import platform_for
-        from station_directory import ready_directory
+        from station_directory import ready_directory, wait_xiaoxiang_directory
         yield log_event('正在自动应用已有扣款配置；无配置站点按零扣款计算')
         def capture():
             if relaxed:
@@ -974,7 +973,12 @@ async def _run_payroll(config, request, folder, state, cancelled, *, context=Non
                 capture_available_rules(folder,state,ROOT)
             else:
                 retained = state.get('deductions', {}).get('frozen') or (bool(state.get('deduction_confirmation')) and state['deduction_confirmation'].get('stage', 'final') == 'final')
-                data = None if retained else ready_directory(platform_for(state), state['plan']['city'])
+                if retained:
+                    data = None
+                elif platform_for(state) == 'xiaoxiang':
+                    data = wait_xiaoxiang_directory()
+                else:
+                    data = ready_directory(platform_for(state), state['plan']['city'])
                 capture_rules(folder, state, ROOT, data)
             state.pop('pause_reason', None)
             save(folder, state)

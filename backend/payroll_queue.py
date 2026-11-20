@@ -144,7 +144,7 @@ class PayrollQueue:
             for template in templates:
                 key=uuid.uuid4().hex
                 from payroll_business import xiaoxiang_template
-                actual_mode='xiaoxiang' if mode=='manual' and xiaoxiang_template(template) else mode
+                actual_mode='xiaoxiang' if xiaoxiang_template(template) else mode
                 task={'id':key,'wid':wid,'owner':owner,'mode':actual_mode,'source_path':str(folder),'template_path':template.relative_to(folder).as_posix(),
                       'template_name':template.name,'status':'queued','progress':0,'current_action':'排队中','created_at':now(),
                       'submission_id':request_id,'approval_code':'','batch_id':None,'plan':None,'preparation':None,'logs':[],'hidden':False,

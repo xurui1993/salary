@@ -77,15 +77,20 @@ class BaizeStandaloneTests(unittest.TestCase):
     def test_employee_export_does_not_query_or_compare_page_total(self):
         with tempfile.TemporaryDirectory() as folder:
             session = Mock(); session.__enter__ = Mock(return_value=session); session.__exit__ = Mock()
+            def fake_query(_session, _source, path, params=None):
+                if path == 'web/merchantGroup/queryList':
+                    return {'data': [{'id': '2030', 'groupName': '小象超市'}]}
+                return {}
             with patch('binding_sources_http.authenticated', return_value=session), \
                  patch('binding_sources_http.identity', return_value={'user': {'userRelateId': 1}}), \
-                 patch('binding_sources_http.query', return_value={}) as query, \
-                 patch('binding_sources_http.export_once', return_value=Path(folder)/'employees.xlsx'), \
+                 patch('binding_sources_http.query', side_effect=fake_query) as query, \
+                 patch('binding_sources_http.export_once', return_value=Path(folder)/'employees.xlsx') as export, \
                  patch('binding_sources_http.validate_employees', return_value={'rows': 12}) as validate:
                 BindingSources(folder, lambda *_: None, threading.Event()).employees()
             self.assertEqual(validate.call_args.kwargs, {})
-            self.assertEqual(query.call_count, 1)
+            self.assertEqual(query.call_count, 2)
             self.assertEqual(query.call_args.args[2], 'web/merchantFreelancer/checkSecrecy')
+            self.assertEqual(export.call_args.args[3]['groupId'], '2030')
 
     def test_payroll_does_not_enqueue_binding_or_baize(self):
         state = {'id': 'a'*32, 'plan': {'city': '泉州', 'start': '2026-10-01', 'end': '2026-10-15'},
@@ -146,6 +151,38 @@ class BaizeStandaloneTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class BaizeRegionExportTests(unittest.TestCase):
+    def test_employees_exports_only_xiaoxiang_region(self):
+        import contextlib
+        import binding_sources_http as module
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / 'raw'
+            (root / 'baize').mkdir(parents=True)
+            session = Mock()
+            calls = []
+            def fake_query(_session, _source, path, params=None):
+                calls.append((path, params))
+                if path == 'web/merchantGroup/queryList':
+                    return {'data': [{'id': '2030', 'groupName': '小象超市'},
+                                     {'id': '1', 'groupName': '运营'}]}
+                return {}
+            def fake_export(_session, _source, path, params, output, _cancelled):
+                calls.append((path, params))
+                return Path(output)
+            with patch.object(module, 'authenticated', return_value=contextlib.nullcontext(session)), \
+                 patch.object(module, 'identity', return_value={'user': {'userRelateId': '2008'}}), \
+                 patch.object(module, 'query', side_effect=fake_query), \
+                 patch.object(module, 'retained_employee_export', return_value=False), \
+                 patch.object(module, 'export_once', side_effect=fake_export), \
+                 patch.object(module, 'validate_employees', return_value={'rows': 1, 'path': 'x'}):
+                file = BindingSources(root, lambda *_: None, threading.Event()).employees()
+            export_calls = [params for path, params in calls if path == 'web/merchantFreelancer/export']
+            self.assertEqual(len(export_calls), 1)
+            self.assertEqual(export_calls[0]['groupId'], '2030')
+            self.assertNotIn('groupName', export_calls[0])
+            self.assertEqual(file, root / 'baize' / 'merchantFreelancer_白泽全量.xlsx')
 
 
 class RetainedEmployeeExportTests(unittest.TestCase):

@@ -357,6 +357,38 @@ class DailyRangeTests(unittest.TestCase):
             with self.assertRaisesRegex(LighthouseError, '均无骑手分析数据'):
                 board.generate_rider_daily_range('2026-10-28', '2026-10-29', Path(tempfile.gettempdir()))
 
+    def test_range_all_dates_allows_long_range_and_names_by_actual_data(self):
+        def query(_session, day):
+            if day in (date(2026, 9, 1), date(2026, 9, 2), date(2026, 10, 5)):
+                return {'rows': [], 'metas': METAS, 'total': 0}
+            return {'rows': [daily_row('842952', 7, '40')], 'metas': METAS, 'total': 1}
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.object(lh, 'load_state', return_value=FAKE_STATE), \
+                patch.object(board, 'query_rider_daily', side_effect=query):
+            target = board.generate_rider_daily_range(
+                '2026-09-01', '2026-10-05', Path(folder), all_dates=True)
+            self.assertEqual(target.name, '日维度骑手分析2026-09-03-2026-10-04.xlsx')
+
+    def test_validate_request_all_dates_uses_recent_year_and_ignores_dates(self):
+        today = date(2026, 10, 31)
+        config = validate_request(
+            {'datasets': ['rider_daily'], 'xiaoxiang_all_dates': True,
+             'start': '2026-10-01', 'end': '2026-10-02'}, today=today)
+        self.assertEqual((config['start'], config['end']), ('2025-10-31', '2026-10-30'))
+        self.assertEqual((config['months'][0], config['months'][-1]), ('2025-10', '2026-10'))
+        self.assertTrue(config['xiaoxiang_all_dates'])
+        with self.assertRaises(ValidationError):
+            validate_request({'datasets': ['rider_daily'], 'xiaoxiang_all_dates': 'yes'}, today=today)
+
+    def test_validate_request_all_dates_covers_every_lighthouse_dated_dataset(self):
+        today = date(2026, 10, 31)
+        for dataset in ('rider_daily', 'detail_orders', 'detail_kesu', 'detail_reviews',
+                        'rider_order_detail', 'xiaoxiang_attendance_detail'):
+            with self.subTest(dataset=dataset):
+                config = validate_request({'datasets': [dataset], 'xiaoxiang_all_dates': True}, today=today)
+                self.assertEqual((config['start'], config['end']), ('2025-10-31', '2026-10-30'))
+                self.assertTrue(config['xiaoxiang_all_dates'])
+
     def test_validate_request_accepts_range_and_rejects_out_of_bounds(self):
         today = date(2026, 10, 31)
         config = validate_request({'datasets': ['rider_daily'], 'start': '2026-10-01', 'end': '2026-10-30'},
@@ -493,6 +525,19 @@ class DetailTests(unittest.TestCase):
             self.assertEqual(values[1][0], '2026-10-28')
         self.assertTrue(any('跳过' in message and '2026-10-29' in message for message in logs))
         self.assertTrue(any('[校验]' in message and '1 行 / 12 列' in message for message in logs))
+
+    def test_generate_detail_all_dates_allows_long_range_and_names_by_actual_data(self):
+        def query_rows(_session, kind, day, site_ids):
+            if day in (date(2026, 9, 1), date(2026, 9, 2), date(2026, 10, 5)):
+                return []
+            return [dict(REVIEW_ROWS[0])]
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.object(lh, 'load_state', return_value=FAKE_STATE), \
+                patch.object(board, 'query_site_ids', return_value=[493]), \
+                patch.object(board, 'query_detail_rows', side_effect=query_rows):
+            target = board.generate_detail('detail_reviews', '2026-09-01', '2026-10-05',
+                                           Path(folder), all_dates=True)
+            self.assertEqual(target.name, '2026-09-03-2026-10-04配送评价明细.xlsx')
 
     def test_generate_detail_rejects_long_range_and_all_empty(self):
         with self.assertRaises(LighthouseError):

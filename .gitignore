@@ -19,3 +19,4 @@ salary_source_*.zip
 backend/tests/tmp*/
 /server.log
 /server-restart.log
+/logs/

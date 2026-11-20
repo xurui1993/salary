@@ -85,6 +85,22 @@ class ConfirmationTests(unittest.TestCase):
         self.assertEqual({e['station']['id'] for e in data['entries']},{'2155'})
         self.assertEqual(data['entries'][0]['row']['团队ID'],'2155')
 
+    def test_xiaoxiang_station_variants_resolve_to_backend_station(self):
+        book=Workbook();book.active.title='申请名单'
+        book.active.append(['业务城市','团队名称','骑手ID'])
+        book.active.append(['测试城',' 小象超市-云梯站-CZ4001 ','00001'])
+        book.save(self.input/'variants.xlsx');book.close()
+        self.bill('小象超市-云梯店-CZ4001')
+        self.state={'id':'a'*32,'mode':'xiaoxiang','status':'ready','jobs':[],
+                    'template_hash':self.sha('variants.xlsx'),
+                    'plan':{'city':'小象','start':'2026-10-26','end':'2026-11-01','month':'2026-10','cycle':'周结','template':'variants.xlsx','applicants':1},
+                    'items':{'delivery_fee':{'status':'ready','file':'bill.csv','sha256':self.sha('bill.csv')},'penalty':{'status':'omitted'}}}
+        self.directory={'platform':'xiaoxiang','session_version':'session-v1','cities':[{'id':'001','name':'测试城'}],
+                        'stations':[{'platform':'xiaoxiang','city':'测试城','city_id':'001','id':'9001','name':'小象超市-云梯店-CZ4001'}]}
+        data=self.read()
+        self.assertEqual(data['unresolved'],[])
+        self.assertEqual([e['station']['id'] for e in data['entries']],['9001'])
+
     def test_new_station_and_legacy_candidates_are_pending_until_explicit_confirmation(self):
         data=self.read();self.assertEqual(len(data['entries']),1);self.assertFalse(data['entries'][0]['configured'])
         self.assertEqual(data['entries'][0]['row']['团队ID'],'0001');self.assertEqual(data['entries'][0]['row']['安全基金'],10)

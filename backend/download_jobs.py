@@ -92,6 +92,7 @@ def _fingerprint(config):
         public['exclude_separation'] = config['exclude_separation']
     if config.get('lanorange_by_city'): public['lanorange_by_city'] = True
     if config.get('lanorange_full_delivery'): public['lanorange_full_delivery'] = True
+    if config.get('xiaoxiang_all_dates'): public['xiaoxiang_all_dates'] = True
     if config.get('lanorange_months'): public['lanorange_months'] = sorted(config['lanorange_months'])
     if config.get('merchant_by_city'): public['merchant_by_city'] = True
     if config.get('payroll_agencies'): public['payroll_agencies'] = config['payroll_agencies']
@@ -401,6 +402,7 @@ class DownloadManager:
         refresh_history = config.get("refresh_history") is True
         lanorange_by_city = config.get('lanorange_by_city') is True
         lanorange_full_delivery = config.get('lanorange_full_delivery') is True
+        xiaoxiang_all_dates = config.get('xiaoxiang_all_dates') is True
         merchant_by_city = config.get('merchant_by_city') is True
         business_intent = {key: config[key] for key in ('task_kind', 'generation_target', 'parent_batch_id', 'parent_workspace') if key in config}
         if config.get('include_separation') is True: business_intent['include_separation'] = True
@@ -415,6 +417,7 @@ class DownloadManager:
             config["refresh_history"] = True
         if lanorange_by_city: config['lanorange_by_city'] = True
         if lanorange_full_delivery: config['lanorange_full_delivery'] = True
+        if xiaoxiang_all_dates: config['xiaoxiang_all_dates'] = True
         if merchant_by_city: config['merchant_by_city'] = True
         if recovery_of is not None:
             config["resume_detail_from"] = recovery_of
@@ -484,6 +487,7 @@ class DownloadManager:
                        **{key: config[key] for key in ('include_separation', 'exclude_separation') if key in config},
                        **({'lanorange_by_city': True} if config.get('lanorange_by_city') else {}),
                        **({'lanorange_full_delivery': True} if config.get('lanorange_full_delivery') else {}),
+                       **({'xiaoxiang_all_dates': True} if config.get('xiaoxiang_all_dates') else {}),
                        **({'lanorange_months': list(config['lanorange_months'])} if config.get('lanorange_months') else {}),
                        **({'merchant_by_city': True} if config.get('merchant_by_city') else {}),
                        "start": config["start"], "end": config["end"], "cities": config["cities"],
@@ -1092,6 +1096,7 @@ class DownloadManager:
             if config.get('lanorange_months'): requested_config['lanorange_months'] = list(config['lanorange_months'])
             if config.get('lanorange_by_city'): requested_config['lanorange_by_city'] = True
             if config.get('lanorange_full_delivery'): requested_config['lanorange_full_delivery'] = True
+            if config.get('xiaoxiang_all_dates'): requested_config['xiaoxiang_all_dates'] = True
             if config.get('merchant_by_city'): requested_config['merchant_by_city'] = True
             for option in ('include_separation', 'exclude_separation', 'payroll_agencies', 'task_kind', 'generation_target', 'parent_batch_id', 'parent_workspace', 'order_export_concurrency'):
                 if option in config: requested_config[option] = config[option]

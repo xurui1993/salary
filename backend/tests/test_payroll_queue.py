@@ -54,6 +54,13 @@ class QueueTests(TestCase):
             self.assertEqual(saved['config']['theme']['msg_start'],['original'])
         with self.assertRaises(SourceError):self.enqueue(q,config={'payrollExcludeSeparation':True})
 
+    def test_xiaoxiang_template_is_detected_regardless_of_queue_mode(self):
+        self.template('小象-template.xlsx')
+        q=self.queue();tasks=self.enqueue(q,mode='fengshen')
+        self.assertEqual(tasks[0]['mode'],'xiaoxiang')
+        saved=self.raw(q,tasks[0]['id'])
+        self.assertEqual(saved['config']['payrollSourceMode'],'xiaoxiang')
+
     def test_approval_code_is_manual_editable_per_task(self):
         self.template('one-template.xlsx');self.template('two-template.xlsx')
         q=self.queue();tasks=self.enqueue(q)

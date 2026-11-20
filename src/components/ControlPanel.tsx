@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { UploadCloud } from 'lucide-react';
 
 interface ControlPanelProps {
-  payrollSourceMode?: 'manual' | 'fengshen' | 'xiaoxiang';
   onUploadFiles?: (files: { file: File; relativePath: string }[]) => Promise<void>;
   onOpenTemplates?: () => void;
   isRunning?: boolean;
@@ -10,16 +9,25 @@ interface ControlPanelProps {
 }
 
 /**
- * 兼职核算上传区：仅负责拖拽 / 点选上传与模式说明。
- * 模式切换、辅助下载工具、认证入口由 CorePage 承担；执行态展示由 ExecutionCockpit 承担。
+ * 统一核算上传区：不再切换手动/自动模式。
+ * 拖入模板文件=自动核算；拖入资料文件夹=手动核算；小象模板按文件名自动识别。
  */
-export function ControlPanel({ payrollSourceMode = 'fengshen', onUploadFiles, onOpenTemplates, isRunning = false, separationOption }: ControlPanelProps) {
+export function ControlPanel({ onUploadFiles, onOpenTemplates, isRunning = false, separationOption }: ControlPanelProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState('');
-  const automatic = payrollSourceMode === 'fengshen' || payrollSourceMode === 'xiaoxiang';
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const multiFileInputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { setError(''); setIsDragging(false); }, [payrollSourceMode]);
+  const templateInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { setError(''); setIsDragging(false); }, []);
+
+  const submitFiles = async (files: { file: File; relativePath: string }[]) => {
+    if (!files.length) {
+      setError('未找到可上传的表格文件。');
+      return;
+    }
+    setError('');
+    await onUploadFiles?.(files);
+  };
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
@@ -30,94 +38,77 @@ export function ControlPanel({ payrollSourceMode = 'fengshen', onUploadFiles, on
     setIsDragging(false);
   };
 
+  const readDirectoryEntries = async (reader: any): Promise<any[]> => {
+    const all: any[] = [];
+    while (true) {
+      const batch = await new Promise<any[]>((resolve) => reader.readEntries((result: any[]) => resolve(result)));
+      if (!batch.length) break;
+      all.push(...batch);
+    }
+    return all;
+  };
+
+  const traverseEntry = async (entry: any, path: string, output: { file: File; relativePath: string }[]) => {
+    if (entry.isFile) {
+      const file = await new Promise<File>((resolve) => entry.file(resolve));
+      output.push({ file, relativePath: path + file.name });
+      return;
+    }
+    if (entry.isDirectory) {
+      const entries = await readDirectoryEntries(entry.createReader());
+      for (const child of entries) {
+        await traverseEntry(child, path + entry.name + '/', output);
+      }
+    }
+  };
+
   const processDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-
     if (!onUploadFiles || isRunning) return;
     setError('');
-    if (automatic) {
-      const items = Array.from(e.dataTransfer.items || []);
-      if (items.some(item => item.webkitGetAsEntry?.()?.isDirectory)) {
-        setError('自动核算仅支持上传申请表文件，请勿拖入文件夹。');
-        return;
+    const output: { file: File; relativePath: string }[] = [];
+    const items = Array.from(e.dataTransfer.items || []);
+    try {
+      for (const item of items) {
+        const entry = item.webkitGetAsEntry?.();
+        if (entry) await traverseEntry(entry, '', output);
       }
-      const files = Array.from(e.dataTransfer.files);
-      await onUploadFiles(files.map(file => ({file, relativePath:file.name})));
-      return;
-    }
-
-    const rawItems = Array.from(e.dataTransfer.items || []);
-    if (!rawItems.some(item => item.webkitGetAsEntry?.()?.isDirectory)) {
-      setError('手动上传仅支持上传资料目录，请直接拖入文件夹或点击「选择文件夹」。');
-      return;
-    }
-
-    const items = e.dataTransfer.items;
-    const filesToUpload: { file: File; relativePath: string }[] = [];
-
-    const traverseFileTree = async (item: any, path?: string) => {
-      path = path || "";
-      if (item.isFile) {
-        const file = await new Promise<File>((resolve) => item.file(resolve));
-        filesToUpload.push({ file, relativePath: path + file.name });
-      } else if (item.isDirectory) {
-        const dirReader = item.createReader();
-        const readAllEntries = async () => {
-          let allEntries: any[] = [];
-          let entries: any[] = [];
-          do {
-            entries = await new Promise<any[]>((resolve) => {
-              dirReader.readEntries((result: any[]) => resolve(result));
-            });
-            allEntries = allEntries.concat(entries);
-          } while (entries.length > 0);
-          return allEntries;
-        };
-        const entries = await readAllEntries();
-        for (const entry of entries) {
-          await traverseFileTree(entry, path + item.name + "/");
+      if (!output.length) {
+        for (const file of Array.from(e.dataTransfer.files || [])) {
+          output.push({ file, relativePath: file.name });
         }
       }
-    };
-
-    if (items) {
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i].webkitGetAsEntry();
-        if (item) {
-          await traverseFileTree(item);
-        }
-      }
-    }
-
-    if (filesToUpload.length > 0) {
-      await onUploadFiles(filesToUpload);
+      await submitFiles(output);
+    } catch (dropError) {
+      setError(dropError instanceof Error ? dropError.message : '拖入资料解析失败');
     }
   };
 
-  const handleClick = () => {
-    if (isRunning) return;
-    if (automatic) {
-      multiFileInputRef.current?.click();
-    } else {
-      fileInputRef.current?.click();
-    }
-  };
-
-  const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!onUploadFiles || !e.target.files || isRunning) return;
+  const handleTemplateInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!onUploadFiles || isRunning || !e.target.files) return;
     setError('');
-    const files = e.target.files;
-    const filesToUpload: { file: File; relativePath: string }[] = [];
-    for (let i = 0; i < files.length; i++) {
-      filesToUpload.push({
-        file: files[i],
-        relativePath: files[i].webkitRelativePath || files[i].name,
-      });
-    }
+    const files = Array.from(e.target.files).map(file => ({ file, relativePath: file.name }));
     e.target.value = '';
-    if (filesToUpload.length > 0) {
-      await onUploadFiles(filesToUpload);
+    try {
+      await submitFiles(files);
+    } catch (inputError) {
+      setError(inputError instanceof Error ? inputError.message : '资料上传未完成');
+    }
+  };
+
+  const handleFolderInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!onUploadFiles || isRunning || !e.target.files) return;
+    setError('');
+    const files = Array.from(e.target.files).map(file => ({
+      file,
+      relativePath: file.webkitRelativePath || file.name,
+    }));
+    e.target.value = '';
+    try {
+      await submitFiles(files);
+    } catch (inputError) {
+      setError(inputError instanceof Error ? inputError.message : '资料上传未完成');
     }
   };
 
@@ -128,25 +119,23 @@ export function ControlPanel({ payrollSourceMode = 'fengshen', onUploadFiles, on
       onDragLeave={handleDragLeave}
       onDrop={processDrop}
     >
-      {!automatic && (
-        <input
-          ref={fileInputRef}
-          type="file"
-          className="hidden"
-          webkitdirectory="true"
-          {...({ directory: 'true' } as any)}
-          onChange={handleFileInput}
-          aria-label="选择资料文件夹"
-        />
-      )}
       <input
-        ref={multiFileInputRef}
+        ref={templateInputRef}
         type="file"
         className="hidden"
         multiple
-        accept={automatic ? '.xlsx' : '.xlsx,.xls,.csv,.txt'}
-        onChange={handleFileInput}
-        aria-label={automatic ? '上传薪资申请表' : '模板及补充资料'}
+        accept=".xlsx"
+        onChange={handleTemplateInput}
+        aria-label="上传薪资申请表"
+      />
+      <input
+        ref={folderInputRef}
+        type="file"
+        className="hidden"
+        webkitdirectory="true"
+        {...({ directory: 'true' } as any)}
+        onChange={handleFolderInput}
+        aria-label="选择资料文件夹"
       />
 
       <div className="wbx-payroll__upload-main">
@@ -155,26 +144,16 @@ export function ControlPanel({ payrollSourceMode = 'fengshen', onUploadFiles, on
             <UploadCloud size={24} />
           </div>
           <div className="wbx-payroll__upload-text">
-            <h3>{automatic ? '上传薪资申请表（自动核算）' : '上传资料目录（手动上传）'}</h3>
+            <h3>拖入模板或资料文件夹</h3>
             <p>
-              {automatic
-                ? '拖拽或点选 1 份或多份含 template 的 .xlsx 文件，自动拉取风神与蓝橙源表并执行算薪。'
-                : '仅支持拖入或选择包含标准模板与本地补充源表的整个资料文件夹。'}
+              拖入 .xlsx 模板=自动核算；拖入包含模板及补充资料文件夹=手动核算；小象模板按文件名自动识别。
+              支持多模板同时入队，执行中可继续添加。
             </p>
             <div className="wbx-payroll__upload-hints">
-              {automatic ? (
-                <>
-                  <span>支持多份 .xlsx 并发入队</span>
-                  <span>自动齐套风神 / 蓝橙源表</span>
-                  <span>行内展开全链路核验日志</span>
-                </>
-              ) : (
-                <>
-                  <span>支持整资料目录拖拽上传</span>
-                  <span>自动核验本地补充源表</span>
-                  <span>站点独立扣款优先应用</span>
-                </>
-              )}
+              <span>模板文件自动核算</span>
+              <span>资料文件夹手动核算</span>
+              <span>小象/风神自动识别</span>
+              <span>执行中可叠加上传</span>
             </div>
           </div>
         </div>
@@ -182,25 +161,22 @@ export function ControlPanel({ payrollSourceMode = 'fengshen', onUploadFiles, on
         <div className="pq-upload-actions wbx-payroll__upload-actions">
           {separationOption}
           <div className="wbx-payroll__upload-btn-group">
-            {automatic ? (
-              <button
-                type="button"
-                className="wb-primary"
-                disabled={isRunning}
-                onClick={handleClick}
-              >
-                {isRunning ? '正在添加…' : '选择模板'}
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="wb-primary"
-                disabled={isRunning}
-                onClick={() => fileInputRef.current?.click()}
-              >
-                {isRunning ? '正在添加…' : '选择文件夹'}
-              </button>
-            )}
+            <button
+              type="button"
+              className="wb-primary"
+              disabled={isRunning}
+              onClick={() => templateInputRef.current?.click()}
+            >
+              {isRunning ? '正在添加…' : '选择模板'}
+            </button>
+            <button
+              type="button"
+              className="wbx-btn wbx-btn--ghost"
+              disabled={isRunning}
+              onClick={() => folderInputRef.current?.click()}
+            >
+              {isRunning ? '正在添加…' : '选择文件夹'}
+            </button>
             {onOpenTemplates && (
               <button
                 type="button"
@@ -222,4 +198,3 @@ export function ControlPanel({ payrollSourceMode = 'fengshen', onUploadFiles, on
     </div>
   );
 }
-

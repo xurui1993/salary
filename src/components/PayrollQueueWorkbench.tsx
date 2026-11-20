@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
-import {FileSpreadsheet, Download, Square, FolderOpen, ChevronDown, ArchiveRestore, X, Loader2, Check, Pencil, Sparkles, FolderKanban, SlidersHorizontal, Search, ShieldAlert} from 'lucide-react';
+import {FileSpreadsheet, Download, Square, FolderOpen, ChevronDown, ArchiveRestore, X, Loader2, Check, Pencil, SlidersHorizontal, Search, ShieldAlert} from 'lucide-react';
 import type {CorePageProps} from './CorePage';
 import {ControlPanel} from './ControlPanel';
 import {PayrollReviewSummary} from './PayrollReviewSummary';
@@ -12,23 +12,8 @@ import {legacyPayrollTask,payrollElapsed,payrollModeName,payrollQueueRunning,pay
 import {paginateEntries} from '../lib/deductionCategories';
 import {filterPayrollQueueTasks,type PayrollQueueFilterTab} from '../lib/workbenchFilters';
 
-type Props=Pick<CorePageProps,'config'|'onConfigChange'|'progress'|'progressText'|'logs'|'payrollPreparation'|'apiFetch'|'onPreparationChange'|'onUploadFiles'|'onRun'|'onOpenConnections'|'onOpenFengshenLogin'|'onOpenDeductions'|'onOpenSettings'|'uploadExtracted'>&{isRunning:boolean;onOtherMode:(mode:'fengshen'|'manual'|'xiaoxiang')=>void};
+type Props=Pick<CorePageProps,'config'|'onConfigChange'|'progress'|'progressText'|'logs'|'payrollPreparation'|'apiFetch'|'onPreparationChange'|'onUploadFiles'|'onRun'|'onOpenConnections'|'onOpenFengshenLogin'|'onOpenDeductions'|'onOpenSettings'|'uploadExtracted'>&{isRunning:boolean};
 const API='/api/parttime/queue';
-
-const PAYROLL_WORKBENCH_MODES = [
-  {
-    key: 'fengshen' as const,
-    title: '自动核算',
-    hint: '上传申请表自动齐套风神/蓝橙云端源表',
-    icon: Sparkles,
-  },
-  {
-    key: 'manual' as const,
-    title: '手动上传',
-    hint: '上传含申请表与本地补充源表的资料目录',
-    icon: FolderKanban,
-  },
-] as const;
 
 function payrollPeriod(value:string){
   const match=/^(\d{4})-(\d{2})-(\d{2})/.exec(value||'');
@@ -145,7 +130,7 @@ function formatLogTime(value:string){
   return value.match(/(?:T|\s)(\d{2}:\d{2}(?::\d{2})?)/)?.[1]||value;
 }
 
-export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,progressText,logs,payrollPreparation:value,apiFetch,onPreparationChange,onUploadFiles,onOpenConnections,onOpenFengshenLogin,onOpenDeductions,onOpenSettings,onOtherMode}:Props){
+export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,progressText,logs,payrollPreparation:value,apiFetch,onPreparationChange,onUploadFiles,onOpenConnections,onOpenFengshenLogin,onOpenDeductions,onOpenSettings}:Props){
   const [tasks,setTasks]=useState<PayrollQueueTask[]>([]),[selectedId,setSelectedId]=useState(''),[checked,setChecked]=useState<string[]>([]);
   /** 行内展开的任务 id（T6-1a A2）：详情从页面级 section 搬进表格行 */
   const [expandedId,setExpandedId]=useState('');
@@ -159,40 +144,42 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
   const api=useRef(apiFetch);api.current=apiFetch;
   const selectedRef=useRef(selectedId);selectedRef.current=selectedId;
   const guard=useRef(false),fetching=useRef(false),readController=useRef<AbortController|null>(null),mounted=useRef(true);
-  const rawMode=config.payrollSourceMode||value?.mode||'fengshen';
-  const mode:'fengshen'|'manual'=rawMode==='manual'?'manual':'fengshen';
   const excludeSeparation=config.payrollExcludeSeparation??true;
-
-  useEffect(()=>{
-    if(config.payrollSourceMode==='xiaoxiang'){
-      onConfigChange({payrollSourceMode:'fengshen'});
-    }
-  },[config.payrollSourceMode,onConfigChange]);
 
   const request=useCallback(async(url:string,body?:unknown)=>{
     const response=await api.current(url,body===undefined?{cache:'no-store',signal:AbortSignal.timeout(120000)}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(120000)});
     if(!response.ok){const result=await response.json().catch(()=>({}));throw Error(typeof result.detail==='string'?result.detail:typeof result.error==='string'?result.error:`操作未完成（${response.status}），请检查连接后再操作。`);}
     return response;
   },[]);
-  const refresh=useCallback(async()=>{
-    if(fetching.current)return null;fetching.current=true;
+  const refreshSeq=useRef(0);
+  const refresh=useCallback(async(force=false)=>{
+    if(fetching.current&&!force)return null;
+    if(fetching.current&&force){
+      const deadline=Date.now()+4000;
+      while(fetching.current&&Date.now()<deadline){await new Promise(resolve=>setTimeout(resolve,50));}
+    }
+    fetching.current=true;
+    const seq=++refreshSeq.current;
     const controller=new AbortController();readController.current=controller;
     try{
       const parameters=new URLSearchParams();if(hidden)parameters.set('hidden','true');if(selectedRef.current)parameters.set('detail_id',selectedRef.current);
       const response=await api.current(API+(parameters.size?'?'+parameters.toString():''),{cache:'no-store',signal:AbortSignal.any([controller.signal,AbortSignal.timeout(15000)])});
       const result=await response.json();if(!response.ok||!Array.isArray(result.tasks))throw Error(typeof result.detail==='string'?result.detail:'任务队列暂时无法更新');
-      if(mounted.current&&!controller.signal.aborted){
+      if(mounted.current&&!controller.signal.aborted&&seq===refreshSeq.current){
         setTasks(result.tasks);
         setLoadError('');
       }
       return result.tasks as PayrollQueueTask[];
     }catch(e){
-      if(mounted.current&&!controller.signal.aborted){
+      if(mounted.current&&!controller.signal.aborted&&seq===refreshSeq.current){
         setLoadError(e instanceof Error?e.message:'任务队列暂时无法更新');
       }
       return null;
     }
-    finally{fetching.current=false;if(mounted.current)setLoading(false);}
+    finally{
+      if(seq===refreshSeq.current)fetching.current=false;
+      if(mounted.current&&seq===refreshSeq.current)setLoading(false);
+    }
   },[hidden]);
   /**
    * 队列轮询（P1-5 降噪）：可见时 2.5s，后台标签页降到 10s；
@@ -211,7 +198,25 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
     return()=>{mounted.current=false;window.clearInterval(timer);document.removeEventListener('visibilitychange',onVisibility);readController.current?.abort();};
   },[refresh]);
   useEffect(()=>{void refresh();},[selectedId,refresh]);
-  useEffect(()=>{const changed=()=>void refresh();window.addEventListener('payroll-queue:changed',changed);return()=>window.removeEventListener('payroll-queue:changed',changed);},[refresh]);
+  useEffect(()=>{
+    const changed=(event:Event)=>{
+      const detail=(event as CustomEvent<{tasks?:PayrollQueueTask[]}>).detail;
+      const incoming=Array.isArray(detail?.tasks)?detail.tasks:[];
+      if(incoming.length){
+        setTasks(previous=>{
+          const merged=new Map(previous.map(task=>[task.id,task]));
+          for(const task of incoming)merged.set(task.id,task);
+          return Array.from(merged.values());
+        });
+        setLoading(false);
+        setSelectedId(previous=>previous||incoming[0].id);
+        setNotice(`已提交 ${incoming.length} 个核算任务，正在同步队列…`);
+      }
+      void refresh(true);
+    };
+    window.addEventListener('payroll-queue:changed',changed);
+    return()=>window.removeEventListener('payroll-queue:changed',changed);
+  },[refresh]);
   useEffect(()=>{setChecked([]);setSelectedId('');setTasks([]);setLoading(true);},[hidden]);
   useEffect(()=>{setSkipLegacy(false);},[value?.id]);
   const legacy=value&&!hidden&&!skipLegacy&&!tasks.some(task=>task.batch_id===value.id)?legacyPayrollTask(value,logs,progress,progressText):null;
@@ -231,15 +236,14 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
   const chosen=visible.filter(task=>checked.includes(task.id));
   const downloadable=(chosen.length?chosen:filteredVisible).filter(task=>task.status==='completed'&&task.batch_id);
   const completed=visible.filter(task=>task.status==='completed').length,running=visible.filter(payrollQueueRunning).length;
-  const waitingConfirmCount=visible.filter(task=>task.status==='waiting_confirmation').length;
+  const waitingConfirmCount=visible.filter(task=>task.status==='waiting_confirmation'||task.status==='waiting_materials').length;
   const act=async(work:()=>Promise<void>)=>{if(guard.current)return;guard.current=true;setBusy(true);setError('');setNotice('');try{await work();}catch(e){setError(e instanceof Error?e.message:'操作未完成');}finally{guard.current=false;setBusy(false);}};
   const upload=async(files:{file:File;relativePath:string}[])=>{
     if(uploading)return;setUploading(true);setError('');
     try{
-      if(mode==='fengshen'&&files.some(item=>!item.file.name.toLowerCase().endsWith('.xlsx')||!item.file.name.toLowerCase().includes('template')))throw Error('请选择文件名含 template 的 .xlsx 标准模板，可一次选择多份。');
       const previous=new Set(tasks.map(task=>task.id));await onUploadFiles(files);
       if(hidden){setHidden(false);return;}
-      const next=await refresh();const added=next?.filter(task=>!previous.has(task.id))||[];
+      const next=await refresh(true);const added=next?.filter(task=>!previous.has(task.id))||[];
       if(added.length){
         setSelectedId(added[0].id);
         setQueueFilterTab('all');
@@ -281,40 +285,17 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
       {!!task.elapsed_seconds&&<span className="wbx-hint">已用时 {payrollElapsed(task.elapsed_seconds)}</span>}
     </div>
     {task.status==='error'&&<p className="wbx-hint">任务已结束，具体原因见下方任务动态。</p>}
+    {task.status==='waiting_materials'&&task.preparation?.pause_reason&&<p role="status" className="wbx-hint">{task.preparation.pause_reason}<button type="button" className="wb-link" onClick={onOpenConnections}>检查商翼连接</button></p>}
     {task.preparation?.execution?.waiting_login&&<p role="status" className="wbx-hint">{task.preparation.execution.waiting_verification?'本任务正在等待骑手信息导出验证，完成后自动继续；收起验证窗口会保留等待。':'本任务正在等待平台登录，完成后自动继续。'}<button className="wb-link" onClick={task.mode==='fengshen'?onOpenFengshenLogin:onOpenConnections}>{task.preparation.execution.waiting_verification?'打开验证码窗口':'完成平台登录'}</button></p>}
     <PayrollTaskActivity logs={task.logs?.length?task.logs:task.preparation?.execution_logs}/>
     {task.preparation?.automatic_deductions&&<details className="wbx-disclosure"><summary>本次扣款规则</summary><p className="wbx-hint">沿用已有站点或城市配置，无配置站点按零扣款；不修改默认配置。</p><ul className="pq-rule-list">{task.preparation.automatic_deductions.sources.map((entry,index)=><li key={index}><span>{entry.station.name}</span><small>{entry.source}</small></li>)}</ul></details>}
     {task.status==='completed'&&<><p className="wbx-hint">打开结果后，请在 Excel / WPS 中重算并复核。</p><details className="wbx-disclosure"><summary>复核信息</summary><PayrollReviewSummary review={task.preparation?.result?.review_summary}/></details></>}
     </div>;
-  const activeMode = PAYROLL_WORKBENCH_MODES.find(item => item.key === mode) || PAYROLL_WORKBENCH_MODES[0];
-
   return <div className="pq-workbench wbx-payroll">
-    {/* 顶部：精简模式切换条与快捷入口 */}
-    <section className="wbx-payroll__topbar" aria-label="核算模式与规则入口">
+    {/* 顶部：统一核算入口与快捷操作 */}
+    <section className="wbx-payroll__topbar" aria-label="核算规则与上传入口">
       <div className="wbx-payroll__mode-switch-group">
-        <div className="wbx-segmented" role="tablist" aria-label="核算方式">
-          {PAYROLL_WORKBENCH_MODES.map(item => {
-            const Icon = item.icon;
-            const active = mode === item.key;
-            return (
-              <button
-                key={item.key}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                className={`wbx-segmented__item ${active ? 'is-active' : ''}`}
-                disabled={uploading}
-                onClick={() => {
-                  if (mode !== item.key) onOtherMode(item.key);
-                }}
-              >
-                <Icon size={14} />
-                <span>{item.title}</span>
-              </button>
-            );
-          })}
-        </div>
-        <span className="wbx-payroll__mode-hint">{activeMode.hint}</span>
+        <span className="wbx-payroll__mode-hint">统一核算窗口 · 模板文件自动核算 / 资料文件夹手动核算 / 小象自动识别</span>
       </div>
 
       <div className="wbx-payroll__topbar-actions">
@@ -340,28 +321,25 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
     {/* 中部：常驻一站式拖拽/点选上传工作台 */}
     <section className="pq-intake" aria-label="添加核算任务">
       <ControlPanel
-        payrollSourceMode={mode}
         onUploadFiles={upload}
         onOpenTemplates={() => setTemplates(true)}
         isRunning={uploading}
         separationOption={
-          mode === 'fengshen' ? (
-            <label
-              className="pq-intake-option"
-              title="取消勾选则下载全部站点，范围在任务建立时固定。"
-            >
-              <input
-                type="checkbox"
-                aria-label="排除取分离站点"
-                checked={excludeSeparation}
-                disabled={uploading}
-                onChange={event =>
-                  onConfigChange({ payrollExcludeSeparation: event.target.checked })
-                }
-              />
-              <span>排除取分离站点</span>
-            </label>
-          ) : undefined
+          <label
+            className="pq-intake-option"
+            title="仅对自动风神核算生效；取消勾选则下载全部站点，范围在任务建立时固定。"
+          >
+            <input
+              type="checkbox"
+              aria-label="排除取分离站点"
+              checked={excludeSeparation}
+              disabled={uploading}
+              onChange={event =>
+                onConfigChange({ payrollExcludeSeparation: event.target.checked })
+              }
+            />
+            <span>排除取分离站点</span>
+          </label>
         }
       />
     </section>
@@ -380,10 +358,8 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
           </h3>
           <p className="tabular-nums">
             {visible.length > 0
-              ? `实时队列 · ${running} 运行中 · ${waitingConfirmCount} 待确认 · ${completed} 已完成（点击行首箭头展开日志）`
-              : mode === 'fengshen'
-                ? '拖入或选择 .xlsx 标准薪资申请表即可启动自动算薪'
-                : '拖入或选择含模板与本地源表的资料目录即可启动核验'}
+              ? `实时队列 · ${running} 运行中 · ${waitingConfirmCount} 待处理 · ${completed} 已完成（点击行首箭头展开日志）`
+              : '拖入模板文件或资料文件夹，系统自动识别并加入队列'}
           </p>
         </div>
         <div className="pq-queue-actions">
@@ -423,7 +399,7 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
             {([
               ['all','全部',tabCounts.all],
               ['active','执行中',tabCounts.active],
-              ['waiting','待确认',tabCounts.waiting],
+              ['waiting','待处理',tabCounts.waiting],
               ['completed','已完成',tabCounts.completed],
               ['issue','异常/已结束',tabCounts.issue],
             ] as const).map(([key,label,count])=>(
@@ -551,9 +527,7 @@ export function FlashPayrollWorkbench({config,onConfigChange,isRunning,progress,
           <p>
             {hidden
               ? '移出的任务会保留在此，可随时恢复。'
-              : mode === 'fengshen'
-                ? '上传 1 份或多份 .xlsx 标准申请表模板后，系统会自动建批并发起云端齐套与算薪。'
-                : '上传包含标准模板与本地源表的资料文件夹后，系统会核验齐套度并展示各批次详情。'}
+              : '上传 .xlsx 模板文件将自动核算，上传含模板及补充资料的文件夹将按手动核算处理；支持多模板和在执行中继续添加。'}
           </p>
         </div>
       )}

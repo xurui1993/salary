@@ -12,7 +12,7 @@ export function filterPayrollQueueTasks(
     if (filterTab === 'active' && !['queued', 'preparing', 'calculating', 'stopping'].includes(task.status)) {
       return false;
     }
-    if (filterTab === 'waiting' && task.status !== 'waiting_confirmation') {
+    if (filterTab === 'waiting' && !['waiting_confirmation', 'waiting_materials'].includes(task.status)) {
       return false;
     }
     if (filterTab === 'completed' && task.status !== 'completed') {

@@ -12,6 +12,7 @@ import threading
 from openpyxl import load_workbook
 from parttime_source import SourceError, identifier
 from fengshen_bill import atomic_json
+from station_names import station_match
 import problem_deductions
 
 LOCK = threading.RLock()
@@ -37,7 +38,7 @@ DEDUCTION_CATEGORY_DEFS = (
 DEFAULT_COLUMNS = CONFIG_RULE_COLUMNS
 MONEY_COLUMNS = {*CONFIG_RULE_COLUMNS, *LEGACY_MONEY_COLUMNS}
 SUPPORTED = {*MONEY_COLUMNS, '招聘来源'}
-TEAM = ('团队名称', '骑手所属站点名称', '骑手所属团队名称', '站点名称', '站点', '所属站点', '团队', '站点名')
+TEAM = ('团队名称', '骑手所属站点名称', '骑手所属团队名称', '站点名称', '站点', '所属站点', '团队', '站点名', '配送站点name', '配送站点名称')
 RID = ('骑手ID', '风神骑手ID', '蜂鸟骑手ID', '骑手编号', '工号', 'riderid')
 
 
@@ -47,6 +48,12 @@ def digest(value):
 
 def normalize(value):
     return re.sub(r'_?新专送', '', str(value or '').strip())
+
+
+def _names_match(platform, left, right):
+    if platform == 'xiaoxiang':
+        return station_match(left, right)
+    return normalize(left) == normalize(right)
 
 
 def platform_for(state):
@@ -168,7 +175,7 @@ def station_drafts(platform, root, directory):
     for station in directory['stations']:
         key = station_key(station)
         previous = defaults['entries'].get(key)
-        candidates = [r for r in legacy if r.get('城市') == station['city'] and normalize(r.get('团队名称')) == normalize(station['name'])]
+        candidates = [r for r in legacy if r.get('城市') == station['city'] and _names_match(platform, r.get('团队名称'), station['name'])]
         inherited = candidates[0] if len(candidates) == 1 else {}
         city_default = defaults['cities'].get(digest([platform, station['city_id']]))
         values = previous['row'] if previous else {**inherited, **city_default['row']} if city_default else inherited
@@ -324,7 +331,7 @@ def parse_problem_rows(rows, platform, directory):
                 if team_id:
                     candidates = [station for station in candidates if team_id in station_codes(station)]
                 elif team_name:
-                    candidates = [station for station in candidates if normalize(station['name']) == normalize(team_name)]
+                    candidates = [station for station in candidates if _names_match(platform, station['name'], team_name)]
                 if len(candidates) != 1:
                     raise problem_deductions.ProblemRuleError('站点不在当前后台目录中或存在同名站点，请填写团队ID确认')
                 station = candidates[0]
@@ -546,7 +553,7 @@ def preflight(folder, state, root, directory, city_id=''):
                       and (not hints.get(name) or (len(hints[name]) == 1 and hints[name] & station_codes(e['station'])))]
         method = 'name'
         history_invalid = False
-        matches = [e for e in candidates if normalize(e['station']['name']) == normalize(name)]
+        matches = [e for e in candidates if _names_match(platform_for(state), e['station']['name'], name)]
         if hints.get(name):
             matches = candidates
             method = 'id'
@@ -590,11 +597,13 @@ def preflight(folder, state, root, directory, city_id=''):
             raise SourceError('关联名称与其他站点的核算名称冲突，请核对归属')
         identities[name] = alias['key']
     differences = []
+    platform = platform_for(state)
     for rid, team, number, application_code in ([] if intent else applicants):
         observed = actual.get(rid, set())
         code_difference = bool(application_code and actual_codes.get(rid) and actual_codes[rid] != {application_code})
         same_identity = bool(observed and resolved.get(team) and all(resolved.get(name) == resolved[team] for name in observed))
-        if not observed or (not same_identity and {normalize(v) for v in observed} != {normalize(team)}) or code_difference:
+        matched_name = bool(observed) and any(_names_match(platform, team, name) for name in observed)
+        if not observed or (not same_identity and not matched_name) or code_difference:
             differences.append({'id': digest([number, rid, team, sorted(observed), application_code, sorted(actual_codes.get(rid, set()))]), 'row': number, 'application': team,
                                 'bill': sorted(observed), 'reason': '申请与账单站点编号不同' if code_difference else '申请与账单站点不同' if observed else '账单未提供此申请人的可核对站点'})
     basis = {'inputs': input_signature(state), 'directory_version': directory['session_version'],

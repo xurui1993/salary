@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import {createUploadArchive} from './lib/uploadArchive';
 import { uploadSource } from "./lib/uploadSource";
-import {pendingQueueSubmission,prepareQueueSubmission,sendQueueSubmission,queueUploadFiles} from './lib/payrollQueueSubmit';
+import {pendingQueueSubmission,prepareQueueSubmission,sendQueueSubmission} from './lib/payrollQueueSubmit';
+import {planPayrollUpload} from './lib/payrollUploadPlan';
 import { THEMES } from "./constants";
 import { LogEntry, AppConfig, TaskHistoryRecord } from "./types";
 import { FengshenLoginModal, FengshenAuthStatus } from "./components/FengshenLoginModal";
@@ -697,35 +698,32 @@ export default function App() {
   const uploadFilesAndExecute = async (files: { file: File; relativePath: string }[]) => {
     if (!files.length || uploadSubmission.current) return;
     uploadSubmission.current = true;
-    const mode = files.some(({ file }) => (file.name.includes('小象') || file.name.includes('灯塔')) && file.name.toLowerCase().includes('template')) ? 'xiaoxiang' : appConfig.payrollSourceMode;
     try {
-      if (!files.some(({file}) => !file.name.startsWith('~$') && file.name.toLowerCase().includes('template') && /\.xlsx$/i.test(file.name))) throw new Error('请上传 .xlsx 薪资申请表（标准模板）');
-      const uploaded = await uploadExtractedFilesAndGetPath(queueUploadFiles(files,mode||'fengshen'));
-      if (!uploaded) return;
-      if(mode!=='xiaoxiang') {
-        const attempt=prepareQueueSubmission(workspaceId,{source_path:uploaded.path,mode:mode||'fengshen',config:{...appConfig}},sessionStorage);
-        const submitted=await sendQueueSubmission(workspaceId,attempt,fetchWithAuth,sessionStorage);
-        setUploadStatus(null);
-        appendLog(`已加入 ${submitted.tasks.length} 个核算任务，按顺序执行。`,'INFO','core');
-        window.dispatchEvent(new CustomEvent('payroll-queue:changed'));
-        return;
+      const groups = planPayrollUpload(files);
+      let totalTasks = 0;
+      for (const group of groups) {
+        const uploaded = await uploadExtractedFilesAndGetPath(group.files);
+        if (!uploaded) continue;
+        const attempt = prepareQueueSubmission(workspaceId, {
+          source_path: uploaded.path,
+          mode: group.mode,
+          config: { ...appConfig },
+        }, sessionStorage);
+        const submitted = await sendQueueSubmission(workspaceId, attempt, fetchWithAuth, sessionStorage);
+        totalTasks += submitted.tasks.length;
+        window.dispatchEvent(new CustomEvent('payroll-queue:changed', { detail: { tasks: submitted.tasks } }));
       }
-      setUploadStatus((previous: any) => previous ? { ...previous, stage: 'validating' } : null);
-      const response = await fetchWithAuth('/api/parttime/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: uploaded.path, mode }), signal: AbortSignal.timeout(30000) });
-      const data = await response.json();
-      if (!response.ok || !data.success) throw new Error(data.error || '模板预检失败');
-      setUploadStatus((previous: any) => previous ? { ...previous, stage: 'success' } : null);
-      setTimeout(() => setUploadStatus((previous: any) => previous?.stage === 'success' ? null : previous), 1200);
-      setTaskQueue(uploaded.tasks);
-      const detectedMode = (data.mode || mode) as AppConfig['payrollSourceMode'];
-      const currentUrl = new URL(window.location.href); currentUrl.searchParams.delete('batch'); window.history.replaceState(null, '', currentUrl);
-      setPayrollPreparation(null);
-      localStorage.removeItem(`payroll_preparation_${workspaceId}`);
-      setAppConfig(previous => ({...previous, sourcePath: uploaded.path, city: data.plan.city, payrollSourceMode: detectedMode}));
-      appendLog(`已识别申请范围：${data.plan.city} · ${data.plan.start} 至 ${data.plan.end} · ${data.plan.applicants} 人，开始自动处理`, 'INFO', 'core');
-      await handleRun({action:'core', sourcePath:uploaded.path, city:data.plan.city, payrollSourceMode:detectedMode, payrollPreparationId:'', preparationOnly:detectedMode==='manual', deductionConfigVersion:''});
-    } catch (error) { setUploadStatus(null); const message=error instanceof Error ? error.message : '模板无法读取'; if(mode==='fengshen'){appendLog(message,'ERROR','core');showToast('任务已结束，详情见执行日志','info');}else showToast(message,'error'); }
-    finally { uploadSubmission.current = false; }
+      setUploadStatus(null);
+      appendLog(`已加入 ${totalTasks} 个核算任务，按提交顺序执行。`, 'INFO', 'core');
+      window.dispatchEvent(new CustomEvent('payroll-queue:changed'));
+    } catch (error) {
+      setUploadStatus(null);
+      const message = error instanceof Error ? error.message : '模板无法读取';
+      appendLog(message, 'ERROR', 'core');
+      showToast(message, 'error');
+    } finally {
+      uploadSubmission.current = false;
+    }
   };
 
   const recoveredQueueSubmission=useRef('');

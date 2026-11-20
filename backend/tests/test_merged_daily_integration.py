@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import download_service as service
 import xiaoxiang_board as board
 import xiaoxiang_lighthouse as lighthouse
+import xiaoxiang_notice_data as notice_data
 from xiaoxiang_source_auth import AUTH, XiangAuth
 from test_xiaoxiang_board import METAS, ROWS, api_response, FAKE_STATE
 
@@ -85,7 +86,7 @@ class DailyIntegrationTests(unittest.TestCase):
     def test_lighthouse_queue_runs_each_item_and_keeps_other_results_after_one_failure(self):
         from openpyxl import Workbook
         config=service.validate_request({'datasets':['detail_orders','rider_daily']},today=dt.date(2026,10,31))
-        def fake_detail(kind,start,end,directory,log=None,cancelled=None):
+        def fake_detail(kind,start,end,directory,log=None,cancelled=None,all_dates=False):
             target=Path(directory)/'2026-10-30配送订单明细.xlsx'
             book=Workbook();book.active['A1']='synthetic';book.save(target);return target
         updates=[]
@@ -98,6 +99,33 @@ class DailyIntegrationTests(unittest.TestCase):
         statuses={entry['dataset']:entry['status'] for entry in updates
                   if entry.get('dataset') in ('rider_daily','detail_orders')}
         self.assertEqual(statuses,{'rider_daily':'error','detail_orders':'success'})
+
+    def test_all_dates_keeps_generated_actual_range_filename(self):
+        from openpyxl import Workbook
+        config=service.validate_request({'datasets':['detail_orders'],'xiaoxiang_all_dates':True},today=dt.date(2026,10,31))
+        seen=[]
+        def fake_detail(kind,start,end,directory,log=None,cancelled=None,all_dates=False):
+            seen.append((start,end,all_dates))
+            target=Path(directory)/'2026-10-01-2026-10-30配送订单明细.xlsx'
+            book=Workbook();book.active['A1']='synthetic';book.save(target);return target
+        with patch.object(board,'generate_detail',side_effect=fake_detail):
+            result=service.execute_downloads(config,self.root,lambda *_:None,threading.Event(),lambda *_:None,
+                                             runner_factory=lambda *_:self.fail('unexpected Fengshen login'))
+        self.assertEqual(seen,[('2025-10-31','2026-10-30',True)])
+        self.assertEqual(result[0]['name'],'2026-10-01-2026-10-30配送订单明细.xlsx')
+
+    def test_attendance_generated_name_with_missing_marker_is_published(self):
+        from openpyxl import Workbook
+        config=service.validate_request({'datasets':['xiaoxiang_attendance_detail'],
+                                         'start':'2026-09-23','end':'2026-09-25'},today=dt.date(2026,10,31))
+        name='骑手出勤明细_2026-09-23_2026-09-25（缺09-24~09-25）.xlsx'
+        def fake_notice(dataset,start,end,directory,log=None,cancelled=None,all_dates=False):
+            target=Path(directory)/name
+            book=Workbook();book.active['A1']='synthetic';book.save(target);return target
+        with patch.object(notice_data,'generate_notice_merge',side_effect=fake_notice):
+            result=service.execute_downloads(config,self.root,lambda *_:None,threading.Event(),lambda *_:None,
+                                             runner_factory=lambda *_:self.fail('unexpected Fengshen login'))
+        self.assertEqual(result[0]['name'],name)
 
     def test_default_yesterday_is_correct_across_year_boundary_and_never_joins_payroll(self):
         config=service.validate_request({'datasets':['rider_daily']},today=dt.date(2027,1,1))
