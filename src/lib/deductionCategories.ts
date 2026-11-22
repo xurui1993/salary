@@ -370,6 +370,104 @@ export function summarizeStationRow(
   return `已填 ${zeroCount} 项为 0 · 待填 ${blankCount}`;
 }
 
+export interface CityCardPreviewMetric {
+  column: string;
+  shortLabel: string;
+  valueText: string;
+  unit: string;
+}
+
+export interface CityCardPreview {
+  state: 'configured' | 'zero' | 'pending' | 'empty';
+  metrics: CityCardPreviewMetric[];
+  configuredCount: number;
+  totalCount: number;
+  extraCount: number;
+  blankCount: number;
+  zeroConfirmed: boolean;
+}
+
+const SHORT_COLUMN_LABELS: Record<string, string> = {
+  循环物资使用费: '循环物资',
+  不准时单: '不准时',
+};
+
+export function extractCityCardPreview(
+  entry: DeductionEntry | null,
+  columns: string[],
+  maxItems = 3,
+): CityCardPreview {
+  const activeCols = columns.filter(c => !c.endsWith('_maxDays'));
+  if (!entry || !activeCols.length) {
+    return {
+      state: 'empty',
+      metrics: [],
+      configuredCount: 0,
+      totalCount: activeCols.length,
+      extraCount: 0,
+      blankCount: activeCols.length,
+      zeroConfirmed: false,
+    };
+  }
+
+  const metrics: CityCardPreviewMetric[] = [];
+  let zeroCount = 0;
+  let blankCount = 0;
+
+  for (const col of activeCols) {
+    const val = entry.row[col];
+    if (val === null || val === undefined || val === '') {
+      blankCount += 1;
+    } else if (typeof val === 'number' && val === 0) {
+      zeroCount += 1;
+    } else {
+      metrics.push({
+        column: col,
+        shortLabel: SHORT_COLUMN_LABELS[col] || col,
+        valueText: String(val),
+        unit: DEDUCTION_COLUMN_UNIT[col] || '',
+      });
+    }
+  }
+
+  const totalCount = activeCols.length;
+  const configuredCount = totalCount - blankCount;
+
+  if (blankCount === totalCount) {
+    return {
+      state: 'pending',
+      metrics: [],
+      configuredCount: 0,
+      totalCount,
+      extraCount: 0,
+      blankCount,
+      zeroConfirmed: false,
+    };
+  }
+
+  if (metrics.length > 0) {
+    return {
+      state: 'configured',
+      metrics: metrics.slice(0, maxItems),
+      configuredCount,
+      totalCount,
+      extraCount: Math.max(0, metrics.length - maxItems),
+      blankCount,
+      zeroConfirmed: Boolean(entry.zero_confirmed),
+    };
+  }
+
+  return {
+    state: zeroCount > 0 ? 'zero' : 'pending',
+    metrics: [],
+    configuredCount,
+    totalCount,
+    extraCount: 0,
+    blankCount,
+    zeroConfirmed: Boolean(entry.zero_confirmed),
+  };
+}
+
 export interface PaginatedSlice<T> {
   items: T[];
   total: number;

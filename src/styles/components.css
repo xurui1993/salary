@@ -2580,142 +2580,176 @@
 }
 
 /* ==========================================================================
-   15. 模板中心（SystemTemplatesPanel）— 单行紧凑工具栏 + 44px 清爽列表 + 增删改弹窗
+   15. 模板中心（SystemTemplatesPanel）— 统一工作台大卡 + 下划线标签 + 精致模板卡片
    ========================================================================== */
 .wbx-tpl-center,
 .wb-template-library.wbx-tpl-center {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
   min-width: 0;
 }
 
-/* 1. 顶部单行紧凑工具栏（业务线切换 + 片区快筛 + 搜索 + 操作按钮） */
-.wbx-tpl-toolbar {
+/* 统一工作台大卡容器（对齐兼职核算 / 任务中心 / 扣款配置） */
+.wbx-tpl-deck-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  box-shadow: var(--wbx-shadow-xs);
+  overflow: hidden;
+  min-width: 0;
+}
+
+/* 1. 卡片头部：标题计数 + 操作按钮区 */
+.wbx-tpl-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px 12px;
-  min-height: 40px;
-  padding: 6px 12px;
-  border-radius: 10px;
-  border: 1px solid #e2e8f0;
+  gap: 10px 16px;
+  padding: 13px 18px;
+  border-bottom: 1px solid #f1f5f9;
   background: #ffffff;
 }
 
-.wbx-tpl-toolbar__left {
+.wbx-tpl-head__left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  min-width: 0;
+}
+
+.wbx-tpl-head__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.wbx-tpl-head__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-family: var(--wbx-font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.wbx-tpl-head__summary {
+  font-size: 12.5px;
+  color: #64748b;
+  padding-left: 4px;
+  white-space: nowrap;
+}
+
+.wbx-tpl-head__actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* 2. 底划线标签 + 搜索筛选条 */
+.wbx-tpl-filterbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0 14px;
+  min-height: 44px;
+  padding: 0 18px;
+  border-bottom: 1px solid #f1f5f9;
+  background: #fafbfc;
+}
+
+.wbx-tpl-tabs {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 20px;
   min-width: 0;
 }
 
-.wbx-tpl-seg {
+.wbx-tpl-tab {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 7px;
-  background: #f1f5f9;
-}
-
-.wbx-tpl-seg__btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 28px;
-  padding: 0 10px;
+  gap: 6px;
+  height: 44px;
+  padding: 0 2px;
   border: 0;
-  border-radius: 5px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
   background: transparent;
-  color: #475569;
+  color: #64748b;
   font-size: 13px;
-  font-weight: 400;
+  font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color 140ms ease, color 140ms ease;
+  transition: color 140ms ease, border-color 140ms ease;
 }
 
-.wbx-tpl-seg__btn:hover {
+.wbx-tpl-tab:hover {
   color: #0f172a;
 }
 
-.wbx-tpl-seg__btn.is-active {
-  background: #ffffff;
-  color: #0f172a;
-  font-weight: 500;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
-}
-
-.wbx-tpl-seg__count {
-  font-size: 12px;
-  color: #64748b;
-}
-
-.wbx-tpl-seg__btn.is-active .wbx-tpl-seg__count {
+.wbx-tpl-tab.is-active {
   color: #026aa2;
-  font-weight: 500;
+  font-weight: 600;
+  border-bottom-color: #026aa2;
 }
 
-.wbx-tpl-toolbar__divider {
-  width: 1px;
-  height: 16px;
-  background: #e2e8f0;
-  flex-shrink: 0;
-}
-
-.wbx-tpl-regions {
+.wbx-tpl-tab__count {
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 2px;
-}
-
-.wbx-tpl-region-btn {
-  height: 28px;
-  padding: 0 9px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #eef2f6;
   color: #64748b;
-  font-size: 12.5px;
-  font-weight: 400;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background-color 140ms ease, color 140ms ease;
+  font-family: var(--wbx-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
 }
 
-.wbx-tpl-region-btn:hover {
-  background: #f8fafc;
-  color: #0f172a;
+.wbx-tpl-tab.is-active .wbx-tpl-tab__count {
+  background: #e0f2fe;
+  color: #026aa2;
 }
 
-.wbx-tpl-region-btn.is-active {
-  background: #f1f5f9;
-  color: #0f172a;
-  font-weight: 500;
-}
-
-.wbx-tpl-toolbar__right {
+.wbx-tpl-filterbar__right {
   display: flex;
   align-items: center;
-  flex-wrap: nowrap;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 7px 0;
 }
 
 .wbx-tpl-search {
   position: relative;
   display: inline-flex;
   align-items: center;
-  width: 164px;
+  width: 236px;
+  max-width: 100%;
 }
 
 .wbx-tpl-search__icon {
   position: absolute;
-  left: 9px;
+  left: 10px;
   color: #94a3b8;
   pointer-events: none;
 }
@@ -2723,19 +2757,23 @@
 .wbx-tpl-search__input {
   width: 100%;
   height: 30px;
-  padding: 0 24px 0 28px;
-  border-radius: 6px;
-  border: 1px solid #cbd5e1;
-  background: #f8fafc;
+  padding: 0 26px 0 30px;
+  border-radius: 7px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
   color: #0f172a;
   font-size: 12.5px;
-  transition: border-color 140ms ease, background-color 140ms ease;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.wbx-tpl-search__input:hover {
+  border-color: #cbd5e1;
 }
 
 .wbx-tpl-search__input:focus {
   outline: none;
-  background: #ffffff;
   border-color: #026aa2;
+  box-shadow: 0 0 0 3px rgba(2, 106, 162, 0.1);
 }
 
 .wbx-tpl-search__clear {
@@ -2744,8 +2782,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 17px;
+  height: 17px;
   border: 0;
   border-radius: 999px;
   background: #e2e8f0;
@@ -2753,14 +2791,59 @@
   cursor: pointer;
 }
 
+.wbx-tpl-region-select {
+  appearance: none;
+  height: 30px;
+  min-width: 108px;
+  padding: 0 26px 0 10px;
+  border-radius: 7px;
+  border: 1px solid #e2e8f0;
+  background-color: #ffffff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 13px 13px;
+  color: #334155;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.wbx-tpl-region-select:hover {
+  border-color: #94a3b8;
+}
+
+.wbx-tpl-region-select:focus {
+  outline: none;
+  border-color: #026aa2;
+  box-shadow: 0 0 0 3px rgba(2, 106, 162, 0.1);
+}
+
+.wbx-tpl-reset-link {
+  border: 0;
+  background: transparent;
+  padding: 0 4px;
+  color: #026aa2;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.wbx-tpl-reset-link:hover {
+  color: #035382;
+  text-decoration: underline;
+}
+
 .wbx-tpl-tool-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   height: 30px;
-  padding: 0 9px;
-  border-radius: 6px;
-  border: 1px solid #cbd5e1;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 1px solid #e2e8f0;
   background: #ffffff;
   color: #334155;
   font-size: 12.5px;
@@ -2771,7 +2854,7 @@
 }
 
 .wbx-tpl-tool-btn:hover:not(:disabled) {
-  border-color: #94a3b8;
+  border-color: #cbd5e1;
   background: #f8fafc;
   color: #0f172a;
 }
@@ -2785,10 +2868,10 @@
 .wbx-tpl-add-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   height: 30px;
-  padding: 0 11px;
-  border-radius: 6px;
+  padding: 0 12px;
+  border-radius: 7px;
   border: 1px solid #026aa2;
   background: #026aa2;
   color: #ffffff;
@@ -2796,7 +2879,7 @@
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color 140ms ease, border-color 140ms ease;
+  transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
 }
 
 .wbx-tpl-add-btn:hover:not(:disabled) {
@@ -2814,11 +2897,10 @@
   border-color: #b91c1c;
 }
 
-/* 按需展开的表头规范说明面板 */
+/* 3. 内嵌按需展开的表头规范说明条 */
 .wbx-tpl-spec-drawer {
-  padding: 9px 14px;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
+  padding: 10px 18px;
+  border-bottom: 1px solid #e2e8f0;
   background: #f8fafc;
 }
 
@@ -2846,10 +2928,10 @@
 .wbx-tpl-spec-drawer__sheet {
   padding: 1px 7px;
   border-radius: 4px;
-  background: #e2e8f0;
-  color: #0f172a;
+  background: #e0f2fe;
+  color: #0369a1;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .wbx-tpl-spec-drawer__sep {
@@ -2871,7 +2953,7 @@
   color: #334155;
   font-family: var(--wbx-font-mono);
   font-size: 11.5px;
-  font-weight: 400;
+  font-weight: 500;
 }
 
 .wbx-tpl-spec-drawer__hint {
@@ -2885,8 +2967,8 @@
   align-items: center;
   gap: 6px;
   align-self: flex-start;
-  padding: 6px 12px;
-  border-radius: 6px;
+  padding: 7px 12px;
+  border-radius: 7px;
   border: 1px solid #a7f3d0;
   background: #f0fdf4;
   color: #065f46;
@@ -2899,7 +2981,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 14px;
+  padding: 9px 14px;
   border-radius: 8px;
   border: 1px solid #fecaca;
   background: #fef2f2;
@@ -2908,53 +2990,63 @@
   font-weight: 500;
 }
 
-/* 2. 清爽卡片阵列容器（4 列紧凑卡片，仅展示城市、标准文件名与操作） */
-.wbx-tpl-deck-card {
-  display: flex;
-  flex-direction: column;
-  border-radius: 10px;
-  border: 1px solid #e2e8f0;
-  background: #ffffff;
-  overflow: hidden;
-}
-
+/* 4. 精致模板卡片阵列 */
 .wbx-tpl-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  padding: 16px;
+  gap: 14px;
+  padding: 18px;
+}
+
+.wbx-tpl-center.is-drawer .wbx-tpl-head {
+  padding: 11px 14px;
+}
+
+.wbx-tpl-center.is-drawer .wbx-tpl-filterbar {
+  padding: 0 14px;
 }
 
 .wbx-tpl-center.is-drawer .wbx-tpl-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px;
 }
 
 .wbx-tpl-card {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 12px;
+  gap: 0;
   padding: 14px 15px 12px;
   border-radius: 10px;
   border: 1px solid #e2e8f0;
   background: #ffffff;
-  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  transition: border-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 160ms cubic-bezier(0.16, 1, 0.3, 1),
+              transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .wbx-tpl-card:hover {
-  border-color: #cbd5e1;
-  box-shadow: 0 4px 12px -4px rgba(15, 23, 42, 0.08);
-  transform: translateY(-1px);
+  border-color: #7dd3fc;
+  box-shadow: 0 10px 22px -12px rgba(2, 132, 199, 0.2), 0 2px 6px rgba(15, 23, 42, 0.04);
+  transform: translateY(-2px);
+}
+
+.wbx-tpl-card.is-xiaoxiang:hover {
+  border-color: #6ee7b7;
+  box-shadow: 0 10px 22px -12px rgba(5, 150, 105, 0.18), 0 2px 6px rgba(15, 23, 42, 0.04);
 }
 
 .wbx-tpl-card.is-disabled {
   opacity: 0.65;
 }
 
-.wbx-tpl-card__main {
+.wbx-tpl-card__head {
   display: flex;
   align-items: center;
   gap: 11px;
+  padding-bottom: 11px;
   min-width: 0;
 }
 
@@ -2962,23 +3054,38 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  background: #f1f5f9;
-  color: #334155;
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  border: 1px solid #e0f2fe;
+  background: #f0f9ff;
+  color: #0284c7;
   flex-shrink: 0;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
 }
 
 .wbx-tpl-card:hover .wbx-tpl-card__icon {
-  background: #f0f9ff;
+  background: #e0f2fe;
+  border-color: #bae6fd;
   color: #026aa2;
 }
 
-.wbx-tpl-card__meta {
+.wbx-tpl-card__icon.is-xiaoxiang {
+  border-color: #d1fae5;
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.wbx-tpl-card.is-xiaoxiang:hover .wbx-tpl-card__icon.is-xiaoxiang {
+  background: #d1fae5;
+  border-color: #a7f3d0;
+  color: #047857;
+}
+
+.wbx-tpl-card__title-block {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
   flex: 1;
 }
@@ -2990,12 +3097,13 @@
   min-width: 0;
 }
 
-.wbx-tpl-card__file {
+.wbx-tpl-card__city {
   margin: 0;
-  font-size: 13.5px;
-  font-weight: 500;
+  font-size: 15px;
+  font-weight: 700;
   color: #0f172a;
-  line-height: 1.35;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3005,22 +3113,82 @@
   display: inline-flex;
   align-items: center;
   height: 18px;
-  padding: 0 6px;
+  padding: 0 5px;
   border-radius: 4px;
-  background: #f1f5f9;
-  color: #475569;
-  font-size: 11px;
-  font-weight: 400;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #b45309;
+  font-size: 10.5px;
+  font-weight: 600;
   flex-shrink: 0;
+}
+
+.wbx-tpl-card__biz {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wbx-tpl-card__biz .is-shangou {
+  color: #0369a1;
+  font-weight: 500;
+}
+
+.wbx-tpl-card__biz .is-xiaoxiang {
+  color: #047857;
+  font-weight: 500;
+}
+
+.wbx-tpl-card__sep {
+  color: #cbd5e1;
+}
+
+.wbx-tpl-card__cols {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #94a3b8;
+  white-space: nowrap;
+  flex-shrink: 0;
+  align-self: flex-start;
+  padding-top: 2px;
+}
+
+.wbx-tpl-card__spec {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 0 10px;
+  border-top: 1px solid #f1f5f9;
+  min-width: 0;
+}
+
+.wbx-tpl-card__file {
+  font-family: var(--wbx-font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: #334155;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .wbx-tpl-card__size {
   font-family: var(--wbx-font-mono);
-  font-size: 12px;
-  font-weight: 400;
+  font-size: 11.5px;
   color: #64748b;
-  line-height: 1.3;
+  line-height: 1.35;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .wbx-tpl-card__foot {
@@ -3028,26 +3196,86 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding-top: 10px;
+  padding-top: 9px;
   border-top: 1px solid #f1f5f9;
 }
 
 .wbx-tpl-card__edit-group {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: 4px;
+  margin-left: -7px;
+}
+
+.wbx-tpl-card-op {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.wbx-tpl-card-op:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.wbx-tpl-card-op.is-danger:hover {
+  background: #fff1f2;
+  color: #dc2626;
+}
+
+.wbx-tpl-dl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 26px;
+  min-width: 68px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid #bae6fd;
+  background: #f0f9ff;
+  color: #026aa2;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.wbx-tpl-dl-btn:hover {
+  background: #e0f2fe;
+  border-color: #7dd3fc;
+  color: #035382;
+}
+
+.wbx-tpl-dl-btn.is-downloaded {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+  color: #047857;
 }
 
 .wbx-tpl-action-link {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   padding: 0;
   border: 0;
   background: transparent;
   color: #64748b;
-  font-size: 13px;
-  font-weight: 400;
+  font-size: 12.5px;
+  font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
@@ -3060,28 +3288,19 @@
 
 .wbx-tpl-action-link.is-primary {
   color: #026aa2;
-  font-weight: 500;
 }
 
 .wbx-tpl-action-link.is-primary:hover {
   color: #035382;
 }
 
-.wbx-tpl-action-link.is-downloaded {
-  color: #047857;
-}
-
-.wbx-tpl-action-link.is-danger:hover {
-  color: #dc2626;
-}
-
 .wbx-tpl-action-disabled {
-  font-size: 12.5px;
+  font-size: 12px;
   color: #94a3b8;
 }
 
 .wbx-tpl-empty-box {
-  padding: 40px 16px;
+  padding: 44px 18px;
   text-align: center;
 }
 
@@ -3094,14 +3313,14 @@
   font-size: 13px;
 }
 
-/* 表格底部极简状态行 */
+/* 5. 底部统一状态行 */
 .wbx-tpl-table-foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  height: 36px;
-  padding: 0 14px;
+  height: 40px;
+  padding: 0 18px;
   border-top: 1px solid #f1f5f9;
   background: #fafbfc;
   font-size: 12px;

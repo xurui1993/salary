@@ -305,6 +305,7 @@ import {
   applyProblemRuleRows,
   buildUnifiedConfigWorkbookData,
   classifyImportedWorkbookSheets,
+  extractCityCardPreview,
   groupDeductionsByCity,
   summarizeStationRow,
 } from '../src/lib/deductionCategories';
@@ -357,7 +358,30 @@ test('groupDeductionsByCity and summarizeStationRow organize 14 cities x 10+ sta
   assert.match(cardHtml, /城市1/);
   assert.match(cardHtml, /11 个站点/);
   assert.match(cardHtml, /查看扣款/);
+  assert.doesNotMatch(cardHtml, /配置进度/);
   assert.doesNotMatch(cardHtml, /下属站点分组明细/);
+
+  const configuredPreview = extractCityCardPreview(allGroups[0].cityEntry, [...CONFIG_RULE_COLUMNS], 3);
+  assert.equal(configuredPreview.state, 'configured');
+  assert.equal(configuredPreview.metrics.length, 1);
+  assert.equal(configuredPreview.metrics[0].shortLabel, '投诉');
+  assert.equal(configuredPreview.metrics[0].valueText, '20');
+
+  const pendingEntry = makeEntry('099', '待配城', '*', '城市统一扣款');
+  const pendingPreview = extractCityCardPreview(pendingEntry, [...CONFIG_RULE_COLUMNS], 3);
+  assert.equal(pendingPreview.state, 'pending');
+  assert.equal(pendingPreview.blankCount, CONFIG_RULE_COLUMNS.length);
+
+  const xxEntry = makeEntry('088', '小象城', '*', '城市统一扣款', { configured: true });
+  xxEntry.row['保险费'] = 1;
+  xxEntry.row['循环物资使用费'] = 2;
+  xxEntry.row['附加险'] = 30;
+  const xxPreview = extractCityCardPreview(xxEntry, ['保险费', '循环物资使用费', '附加险'], 3);
+  assert.equal(xxPreview.state, 'configured');
+  assert.deepEqual(
+    xxPreview.metrics.map(m => m.shortLabel),
+    ['保险费', '循环物资', '附加险'],
+  );
 
   const tableHtml = renderToStaticMarkup(
     React.createElement(CityDeductionTableView, {
