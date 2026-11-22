@@ -740,12 +740,61 @@
   overflow-y: auto;
 }
 
+.wbx-approvals__table {
+  width: 100%;
+  min-width: 960px;
+  table-layout: fixed;
+}
+
 .wbx-approvals__table thead th {
   position: sticky;
   top: 0;
   z-index: 4;
   background: #f8fafc;
   box-shadow: 0 1px 0 #e2e8f0;
+}
+
+.wbx-approvals__table .ap-col-check {
+  width: 44px;
+  text-align: center;
+  padding-left: 14px;
+  padding-right: 6px;
+}
+
+.wbx-approvals__table .ap-col-code {
+  width: 17%;
+}
+
+.wbx-approvals__table .ap-col-city {
+  width: 16%;
+}
+
+.wbx-approvals__table .ap-col-period {
+  width: 18%;
+  white-space: nowrap;
+}
+
+.wbx-approvals__table .ap-col-count {
+  width: 8%;
+  text-align: right;
+  padding-right: 28px;
+  white-space: nowrap;
+}
+
+.wbx-approvals__table .ap-col-creator {
+  width: 16%;
+  padding-left: 16px;
+}
+
+.wbx-approvals__table .ap-col-node {
+  width: 14%;
+}
+
+.wbx-approvals__table thead th.wbx-table__actions,
+.wbx-approvals__table tbody td.wbx-table__actions {
+  width: 11%;
+  text-align: right;
+  padding-right: 18px;
 }
 
 .wbx-approvals__table thead th.wbx-table__actions {

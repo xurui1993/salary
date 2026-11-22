@@ -99,6 +99,7 @@ export function StatusHoverPopover({
       ref={triggerRef}
       className="wbx-status-hover-trigger"
       tabIndex={0}
+      aria-label={model.currentNode ? `${model.badgeLabel}：${model.currentNode}` : model.badgeLabel}
       aria-describedby={open ? popoverId : undefined}
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}

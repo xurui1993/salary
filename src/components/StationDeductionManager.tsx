@@ -13,7 +13,6 @@ import {
   buildUnifiedConfigWorkbookData,
   classifyImportedWorkbookSheets,
   CONFIG_RULE_COLUMNS_WITH_THRESHOLDS,
-  columnDisplayLabel,
   groupDeductionsByCity,
   summarizeCitiesProgress,
   visibleColumnsForCategory,
@@ -270,7 +269,7 @@ export function StationDeductionManager({
     setProblemPreview(null);
     setUndoEntries(null);
     setError('');
-    setNotice('已放弃未保存的修改，恢复为上次保存的扣款规则。');
+    setNotice('已放弃未保存的修改，恢复为上次保存的扣款配置。');
     setReloadKey(val => val + 1);
   };
 
@@ -289,8 +288,8 @@ export function StationDeductionManager({
         setUndoEntries(null);
         setNotice(
           currentPlatform === 'xiaoxiang'
-            ? '示例小象超市扣款规则已本地保存（共 30 站），连接灯塔后将自动切换为真实数据。'
-            : '示例站点扣款与问题单关键词规则已本地保存（共 30 站），连接风神后将自动切换为真实数据。',
+            ? '示例小象超市扣款配置已本地保存（共 30 站），连接灯塔后将自动切换为真实数据。'
+            : '示例站点扣款与问题单关键词配置已本地保存（共 30 站），连接风神后将自动切换为真实数据。',
         );
         return;
       }
@@ -388,8 +387,8 @@ export function StationDeductionManager({
       XLSX.writeFile(
         book,
         currentPlatform === 'xiaoxiang'
-          ? '小象超市扣款规则配置.xlsx'
-          : `站点扣款规则配置_${currentPlatform}.xlsx`,
+          ? '小象超市扣款配置.xlsx'
+          : `站点扣款配置_${currentPlatform}.xlsx`,
       );
       setNotice(
         currentPlatform === 'xiaoxiang'
@@ -481,7 +480,7 @@ export function StationDeductionManager({
             body: JSON.stringify({ version: profile.version, rows: problemRows }),
           });
           const data = await res.json();
-          if (!res.ok) throw new Error(data.detail || '问题单扣款规则预览失败');
+          if (!res.ok) throw new Error(data.detail || '问题单扣款配置预览失败');
           setProblemPreview(data);
         }
       }
@@ -510,16 +509,16 @@ export function StationDeductionManager({
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || '问题单扣款规则保存失败');
+      if (!res.ok) throw new Error(data.detail || '问题单扣款配置保存失败');
       setProfile((prev: any) => ({ ...prev, version: data.version, problem_rules: data.problem_rules || {} }));
       setProblemPreview(null);
       setPendingProblemRows(null);
       setDirty(false);
-      setProblemNotice('问题单关键词扣款规则已保存。');
+      setProblemNotice('问题单关键词扣款配置已保存。');
       setReloadKey(value => value + 1);
       onSaved();
     } catch (err) {
-      setProblemError(readErrorMessage(err, '问题单扣款规则保存失败'));
+      setProblemError(readErrorMessage(err, '问题单扣款配置保存失败'));
     } finally {
       setProblemBusy(false);
     }
@@ -560,11 +559,6 @@ export function StationDeductionManager({
       return true;
     });
   }, [citySummaries, citySearch, onlyPendingCities]);
-
-  const activeCategorySpec = useMemo(
-    () => (activeCategory === 'all' ? null : categorySpecs.find(cat => cat.id === activeCategory) || null),
-    [activeCategory, categorySpecs],
-  );
 
   const isOfflineLoginEmpty =
     entries.length === 0 &&
@@ -720,7 +714,7 @@ export function StationDeductionManager({
       )}
 
       {/* 2. 主容器一：一级「竖向城市卡片墙」 OR 二级「全宽城市扣款表格视图」 */}
-      <section className="wbx-ded-workspace" aria-label="城市与站点扣款规则工作区">
+      <section className="wbx-ded-workspace" aria-label="城市与站点扣款配置工作区">
         {activeCityGroup ? (
           <CityDeductionTableView
             group={activeCityGroup}
@@ -798,56 +792,7 @@ export function StationDeductionManager({
           />
         ) : (
           <>
-            {/* 单行轻量类目切换条（对齐数据采集页 .wbx-dc-catbar） */}
-            <div className="wbx-ded-catbar-wrap">
-              <div className="wbx-ded-catbar" role="group" aria-label="切换扣款项类目">
-                <button
-                  type="button"
-                  className={`wbx-ded-cat${activeCategory === 'all' ? ' is-active' : ''}`}
-                  aria-pressed={activeCategory === 'all'}
-                  onClick={() => setActiveCategory('all')}
-                  title={`展示全部 ${categorySpecs.length} 个类目共 ${activeColumns.length} 个扣款字段`}
-                >
-                  <span>全部类目</span>
-                  <span className="wbx-ded-cat__count tabular-nums">{activeColumns.length}</span>
-                </button>
-                {categorySpecs.map(cat => {
-                  const isSelected = activeCategory === cat.id;
-                  const fieldNames = cat.columns.map(col => columnDisplayLabel(col)).join(' · ');
-                  return (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      className={`wbx-ded-cat${isSelected ? ' is-active' : ''}`}
-                      aria-pressed={isSelected}
-                      onClick={() => setActiveCategory(prev => (prev === cat.id ? 'all' : cat.id))}
-                      title={`${cat.label}（${cat.unitHint}）：${fieldNames}`}
-                    >
-                      <span>{cat.label}</span>
-                      <span className="wbx-ded-cat__count tabular-nums">{cat.columns.length}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="wbx-ded-cat-summary">
-                {activeCategorySpec ? (
-                  <span>
-                    <strong>{activeCategorySpec.label}</strong>（{activeCategorySpec.unitHint}）：
-                    {activeCategorySpec.columns.map(col => columnDisplayLabel(col)).join(' · ')}
-                  </span>
-                ) : (
-                  <span>
-                    共 {categorySpecs.length} 大类目、{activeColumns.length} 个字段
-                    {currentPlatform === 'xiaoxiang'
-                      ? '（保险费 · 循环物资使用费 · 附加险）'
-                      : '，点击任意城市卡片进入全宽表格填写'}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* 紧凑搜索与筛选条 */}
+            {/* 紧凑搜索与筛选条（类目列筛选仅在进入城市全宽表格后展示） */}
             <div className="wbx-ded-filterbar" aria-label="城市站点筛选与操作控制">
               <div className="wbx-ded-filterbar__left">
                 <div className="wbx-ded-search">
@@ -874,7 +819,7 @@ export function StationDeductionManager({
                 {citySummaries.length > 0 && (
                   <select
                     className="wb-select wbx-ded-city-select"
-                    aria-label="按城市筛选扣款规则"
+                    aria-label="按城市筛选扣款配置"
                     value={cityFilter}
                     onChange={event => {
                       const targetId = event.target.value;
@@ -1126,7 +1071,7 @@ export function StationDeductionManager({
 
           {!problemPreview && visibleProblemRules.length === 0 && (
             <p className="wbx-problem-panel__empty">
-              暂无已配置的问题单关键词扣款规则。同步城市目录后，可在城市/站点内添加或通过 Excel 批量导入。
+              暂无已配置的问题单关键词扣款配置。同步城市目录后，可在城市/站点内添加或通过 Excel 批量导入。
             </p>
           )}
         </section>
@@ -1148,11 +1093,11 @@ export function StationDeductionManager({
       )}
 
       {inline && hasUnsavedChanges && (
-        <div className="wbx-ded-sticky-bar" role="region" aria-label="未保存的扣款规则更改">
+        <div className="wbx-ded-sticky-bar" role="region" aria-label="未保存的扣款配置更改">
           <div className="wbx-ded-sticky-bar__info">
             <span className="wbx-ded-sticky-bar__dot" aria-hidden="true" />
             <span>
-              有未保存的扣款规则修改
+              有未保存的扣款配置修改
               {(modifiedCityCount > 0 || modifiedStationCount > 0) && (
                 <strong className="tabular-nums">
                   （{[

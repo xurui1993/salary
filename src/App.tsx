@@ -32,7 +32,6 @@ import { SystemConnections } from "./components/SystemConnections";
 import { fetchWithPreflight } from "./lib/authPreflight";
 import { HeaderApprovalNotifier } from "./components/HeaderApprovalNotifier";
 import { LanorangeApprovals } from "./components/LanorangeApprovals";
-import { LanorangePriceExports } from "./components/LanorangePriceExports";
 import { StationDeductionManager } from "./components/StationDeductionManager";
 import {useStationDirectory,stationCountText} from './lib/useStationDirectory';
 import { SystemTemplatesPanel } from "./components/SystemTemplatesPanel";
@@ -246,12 +245,11 @@ export default function App() {
   const platformNavLabel=platformMeta.navLabel;
   const [approvalActiveCount,setApprovalActiveCount]=useState(0);
   const [approvalPendingCount,setApprovalPendingCount]=useState(0);
-  const [priceExportActiveCount,setPriceExportActiveCount]=useState(0);
   const [priceRecordId,setPriceRecordId]=useState<string|undefined>();
   const [systemStats, setSystemStats] = useState<SystemResourceStatsInput | null>(null);
   useEffect(()=>{
     let disposed=false;const controller=new AbortController();
-    const read=()=>Promise.all([['lanorange-approvals',setApprovalActiveCount],['lanorange-prices',setPriceExportActiveCount]].map(([path,setter])=>fetchWithAuth(`/api/fengshen-downloads/${path}/activity`,{signal:controller.signal}).then(r=>r.ok?r.json():null).then(value=>{if(!disposed && value)(setter as (count:number)=>void)(value.active?1:0);}).catch(()=>{})));
+    const read=()=>fetchWithAuth('/api/fengshen-downloads/lanorange-approvals/activity',{signal:controller.signal}).then(r=>r.ok?r.json():null).then(value=>{if(!disposed && value)setApprovalActiveCount(value.active?1:0);}).catch(()=>{});
     void read();const timer=setInterval(read,10000);
     return()=>{disposed=true;controller.abort();clearInterval(timer);};
   },[workspaceId]);
@@ -281,7 +279,22 @@ export default function App() {
   const [activeDownloadCount, setActiveDownloadCount] = useState(0);
   const [payrollResumeVersion, setPayrollResumeVersion] = useState(0);
   useEffect(() => { localStorage.setItem('workbench_task_kind', taskKind); setActiveMenu(taskKind === 'payroll' ? 'core' : 'fengshen_downloads'); }, [taskKind]);
-  const navigateWorkspace = (view: 'create' | 'history' | 'approval' | 'price-export') => { setWorkspaceView(view); if(view==='create'||view==='history')setDownloadNavigation(previous => ({view, version: previous.version + 1})); };
+  const navigateWorkspace = (view: 'create' | 'history' | 'approval' | 'price-export') => {
+    const resolvedView = view === 'price-export' ? 'approval' : view;
+    setWorkspaceView(resolvedView);
+    if (resolvedView === 'create' || resolvedView === 'history') {
+      setDownloadNavigation(previous => ({ view: resolvedView, version: previous.version + 1 }));
+    }
+  };
+  const triggerUrlDownload = (url: string) => {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = '';
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
   const openDownloadModule=(platform:DownloadPlatform)=>{
     setDownloadPlatform(platform);try{localStorage.setItem('workbench_download_platform',platform);}catch{}
     setHistoryAll(false);setTaskKind('download');navigateWorkspace('create');
@@ -1192,9 +1205,9 @@ export default function App() {
           systemStats={systemStats}
           activeDownloadCount={activeDownloadCount}
           payrollBadge={getPayrollSidebarBadge(payrollPreparation?.status, isRunning)}
-          approvalActiveCount={approvalActiveCount + priceExportActiveCount}
+          approvalActiveCount={approvalActiveCount}
           approvalPendingCount={approvalPendingCount}
-          totalActiveCount={activeDownloadCount + (isRunning ? 1 : 0) + approvalActiveCount + priceExportActiveCount}
+          totalActiveCount={activeDownloadCount + (isRunning ? 1 : 0) + approvalActiveCount}
           onExecuteAction={executeShellAction}
           onCloseMobile={() => setMobileNavOpen(false)}
           onOpenPlatformDock={() => setDockOpen(true)}
@@ -1210,7 +1223,7 @@ export default function App() {
             });
             const errorLogCount = logs.filter(entry => entry.level === 'ERROR').length;
             const totalActiveCount =
-              activeDownloadCount + (isRunning ? 1 : 0) + approvalActiveCount + priceExportActiveCount;
+              activeDownloadCount + (isRunning ? 1 : 0) + approvalActiveCount;
 
             return (
               <header className="wb-header wbx-header">
@@ -1397,8 +1410,7 @@ export default function App() {
               </section>
             )}
 
-            {workspaceView==='approval' && <LanorangeApprovals focusId={priceRecordId} apiFetch={fetchWithAuth} workspaceId={workspaceId} onActiveCount={setApprovalActiveCount} onSwitchView={view => navigateWorkspace(view)} />}
-            {workspaceView==='price-export' && <LanorangePriceExports focusId={priceRecordId} apiFetch={fetchWithAuth} workspaceId={workspaceId} lanorangeConnected={['ready', 'saved'].includes(platformStatuses.lanorange?.state || '')} onActiveCount={setPriceExportActiveCount} onSwitchView={view => navigateWorkspace(view)} />}
+            {(workspaceView==='approval' || workspaceView==='price-export') && <LanorangeApprovals focusId={priceRecordId} apiFetch={fetchWithAuth} workspaceId={workspaceId} onActiveCount={setApprovalActiveCount} onSwitchView={view => navigateWorkspace(view)} />}
             <section hidden={workspaceView==='approval' || workspaceView==='price-export' || (workspaceView !== 'history' && taskKind === 'payroll')} aria-label="任务下载">
               <FengshenDownloadCenter
                 apiFetch={fetchWithAuth}
@@ -1462,10 +1474,10 @@ export default function App() {
                   onDownloadRiderSources={downloadRiderSources}
                   onDownloadShangyi={() => void handleRun({ action: 'download_shangyi_employees', sourcePath: '' })}
                   onOpenShangyi={lastShangyiOutput ? () => {
-                    window.open(`/api/download?path=${encodeURIComponent(lastShangyiOutput)}&workspace_id=${encodeURIComponent(getWorkspaceId())}`, '_blank');
+                    triggerUrlDownload(`/api/download?path=${encodeURIComponent(lastShangyiOutput)}&workspace_id=${encodeURIComponent(getWorkspaceId())}`);
                   } : undefined}
                   onOpenRiderSources={lastRiderSourcesOutput ? () => {
-                    window.open(`/api/download?path=${encodeURIComponent(lastRiderSourcesOutput)}&workspace_id=${encodeURIComponent(getWorkspaceId())}`, '_blank');
+                    triggerUrlDownload(`/api/download?path=${encodeURIComponent(lastRiderSourcesOutput)}&workspace_id=${encodeURIComponent(getWorkspaceId())}`);
                   } : undefined}
                   onOpenFengshenLogin={() => setFengshenLoginRequest(value => value + 1)}
                   fengshenAuthStatus={fengshenAuthStatus}

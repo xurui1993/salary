@@ -718,7 +718,7 @@ export function DownloadRecords({
               <input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="搜索任务名称、城市、文件名或编号…"
+                placeholder="搜索任务名称、城市或编号…"
                 aria-label="搜索任务"
               />
             </label>
@@ -1166,17 +1166,6 @@ export function DownloadRecords({
                           </>
                         )}
 
-                        {primaryAction?.type !== 'attention' && (
-                          <button
-                            type="button"
-                            className={`tc-detail-trigger${isDetailOpen ? ' is-active' : ''}`}
-                            aria-label={`查看 ${cleanTitle} 详情`}
-                            onClick={() => openDetail(r)}
-                          >
-                            <span>详情</span>
-                          </button>
-                        )}
-
                         {!archived && isActive && (
                           <button
                             type="button"
@@ -1204,7 +1193,7 @@ export function DownloadRecords({
 
                         {!archived && (
                           <>
-                            <span className="tc-op-sep" aria-hidden="true" />
+                            {(primaryAction || isActive) && <span className="tc-op-sep" aria-hidden="true" />}
                             <button
                               type="button"
                               className="tc-icon-btn tc-remove-btn"

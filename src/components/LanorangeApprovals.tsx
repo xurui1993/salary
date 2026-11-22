@@ -363,7 +363,11 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
               type="button"
               className="wbx-btn wbx-btn--ghost wbx-btn--sm"
               onClick={() => {
-                setDemoEnabled(prev => !prev);
+                setDemoEnabled(prev => {
+                  const next = !prev;
+                  window.dispatchEvent(new CustomEvent('workbench:lanorange-demo-toggled', { detail: { enabled: next } }));
+                  return next;
+                });
                 setSelection({});
                 setPage(1);
               }}
@@ -553,7 +557,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
             <table className="wbx-table wbx-approvals__table">
               <thead>
                 <tr>
-                  <th>
+                  <th className="ap-col-check">
                     <input
                       type="checkbox"
                       aria-label="选择本页可审批流程"
@@ -562,19 +566,19 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
                       onChange={e => choose(rows, e.target.checked)}
                     />
                   </th>
-                  <th>业务编号</th>
-                  <th>城市 / 站点</th>
-                  <th>结算周期</th>
-                  <th>人数</th>
-                  <th>申请人 / 时间</th>
-                  <th>当前节点</th>
+                  <th className="ap-col-code">业务编号</th>
+                  <th className="ap-col-city">城市 / 站点</th>
+                  <th className="ap-col-period">结算周期</th>
+                  <th className="ap-col-count">人数</th>
+                  <th className="ap-col-creator">申请人 / 时间</th>
+                  <th className="ap-col-node">当前节点</th>
                   <th className="wbx-table__actions">操作</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map(task => (
                   <tr key={task.id} className={task.reason ? 'is-blocked' : ''}>
-                    <td>
+                    <td className="ap-col-check">
                       <input
                         type="checkbox"
                         aria-label={`选择流程${code(task)}`}
@@ -583,21 +587,21 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
                         onChange={e => choose([task], e.target.checked)}
                       />
                     </td>
-                    <td className="tabular-nums">
+                    <td className="ap-col-code tabular-nums">
                       <span className="wbx-approvals__code">{code(task)}</span>
                       {task.reason && <small className="wb-error wbx-approvals__reason">{task.reason}</small>}
                     </td>
-                    <td>
+                    <td className="ap-col-city">
                       <span className="wbx-approvals__city">{task.cityName || '—'}</span>
                       <small className="wbx-approvals__site" title={task.siteName || '—'}>{task.siteName || '—'}</small>
                     </td>
-                    <td className="tabular-nums">{period(task)}</td>
-                    <td className="tabular-nums">{task.rider_count ?? '—'}</td>
-                    <td>
+                    <td className="ap-col-period tabular-nums">{period(task)}</td>
+                    <td className="ap-col-count tabular-nums">{task.rider_count ?? '—'}</td>
+                    <td className="ap-col-creator">
                       <span>{task.createByName || '—'}</span>
                       <small className="tabular-nums">{task.createTime || '—'}</small>
                     </td>
-                    <td>
+                    <td className="ap-col-node">
                       <span className={`wbx-pill ${task.reason ? 'wbx-pill--warn' : 'wbx-pill--neutral'}`}>
                         {task.nodeName || '—'}
                       </span>

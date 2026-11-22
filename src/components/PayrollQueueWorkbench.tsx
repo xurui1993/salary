@@ -370,31 +370,18 @@ export function PayrollQueueTable({
                     ) : null}
                   </div>
                 </td>
-                {/* 与任务中心统一的清爽纯文字操作列：主操作文字 + 详情文字 + 轻图标移出 */}
+                {/* 精简操作列：仅保留场景主操作、停止与移出，点击整行直接展开详情抽屉 */}
                 <td className="pq-col-ops">
                   <div className="pq-row-actions" onClick={event => event.stopPropagation()}>
                     {hidden ? (
-                      <>
-                        <button
-                          type="button"
-                          className="pq-op-cta is-primary"
-                          disabled={busy}
-                          onClick={() => onRestore([task])}
-                        >
-                          <span>恢复</span>
-                        </button>
-                        <button
-                          type="button"
-                          className={`pq-detail-trigger${isDetailOpen ? ' is-active' : ''}`}
-                          aria-label={`查看 ${taskLabel(task)} 详情`}
-                          onClick={() => {
-                            onSelect(task.id);
-                            onOpenDetail?.(task.id);
-                          }}
-                        >
-                          <span>详情</span>
-                        </button>
-                      </>
+                      <button
+                        type="button"
+                        className="pq-op-cta is-primary"
+                        disabled={busy}
+                        onClick={() => onRestore([task])}
+                      >
+                        <span>恢复</span>
+                      </button>
                     ) : (
                       <>
                         {done && task.batch_id && (
@@ -448,19 +435,6 @@ export function PayrollQueueTable({
                             <span>查看原因</span>
                           </button>
                         )}
-                        {!isWaiting && !isError && !(done && task.batch_id) && (
-                          <button
-                            type="button"
-                            className={`pq-detail-trigger${isDetailOpen ? ' is-active' : ''}`}
-                            aria-label={`查看 ${taskLabel(task)} 详情`}
-                            onClick={() => {
-                              onSelect(task.id);
-                              onOpenDetail?.(task.id);
-                            }}
-                          >
-                            <span>详情</span>
-                          </button>
-                        )}
                         {running && (
                           <button
                             type="button"
@@ -479,7 +453,9 @@ export function PayrollQueueTable({
                             {task.status === 'stopping' ? '停止中' : task.status === 'queued' ? '取消' : '停止'}
                           </button>
                         )}
-                        <span className="pq-op-sep" aria-hidden="true" />
+                        {((done && task.batch_id) || isWaiting || isError || running) && (
+                          <span className="pq-op-sep" aria-hidden="true" />
+                        )}
                         <button
                           type="button"
                           className="pq-icon-btn pq-remove-btn"
@@ -1154,12 +1130,12 @@ export function FlashPayrollWorkbench({
         </p>
       )}
 
-      {/* 2. 常驻核算批次队列 */}
-      <section className="pq-queue" aria-label="核算任务队列" aria-busy={loading && !usingDemo}>
+      {/* 2. 常驻兼职核算队列 */}
+      <section className="pq-queue" aria-label="兼职核算队列" aria-busy={loading && !usingDemo}>
         <header className="pq-queue-heading">
           <div className="pq-queue-title-group">
             <h3>
-              {hidden ? '已移出批次' : '核算批次队列'}
+              {hidden ? '已移出批次' : '兼职核算队列'}
               <span className="tabular-nums">{visible.length}</span>
             </h3>
             {visible.length > 0 && (
@@ -1477,7 +1453,7 @@ export function FlashPayrollWorkbench({
               busy={busy}
               hidden={hidden}
             />
-            <footer className="wbx-payroll__pagination" aria-label="核算批次队列分页">
+            <footer className="wbx-payroll__pagination" aria-label="兼职核算队列分页">
               <div className="wbx-payroll__pagination-meta tabular-nums">
                 <span>
                   共 {pagedQueue.total} 条 · 当前第 {pagedQueue.startIndex + 1}-{pagedQueue.endIndex} 条

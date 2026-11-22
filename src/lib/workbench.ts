@@ -393,8 +393,7 @@ export function getWorkbenchBreadcrumb(
   workspaceView: 'create' | 'history' | 'approval' | 'price-export',
   taskKind: 'download' | 'generate' | 'payroll',
 ): { section: string; title: string; subtitle: string } {
-  if (workspaceView === 'approval') return {section:'业务审批',title:'价格审批',subtitle:'筛选本人价格提审，跨页勾选后预览并批量同意当前节点'};
-  if (workspaceView === 'price-export') return {section:'蓝橙价格',title:'待审每日价格导出',subtitle:'获取有权限站点的最新待审版本，生成骑手每日价格Excel'};
+  if (workspaceView === 'approval' || workspaceView === 'price-export') return {section:'薪资核算',title:'价格审批',subtitle:'筛选本人价格提审，跨页勾选后预览并批量同意当前节点'};
   if (workspaceView === 'history') {
     return {
       section: '任务与归档',
@@ -605,11 +604,9 @@ export function getHeaderModuleContext(
 ): HeaderModuleContext {
   if (workspaceView === 'approval' || workspaceView === 'price-export') {
     return {
-      groupLabel: '核算与业务',
+      groupLabel: '薪资核算',
       title: '价格审批',
-      subtitle: workspaceView === 'approval'
-        ? '筛选本人蓝橙价格提审，跨页勾选后预览并批量审批'
-        : '拉取有权限站点的最新待审版本，导出骑手每日价格表',
+      subtitle: '筛选本人价格提审，跨页勾选后预览并批量审批',
       iconKey: 'badge-dollar-sign',
     };
   }

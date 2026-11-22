@@ -9,6 +9,7 @@ import {
   X,
 } from 'lucide-react';
 import { platformAuthRequest } from '../lib/platformAuthApi';
+import { buildDemoLanorangeApprovals } from '../lib/showcaseDemoData';
 
 export interface ApprovalPendingTaskItem {
   id: string;
@@ -82,6 +83,25 @@ export function HeaderApprovalNotifier({
   const [rows, setRows] = useState<ApprovalPendingTaskItem[]>([]);
   const [unreadIds, setUnreadIds] = useState<string[]>([]);
   const [lastCheckedAt, setLastCheckedAt] = useState<string>('');
+  const [demoEnabled, setDemoEnabled] = useState(true);
+  const [demoRows] = useState<ApprovalPendingTaskItem[]>(() =>
+    buildDemoLanorangeApprovals().map(item => ({
+      id: item.id,
+      business_id: item.id,
+      businessCode: item.businessCode,
+      businessTitle: `${item.cityName} · ${item.siteName}`,
+      cityName: item.cityName,
+      siteName: item.siteName,
+      nodeName: item.nodeName,
+      createByName: item.createByName,
+      createTime: item.createTime,
+      period_start: item.period_start,
+      period_end: item.period_end,
+      rider_count: item.rider_count,
+      settle_month: item.settle_month,
+      reason: item.reason,
+    })),
+  );
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const fetchRef = useRef(apiFetch);
@@ -131,7 +151,7 @@ export function HeaderApprovalNotifier({
           const freshIds = nextRows.map(item => String(item.id));
           setUnreadIds(freshIds);
           onShowToastRef.current?.(
-            `蓝橙批量审批共有 ${nextRows.length} 条待审批提审单，请及时处理`,
+            `价格审批共有 ${nextRows.length} 条待审批提审单，请及时处理`,
             'info',
           );
         }
@@ -148,9 +168,9 @@ export function HeaderApprovalNotifier({
         if (options.announceNew) {
           const sampleCity =
             newlyAdded[0]?.cityName || newlyAdded[0]?.siteName || '蓝橙站点';
-          const msg = `新增 ${newlyAdded.length} 条蓝橙待审批提审单（${sampleCity}等，当前共 ${nextRows.length} 条待审）`;
+          const msg = `新增 ${newlyAdded.length} 条价格待审批单（${sampleCity}等，当前共 ${nextRows.length} 条待审）`;
           onShowToastRef.current?.(msg, 'info');
-          onDesktopNotifyRef.current?.('蓝橙批量审批新待办提醒', msg);
+          onDesktopNotifyRef.current?.('价格审批新待办提醒', msg);
         }
       } else {
         // Prune any unreadIds that are no longer pending
@@ -242,8 +262,15 @@ export function HeaderApprovalNotifier({
       }
     };
     window.addEventListener('workbench:lanorange-approvals-updated', onUpdated);
-    return () =>
+    const onDemoToggled = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { enabled?: boolean } | undefined;
+      if (typeof detail?.enabled === 'boolean') setDemoEnabled(detail.enabled);
+    };
+    window.addEventListener('workbench:lanorange-demo-toggled', onDemoToggled);
+    return () => {
       window.removeEventListener('workbench:lanorange-approvals-updated', onUpdated);
+      window.removeEventListener('workbench:lanorange-demo-toggled', onDemoToggled);
+    };
   }, [applyPendingSnapshot]);
 
   useEffect(() => {
@@ -264,10 +291,20 @@ export function HeaderApprovalNotifier({
     };
   }, [open]);
 
-  const pendingCount = rows.length;
-  const eligibleCount = rows.filter(item => !item.reason).length;
-  const unreadCount = unreadIds.length;
+  const usingDemo = !loggedIn && demoEnabled;
+  const effectiveRows = usingDemo ? demoRows : rows;
+  const pendingCount = effectiveRows.length;
+  const eligibleCount = effectiveRows.filter(item => !item.reason).length;
+  const unreadCount = loggedIn ? unreadIds.length : 0;
   const hasUnread = unreadCount > 0;
+
+  useEffect(() => {
+    if (usingDemo) {
+      onPendingCountChangeRef.current?.(demoRows.length);
+    } else if (!loggedIn) {
+      onPendingCountChangeRef.current?.(0);
+    }
+  }, [usingDemo, loggedIn, demoRows.length]);
 
   const handleToggleOpen = () => {
     setOpen(prev => {
@@ -289,11 +326,13 @@ export function HeaderApprovalNotifier({
         className={`wbx-header-tool-btn wbx-approval-bell-btn${open || isApprovalViewActive ? ' is-open' : ''}${pendingCount > 0 ? ' has-pending' : ''}${hasUnread ? ' has-unread' : ''}`}
         aria-expanded={open}
         aria-haspopup="dialog"
-        aria-label={`蓝橙批量审批待审批通知（待审批 ${pendingCount} 条${hasUnread ? `，新增 ${unreadCount} 条` : ''}）`}
+        aria-label={`价格审批待办通知（待审批 ${pendingCount} 条${hasUnread ? `，新增 ${unreadCount} 条` : ''}）`}
         title={
           loggedIn
-            ? `蓝橙批量审批：当前待审批 ${pendingCount} 条（可同意 ${eligibleCount} 条）`
-            : '蓝橙批量审批通知（未登录蓝橙账号）'
+            ? `价格审批：当前待审批 ${pendingCount} 条（可同意 ${eligibleCount} 条）`
+            : usingDemo
+              ? `价格审批（示例数据）：当前展示 ${pendingCount} 条待审批（可同意 ${eligibleCount} 条）`
+              : '价格审批通知（未登录蓝橙账号）'
         }
         onClick={handleToggleOpen}
       >
@@ -326,12 +365,12 @@ export function HeaderApprovalNotifier({
           className="wbx-popover wbx-approval-popover"
           role="dialog"
           aria-modal="false"
-          aria-label="蓝橙批量审批待办通知"
+          aria-label="价格审批待办通知"
         >
           <div className="wbx-popover__head">
             <div>
               <div className="flex items-center gap-2">
-                <span className="wbx-popover__title">蓝橙批量审批待办通知</span>
+                <span className="wbx-popover__title">价格审批待办通知</span>
                 <span
                   className={`wbx-approval-popover__badge tabular-nums${
                     pendingCount > 0 ? ' is-pending' : ''
@@ -339,13 +378,16 @@ export function HeaderApprovalNotifier({
                 >
                   待审 {pendingCount}
                 </span>
+                {usingDemo && <span className="wbx-demo-badge">示例</span>}
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
                 {loggedIn
                   ? `${actorLabel ? `账号：${actorLabel} · ` : ''}可同意 ${eligibleCount} 条${
                       lastCheckedAt ? ` · 更新于 ${lastCheckedAt}` : ''
                     }`
-                  : '连接蓝橙账号后自动实时巡检并推送新增待审提醒'}
+                  : usingDemo
+                    ? `示例待办可同意 ${eligibleCount} 条 · 登录蓝橙账号后切换实时待办`
+                    : '连接蓝橙账号后自动实时巡检并推送新增待审提醒'}
               </p>
             </div>
 
@@ -372,7 +414,7 @@ export function HeaderApprovalNotifier({
           </div>
 
           <div className="wbx-approval-popover__body">
-            {!loggedIn ? (
+            {!loggedIn && !usingDemo ? (
               <div className="wbx-approval-popover__empty">
                 <span className="wbx-approval-popover__empty-icon">
                   <KeyRound size={18} />
@@ -405,7 +447,7 @@ export function HeaderApprovalNotifier({
               </div>
             ) : (
               <ul className="wbx-approval-popover__list" aria-label="待审批价格提审单列表">
-                {rows.slice(0, 6).map(task => {
+                {effectiveRows.slice(0, 6).map(task => {
                   const code = task.businessCode || task.id;
                   const periodText = task.period_start
                     ? `${task.period_start.slice(0, 10)} ~ ${task.period_end?.slice(0, 10) || '—'}`
@@ -447,7 +489,20 @@ export function HeaderApprovalNotifier({
             )}
           </div>
 
-          <div className="wbx-approval-popover__foot">
+          <div className="wbx-approval-popover__foot flex items-center gap-2">
+            {usingDemo && (
+              <button
+                type="button"
+                className="wbx-btn wbx-btn--sm shrink-0"
+                onClick={() => {
+                  setOpen(false);
+                  onOpenLanorangeAuth();
+                }}
+              >
+                <KeyRound size={12.5} />
+                <span>登录授权</span>
+              </button>
+            )}
             <button
               type="button"
               className="wbx-btn wbx-btn--primary wbx-btn--sm w-full justify-center"
@@ -458,8 +513,8 @@ export function HeaderApprovalNotifier({
             >
               <span>
                 {pendingCount > 0
-                  ? `前往蓝橙批量审批处理 (${pendingCount})`
-                  : '打开蓝橙批量审批工作台'}
+                  ? `前往价格审批处理 (${pendingCount})`
+                  : '打开价格审批工作台'}
               </span>
               <ArrowRight size={13} aria-hidden="true" />
             </button>

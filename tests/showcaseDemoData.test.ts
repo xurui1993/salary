@@ -69,7 +69,7 @@ test('任务中心示例数据：精确 30 条并覆盖全部状态、类型、�
   }
 
   const kinds = new Set(records.map(r => r.kind));
-  assert.deepEqual([...kinds].sort(), ['approval', 'download', 'generate', 'price-export']);
+  assert.deepEqual([...kinds].sort(), ['approval', 'download', 'generate']);
 
   const page1 = queryDemoTaskCenter(records, { status: 'all', page: 1, pageSize: 20 });
   const page2 = queryDemoTaskCenter(records, { status: 'all', page: 2, pageSize: 20 });

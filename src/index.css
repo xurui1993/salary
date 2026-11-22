@@ -8,49 +8,49 @@
 /* ↓ 以下是逐批搬空的旧覆盖层（T3/T4/T5），禁止新增规则 */
 
 /* 1. Remove outer double-card wrapper nesting on the data collection workbench */
-.wb-task-form.wb-download-workbench,
+.workbench-app .wb-task-form.wb-download-workbench,
 .wb-download-main {
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
-  padding: 0 !important;
-  border-radius: 0 !important;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  border-radius: 0;
 }
 
 .wb-download-main {
-  gap: 12px !important;
+  gap: 12px;
 }
 
 /* 2. Refined step cards & compact vertical density so 01 + 02 + 03 fit in one viewport */
-.wb-step-card {
-  background: #ffffff !important;
-  border: 1px solid #e2e8f0 !important;
-  border-radius: 14px !important;
-  padding: 15px 18px !important;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03) !important;
-  min-width: 0 !important;
-  max-width: 100% !important;
+.workbench-app .wb-step-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 15px 18px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  min-width: 0;
+  max-width: 100%;
 }
 
-.wb-step-card-header {
-  margin-bottom: 10px !important;
+.workbench-app .wb-step-card-header {
+  margin-bottom: 10px;
 }
 
 /* 3. 自适应城市网格（01 处理城市）
    T6-0b：原为「全宽单卡」假设下的固定 6 列（!important 锁死）+ ≤1240 四列 / ≤760 两列断点。
    T3 两列布局后账期/城市卡最窄 ~470px，6 列只剩 ~71px/列 → 城市名被截成「鲁…」、末行孤卡。
    改为 auto-fill 自适应（每列 ≥132px），并删除两条断点块（auto-fill 已自适应，断点反而互相打架）。 */
-.wb-inline-city-grid {
+.workbench-app .wb-inline-city-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: 8px !important;
+  gap: 8px;
 }
 
-.wb-inline-city-chip {
-  min-height: 35px !important;
-  padding: 5px 10px !important;
-  border-radius: 9px !important;
-  font-size: 12.5px !important;
+.workbench-app .wb-inline-city-chip {
+  min-height: 35px;
+  padding: 5px 10px;
+  border-radius: 9px;
+  font-size: 12.5px;
 }
 
 .wb-month-grid-3 {
@@ -153,15 +153,15 @@
   color: #0284c7;
 }
 
-.wb-city-count-note {
-  margin-top: 8px !important;
-  padding-top: 7px !important;
+.workbench-app .wb-city-count-note {
+  margin-top: 8px;
+  padding-top: 7px;
 }
 
 .wb-date-rule-bar {
-  margin-top: 9px !important;
-  padding: 7px 12px !important;
-  border-radius: 9px !important;
+  margin-top: 9px;
+  padding: 7px 12px;
+  border-radius: 9px;
 }
 
 /* 4. Unified header action buttons across 01, 02, 03 and right execution rail */
@@ -177,89 +177,89 @@
 
 .wb-city-preset-btn,
 .wb-compact-clear-btn {
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 5px !important;
-  min-height: 28px !important;
-  padding: 4px 11px !important;
-  font-size: 12px !important;
-  font-weight: 500 !important;
-  line-height: 1.4 !important;
-  color: #475569 !important;
-  background: #f8fafc !important;
-  border: 1px solid #e2e8f0 !important;
-  border-radius: 8px !important;
-  cursor: pointer !important;
-  transition: all 0.15s ease !important;
-  white-space: nowrap !important;
-  box-shadow: none !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 4px 11px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: #475569;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  box-shadow: none;
 }
 
 .wb-city-preset-btn:hover:not(:disabled),
 .wb-compact-clear-btn:hover:not(:disabled) {
-  color: #0369a1 !important;
-  background: #f0f9ff !important;
-  border-color: #bae6fd !important;
+  color: #0369a1;
+  background: #f0f9ff;
+  border-color: #bae6fd;
 }
 
 .wb-city-preset-btn:disabled,
 .wb-compact-clear-btn:disabled {
-  opacity: 0.55 !important;
-  cursor: not-allowed !important;
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 /* 5. Consistent 03 dataset card heights & 2-line description clamping */
-.wb-dataset-card {
-  padding: 9px 12px !important;
-  border-radius: 10px !important;
+.workbench-app .wb-dataset-card {
+  padding: 9px 12px;
+  border-radius: 10px;
 }
 
-.wb-dataset-desc {
-  display: -webkit-box !important;
-  -webkit-line-clamp: 2 !important;
-  -webkit-box-orient: vertical !important;
-  overflow: hidden !important;
-  white-space: normal !important;
-  line-height: 1.45 !important;
-  margin-top: 3px !important;
+.workbench-app .wb-dataset-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+  line-height: 1.45;
+  margin-top: 3px;
 }
 
 /* 6. Unified Right-Hand Execution Card (合并右侧已选清单与执行范围核对为一体化卡片) */
-.wb-task-preview.wb-preview-compact {
-  background: #ffffff !important;
-  border: 1px solid #e2e8f0 !important;
-  border-radius: 14px !important;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03) !important;
-  padding: 0 !important;
-  gap: 0 !important;
-  overflow: hidden !important;
-  align-self: start !important;
-  height: auto !important;
+.workbench-app .wb-task-preview.wb-preview-compact {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  align-self: start;
+  height: auto;
 }
 
-.wb-task-preview.wb-preview-compact .wb-compact-rail-top {
-  background: transparent !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-  padding: 15px 16px 14px !important;
+.workbench-app .wb-task-preview.wb-preview-compact .wb-compact-rail-top {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 15px 16px 14px;
 }
 
-.wb-task-preview.wb-preview-compact .wb-compact-rail-bottom {
-  background: #f8fafc !important;
-  border: 0 !important;
-  border-top: 1px solid #e2e8f0 !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-  padding: 14px 16px 16px !important;
+.workbench-app .wb-task-preview.wb-preview-compact .wb-compact-rail-bottom {
+  background: #f8fafc;
+  border: 0;
+  border-top: 1px solid #e2e8f0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 14px 16px 16px;
 }
 
-.wb-task-preview.wb-preview-compact .wb-compact-scope-box {
-  background: #ffffff !important;
-  border: 1px solid #e2e8f0 !important;
-  border-radius: 10px !important;
-  padding: 10px 12px !important;
+.workbench-app .wb-task-preview.wb-preview-compact .wb-compact-scope-box {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
 }
 
 /* 7. Streamlined Baize single-line inline banner in 01 & 02 and full-width card in 03 */
@@ -276,14 +276,14 @@
 }
 
 .wb-baize-inline-banner .wb-city-check-box {
-  background: #0284c7 !important;
-  border-color: #0284c7 !important;
-  color: #ffffff !important;
+  background: #0284c7;
+  border-color: #0284c7;
+  color: #ffffff;
 }
 
 .wb-source-group > .wb-baize-single-grid {
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr) !important;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .wb-baize-banner-pill {
@@ -309,11 +309,11 @@
 
 /* 8. Cross-module visual consistency & merged Payroll toolbar */
 .pq-mode-bar {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: space-between !important;
-  gap: 12px !important;
-  margin-bottom: 14px !important;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
 }
 
 .pq-mode-left {
@@ -325,10 +325,10 @@
 
 /* migrated -> src/styles/pages/*.css */
 .workbench-app .rb-shell {
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
-  padding: 0 !important;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
 }
 
 /* migrated -> src/styles/pages/approval.css + collection.css  (原 §9 价格审批与任务中心覆盖层，已被 wbx-* 取代) */
@@ -731,19 +731,19 @@
 }
 
 .workbench-app .rb-fixed-scope {
-  display: grid !important;
+  display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px !important;
-  padding: 16px 18px !important;
-  background: #f8fafc !important;
+  gap: 16px;
+  padding: 16px 18px;
+  background: #f8fafc;
   border: 1px solid #e2e8f0;
-  border-radius: 11px !important;
+  border-radius: 11px;
 }
 
 .rb-fixed-scope-item {
-  display: flex !important;
+  display: flex;
   flex-direction: column;
-  gap: 4px !important;
+  gap: 4px;
 }
 
 .rb-fixed-scope-label {
@@ -765,10 +765,10 @@
 
 .workbench-app .rb-explanation {
   margin-top: 0;
-  border-radius: 10px !important;
-  background: #f8fafc !important;
-  border: 1px solid #e2e8f0 !important;
-  padding: 9px 13px !important;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 9px 13px;
   font-size: 12.5px;
 }
 
@@ -831,7 +831,7 @@
 }
 
 .workbench-app .rb-workbench .rb-rail {
-  display: flex !important;
+  display: flex;
   flex-direction: column;
   position: sticky;
   top: 18px;
@@ -856,24 +856,24 @@
 }
 
 .wb-button {
-  border-radius: 8px !important;
-  border-color: #e2e8f0 !important;
-  font-weight: 500 !important;
-  transition: all 0.15s ease !important;
+  border-radius: 8px;
+  border-color: #e2e8f0;
+  font-weight: 500;
+  transition: all 0.15s ease;
 }
 
 .wb-button:hover:not(:disabled) {
-  border-color: #bae6fd !important;
-  background: #f0f9ff !important;
-  color: #0369a1 !important;
+  border-color: #bae6fd;
+  background: #f0f9ff;
+  color: #0369a1;
 }
 
 .pq-table th,
 .wb-table th {
-  background: #f8fafc !important;
-  color: #475569 !important;
-  font-weight: 600 !important;
-  border-bottom-color: #e2e8f0 !important;
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+  border-bottom-color: #e2e8f0;
 }
 
 /* migrated -> src/styles/pages/*.css  (dead selector: .wb-approval-empty-state) */
@@ -882,16 +882,16 @@
 
 /* 11. Collapsible Sidebar (左侧栏折叠为纯图标模式，释放 180px+ 宽度并收紧网格) */
 .wb-shell {
-  transition: grid-template-columns 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  transition: grid-template-columns 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .wb-shell:has(.wb-sidebar.is-collapsed),
 .wb-shell.has-collapsed-sidebar {
-  grid-template-columns: var(--wbx-sidebar-w-collapsed, 68px) minmax(0, 1fr) !important;
+  grid-template-columns: var(--wbx-sidebar-w-collapsed, 68px) minmax(0, 1fr);
 }
 
 .wb-sidebar {
-  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .wb-sidebar-brand {
@@ -924,40 +924,40 @@
 }
 
 .wb-sidebar.is-collapsed {
-  width: var(--wbx-sidebar-w-collapsed, 68px) !important;
-  min-width: var(--wbx-sidebar-w-collapsed, 68px) !important;
+  width: var(--wbx-sidebar-w-collapsed, 68px);
+  min-width: var(--wbx-sidebar-w-collapsed, 68px);
 }
 
 .wb-sidebar.is-collapsed .wb-sidebar-brand {
-  flex-direction: column !important;
-  justify-content: center !important;
-  gap: 6px !important;
-  padding: 10px 6px !important;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 6px;
 }
 
 .wb-sidebar.is-collapsed .wb-sidebar-brand-text,
 .wb-sidebar.is-collapsed .wb-sidebar-label,
 .wb-sidebar.is-collapsed .wb-sidebar-text,
 .wb-sidebar.is-collapsed .wb-sidebar-badge {
-  display: none !important;
+  display: none;
 }
 
 .wb-sidebar.is-collapsed .wb-sidebar-item {
-  justify-content: center !important;
-  padding-left: 0 !important;
-  padding-right: 0 !important;
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .wb-sidebar.is-collapsed .wb-sidebar-item .wb-sidebar-icon {
-  margin: 0 !important;
+  margin: 0;
 }
 
 /* 12. City Presets & Active State */
 .wb-city-preset-btn.is-active {
-  background: #0284c7 !important;
-  color: #ffffff !important;
-  border-color: #0284c7 !important;
-  font-weight: 600 !important;
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #0284c7;
+  font-weight: 600;
 }
 
 /* 13. Scenario Presets in 03 选择资料 (发薪齐套包、风控对账包、人员快照包) */
@@ -1098,9 +1098,9 @@
 }
 
 .wb-connection-popover .wb-platform-login-row {
-  padding: 10px 12px !important;
-  border-radius: 10px !important;
-  border: 1px solid #e2e8f0 !important;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
   background: #f8fafc;
 }
 
@@ -1309,11 +1309,11 @@
 @keyframes wb-field-pulse {
   0% {
     box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.6);
-    border-color: #0284c7 !important;
+    border-color: #0284c7;
   }
   50% {
     box-shadow: 0 0 0 8px rgba(14, 165, 233, 0.25);
-    border-color: #0284c7 !important;
+    border-color: #0284c7;
   }
   100% {
     box-shadow: 0 0 0 0 rgba(14, 165, 233, 0);
@@ -1321,9 +1321,9 @@
 }
 
 .wb-field-pulse-highlight {
-  animation: wb-field-pulse 1.5s ease-out !important;
-  border-color: #0284c7 !important;
-  background-color: #f0f9ff !important;
+  animation: wb-field-pulse 1.5s ease-out;
+  border-color: #0284c7;
+  background-color: #f0f9ff;
 }
 
 /* migrated -> src/styles/pages/*.css  (dead selector: .wb-execution-prompt-btn) */
@@ -1435,15 +1435,15 @@
    本节其余规则（日期触发器窄屏、侧栏 flat-nav、子视图切换、扣款筛选栏、模板中心、核算批次容器、价格审批卡）不属于发薪平台，保留待后续批次。 */
 @media (max-width: 640px) {
   .wb-dp-wrap,
-  .wb-dp-trigger {
-    max-width: 100% !important;
+.wb-dp-trigger {
+    max-width: 100%;
   }
 
   .wb-dp-trigger {
-    flex-wrap: wrap !important;
-    white-space: normal !important;
-    height: auto !important;
-    min-height: 30px !important;
+    flex-wrap: wrap;
+    white-space: normal;
+    height: auto;
+    min-height: 30px;
   }
 
   .wb-dp-trigger-value {
@@ -1623,10 +1623,10 @@
 }
 
 .wb-deduction-search-input {
-  width: 220px !important;
+  width: 220px;
   min-width: 180px;
   height: 34px;
-  background: #ffffff !important;
+  background: #ffffff;
 }
 
 .wb-deduction-filter-right {
@@ -1640,23 +1640,23 @@
 
 .city-deduction-default,
 .station-exceptions {
-  padding: 16px 18px !important;
-  background: #f8fafc !important;
-  border: 1px solid #e2e8f0 !important;
-  border-radius: 10px !important;
+  padding: 16px 18px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
 }
 
 .city-deduction-default h3 {
-  margin: 0 0 4px !important;
-  font-size: 14px !important;
-  font-weight: 700 !important;
-  color: #0f172a !important;
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
 }
 
 .station-exceptions > summary {
-  font-size: 13.5px !important;
-  font-weight: 700 !important;
-  color: #0f172a !important;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0f172a;
   cursor: pointer;
 }
 
@@ -1668,80 +1668,80 @@
 }
 
 .wb-template-toolbar {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: space-between !important;
-  flex-wrap: wrap !important;
-  gap: 10px 16px !important;
-  padding: 10px 14px !important;
-  background: #f8fafc !important;
-  border: 1px solid #e2e8f0 !important;
-  border-radius: 10px !important;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 10px 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
 }
 
 .wb-template-list {
-  display: grid !important;
-  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  gap: 10px !important;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .wb-template-item {
-  display: grid !important;
-  grid-template-columns: 36px minmax(0, 1fr) auto !important;
-  align-items: center !important;
-  gap: 12px !important;
-  padding: 12px 14px !important;
-  background: #ffffff !important;
-  border: 1px solid #e2e8f0 !important;
-  border-radius: 10px !important;
-  transition: border-color 140ms ease, box-shadow 140ms ease !important;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
 }
 
 .wb-template-item:hover {
-  border-color: #cbd5e1 !important;
-  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.04) !important;
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.04);
 }
 
 .wb-template-icon {
-  width: 36px !important;
-  height: 36px !important;
-  padding: 8px !important;
-  border-radius: 8px !important;
-  background: #f0f9ff !important;
-  color: #0284c7 !important;
-  border: 1px solid #bae6fd !important;
+  width: 36px;
+  height: 36px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #f0f9ff;
+  color: #0284c7;
+  border: 1px solid #bae6fd;
 }
 
 .wb-template-item h3 {
-  margin: 0 !important;
-  font-size: 13.5px !important;
-  font-weight: 700 !important;
-  color: #0f172a !important;
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .wb-template-item > div:last-child {
-  display: inline-flex !important;
-  align-items: center !important;
-  gap: 8px !important;
-  flex-shrink: 0 !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .wb-template-item > div:last-child .wb-error {
-  margin: 0 !important;
-  padding: 3px 8px !important;
-  font-size: 11px !important;
-  line-height: 1.3 !important;
-  border-radius: 6px !important;
-  background: #fff1f2 !important;
-  border: 1px solid #fecdd3 !important;
-  color: #be123c !important;
-  max-width: 165px !important;
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
+  margin: 0;
+  padding: 3px 8px;
+  font-size: 11px;
+  line-height: 1.3;
+  border-radius: 6px;
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  color: #be123c;
+  max-width: 165px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Payroll Batches Unified Intake & Queue Cards */
@@ -1766,11 +1766,11 @@
 
 /* Price Approval De-Nested Clean Layout */
 .wb-approval-card {
-  padding: 18px 20px !important;
-  border: 1px solid #e2e8f0 !important;
-  border-radius: 12px !important;
-  background: #ffffff !important;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03) !important;
+  padding: 18px 20px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
 }
 
 /* 4-in-1 Unified Data Collection Platform Switcher Bar (Sleek Single-Row Segmented Bar) */
@@ -1888,33 +1888,33 @@
 }
 
 /* Unified Right-Hand Cross-Platform Execution Panel */
-.wb-task-preview.wb-preview-compact {
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 0 !important;
-  padding: 0 !important;
-  background: #ffffff !important;
-  border: 1px solid #e2e8f0 !important;
-  border-radius: 12px !important;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04) !important;
-  overflow: hidden !important;
+.workbench-app .wb-task-preview.wb-preview-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  overflow: hidden;
 }
 
-.wb-task-preview.wb-preview-compact .wb-compact-rail-top {
-  border: 0 !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-  padding: 14px 16px !important;
-  background: #ffffff !important;
+.workbench-app .wb-task-preview.wb-preview-compact .wb-compact-rail-top {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 14px 16px;
+  background: #ffffff;
 }
 
-.wb-task-preview.wb-preview-compact .wb-compact-rail-bottom {
-  border: 0 !important;
-  border-top: 1px solid #e2e8f0 !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-  padding: 14px 16px !important;
-  background: #f8fafc !important;
+.workbench-app .wb-task-preview.wb-preview-compact .wb-compact-rail-bottom {
+  border: 0;
+  border-top: 1px solid #e2e8f0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 14px 16px;
+  background: #f8fafc;
 }
 
 /* Station Scope Segmented Radio Group (Step 02 inside 风神数据) */
@@ -2014,7 +2014,7 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .wb-template-list {
-    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-columns: minmax(0, 1fr);
   }
   .wb-header-subview-divider {
     display: none;
@@ -2030,9 +2030,9 @@
 /* 风神短信登录输入框：聚焦时保持普通边框，不显示浏览器高亮 */
 .wb-fengshen-input:focus,
 .wb-fengshen-input:focus-visible {
-  border-color: #cbd5e1 !important;
-  outline: none !important;
-  box-shadow: none !important;
+  border-color: #cbd5e1;
+  outline: none;
+  box-shadow: none;
 }
 
 

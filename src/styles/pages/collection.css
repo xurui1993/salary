@@ -1020,12 +1020,12 @@
 .wbx-tc-search {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  min-width: 140px;
-  width: 164px;
-  flex: 0 1 164px;
+  gap: 6px;
+  min-width: 160px;
+  width: 212px;
+  flex: 0 1 212px;
   height: 30px;
-  padding: 0 8px;
+  padding: 0 9px;
   margin: 5px 0;
   border-radius: 7px;
   border: 1px solid var(--wbx-border);
@@ -1100,6 +1100,8 @@
 
 .wbx-taskcenter__table {
   width: 100%;
+  min-width: 996px;
+  table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
 }
@@ -1109,7 +1111,7 @@
   top: 0;
   z-index: 4;
   height: 38px;
-  padding: 0 10px;
+  padding: 0 12px;
   background: #f8fafc;
   color: #64748b;
   font-size: 12px;
@@ -1122,9 +1124,9 @@
 
 .wbx-taskcenter__table thead th.tc-col-check,
 .wbx-taskcenter__table tbody td.tc-col-check {
-  width: 36px;
-  min-width: 36px;
-  padding-left: 12px;
+  width: 40px;
+  min-width: 40px;
+  padding-left: 14px;
   padding-right: 4px;
   text-align: center;
 }
@@ -1133,9 +1135,9 @@
 .wbx-taskcenter__table tbody td.tc-col-time {
   text-align: right;
   white-space: nowrap;
-  width: 96px;
-  min-width: 96px;
-  padding-right: 12px;
+  width: 11%;
+  min-width: 104px;
+  padding-right: 22px;
 }
 
 .wbx-taskcenter__table thead th.tc-col-ops {
@@ -1143,9 +1145,9 @@
   right: 0;
   z-index: 5;
   text-align: right;
-  width: 112px;
-  min-width: 112px;
-  padding-right: 14px;
+  width: 11%;
+  min-width: 138px;
+  padding-right: 16px;
   background: #f8fafc;
 }
 
@@ -1154,9 +1156,9 @@
   right: 0;
   z-index: 2;
   text-align: right;
-  width: 112px;
-  min-width: 112px;
-  padding-right: 12px;
+  width: 11%;
+  min-width: 138px;
+  padding-right: 16px;
   white-space: nowrap;
   background: #ffffff;
   box-shadow: -6px 0 10px -8px rgba(15, 23, 42, 0.06);
@@ -1170,7 +1172,7 @@
 .wbx-taskcenter__table tbody tr.tc-row td.tc-col-ops {
   background: #ffffff;
   height: 44px;
-  padding: 0 10px;
+  padding: 0 12px;
   font-size: 13px;
   font-weight: 400;
   color: #334155;
@@ -1181,11 +1183,11 @@
 }
 
 .wbx-taskcenter__table tbody tr.tc-row td.tc-col-time {
-  padding-right: 12px;
+  padding-right: 22px;
 }
 
 .wbx-taskcenter__table tbody tr.tc-row td.tc-col-ops {
-  padding-right: 12px;
+  padding-right: 16px;
 }
 
 .wbx-taskcenter__table tbody tr.tc-row:last-child td {
@@ -1204,13 +1206,15 @@
 
 /* 列级排版与视觉层级：仅状态列保留语义色，全表统一 13px 与两级字重（400/500） */
 .wbx-taskcenter__table .tc-col-task {
-  min-width: 172px;
-  max-width: 226px;
+  width: 30%;
+  min-width: 220px;
+  padding-right: 18px;
 }
 
 .tc-task-title {
-  display: inline-block;
-  max-width: 216px;
+  display: block;
+  width: 100%;
+  max-width: 100%;
   color: #0f172a;
   font-size: 13px;
   font-weight: 500;
@@ -1218,7 +1222,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  vertical-align: middle;
 }
 
 .wbx-taskcenter__table tbody tr.tc-row:hover .tc-task-title {
@@ -1226,8 +1229,8 @@
 }
 
 .wbx-taskcenter__table .tc-col-source {
-  min-width: 102px;
-  width: 114px;
+  width: 13%;
+  min-width: 118px;
   white-space: nowrap;
 }
 
@@ -1257,14 +1260,15 @@
 }
 
 .wbx-taskcenter__table .tc-col-scope {
-  min-width: 144px;
-  width: 164px;
+  width: 18%;
+  min-width: 176px;
   white-space: nowrap;
 }
 
 .tc-scope-inline {
-  display: inline-block;
-  max-width: 160px;
+  display: block;
+  width: 100%;
+  max-width: 100%;
   font-family: var(--wbx-font-sans);
   font-variant-numeric: tabular-nums;
   font-size: 13px;
@@ -1273,12 +1277,11 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  vertical-align: middle;
 }
 
 .wbx-taskcenter__table .tc-col-progress {
-  min-width: 168px;
-  width: 212px;
+  width: 17%;
+  min-width: 188px;
   padding-right: 16px;
 }
 
@@ -1290,7 +1293,7 @@
 }
 
 .wbx-taskcenter__table .tc-col-progress .wbx-pill {
-  width: 124px;
+  width: 128px;
   height: 26px;
   padding: 0 9px;
   border-radius: 7px;
@@ -1402,28 +1405,6 @@
 .tc-op-cta:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.tc-detail-trigger {
-  display: inline-flex;
-  align-items: center;
-  height: 26px;
-  padding: 0 8px;
-  border-radius: 6px;
-  border: 0;
-  background: transparent;
-  color: #475569;
-  font-size: 12.5px;
-  font-weight: 400;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background-color 140ms ease, color 140ms ease;
-}
-
-.tc-detail-trigger:hover,
-.tc-detail-trigger.is-active {
-  background: #f1f5f9;
-  color: #0f172a;
 }
 
 .tc-stop-btn {
