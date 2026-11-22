@@ -55,27 +55,26 @@
 
 .wb-month-grid-3 {
   display: grid;
-  /* BugFix 2026-11-17：原 repeat(3, 1fr) !important 为全宽单卡设计（3×~390px）；
-     T3 两列布局后账期卡最窄 ~371px，117px 列宽装不下 chip 内容（~163px）导致文字叠印。
-     改为自适应列（每列 ≥200px，chip 真实需求 ≈199px）：全宽 6 列 / 两列布局 2 列，无需断点兜底。 */
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 12px;
 }
 
 .wb-month-card-3 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  min-width: 0;
   min-height: 44px;
-  padding: 9px 13px;
+  padding: 10px 14px;
   border-radius: 10px;
   border: 1px solid #cbd5e1;
   background: #ffffff;
   color: #1e293b;
   cursor: pointer;
   user-select: none;
-  transition: all 0.15s ease;
+  transition: border-color 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
 }
 
 .wb-month-card-3:hover:not(:disabled) {
@@ -101,6 +100,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
   min-width: 0;
 }
 
@@ -128,10 +128,11 @@
 }
 
 .wb-month-card-title {
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
   color: #0f172a;
   white-space: nowrap;
+  line-height: 1.35;
 }
 
 .wb-month-card-3.is-selected .wb-month-card-title {
@@ -143,6 +144,9 @@
   font-weight: 500;
   color: #64748b;
   white-space: nowrap;
+  flex-shrink: 0;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
 }
 
 .wb-month-card-3.is-selected .wb-month-chip-range {
