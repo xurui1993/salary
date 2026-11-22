@@ -1,4 +1,4 @@
-import type { PayrollQueueTask } from './payrollQueue';
+import { payrollSettlementType, type PayrollQueueTask } from './payrollQueue';
 
 export type PayrollQueueFilterTab = 'all' | 'active' | 'waiting' | 'completed' | 'issue';
 
@@ -22,7 +22,7 @@ export function filterPayrollQueueTasks(
       return false;
     }
     if (!q) return true;
-    const hay = `${task.approval_code || ''} ${task.template_name || ''} ${task.plan?.city || ''} ${task.batch_id || ''} ${task.current_action || ''}`.toLowerCase();
+    const hay = `${task.approval_code || ''} ${task.template_name || ''} ${task.plan?.city || ''} ${task.batch_id || ''} ${task.current_action || ''} ${payrollSettlementType(task)}`.toLowerCase();
     return hay.includes(q);
   });
 }
@@ -44,7 +44,7 @@ export function filterPayrollQueueAdvanced(
   const mode = (filter.mode || '').trim();
   return base.filter(task => {
     if (city && (task.plan?.city || '') !== city) return false;
-    if (mode && task.mode !== mode) return false;
+    if (mode && task.mode !== mode && payrollSettlementType(task) !== mode) return false;
     if (filter.missingApprovalOnly && (task.approval_code || '').trim() !== '') return false;
     return true;
   });

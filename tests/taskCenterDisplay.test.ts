@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildTaskProgressPopoverData,
   buildTaskTimelineSteps,
   cleanTaskTitle,
   computeDatePresetRange,
@@ -24,8 +25,8 @@ test('cleanTaskTitle removes redundant leading platform and kind prefixes withou
     '上海/深圳/广州 10月配送费与违规扣款',
   );
   assert.equal(
-    cleanTaskTitle('业务报表 · 异常骑手跟进（大连/保定）', '风神', '业务报表'),
-    '异常骑手跟进（大连/保定）',
+    cleanTaskTitle('业务报表 · 异常跟进（大连/保定）', '风神', '业务报表'),
+    '异常跟进（大连/保定）',
   );
   assert.equal(
     cleanTaskTitle('蓝橙价格审批 · 上海/深圳 10月薪资单价批量审批', '蓝橙', '价格审批'),
@@ -188,3 +189,57 @@ test('P0/P1 task helpers: auth system resolution, retryability, date presets, ba
   assert.deepEqual(sortTaskDisplayRecords(unsorted, 'elapsed_desc').map(r => r.id), ['b', 'c', 'a']);
   assert.deepEqual(sortTaskDisplayRecords(unsorted, 'files_desc').map(r => r.id), ['c', 'a', 'b']);
 });
+
+test('buildTaskProgressPopoverData exposes elapsed timing, item progress, and current processing node', () => {
+  const running = buildTaskProgressPopoverData(
+    {
+      status: 'running',
+      created_at: '2026-11-21T21:18:00+08:00',
+      updated_at: '2026-11-21T21:24:03+08:00',
+      completed_items: 4,
+      total_items: 6,
+      failed_items: 0,
+      available_files: 3,
+    },
+    {
+      statusLabel: '处理中',
+      tone: 'active',
+      percent: 67,
+      elapsedText: '6分03秒',
+      platformName: '风神',
+      nowMs: Date.parse('2026-11-21T21:25:00+08:00'),
+    },
+  );
+  assert.equal(running.badgeLabel, '处理中');
+  assert.equal(running.elapsedLabel, '任务耗时');
+  assert.equal(running.elapsedValue, '6分03秒');
+  assert.equal(running.percent, 67);
+  assert.match(running.currentNode, /风神/);
+  assert.match(running.currentNode, /4 \/ 6/);
+  assert.ok(running.metrics.some(m => m.label === '子项进度' && m.value === '4 / 6 项'));
+
+  const partial = buildTaskProgressPopoverData(
+    {
+      status: 'partial',
+      created_at: '2026-11-21T20:36:00+08:00',
+      updated_at: '2026-11-21T20:42:00+08:00',
+      completed_items: 6,
+      total_items: 8,
+      failed_items: 2,
+      available_files: 3,
+      error: '泉州问题单拉取超时',
+    },
+    {
+      statusLabel: '部分完成',
+      tone: 'waiting',
+      percent: null,
+      elapsedText: '6分00秒',
+      platformName: '风神',
+      diagNote: { text: '泉州问题单拉取超时', tone: 'warn' },
+      nowMs: Date.parse('2026-11-21T21:25:00+08:00'),
+    },
+  );
+  assert.equal(partial.currentNode, '泉州问题单拉取超时');
+  assert.ok(partial.metrics.some(m => m.label === '异常子项' && m.value === '2 项失败'));
+});
+

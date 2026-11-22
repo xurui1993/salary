@@ -250,13 +250,13 @@ test('sidebar navigation converges into 2 groups with concise 4-character labels
   );
   assert.deepEqual(
     SIDEBAR_NAV_GROUPS[1].items.map(item => item.label),
-    ['薪资核算', '价格审批', '扣款规则', '模板中心'],
+    ['兼职核算', '价格审批', '扣款配置', '模板中心'],
   );
   assert.equal(SIDEBAR_FOOTER_ITEM.label, '任务中心');
   const allItems = [...SIDEBAR_NAV_GROUPS.flatMap(group => group.items), SIDEBAR_FOOTER_ITEM];
   assert.deepEqual(
     allItems.map(item => item.label),
-    ['风神数据', '蓝橙数据', '发薪平台', '小象灯塔', '薪资核算', '价格审批', '扣款规则', '模板中心', '任务中心'],
+    ['风神数据', '蓝橙数据', '发薪平台', '小象灯塔', '兼职核算', '价格审批', '扣款配置', '模板中心', '任务中心'],
   );
   assert.ok(allItems.every(item => item.label.length === 4), 'Every sidebar item label should be exactly 4 Chinese characters');
   const iconSet = new Set(allItems.map(item => item.iconKey));
@@ -267,11 +267,11 @@ test('Scheme B header context and multi-platform status cluster map module group
   assert.deepEqual(getHeaderModuleContext('create', 'download', 'fengshen', false), {
     groupLabel: '数据采集',
     title: '风神数据',
-    subtitle: '按城市与账期采集配送费、违规扣款、UB账单、考勤源表与专项报表',
+    subtitle: '按城市与账期采集配送费、违规扣款、UB账单与考勤源表',
     iconKey: 'compass',
   });
   assert.equal(getHeaderModuleContext('create', 'download', 'payout', false).title, '发薪平台');
-  assert.equal(getHeaderModuleContext('create', 'generate', 'fengshen', false).groupLabel, '核算与业务');
+  assert.equal(getHeaderModuleContext('create', 'generate', 'fengshen', false).groupLabel, '专项报表');
   assert.equal(getHeaderModuleContext('history', 'download', 'fengshen', true).groupLabel, '任务记录');
 
   const cluster = getPlatformStatusCluster(
@@ -409,18 +409,18 @@ test('getDatasetCardMeta provides scopeTag, tone, and business description for d
   assert.equal(xiaoxiang.scopeTag, '全城·日期');
   assert.equal(xiaoxiang.tone, 'lighthouse');
 
-  const paymentBinding = getDatasetCardMeta('payment_binding', '骑手支付绑定（生成表）');
-  assert.equal(paymentBinding.title, '骑手支付绑定');
+  const paymentBinding = getDatasetCardMeta('payment_binding', '支付绑定（生成表）');
+  assert.equal(paymentBinding.title, '支付绑定');
   assert.equal(paymentBinding.scopeTag, '生成·按月');
   assert.equal(paymentBinding.tone, 'monthly');
 
-  const abnormalFollowup = getDatasetCardMeta('abnormal_followup', '异常骑手跟进（生成表）');
-  assert.equal(abnormalFollowup.title, '异常骑手跟进');
+  const abnormalFollowup = getDatasetCardMeta('abnormal_followup', '异常跟进（生成表）');
+  assert.equal(abnormalFollowup.title, '异常跟进');
   assert.equal(abnormalFollowup.scopeTag, '生成·按月');
   assert.equal(abnormalFollowup.tone, 'monthly');
 
-  const abnormalRiders = getDatasetCardMeta('abnormal_riders', '异常骑手整理（生成表）');
-  assert.equal(abnormalRiders.title, '异常骑手整理');
+  const abnormalRiders = getDatasetCardMeta('abnormal_riders', '异常名单（生成表）');
+  assert.equal(abnormalRiders.title, '异常名单');
   assert.equal(abnormalRiders.scopeTag, '生成·全量');
   assert.equal(abnormalRiders.tone, 'full');
 });
@@ -776,9 +776,8 @@ test('multi-month selection toggles, detects continuity, and builds Fengshen/Xia
   assert.equal(lanorangeMultiRail.periodSpanBadge, '共 2 个月');
 });
 
-test('Fengshen 全部资料 category filter includes the 3 reports, keeps reports grouped at the end of all, and preserves counts', () => {
+test('Fengshen 全部资料 category filter excludes extracted 专项报表 and preserves raw dataset counts', () => {
   const sampleDatasets = [
-    { id: 'payment_binding' },
     { id: 'delivery_fee' },
     { id: 'penalty' },
     { id: 'rider_monthly' },
@@ -786,22 +785,15 @@ test('Fengshen 全部资料 category filter includes the 3 reports, keeps report
     { id: 'rider_detail' },
     { id: 'attendance_detail' },
     { id: 'invitation_records' },
-    { id: 'abnormal_riders' },
     { id: 'fraud' },
     { id: 'problem' },
     { id: 'delivery_waybill' },
     { id: 'rider_info' },
     { id: 'goods_rent' },
-    { id: 'abnormal_followup' },
   ];
   assert.equal(FENGSHEN_DATASET_CATEGORIES[0].label, '全部资料');
-  assert.equal(countFengshenDatasetsByCategory(sampleDatasets, 'all'), 15);
-  const allFiltered = filterFengshenDatasetsByCategory(sampleDatasets, 'all').map(d => d.id);
-  assert.deepEqual(allFiltered.slice(-3), ['payment_binding', 'abnormal_followup', 'abnormal_riders']);
-  assert.deepEqual(
-    filterFengshenDatasetsByCategory(sampleDatasets, 'reports').map(d => d.id),
-    ['payment_binding', 'abnormal_followup', 'abnormal_riders'],
-  );
+  assert.equal(FENGSHEN_DATASET_CATEGORIES.some(c => c.label === '专项报表'), false);
+  assert.equal(countFengshenDatasetsByCategory(sampleDatasets, 'all'), 12);
   assert.deepEqual(
     filterFengshenDatasetsByCategory(sampleDatasets, 'settlement').map(d => d.id),
     ['delivery_fee', 'penalty', 'rider_monthly', 'receive_account'],
@@ -809,7 +801,6 @@ test('Fengshen 全部资料 category filter includes the 3 reports, keeps report
   assert.equal(countFengshenDatasetsByCategory(sampleDatasets, 'orders'), 3);
   assert.equal(countFengshenDatasetsByCategory(sampleDatasets, 'attendance'), 3);
   assert.equal(countFengshenDatasetsByCategory(sampleDatasets, 'profile'), 2);
-  assert.equal(countFengshenDatasetsByCategory(sampleDatasets, 'reports'), 3);
 });
 
 test('payout module multi-selects baize and benlai together and computes dual-batch rail summary', () => {
@@ -904,7 +895,7 @@ test('payout module multi-selects baize and benlai together and computes dual-ba
   assert.equal(abnormalRidersRail.periodText, '全量最新档案');
   assert.equal(abnormalRidersRail.periodSpanBadge, '不限账期');
   assert.equal(abnormalRidersRail.thirdRowValue, '1 份全城整理表');
-  assert.equal(abnormalRidersRail.listFooterText, '异常骑手整理 · 固定全城全量导出');
+  assert.equal(abnormalRidersRail.listFooterText, '异常名单 · 固定全城全量导出');
 
   const mixedRail = buildExecutionRailSummary({
     datasetsCount: 2,
@@ -933,10 +924,10 @@ test('payout module multi-selects baize and benlai together and computes dual-ba
   assert.equal(mixedRail.listFooterText, '已选 1 类资料 + 1 份报表 · 将自动分批提交');
 });
 
-test('flat 3-module primary navigation and embedded sub-view headers reflect Scheme 2 + Scheme 1 combined layout', () => {
+test('flat 2-module primary navigation and embedded sub-view headers reflect updated layout', () => {
   assert.deepEqual(
     PRIMARY_NAV_ITEMS.map(item => item.label),
-    ['数据采集', '薪资核算', '价格审批'],
+    ['数据采集', '薪资核算'],
   );
   assert.deepEqual(
     COLLECTION_SUB_VIEWS.map(item => item.label),
@@ -944,12 +935,16 @@ test('flat 3-module primary navigation and embedded sub-view headers reflect Sch
   );
   assert.deepEqual(
     PAYROLL_SUB_VIEWS.map(item => item.label),
-    ['核算批次', '扣款规则', '模板中心'],
+    ['兼职核算', '扣款配置', '模板中心'],
   );
 
   assert.equal(
     getPrimaryHeaderContext({ workspaceView: 'create', taskKind: 'download', downloadPlatform: 'fengshen' }).title,
-    '风神数据（含专项报表）',
+    '风神数据',
+  );
+  assert.equal(
+    getPrimaryHeaderContext({ workspaceView: 'create', taskKind: 'generate', downloadPlatform: 'fengshen' }).groupLabel,
+    '专项报表',
   );
   assert.equal(
     getPrimaryHeaderContext({ workspaceView: 'history', taskKind: 'download', downloadPlatform: 'fengshen' }).title,
@@ -957,11 +952,11 @@ test('flat 3-module primary navigation and embedded sub-view headers reflect Sch
   );
   assert.equal(
     getPrimaryHeaderContext({ workspaceView: 'create', taskKind: 'payroll', downloadPlatform: 'fengshen', payrollSubView: 'batches' }).title,
-    '核算批次队列',
+    '兼职核算',
   );
   assert.equal(
     getPrimaryHeaderContext({ workspaceView: 'create', taskKind: 'payroll', downloadPlatform: 'fengshen', payrollSubView: 'deductions' }).title,
-    '扣款规则配置',
+    '扣款配置',
   );
   assert.equal(
     getPrimaryHeaderContext({ workspaceView: 'create', taskKind: 'payroll', downloadPlatform: 'fengshen', payrollSubView: 'templates' }).title,
@@ -969,7 +964,7 @@ test('flat 3-module primary navigation and embedded sub-view headers reflect Sch
   );
   assert.equal(
     getPrimaryHeaderContext({ workspaceView: 'approval', taskKind: 'payroll', downloadPlatform: 'fengshen' }).title,
-    '批量审批',
+    '价格审批',
   );
 });
 

@@ -302,15 +302,15 @@ export interface GenerationReportCardMeta {
 export const GENERATION_REPORT_CARDS: GenerationReportCardMeta[] = [
   {
     id: 'payment_binding',
-    title: '骑手支付绑定',
+    title: '支付绑定',
     systems: ['风神', '蓝橙'],
     granularity: '按城市 · 按月拆分',
-    summary: '自动关联风神收薪绑定与原雷神人事档案，输出周期内有单骑手支付绑定表及多城汇总。',
+    summary: '自动关联风神收薪绑定与原雷神人事档案，输出周期内有单支付绑定表及多城汇总。',
     requiresCityAndDate: true,
   },
   {
     id: 'abnormal_followup',
-    title: '异常骑手跟进',
+    title: '异常跟进',
     systems: ['风神', '蓝橙'],
     granularity: '按城市 · 按月拆分',
     summary: '以支付绑定为基准，关联物资租用、月度UB账单、价格与骑手档案，定位异常待跟进名单。',
@@ -318,10 +318,10 @@ export const GENERATION_REPORT_CARDS: GenerationReportCardMeta[] = [
   },
   {
     id: 'abnormal_riders',
-    title: '异常骑手整理',
+    title: '异常名单',
     systems: ['蓝橙'],
     granularity: '全部城市 · 全量交付',
-    summary: '自动汇总原雷神 5 类离职、请假与骑手档案，无需风神登录即可生成全城异常整理工作簿。',
+    summary: '自动汇总原雷神 5 类离职、请假与骑手档案，无需风神登录即可生成全城异常名单工作簿。',
     requiresCityAndDate: false,
   },
 ];
@@ -393,7 +393,7 @@ export function getWorkbenchBreadcrumb(
   workspaceView: 'create' | 'history' | 'approval' | 'price-export',
   taskKind: 'download' | 'generate' | 'payroll',
 ): { section: string; title: string; subtitle: string } {
-  if (workspaceView === 'approval') return {section:'业务审批',title:'蓝橙价格审批',subtitle:'筛选本人价格提审，跨页勾选后预览并批量同意当前节点'};
+  if (workspaceView === 'approval') return {section:'业务审批',title:'价格审批',subtitle:'筛选本人价格提审，跨页勾选后预览并批量同意当前节点'};
   if (workspaceView === 'price-export') return {section:'蓝橙价格',title:'待审每日价格导出',subtitle:'获取有权限站点的最新待审版本，生成骑手每日价格Excel'};
   if (workspaceView === 'history') {
     return {
@@ -469,7 +469,6 @@ export interface SidebarNavGroupSpec {
 export const PRIMARY_NAV_ITEMS: SidebarNavItemSpec[] = [
   { id: 'collection', label: '数据采集', iconKey: 'compass' },
   { id: 'payroll', label: '薪资核算', iconKey: 'wallet-cards' },
-  { id: 'approval', label: '价格审批', iconKey: 'badge-dollar-sign' },
 ];
 
 export type CollectionSubView = 'create' | 'history';
@@ -481,8 +480,8 @@ export const COLLECTION_SUB_VIEWS: { id: CollectionSubView; label: string; iconK
 ];
 
 export const PAYROLL_SUB_VIEWS: { id: PayrollSubView; label: string; iconKey: SidebarNavItemSpec['iconKey'] }[] = [
-  { id: 'batches', label: '核算批次', iconKey: 'wallet-cards' },
-  { id: 'deductions', label: '扣款规则', iconKey: 'sliders-horizontal' },
+  { id: 'batches', label: '兼职核算', iconKey: 'wallet-cards' },
+  { id: 'deductions', label: '扣款配置', iconKey: 'sliders-horizontal' },
   { id: 'templates', label: '模板中心', iconKey: 'file-spreadsheet' },
 ];
 
@@ -501,9 +500,9 @@ export const SIDEBAR_NAV_GROUPS: SidebarNavGroupSpec[] = [
     id: 'business',
     title: '核算与业务',
     items: [
-      { id: 'payroll', label: '薪资核算', iconKey: 'wallet-cards' },
+      { id: 'payroll', label: '兼职核算', iconKey: 'wallet-cards' },
       { id: 'approval', label: '价格审批', iconKey: 'badge-dollar-sign' },
-      { id: 'deductions', label: '扣款规则', iconKey: 'sliders-horizontal' },
+      { id: 'deductions', label: '扣款配置', iconKey: 'sliders-horizontal' },
       { id: 'templates', label: '模板中心', iconKey: 'file-spreadsheet' },
     ],
   },
@@ -516,7 +515,7 @@ export const SIDEBAR_FOOTER_ITEM: SidebarNavItemSpec = {
 };
 
 export interface HeaderModuleContext {
-  groupLabel: '数据采集' | '核算与业务' | '任务记录' | '薪资核算' | '价格审批';
+  groupLabel: '数据采集' | '专项报表' | '核算与业务' | '任务记录' | '薪资核算' | '价格审批';
   title: string;
   subtitle: string;
   description?: string;
@@ -533,12 +532,9 @@ export function getPrimaryHeaderContext(options: {
 
   if (workspaceView === 'approval' || workspaceView === 'price-export') {
     return {
-      groupLabel: '价格审批',
-      title: workspaceView === 'approval' ? '批量审批' : '待审每日价格导出',
-      subtitle:
-        workspaceView === 'approval'
-          ? '筛选本人蓝橙价格提审，跨页勾选后预览并批量审批'
-          : '拉取有权限站点的最新待审版本，导出骑手每日价格表',
+      groupLabel: '薪资核算',
+      title: '价格审批',
+      subtitle: '筛选本人价格审批，跨页勾选后预览并批量审批',
       iconKey: 'badge-dollar-sign',
     };
   }
@@ -547,7 +543,7 @@ export function getPrimaryHeaderContext(options: {
     if (payrollSubView === 'deductions') {
       return {
         groupLabel: '薪资核算',
-        title: '扣款规则配置',
+        title: '扣款配置',
         subtitle: '按城市与团队维护站点默认扣款金额、关键词匹配规则及批量同步',
         iconKey: 'sliders-horizontal',
       };
@@ -562,7 +558,7 @@ export function getPrimaryHeaderContext(options: {
     }
     return {
       groupLabel: '薪资核算',
-      title: '核算批次队列',
+      title: '兼职核算',
       subtitle: '上传薪资申请表，自动识别范围、齐套资料并执行兼职核算',
       iconKey: 'wallet-cards',
     };
@@ -577,8 +573,17 @@ export function getPrimaryHeaderContext(options: {
     };
   }
 
+  if (workspaceView === 'create' && taskKind === 'generate') {
+    return {
+      groupLabel: '专项报表',
+      title: '专项报表',
+      subtitle: '支付绑定、异常跟进、异常名单独立生成工作台',
+      iconKey: 'bar-chart-3',
+    };
+  }
+
   const platformNames: Record<'fengshen' | 'lanorange' | 'payout' | 'xiaoxiang', string> = {
-    fengshen: '风神数据（含专项报表）',
+    fengshen: '风神数据',
     lanorange: '蓝橙数据',
     payout: '发薪平台（白泽商翼 + 本来人力）',
     xiaoxiang: systemLabel('xiaoxiang'),
@@ -618,9 +623,9 @@ export function getHeaderModuleContext(
   }
   if (taskKind === 'generate') {
     return {
-      groupLabel: '核算与业务',
+      groupLabel: '专项报表',
       title: '专项报表',
-      subtitle: '骑手支付绑定、异常骑手跟进、异常骑手整理自动关联生成',
+      subtitle: '支付绑定、异常跟进、异常名单自动关联生成',
       iconKey: 'bar-chart-3',
     };
   }
@@ -659,7 +664,7 @@ export function getHeaderModuleContext(
   return {
     groupLabel: '数据采集',
     title: '风神数据',
-    subtitle: '按城市与账期采集配送费、违规扣款、UB账单、考勤源表与专项报表',
+    subtitle: '按城市与账期采集配送费、违规扣款、UB账单与考勤源表',
     iconKey: 'compass',
   };
 }
@@ -1066,19 +1071,19 @@ const DATASET_CARD_META_MAP: Record<string, Omit<DatasetCardMeta, 'id'>> = {
     desc: '工服、餐箱及电池领用扣款登记表',
   },
   payment_binding: {
-    title: '骑手支付绑定',
+    title: '支付绑定',
     scopeTag: '生成·按月',
     tone: 'monthly',
-    desc: '自动关联风神收薪绑定与蓝橙、发薪档案，输出骑手支付绑定及多城汇总',
+    desc: '自动关联风神收薪绑定与蓝橙、发薪档案，输出支付绑定及多城汇总',
   },
   abnormal_followup: {
-    title: '异常骑手跟进',
+    title: '异常跟进',
     scopeTag: '生成·按月',
     tone: 'monthly',
     desc: '以支付绑定为基准，关联物资、UB账单与价格档案，输出异常待跟进表',
   },
   abnormal_riders: {
-    title: '异常骑手整理',
+    title: '异常名单',
     scopeTag: '生成·全量',
     tone: 'full',
     desc: '固定全城全量汇总蓝橙离职、请假与骑手档案（免选城市与月份）',
@@ -1688,7 +1693,7 @@ export function buildExecutionRailSummary(input: ExecutionRailSummaryInput): Exe
   let listFooterText = '';
   if (datasetsCount > 0) {
     if (abnormalRidersOnly) {
-      listFooterText = '异常骑手整理 · 固定全城全量导出';
+      listFooterText = '异常名单 · 固定全城全量导出';
     } else if (payoutBoth) {
       listFooterText = '已选双发薪平台 · 自动拆分为 2 批独立采集';
     } else if (baizeOnly) {
@@ -1764,7 +1769,7 @@ export function buildExecutionRailSummary(input: ExecutionRailSummaryInput): Exe
   };
 }
 
-export type FengshenDatasetCategoryId = 'all' | 'settlement' | 'attendance' | 'orders' | 'profile' | 'reports';
+export type FengshenDatasetCategoryId = 'all' | 'settlement' | 'attendance' | 'orders' | 'profile';
 
 export interface FengshenDatasetCategoryDef {
   id: FengshenDatasetCategoryId;
@@ -1778,7 +1783,6 @@ export const FENGSHEN_DATASET_CATEGORIES: FengshenDatasetCategoryDef[] = [
   { id: 'attendance', label: '明细与出勤', datasetIds: ['rider_detail', 'attendance_detail', 'invitation_records'] },
   { id: 'orders', label: '风控与运单', datasetIds: ['fraud', 'problem', 'delivery_waybill'] },
   { id: 'profile', label: '档案与物资', datasetIds: ['rider_info', 'goods_rent'] },
-  { id: 'reports', label: '专项报表', datasetIds: ['payment_binding', 'abnormal_followup', 'abnormal_riders'] },
 ];
 
 const FENGSHEN_REPORT_ORDER = ['payment_binding', 'abnormal_followup', 'abnormal_riders'];

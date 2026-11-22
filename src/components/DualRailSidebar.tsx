@@ -2,10 +2,13 @@ import React from 'react';
 import {
   BadgeDollarSign,
   Compass,
+  CreditCard,
   FileSpreadsheet,
+  FolderKanban,
   Layers,
   Radar,
   SlidersHorizontal,
+  UserSearch,
   UsersRound,
   WalletCards,
   X,
@@ -17,6 +20,7 @@ import type { PayrollSubView, PlatformStatusMap, SystemResourceStatsInput } from
 import {
   getActiveNavGroup,
   getPlatformChannelStatus,
+  SPECIAL_REPORT_SUBMODULES,
   type QuickTargetId,
   type ShellCommandAction,
 } from '../lib/shellNav';
@@ -25,6 +29,7 @@ export interface DualRailSidebarProps {
   workspaceView: 'create' | 'history' | 'approval' | 'price-export';
   taskKind: 'download' | 'generate' | 'payroll';
   downloadPlatform: DownloadPlatform;
+  activeReportId?: string;
   payrollSubView: PayrollSubView;
   collapsed?: boolean;
   isDrawerMode: boolean;
@@ -64,6 +69,7 @@ export function DualRailSidebar({
   workspaceView,
   taskKind,
   downloadPlatform,
+  activeReportId = SPECIAL_REPORT_SUBMODULES[0].id,
   payrollSubView,
   isDrawerMode,
   taskFormLocked,
@@ -77,8 +83,7 @@ export function DualRailSidebar({
   onCloseMobile,
   onOpenPlatformDock,
 }: DualRailSidebarProps) {
-  const normalizedKind = taskKind === 'generate' ? 'download' : taskKind;
-  const activeGroup = getActiveNavGroup({ workspaceView, taskKind: normalizedKind });
+  const activeGroup = getActiveNavGroup({ workspaceView, taskKind });
 
   const collectionItems: SidebarNavItem[] = [
     {
@@ -115,36 +120,47 @@ export function DualRailSidebar({
     },
   ];
 
+  const reportIconFor = (id: string) => {
+    if (id === 'payment_binding') return <CreditCard size={15.5} />;
+    if (id === 'abnormal_followup') return <UserSearch size={15.5} />;
+    return <FolderKanban size={15.5} />;
+  };
+
+  const reportItems: SidebarNavItem[] = SPECIAL_REPORT_SUBMODULES.map(report => ({
+    id: `report:${report.id}` as QuickTargetId,
+    label: report.label,
+    icon: reportIconFor(report.id),
+    active: workspaceView === 'create' && activeGroup === 'reports' && activeReportId === report.id,
+    action: { type: 'report', reportId: report.id },
+  }));
+
   const payrollItems: SidebarNavItem[] = [
     {
       id: 'payroll:batches',
-      label: '核算批次',
+      label: '兼职核算',
       icon: <WalletCards size={15.5} />,
-      active: activeGroup === 'payroll' && payrollSubView === 'batches',
+      active: workspaceView === 'create' && activeGroup === 'payroll' && payrollSubView === 'batches',
       action: { type: 'payroll', subView: 'batches' },
       badgeText: payrollBadge?.label,
       badgeTone: payrollBadge?.tone,
     },
     {
       id: 'payroll:deductions',
-      label: '扣款规则',
+      label: '扣款配置',
       icon: <SlidersHorizontal size={15.5} />,
-      active: activeGroup === 'payroll' && payrollSubView === 'deductions',
+      active: workspaceView === 'create' && activeGroup === 'payroll' && payrollSubView === 'deductions',
       action: { type: 'payroll', subView: 'deductions' },
     },
     {
       id: 'payroll:templates',
       label: '模板中心',
       icon: <FileSpreadsheet size={15.5} />,
-      active: activeGroup === 'payroll' && payrollSubView === 'templates',
+      active: workspaceView === 'create' && activeGroup === 'payroll' && payrollSubView === 'templates',
       action: { type: 'payroll', subView: 'templates' },
     },
-  ];
-
-  const approvalItems: SidebarNavItem[] = [
     {
       id: 'workspace:approval',
-      label: '蓝橙批量审批',
+      label: '价格审批',
       icon: <BadgeDollarSign size={15.5} />,
       active: workspaceView === 'approval',
       action: { type: 'workspace', view: 'approval' },
@@ -155,13 +171,6 @@ export function DualRailSidebar({
             ? `待审 ${approvalPendingCount}`
             : undefined,
       badgeTone: approvalActiveCount > 0 ? 'active' : 'warn',
-    },
-    {
-      id: 'workspace:price-export',
-      label: '待审每日价格导出',
-      icon: <FileSpreadsheet size={15.5} />,
-      active: workspaceView === 'price-export',
-      action: { type: 'workspace', view: 'price-export' },
     },
   ];
 
@@ -219,7 +228,7 @@ export function DualRailSidebar({
         )}
       </div>
 
-      {/* 全展开三分栏核心业务导航：数据采集 / 薪资核算 / 价格审批 */}
+      {/* 全展开三分栏核心业务导航：数据采集 / 专项报表 / 薪资核算 */}
       <nav className="wbx-flat-sidebar__nav" aria-label="业务功能导航">
         <section className="wbx-snav-group" aria-label="数据采集">
           <div className="wbx-snav-group__head">
@@ -235,21 +244,21 @@ export function DualRailSidebar({
           </div>
         </section>
 
+        <section className="wbx-snav-group" aria-label="专项报表">
+          <div className="wbx-snav-group__head">
+            <span className="wbx-snav-group__title">专项报表</span>
+          </div>
+          <div className="wbx-snav-group__list">
+            {reportItems.map(renderNavItem)}
+          </div>
+        </section>
+
         <section className="wbx-snav-group" aria-label="薪资核算">
           <div className="wbx-snav-group__head">
             <span className="wbx-snav-group__title">薪资核算</span>
           </div>
           <div className="wbx-snav-group__list">
             {payrollItems.map(renderNavItem)}
-          </div>
-        </section>
-
-        <section className="wbx-snav-group" aria-label="价格审批">
-          <div className="wbx-snav-group__head">
-            <span className="wbx-snav-group__title">价格审批</span>
-          </div>
-          <div className="wbx-snav-group__list">
-            {approvalItems.map(renderNavItem)}
           </div>
         </section>
       </nav>

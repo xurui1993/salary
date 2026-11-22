@@ -6,7 +6,7 @@
  */
 
 /** 应用标题：浏览器标签页、OG 标题、文档口径三者共用同一字面量。 */
-export const APP_TITLE = '兼职运力与薪资结算调度中心';
+export const APP_TITLE = '薪酬结算中心';
 
 /** 应用简介：`meta[name=description]` 与 `og:description` 共用。 */
 export const APP_DESCRIPTION = '兼职运力采集、薪资核算与价格审批一体化调度工作台';

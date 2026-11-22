@@ -371,37 +371,64 @@ export function buildGenerateBatchPayloads(
 export const DEFAULT_REPORT_DEFINITIONS: ReportDefinition[] = [
   {
     id: 'payment_binding',
-    label: '骑手支付绑定',
+    label: '支付绑定',
     scope: 'city_month',
+    description: '自动关联风神收薪绑定与蓝橙、商翼及本来人力档案，输出周期内有单支付绑定表及多城汇总。',
     systems: ['风神', '蓝橙', '商翼', '本来人力'],
     sources: [],
     station_rule: 'separation',
   },
   {
     id: 'abnormal_followup',
-    label: '异常骑手跟进',
+    label: '异常跟进',
     scope: 'city_month',
+    description: '以支付绑定为基准，关联物资租用、月度 UB 账单、价格与骑手档案，定位异常待跟进名单。',
     systems: ['风神', '蓝橙', '商翼'],
     sources: [],
     station_rule: 'separation',
   },
   {
     id: 'abnormal_riders',
-    label: '异常骑手整理',
+    label: '异常名单',
     scope: 'all',
+    description: '自动汇总蓝橙 5 类离职、请假与骑手档案，无需风神登录即可生成全城异常名单工作簿。',
     systems: ['蓝橙'],
     sources: [],
     station_rule: 'none',
   },
 ];
 
+export function mergeAvailableReports(
+  availableGenerators: ReportDefinition[] = [],
+): ReportDefinition[] {
+  const byId = new Map<string, ReportDefinition>();
+  for (const def of DEFAULT_REPORT_DEFINITIONS) {
+    byId.set(def.id, { ...def });
+  }
+  for (const gen of availableGenerators) {
+    const existing = byId.get(gen.id);
+    if (existing) {
+      byId.set(gen.id, {
+        ...existing,
+        ...gen,
+        label: existing.label,
+        description: existing.description || gen.description,
+        systems: gen.systems?.length ? gen.systems : existing.systems,
+        sources: gen.sources?.length ? gen.sources : existing.sources,
+      });
+    } else {
+      byId.set(gen.id, gen);
+    }
+  }
+  return Array.from(byId.values());
+}
+
 export function resolveReportDefinitions(
   selectedIds: string[],
   availableGenerators: ReportDefinition[] = [],
 ): ReportDefinition[] {
-  const byId = new Map<string, ReportDefinition>();
-  for (const def of DEFAULT_REPORT_DEFINITIONS) byId.set(def.id, def);
-  for (const def of availableGenerators) byId.set(def.id, def);
+  const merged = mergeAvailableReports(availableGenerators);
+  const byId = new Map(merged.map(def => [def.id, def]));
   return selectedIds
     .map(id => byId.get(id))
     .filter((def): def is ReportDefinition => Boolean(def));

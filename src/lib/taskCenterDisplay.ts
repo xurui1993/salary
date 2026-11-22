@@ -424,3 +424,133 @@ export function sortTaskDisplayRecords<T extends Pick<TaskDisplayRecord, 'create
   return copy;
 }
 
+export interface TaskProgressPopoverData {
+  badgeLabel: string;
+  tone: 'active' | 'waiting' | 'success' | 'error' | 'muted';
+  percent: number | null;
+  elapsedLabel: string;
+  elapsedValue: string;
+  currentNode: string;
+  metrics: Array<{
+    label: string;
+    value: string;
+    tone?: 'default' | 'accent' | 'warn' | 'danger' | 'success';
+  }>;
+  footnote?: string;
+}
+
+export function buildTaskProgressPopoverData(
+  task: Pick<
+    TaskDisplayRecord,
+    'status' | 'created_at' | 'updated_at' | 'completed_items' | 'total_items' | 'failed_items' | 'available_files' | 'error'
+  >,
+  options: {
+    statusLabel: string;
+    tone: 'active' | 'waiting' | 'success' | 'error' | 'muted';
+    percent: number | null;
+    elapsedText: string;
+    platformName?: string;
+    diagNote?: { text: string; tone: 'warn' | 'error' | 'muted' } | null;
+    nowMs?: number;
+  },
+): TaskProgressPopoverData {
+  const total = Math.max(1, task.total_items || 0);
+  const completed = Math.max(0, Math.min(total, task.completed_items || 0));
+  const failed = Math.max(0, task.failed_items || 0);
+  const platformPrefix = options.platformName ? `${options.platformName}` : '来源平台';
+
+  let currentNode = options.diagNote?.text || '';
+  if (!currentNode) {
+    switch (task.status) {
+      case 'queued':
+        currentNode = `已进入调度队列，等待 ${platformPrefix} 采集通道释放`;
+        break;
+      case 'running':
+      case 'preparing':
+        currentNode = `正在抓取并校验 ${platformPrefix} 业务数据（已完成 ${completed} / ${total} 项）`;
+        break;
+      case 'cancelling':
+      case 'stopping':
+        currentNode = `正在安全中止执行中的子项请求（已完成 ${completed} / ${total} 项）`;
+        break;
+      case 'waiting_login':
+        currentNode = `等待完成 ${platformPrefix} 登录授权后自动恢复采集`;
+        break;
+      case 'waiting_manual':
+        currentNode = `触发 ${platformPrefix} 安全校验，完成人工验证后继续执行`;
+        break;
+      case 'partial':
+        currentNode = `已完成 ${completed} 项，${failed || 1} 项待处理，已有文件可先行下载`;
+        break;
+      case 'success':
+        currentNode = `全部 ${total} 项已采集完成，归档 ${task.available_files} 个可下载文件`;
+        break;
+      case 'cancelled':
+        currentNode = '任务已手动停止，历史执行记录与已有文件已保留';
+        break;
+      case 'empty':
+        currentNode = '所选范围未返回业务记录，未生成空白文件';
+        break;
+      case 'needs_review':
+        currentNode = '平台回执状态待核实，请点击「去核实」确认最终结果';
+        break;
+      default:
+        currentNode = task.error || '正在同步任务执行状态';
+        break;
+    }
+  }
+
+  const created = formatCompactTimestamp(task.created_at, options.nowMs);
+  const metrics: TaskProgressPopoverData['metrics'] = [
+    {
+      label: '子项进度',
+      value: `${completed} / ${total} 项`,
+      tone: task.status === 'success' ? 'success' : failed > 0 ? 'warn' : 'default',
+    },
+    {
+      label: '创建时间',
+      value: created.short,
+    },
+  ];
+
+  if (failed > 0) {
+    metrics.push({
+      label: '异常子项',
+      value: `${failed} 项失败`,
+      tone: 'danger',
+    });
+  } else if (task.available_files > 0 || task.status === 'success') {
+    metrics.push({
+      label: '产出文件',
+      value: `${task.available_files} 个`,
+      tone: task.available_files > 0 ? 'accent' : 'default',
+    });
+  }
+
+  if (task.updated_at && task.updated_at !== task.created_at) {
+    const updated = formatCompactTimestamp(task.updated_at, options.nowMs);
+    metrics.push({
+      label: task.status === 'success' ? '完成时间' : '最近更新',
+      value: updated.short,
+    });
+  }
+
+  const pct =
+    options.percent !== null && Number.isFinite(options.percent)
+      ? Math.max(0, Math.min(100, Math.round(options.percent)))
+      : task.status === 'success'
+        ? 100
+        : null;
+
+  return {
+    badgeLabel: options.statusLabel,
+    tone: options.tone,
+    percent: pct,
+    elapsedLabel: '任务耗时',
+    elapsedValue: options.elapsedText && options.elapsedText !== '—' ? options.elapsedText : '—',
+    currentNode,
+    metrics: metrics.slice(0, 4),
+  };
+}
+
+

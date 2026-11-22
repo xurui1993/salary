@@ -4,27 +4,26 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
-  Download,
   FileSpreadsheet,
   Info,
+  Plus,
   RefreshCw,
+  RotateCcw,
   Search,
-  ShieldCheck,
   Upload,
   X,
 } from 'lucide-react';
-import { classifyTemplateCategory } from '../lib/workbench';
+import {
+  filterAndSortTemplateRows,
+  getMemoryCachedTemplates,
+  preloadSystemTemplates,
+  resolveTemplateBusinessTag,
+  setMemoryCachedTemplates,
+  validateTemplateFormInput,
+  type TemplateRecord,
+} from '../lib/templateCenterDisplay';
 
-export interface TemplateRecord {
-  filename: string;
-  business_line?: string;
-  scope?: string;
-  size: number;
-  mtime?: number;
-  content_version?: string;
-  available?: boolean;
-  error?: string;
-}
+export type { TemplateRecord };
 
 export interface SystemTemplatesPanelProps {
   onNavigatePayroll?: () => void;
@@ -34,29 +33,17 @@ export interface SystemTemplatesPanelProps {
 
 const REQUIRED_FIELDS = ['业务城市', '骑手ID', '开始日期', '结束日期', '结算类型'] as const;
 
-const REGION_GROUPS: { id: string; label: string; cities: string[] }[] = [
-  { id: 'all', label: '全部地区', cities: [] },
-  { id: 'south', label: '华南地区', cities: ['广州', '深圳', '东莞', '韶关', '三亚'] },
-  { id: 'east', label: '华东地区', cities: ['上海', '宁波', '泉州'] },
-  { id: 'north', label: '华北与东北', cities: ['北京', '天津', '保定', '大连'] },
-];
-
-function formatTemplateDisplayTitle(item: TemplateRecord, categoryTag: string): {
-  displayTitle: string;
-  accountingHint: string;
-} {
-  const baseName = item.filename.replace(/-template\.xlsx$/i, '').replace(/\.xlsx$/i, '');
-  if (categoryTag === '美团小象' || baseName.includes('小象')) {
-    return {
-      displayTitle: '美团小象 · 灯塔薪资申请表',
-      accountingHint: '自动匹配灯塔核算 · 已校验',
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const commaIdx = result.indexOf(',');
+      resolve(commaIdx >= 0 ? result.slice(commaIdx + 1) : result);
     };
-  }
-  const city = item.scope || baseName;
-  return {
-    displayTitle: `${city} · 闪购兼职薪资申请表`,
-    accountingHint: '自动匹配风神核算 · 已校验',
-  };
+    reader.onerror = () => reject(new Error('文件读取失败'));
+    reader.readAsDataURL(file);
+  });
 }
 
 export function SystemTemplatesPanel({
@@ -64,62 +51,71 @@ export function SystemTemplatesPanel({
   onQuickUpload,
   embeddedInDrawer = false,
 }: SystemTemplatesPanelProps) {
-  const [templates, setTemplates] = useState<TemplateRecord[]>([]);
+  const initialCache = useMemo(() => getMemoryCachedTemplates(), []);
+  const [templates, setTemplates] = useState<TemplateRecord[]>(initialCache.templates);
+  const [hasCustomizations, setHasCustomizations] = useState<boolean>(initialCache.hasCustomizations);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<'all' | '淘宝闪购' | '美团小象'>('all');
-  const [regionFilter, setRegionFilter] = useState<string>('all');
   const [showSpec, setShowSpec] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState('');
-  const [version, setVersion] = useState(0);
+  const [feedbackToast, setFeedbackToast] = useState('');
   const [recentlyDownloaded, setRecentlyDownloaded] = useState<Record<string, boolean>>({});
-  const loaded = useRef(false);
   const uploadInputRef = useRef<HTMLInputElement>(null);
+  const modalFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Create / Edit modal state
+  const [modalMode, setModalMode] = useState<'closed' | 'create' | 'edit'>('closed');
+  const [editingRecord, setEditingRecord] = useState<TemplateRecord | null>(null);
+  const [formScope, setFormScope] = useState('');
+  const [formBusinessLine, setFormBusinessLine] = useState<'淘宝闪购' | '美团小象'>('淘宝闪购');
+  const [formFileMode, setFormFileMode] = useState<'generate' | 'upload'>('generate');
+  const [formFile, setFormFile] = useState<File | null>(null);
+  const [formError, setFormError] = useState('');
+  const [formSubmitting, setFormSubmitting] = useState(false);
+
+  // Delete / Reset confirmation state
+  const [confirmTarget, setConfirmTarget] = useState<
+    | { type: 'delete'; record: TemplateRecord; cityName: string }
+    | { type: 'reset' }
+    | null
+  >(null);
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false);
+
+  const showNotice = (msg: string) => {
+    setFeedbackToast(msg);
+    setTimeout(() => {
+      setFeedbackToast(prev => (prev === msg ? '' : prev));
+    }, 3200);
+  };
+
+  const syncTemplates = async (force = false) => {
+    setSyncing(true);
+    try {
+      const result = await preloadSystemTemplates(force);
+      setTemplates(result.templates);
+      setHasCustomizations(result.hasCustomizations);
+      setError('');
+    } catch {
+      // Keep showing cached templates if background refresh fails
+      if (!templates.length) {
+        setError('模板列表暂不可用，请刷新重试。');
+      }
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   useEffect(() => {
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-
-    async function refresh() {
-      if (!loaded.current) setLoading(true);
-      try {
-        const response = await fetch('/api/templates/list', {
-          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
-        });
-        const data = await response.json();
-        if (!response.ok || !data.success || !Array.isArray(data.templates)) {
-          throw new Error('模板列表读取失败');
-        }
-        if (!controller.signal.aborted) {
-          setTemplates(data.templates as TemplateRecord[]);
-          setError('');
-          loaded.current = true;
-        }
-      } catch {
-        if (!controller.signal.aborted) {
-          setError('模板列表暂不可用，请刷新重试。');
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setLoading(false);
-          timer = setTimeout(refresh, 15000);
-        }
-      }
-    }
-
-    void refresh();
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-    };
-  }, [version]);
+    void syncTemplates(!initialCache.isLoadedFromServer);
+  }, []);
 
   const counts = useMemo(() => {
     let shangou = 0;
     let xiaoxiang = 0;
     let available = 0;
     for (const item of templates) {
-      const tag = classifyTemplateCategory(item.filename).tag;
+      const tag = resolveTemplateBusinessTag(item);
       if (tag === '淘宝闪购') shangou += 1;
       if (tag === '美团小象') xiaoxiang += 1;
       if (item.available !== false) available += 1;
@@ -132,117 +128,260 @@ export function SystemTemplatesPanel({
     };
   }, [templates]);
 
-  const visible = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-    const activeRegion = REGION_GROUPS.find(group => group.id === regionFilter);
+  const visibleRows = useMemo(
+    () =>
+      filterAndSortTemplateRows(templates, {
+        search,
+        category,
+      }),
+    [templates, search, category],
+  );
 
-    const filtered = templates.filter(item => {
-      const meta = classifyTemplateCategory(item.filename);
-      const { displayTitle, accountingHint } = formatTemplateDisplayTitle(item, meta.tag);
-      const matchesSearch =
-        !keyword ||
-        item.filename.toLowerCase().includes(keyword) ||
-        displayTitle.toLowerCase().includes(keyword) ||
-        accountingHint.toLowerCase().includes(keyword) ||
-        (item.scope || '').toLowerCase().includes(keyword);
-      if (!matchesSearch) return false;
-      if (category !== 'all' && meta.tag !== category) return false;
-      if (activeRegion && activeRegion.cities.length > 0) {
-        const city = item.scope || item.filename.replace(/-template\.xlsx$/i, '');
-        if (!activeRegion.cities.includes(city)) return false;
-      }
-      return true;
-    });
-
-    return [...filtered].sort((a, b) => {
-      const rankA = classifyTemplateCategory(a.filename).tag === '美团小象' ? 1 : 0;
-      const rankB = classifyTemplateCategory(b.filename).tag === '美团小象' ? 1 : 0;
-      return rankA - rankB;
-    });
-  }, [templates, search, category, regionFilter]);
-
-  const hasActiveFilter = Boolean(search.trim() || category !== 'all' || regionFilter !== 'all');
+  const hasActiveFilter = Boolean(search.trim() || category !== 'all');
 
   const markDownloaded = (filename: string) => {
     setRecentlyDownloaded(prev => ({ ...prev, [filename]: true }));
     setTimeout(() => {
       setRecentlyDownloaded(prev => ({ ...prev, [filename]: false }));
-    }, 2600);
+    }, 2400);
   };
+
+  const openCreateModal = () => {
+    setModalMode('create');
+    setEditingRecord(null);
+    setFormScope('');
+    setFormBusinessLine(category === '美团小象' ? '美团小象' : '淘宝闪购');
+    setFormFileMode('generate');
+    setFormFile(null);
+    setFormError('');
+  };
+
+  const openEditModal = (record: TemplateRecord) => {
+    const tag = resolveTemplateBusinessTag(record);
+    const defaultScope = (record.scope || record.filename.replace(/-template\.xlsx$/i, '')).trim();
+    setModalMode('edit');
+    setEditingRecord(record);
+    setFormScope(defaultScope);
+    setFormBusinessLine(tag);
+    setFormFileMode('generate');
+    setFormFile(null);
+    setFormError('');
+  };
+
+  const closeModal = () => {
+    if (formSubmitting) return;
+    setModalMode('closed');
+    setEditingRecord(null);
+    setFormError('');
+  };
+
+  const handleFormSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const isEdit = modalMode === 'edit';
+    const validationError = validateTemplateFormInput({
+      scope: formScope,
+      mode: formFileMode,
+      hasFile: Boolean(formFile),
+      isEdit,
+    });
+    if (validationError) {
+      setFormError(validationError);
+      return;
+    }
+
+    setFormSubmitting(true);
+    setFormError('');
+    try {
+      let fileBase64: string | undefined;
+      if (formFileMode === 'upload' && formFile) {
+        fileBase64 = await readFileAsBase64(formFile);
+      }
+
+      const endpoint = isEdit ? '/api/templates/update' : '/api/templates/create';
+      const bodyPayload = isEdit
+        ? {
+            original_filename: editingRecord?.filename,
+            scope: formScope.trim(),
+            business_line: formBusinessLine,
+            ...(fileBase64 ? { file_base64: fileBase64 } : {}),
+          }
+        : {
+            scope: formScope.trim(),
+            business_line: formBusinessLine,
+            mode: formFileMode,
+            ...(fileBase64 ? { file_base64: fileBase64 } : {}),
+          };
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyPayload),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || (isEdit ? '修改模板失败' : '新增模板失败'));
+      }
+
+      await syncTemplates(true);
+      setModalMode('closed');
+      setEditingRecord(null);
+      showNotice(
+        isEdit
+          ? `已更新模板「${data.template?.scope || formScope.trim()}」`
+          : `已新增模板「${data.template?.scope || formScope.trim()}」`,
+      );
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : '操作失败，请重试');
+    } finally {
+      setFormSubmitting(false);
+    }
+  };
+
+  const handleConfirmAction = async () => {
+    if (!confirmTarget || confirmSubmitting) return;
+    setConfirmSubmitting(true);
+    try {
+      if (confirmTarget.type === 'delete') {
+        const res = await fetch('/api/templates/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: confirmTarget.record.filename }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || '删除模板失败');
+        }
+        const nextList = templates.filter(item => item.filename !== confirmTarget.record.filename);
+        setTemplates(nextList);
+        setHasCustomizations(true);
+        setMemoryCachedTemplates(nextList, true);
+        showNotice(`已删除模板「${confirmTarget.cityName}」`);
+      } else {
+        const res = await fetch('/api/templates/reset', {
+          method: 'POST',
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success || !Array.isArray(data.templates)) {
+          throw new Error(data.error || '恢复默认模板失败');
+        }
+        setTemplates(data.templates as TemplateRecord[]);
+        setHasCustomizations(false);
+        setMemoryCachedTemplates(data.templates as TemplateRecord[], false);
+        showNotice('已恢复系统默认 13 份标准模板');
+      }
+      setConfirmTarget(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '操作失败，请稍后重试');
+      setConfirmTarget(null);
+    } finally {
+      setConfirmSubmitting(false);
+    }
+  };
+
+  const previewFilename = useMemo(() => {
+    const clean = formScope.trim().replace(/-template\.xlsx$/i, '').replace(/\.xlsx$/i, '').trim();
+    if (!clean) return '城市名称-template.xlsx';
+    if (
+      modalMode === 'edit' &&
+      editingRecord &&
+      clean === (editingRecord.scope || editingRecord.filename.replace(/-template\.xlsx$/i, ''))
+    ) {
+      return editingRecord.filename;
+    }
+    return `${clean}-template.xlsx`;
+  }, [formScope, modalMode, editingRecord]);
 
   return (
     <section
       className={`wbx-tpl-center${embeddedInDrawer ? ' is-drawer' : ''}`}
       aria-label="系统模板库"
     >
-      {/* 1. 顶部精简下划线导航条：业务线页签 + 校验状态 + 表头规范按需展开 + 主操作 */}
-      <div className="wbx-tpl-topbar">
-        <div className="wbx-tpl-tabs" role="group" aria-label="模板业务线分类">
-          <button
-            type="button"
-            className={`wbx-tpl-tab${category === 'all' ? ' is-active' : ''}`}
-            aria-pressed={category === 'all'}
-            onClick={() => setCategory('all')}
-          >
-            <span>全部模板</span>
-            <span className="wbx-tpl-tab__count tabular-nums">{counts.all}</span>
-          </button>
-          <button
-            type="button"
-            className={`wbx-tpl-tab${category === '淘宝闪购' ? ' is-active' : ''}`}
-            aria-pressed={category === '淘宝闪购'}
-            onClick={() => setCategory('淘宝闪购')}
-          >
-            <span>淘宝闪购</span>
-            <span className="wbx-tpl-tab__count tabular-nums">{counts.shangou}</span>
-          </button>
-          <button
-            type="button"
-            className={`wbx-tpl-tab${category === '美团小象' ? ' is-active' : ''}`}
-            aria-pressed={category === '美团小象'}
-            onClick={() => {
-              setCategory('美团小象');
-              setRegionFilter('all');
-            }}
-          >
-            <span>美团小象</span>
-            <span className="wbx-tpl-tab__count tabular-nums">{counts.xiaoxiang}</span>
-          </button>
+      {/* 1. 单行紧凑顶栏：业务线切换 + 搜索 + 新增/恢复/表头规范 */}
+      <div className="wbx-tpl-toolbar">
+        <div className="wbx-tpl-toolbar__left">
+          <div className="wbx-tpl-seg" role="group" aria-label="模板业务线分类">
+            <button
+              type="button"
+              className={`wbx-tpl-seg__btn${category === 'all' ? ' is-active' : ''}`}
+              aria-pressed={category === 'all'}
+              onClick={() => setCategory('all')}
+            >
+              <span>全部</span>
+              <span className="wbx-tpl-seg__count tabular-nums">{counts.all}</span>
+            </button>
+            <button
+              type="button"
+              className={`wbx-tpl-seg__btn${category === '淘宝闪购' ? ' is-active' : ''}`}
+              aria-pressed={category === '淘宝闪购'}
+              onClick={() => setCategory('淘宝闪购')}
+            >
+              <span>淘宝闪购</span>
+              <span className="wbx-tpl-seg__count tabular-nums">{counts.shangou}</span>
+            </button>
+            <button
+              type="button"
+              className={`wbx-tpl-seg__btn${category === '美团小象' ? ' is-active' : ''}`}
+              aria-pressed={category === '美团小象'}
+              onClick={() => setCategory('美团小象')}
+            >
+              <span>美团小象</span>
+              <span className="wbx-tpl-seg__count tabular-nums">{counts.xiaoxiang}</span>
+            </button>
+          </div>
         </div>
 
-        <div className="wbx-tpl-topbar__right">
-          <span
-            className="wbx-tpl-verify-meta tabular-nums"
-            title="官方只读标准模板已自动完成 SHA-256 完整性校验"
-          >
-            <ShieldCheck size={13.5} aria-hidden="true" />
-            <span>
-              {counts.available}/{counts.all || 13} 已校验
-            </span>
-          </span>
+        <div className="wbx-tpl-toolbar__right">
+          <div className="wbx-tpl-search">
+            <Search size={13} className="wbx-tpl-search__icon" aria-hidden="true" />
+            <input
+              className="wbx-tpl-search__input"
+              aria-label="搜索模板"
+              placeholder="搜索城市或文件名…"
+              value={search}
+              onChange={event => setSearch(event.target.value)}
+            />
+            {search.trim() && (
+              <button
+                type="button"
+                className="wbx-tpl-search__clear"
+                aria-label="清空搜索关键词"
+                onClick={() => setSearch('')}
+              >
+                <X size={11} />
+              </button>
+            )}
+          </div>
 
           <button
             type="button"
-            className={`wbx-tpl-spec-toggle${showSpec ? ' is-open' : ''}`}
+            className={`wbx-tpl-tool-btn${showSpec ? ' is-active' : ''}`}
             aria-expanded={showSpec}
             aria-controls="wbx-tpl-spec-panel"
             onClick={() => setShowSpec(prev => !prev)}
           >
             <Info size={13} aria-hidden="true" />
             <span>表头规范</span>
-            {showSpec ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
+            {showSpec ? <ChevronUp size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}
           </button>
 
-          {onNavigatePayroll && (
-            <button
-              type="button"
-              className="wbx-btn wbx-btn--sm"
-              onClick={onNavigatePayroll}
-            >
-              <span>前往核算批次</span>
-              <ArrowRight size={13} aria-hidden="true" />
-            </button>
-          )}
+          <button
+            type="button"
+            className="wbx-tpl-tool-btn"
+            onClick={() => setConfirmTarget({ type: 'reset' })}
+            title="还原系统自带的 13 份标准城市模板"
+          >
+            <RotateCcw size={12.5} aria-hidden="true" />
+            <span>恢复默认</span>
+          </button>
+
+          <button
+            type="button"
+            className="wbx-tpl-add-btn"
+            onClick={openCreateModal}
+          >
+            <Plus size={13.5} aria-hidden="true" />
+            <span>新增模板</span>
+          </button>
 
           {onQuickUpload && (
             <>
@@ -262,13 +401,24 @@ export function SystemTemplatesPanel({
               />
               <button
                 type="button"
-                className="wbx-btn wbx-btn--primary wbx-btn--sm"
+                className="wbx-tpl-tool-btn"
                 onClick={() => uploadInputRef.current?.click()}
               >
-                <Upload size={13.5} aria-hidden="true" />
-                <span>上传已填模板去核算</span>
+                <Upload size={13} aria-hidden="true" />
+                <span>上传已填表去核算</span>
               </button>
             </>
+          )}
+
+          {embeddedInDrawer && onNavigatePayroll && (
+            <button
+              type="button"
+              className="wbx-tpl-tool-btn"
+              onClick={onNavigatePayroll}
+            >
+              <span>返回兼职核算</span>
+              <ArrowRight size={12.5} aria-hidden="true" />
+            </button>
           )}
         </div>
       </div>
@@ -288,7 +438,7 @@ export function SystemTemplatesPanel({
             </span>
             <span className="wbx-tpl-spec-drawer__sep" aria-hidden="true">·</span>
             <span className="wbx-tpl-spec-drawer__item">
-              <span className="wbx-tpl-spec-drawer__label">必填表头列</span>
+              <span className="wbx-tpl-spec-drawer__label">核心必填表头列</span>
               <span className="wbx-tpl-spec-fields">
                 {REQUIRED_FIELDS.map(field => (
                   <code key={field} className="wbx-tpl-spec-field">
@@ -297,23 +447,18 @@ export function SystemTemplatesPanel({
                 ))}
               </span>
             </span>
-          </div>
-          <div className="wbx-tpl-spec-drawer__steps" aria-label="模板使用流程">
-            <span className="wbx-tpl-step">
-              <span className="wbx-tpl-step__num">01</span>
-              <span>下载对应城市标准模板</span>
-            </span>
-            <span className="wbx-tpl-step-arrow" aria-hidden="true">→</span>
-            <span className="wbx-tpl-step">
-              <span className="wbx-tpl-step__num">02</span>
-              <span>在「申请名单」填写骑手与账期</span>
-            </span>
-            <span className="wbx-tpl-step-arrow" aria-hidden="true">→</span>
-            <span className="wbx-tpl-step">
-              <span className="wbx-tpl-step__num">03</span>
-              <span>点击右上角上传至核算批次自动计算</span>
+            <span className="wbx-tpl-spec-drawer__sep" aria-hidden="true">·</span>
+            <span className="wbx-tpl-spec-drawer__hint">
+              支持点击右上角「新增模板」一键生成新城市标准模板，或上传自定义 Excel 模板
             </span>
           </div>
+        </div>
+      )}
+
+      {feedbackToast && (
+        <div role="status" className="wbx-tpl-toast">
+          <Check size={13.5} aria-hidden="true" />
+          <span>{feedbackToast}</span>
         </div>
       )}
 
@@ -322,198 +467,384 @@ export function SystemTemplatesPanel({
           <span>{error}</span>
           <button
             type="button"
-            className="wbx-btn wbx-btn--sm"
-            onClick={() => setVersion(value => value + 1)}
+            className="wbx-tpl-action-link"
+            onClick={() => {
+              setError('');
+              void syncTemplates(true);
+            }}
           >
             立即重试
           </button>
         </div>
       )}
 
-      {/* 2. 主体统一白色工作卡：片区筛选 + 搜索 + 3 列精炼模板卡 + 底部三步流程条 */}
-      <div className="wbx-tpl-workspace">
-        <div className="wbx-tpl-subbar">
-          <div className="wbx-tpl-subbar__left">
-            {category !== '美团小象' ? (
-              <div className="wbx-tpl-regions" role="group" aria-label="城市片区快速筛选">
-                {REGION_GROUPS.map(group => (
-                  <button
-                    key={group.id}
-                    type="button"
-                    className={`wbx-tpl-region-btn${regionFilter === group.id ? ' is-active' : ''}`}
-                    aria-pressed={regionFilter === group.id}
-                    onClick={() => setRegionFilter(group.id)}
-                  >
-                    {group.label}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <span className="wbx-tpl-subbar__caption">
-                美团小象超市 / 灯塔全国通用薪资申请模板
+      {/* 2. 清爽卡片阵列布局（移除重复城市标题，展示含城市名的标准文件名 + 文件大小 + 下载/修改/删除操作） */}
+      <div className="wbx-tpl-deck-card">
+        {!visibleRows.length ? (
+          <div className="wbx-tpl-empty-box">
+            <div className="wbx-tpl-empty">
+              <FileSpreadsheet size={18} aria-hidden="true" />
+              <span>
+                {templates.length ? '未找到匹配当前筛选条件的模板' : '暂无可用标准模板'}
               </span>
-            )}
-
-            {hasActiveFilter && !loading && (
-              <span className="wbx-tpl-subbar__count tabular-nums">
-                匹配 {visible.length} 份
-              </span>
-            )}
-          </div>
-
-          <div className="wbx-tpl-subbar__right">
-            <div className="wbx-tpl-search">
-              <Search size={13.5} className="wbx-tpl-search__icon" aria-hidden="true" />
-              <input
-                className="wbx-tpl-search__input"
-                aria-label="搜索模板"
-                placeholder="搜索城市或模板文件名…"
-                value={search}
-                onChange={event => setSearch(event.target.value)}
-              />
-              {search.trim() && (
+              {hasActiveFilter && (
                 <button
                   type="button"
-                  className="wbx-tpl-search__clear"
-                  aria-label="清空搜索关键词"
-                  onClick={() => setSearch('')}
+                  className="wbx-tpl-action-link is-primary"
+                  onClick={() => {
+                    setSearch('');
+                    setCategory('all');
+                  }}
                 >
-                  <X size={12} />
+                  重置筛选
                 </button>
               )}
             </div>
+          </div>
+        ) : (
+          <div className="wbx-tpl-grid" role="list" aria-label="系统标准模板卡片列表">
+            {visibleRows.map(({ record, row }) => {
+              const isDownloaded = Boolean(recentlyDownloaded[row.filename]);
+              return (
+                <article
+                  key={row.filename}
+                  role="listitem"
+                  className={`wbx-tpl-card${!row.available ? ' is-disabled' : ''}`}
+                >
+                  <div className="wbx-tpl-card__main">
+                    <span className="wbx-tpl-card__icon" aria-hidden="true">
+                      <FileSpreadsheet size={16} />
+                    </span>
+                    <div className="wbx-tpl-card__meta">
+                      <div className="wbx-tpl-card__title-row">
+                        <h3 className="wbx-tpl-card__file tabular-nums" title={row.filename}>
+                          {row.filename}
+                        </h3>
+                        {row.sourceBadge && (
+                          <span className="wbx-tpl-source-tag">{row.sourceBadge}</span>
+                        )}
+                      </div>
+                      <span className="wbx-tpl-card__size tabular-nums">
+                        {row.fileSizeText}
+                      </span>
+                    </div>
+                  </div>
 
+                  <div className="wbx-tpl-card__foot">
+                    <div className="wbx-tpl-card__edit-group">
+                      <button
+                        type="button"
+                        className="wbx-tpl-action-link"
+                        aria-label={`修改 ${row.cityName}`}
+                        onClick={() => openEditModal(record)}
+                      >
+                        修改
+                      </button>
+                      <button
+                        type="button"
+                        className="wbx-tpl-action-link is-danger"
+                        aria-label={`删除 ${row.cityName}`}
+                        onClick={() =>
+                          setConfirmTarget({
+                            type: 'delete',
+                            record,
+                            cityName: row.cityName,
+                          })
+                        }
+                      >
+                        删除
+                      </button>
+                    </div>
+
+                    {row.available ? (
+                      <a
+                        className={`wbx-tpl-action-link is-primary${isDownloaded ? ' is-downloaded' : ''}`}
+                        aria-label={`下载 ${row.filename}`}
+                        href={`/api/download/template?file=${encodeURIComponent(row.filename)}`}
+                        download
+                        onClick={() => markDownloaded(row.filename)}
+                      >
+                        {isDownloaded ? '已下载' : '下载'}
+                      </a>
+                    ) : (
+                      <span className="wbx-tpl-action-disabled">不可下载</span>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+
+        {/* 底部极简汇总状态栏 */}
+        <div className="wbx-tpl-table-foot">
+          <div className="wbx-tpl-table-foot__left tabular-nums">
+            <span>
+              共 {visibleRows.length} 份模板（淘宝闪购 {counts.shangou} · 美团小象 {counts.xiaoxiang}）
+            </span>
+            {hasCustomizations && (
+              <span className="wbx-tpl-foot-custom-note">· 含自定义变更，可随时点击「恢复默认」还原</span>
+            )}
+          </div>
+          <div className="wbx-tpl-table-foot__right">
             <button
               type="button"
-              className="wbx-tpl-refresh-btn"
-              aria-label="刷新模板列表"
-              title="重新校验并刷新模板列表"
-              disabled={loading}
-              onClick={() => setVersion(value => value + 1)}
+              className="wbx-tpl-action-link"
+              disabled={syncing}
+              onClick={() => void syncTemplates(true)}
             >
-              <RefreshCw size={13.5} className={loading ? 'animate-spin' : ''} />
+              <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} aria-hidden="true" />
+              <span>{syncing ? '同步中…' : '刷新列表'}</span>
             </button>
           </div>
         </div>
+      </div>
 
-        {/* 模板卡片网格 */}
-        <div className="wbx-tpl-workspace__body">
-          <div className="wbx-tpl-grid" tabIndex={0} aria-label="可下载模板">
-            {loading ? (
-              <div role="status" className="wbx-tpl-empty">
-                <RefreshCw size={18} className="animate-spin text-sky-600" />
-                <span>正在校验并加载系统标准模板…</span>
-              </div>
-            ) : !visible.length ? (
-              <div className="wbx-tpl-empty">
-                <span className="wbx-tpl-empty__icon" aria-hidden="true">
-                  <FileSpreadsheet size={20} />
+      {/* 3. 新增 / 修改模板弹窗 */}
+      {modalMode !== 'closed' && (
+        <div
+          className="wbx-tpl-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label={modalMode === 'create' ? '新增标准模板' : '修改模板'}
+          onClick={event => {
+            if (event.target === event.currentTarget) closeModal();
+          }}
+        >
+          <div className="wbx-tpl-modal">
+            <div className="wbx-tpl-modal__head">
+              <h3 className="wbx-tpl-modal__title">
+                {modalMode === 'create' ? '新增标准模板' : `修改模板 · ${editingRecord?.filename || ''}`}
+              </h3>
+              <button
+                type="button"
+                className="wbx-tpl-modal__close"
+                aria-label="关闭弹窗"
+                onClick={closeModal}
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <form className="wbx-tpl-modal__form" onSubmit={handleFormSubmit}>
+              <div className="wbx-tpl-field">
+                <label className="wbx-tpl-field__label" htmlFor="wbx-tpl-scope-input">
+                  城市 / 模板适用名称
+                </label>
+                <input
+                  id="wbx-tpl-scope-input"
+                  className="wbx-tpl-field__input"
+                  aria-label="城市或模板名称"
+                  placeholder="例如：杭州、成都、武汉…"
+                  value={formScope}
+                  onChange={event => {
+                    setFormScope(event.target.value);
+                    if (formError) setFormError('');
+                  }}
+                  autoFocus
+                />
+                <span className="wbx-tpl-field__hint tabular-nums">
+                  对应标准文件名：<strong>{previewFilename}</strong>
                 </span>
-                <p className="wbx-tpl-empty__title">
-                  {templates.length ? '未找到匹配当前筛选条件的模板' : '暂无可用标准模板'}
-                </p>
-                {hasActiveFilter && (
+              </div>
+
+              <div className="wbx-tpl-field">
+                <span className="wbx-tpl-field__label">适用业务线与核算引擎</span>
+                <div className="wbx-tpl-radio-row" role="group" aria-label="适用业务线">
                   <button
                     type="button"
-                    className="wbx-btn wbx-btn--sm"
+                    className={`wbx-tpl-radio-card${formBusinessLine === '淘宝闪购' ? ' is-selected' : ''}`}
+                    aria-pressed={formBusinessLine === '淘宝闪购'}
+                    onClick={() => setFormBusinessLine('淘宝闪购')}
+                  >
+                    <span className="wbx-tpl-radio-card__title">淘宝闪购</span>
+                    <span className="wbx-tpl-radio-card__desc">闪购兼职薪资申请表（10 列风神标准表头）</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`wbx-tpl-radio-card${formBusinessLine === '美团小象' ? ' is-selected' : ''}`}
+                    aria-pressed={formBusinessLine === '美团小象'}
+                    onClick={() => setFormBusinessLine('美团小象')}
+                  >
+                    <span className="wbx-tpl-radio-card__title">美团小象</span>
+                    <span className="wbx-tpl-radio-card__desc">众包/灯塔薪资申请表（22 列灯塔标准表头）</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="wbx-tpl-field">
+                <span className="wbx-tpl-field__label">
+                  {modalMode === 'create' ? '模板生成方式' : 'Excel 模板文件'}
+                </span>
+                <div className="wbx-tpl-radio-row" role="group" aria-label="模板文件方式">
+                  <button
+                    type="button"
+                    className={`wbx-tpl-radio-card${formFileMode === 'generate' ? ' is-selected' : ''}`}
+                    aria-pressed={formFileMode === 'generate'}
                     onClick={() => {
-                      setSearch('');
-                      setCategory('all');
-                      setRegionFilter('all');
+                      setFormFileMode('generate');
+                      setFormError('');
                     }}
                   >
-                    重置全部筛选条件
+                    <span className="wbx-tpl-radio-card__title">
+                      {modalMode === 'create' ? '基于标准表头一键生成（推荐）' : '保留现有 Excel 文件'}
+                    </span>
+                    <span className="wbx-tpl-radio-card__desc">
+                      {modalMode === 'create'
+                        ? '自动克隆系统标准工作表与必填列，100% 通过核算校验'
+                        : '仅更新城市名称或所属业务线，不替换工作簿内容'}
+                    </span>
                   </button>
+
+                  <button
+                    type="button"
+                    className={`wbx-tpl-radio-card${formFileMode === 'upload' ? ' is-selected' : ''}`}
+                    aria-pressed={formFileMode === 'upload'}
+                    onClick={() => {
+                      setFormFileMode('upload');
+                      setFormError('');
+                    }}
+                  >
+                    <span className="wbx-tpl-radio-card__title">
+                      {modalMode === 'create' ? '上传本地 Excel 模板' : '上传并替换 Excel 文件'}
+                    </span>
+                    <span className="wbx-tpl-radio-card__desc">
+                      上传本地 .xlsx 文件，系统将自动校验「申请名单」必填列
+                    </span>
+                  </button>
+                </div>
+
+                {formFileMode === 'upload' && (
+                  <div className="wbx-tpl-upload-box">
+                    <input
+                      ref={modalFileInputRef}
+                      type="file"
+                      accept=".xlsx"
+                      className="hidden"
+                      aria-label="选择本地 Excel 模板文件"
+                      onChange={event => {
+                        const selected = event.target.files?.[0] || null;
+                        setFormFile(selected);
+                        if (selected && !formScope.trim()) {
+                          const inferred = selected.name
+                            .replace(/-template\.xlsx$/i, '')
+                            .replace(/\.xlsx$/i, '')
+                            .trim();
+                          if (inferred) setFormScope(inferred);
+                        }
+                        if (formError) setFormError('');
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="wbx-tpl-upload-trigger"
+                      onClick={() => modalFileInputRef.current?.click()}
+                    >
+                      <Upload size={14} aria-hidden="true" />
+                      <span>{formFile ? formFile.name : '点击选择本地 .xlsx 模板文件'}</span>
+                    </button>
+                    {formFile && (
+                      <span className="wbx-tpl-upload-meta tabular-nums">
+                        {(formFile.size / 1024).toFixed(1)} KB
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
-            ) : (
-              visible.map(item => {
-                const meta = classifyTemplateCategory(item.filename);
-                const isXiaoxiang = meta.tag === '美团小象';
-                const { displayTitle, accountingHint } = formatTemplateDisplayTitle(item, meta.tag);
-                const isDownloaded = Boolean(recentlyDownloaded[item.filename]);
-                const shortHash = item.content_version ? item.content_version.slice(0, 8) : '';
-                const verifyTooltip = shortHash
-                  ? `已通过 SHA-256 校验（#${shortHash}）· 完整哈希：${item.content_version}`
-                  : '官方标准只读模板';
 
-                return (
-                  <article
-                    key={item.filename}
-                    className={`wbx-tpl-card${isXiaoxiang ? ' is-xiaoxiang' : ' is-shangou'}${item.available === false ? ' is-disabled' : ''}`}
-                  >
-                    <div className="wbx-tpl-card__head">
-                      <div className="wbx-tpl-card__identity">
-                        <span
-                          className={`wbx-tpl-card__emblem${isXiaoxiang ? ' is-xiaoxiang' : ' is-shangou'}`}
-                          aria-hidden="true"
-                        >
-                          <FileSpreadsheet size={16} />
-                        </span>
-                        <div className="wbx-tpl-card__titles">
-                          <h3 className="wbx-tpl-card__title" title={displayTitle}>
-                            {displayTitle}
-                          </h3>
-                          <div className="wbx-tpl-card__file-meta tabular-nums" title={verifyTooltip}>
-                            <span className="wbx-tpl-card__filename">{item.filename}</span>
-                            <span className="wbx-tpl-card__dot" aria-hidden="true">·</span>
-                            <span>{(item.size / 1024).toFixed(1)} KB</span>
-                          </div>
-                        </div>
-                      </div>
+              {formError && (
+                <div role="alert" className="wbx-tpl-form-error">
+                  {formError}
+                </div>
+              )}
 
-                      <span
-                        className={`wbx-tpl-card__tag${isXiaoxiang ? ' is-xiaoxiang' : ' is-shangou'}`}
-                      >
-                        {meta.tag}
-                      </span>
-                    </div>
-
-                    <div className="wbx-tpl-card__foot">
-                      <span className="wbx-tpl-card__scope" title={verifyTooltip}>
-                        <ShieldCheck size={12} aria-hidden="true" />
-                        <span>{accountingHint}</span>
-                      </span>
-
-                      {item.available === false ? (
-                        <div className="wbx-tpl-card__err-wrap">
-                          <span className="wbx-tpl-card__err-text">
-                            {item.error || '模板不可用'}
-                          </span>
-                          <button type="button" className="wbx-btn wbx-btn--sm" disabled>
-                            不可下载
-                          </button>
-                        </div>
-                      ) : (
-                        <a
-                          className={`wbx-tpl-download-btn${isDownloaded ? ' is-downloaded' : ''}`}
-                          aria-label={`下载 ${item.filename}`}
-                          href={`/api/download/template?file=${encodeURIComponent(item.filename)}`}
-                          download
-                          onClick={() => markDownloaded(item.filename)}
-                        >
-                          {isDownloaded ? (
-                            <>
-                              <Check size={13} aria-hidden="true" />
-                              <span>已开始下载</span>
-                            </>
-                          ) : (
-                            <>
-                              <Download size={13} aria-hidden="true" />
-                              <span>下载模板</span>
-                            </>
-                          )}
-                        </a>
-                      )}
-                    </div>
-                  </article>
-                );
-              })
-            )}
+              <div className="wbx-tpl-modal__foot">
+                <button
+                  type="button"
+                  className="wbx-tpl-tool-btn"
+                  disabled={formSubmitting}
+                  onClick={closeModal}
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="wbx-tpl-add-btn"
+                  disabled={formSubmitting}
+                >
+                  {formSubmitting
+                    ? '保存中…'
+                    : modalMode === 'create'
+                      ? '确认新增'
+                      : '保存修改'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
+      )}
 
-      </div>
+      {/* 4. 删除 / 恢复默认 二次确认弹窗 */}
+      {confirmTarget && (
+        <div
+          className="wbx-tpl-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label={confirmTarget.type === 'delete' ? '确认删除模板' : '确认恢复系统默认模板'}
+          onClick={event => {
+            if (event.target === event.currentTarget && !confirmSubmitting) {
+              setConfirmTarget(null);
+            }
+          }}
+        >
+          <div className="wbx-tpl-modal is-compact">
+            <div className="wbx-tpl-modal__head">
+              <h3 className="wbx-tpl-modal__title">
+                {confirmTarget.type === 'delete'
+                  ? `确认删除模板「${confirmTarget.cityName}」？`
+                  : '确认恢复系统默认模板？'}
+              </h3>
+              <button
+                type="button"
+                className="wbx-tpl-modal__close"
+                aria-label="关闭确认弹窗"
+                onClick={() => !confirmSubmitting && setConfirmTarget(null)}
+              >
+                <X size={15} />
+              </button>
+            </div>
+            <div className="wbx-tpl-modal__body">
+              <p className="wbx-tpl-confirm-desc">
+                {confirmTarget.type === 'delete'
+                  ? `将从模板列表中移除「${confirmTarget.record.filename}」。如为系统预设模板，后续随时可点击顶部「恢复默认」一键还原。`
+                  : '将还原系统自带的 13 份标准城市模板（12 城淘宝闪购 + 1 份美团小象），并清理自定义新增或修改项。'}
+              </p>
+            </div>
+            <div className="wbx-tpl-modal__foot">
+              <button
+                type="button"
+                className="wbx-tpl-tool-btn"
+                disabled={confirmSubmitting}
+                onClick={() => setConfirmTarget(null)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className={`wbx-tpl-add-btn${confirmTarget.type === 'delete' ? ' is-danger' : ''}`}
+                disabled={confirmSubmitting}
+                onClick={handleConfirmAction}
+              >
+                {confirmSubmitting
+                  ? '处理中…'
+                  : confirmTarget.type === 'delete'
+                    ? '确认删除'
+                    : '确认恢复默认'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

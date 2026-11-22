@@ -1,5 +1,7 @@
 import asyncio
+import base64
 import hashlib
+import io
 from pathlib import Path
 import tempfile
 import unittest
@@ -17,8 +19,8 @@ class TemplateLibraryTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         (self.root / 'system_templates').mkdir()
 
-    def template(self, headers=library.REQUIRED_HEADERS):
-        path = self.root / 'system_templates/北京-template.xlsx'
+    def template(self, headers=library.REQUIRED_HEADERS, filename='北京-template.xlsx'):
+        path = self.root / 'system_templates' / filename
         book = Workbook()
         book.active.title = '申请名单'
         book.active.append(list(headers))
@@ -70,6 +72,73 @@ class TemplateLibraryTests(unittest.TestCase):
         self.assertEqual(len(value['templates']), len(library.CATALOG))
         self.assertTrue(all(item['available'] is False for item in value['templates']))
         self.assertEqual(list((self.root / 'system_templates').iterdir()), [])
+
+    def test_inspect_template_uses_memory_cache_for_unchanged_file(self):
+        path = self.template()
+        first = library.inspect_template(path)
+        with patch.object(library, 'load_workbook', side_effect=AssertionError('should hit cache')):
+            second = library.inspect_template(path)
+        self.assertEqual(first['content_version'], second['content_version'])
+        self.assertEqual(first['header_count'], len(library.REQUIRED_HEADERS))
+
+    def test_crud_create_update_delete_and_reset_templates(self):
+        # Seed a built-in template first so backup captures it
+        beijing_path = self.template(filename='北京-template.xlsx')
+        beijing_original = beijing_path.read_bytes()
+
+        # 1. Create via standard header generation
+        created = library.create_template(self.root, '杭州', '淘宝闪购', mode='generate')
+        self.assertTrue(created['success'])
+        self.assertEqual(created['template']['filename'], '杭州-template.xlsx')
+        self.assertEqual(created['template']['scope'], '杭州')
+        self.assertTrue(created['template']['custom'])
+        self.assertTrue(created['template']['available'])
+
+        # Duplicate create is rejected with 409
+        with self.assertRaises(library.TemplateError) as dup:
+            library.create_template(self.root, '杭州', '淘宝闪购', mode='generate')
+        self.assertEqual(dup.exception.status, 409)
+
+        # 2. Update: rename scope and switch business line
+        updated = library.update_template(
+            self.root,
+            '杭州-template.xlsx',
+            scope='杭州余杭',
+            business_line='美团小象',
+        )
+        self.assertTrue(updated['success'])
+        self.assertEqual(updated['template']['filename'], '杭州余杭-template.xlsx')
+        self.assertEqual(updated['template']['scope'], '杭州余杭')
+        self.assertEqual(updated['template']['business_line'], '美团灯塔')
+        self.assertFalse((self.root / 'system_templates/杭州-template.xlsx').exists())
+
+        # 3. Upload mode validation: invalid xlsx is rejected
+        bad_b64 = base64.b64encode(b'not-a-valid-xlsx').decode('ascii')
+        with self.assertRaises(library.TemplateError):
+            library.create_template(self.root, '苏州', '淘宝闪购', mode='upload', file_base64=bad_b64)
+
+        # Valid upload succeeds
+        buf = io.BytesIO()
+        wb = Workbook()
+        wb.active.title = '申请名单'
+        wb.active.append(list(library.SHANGOU_HEADERS))
+        wb.save(buf)
+        wb.close()
+        good_b64 = base64.b64encode(buf.getvalue()).decode('ascii')
+        suzhou = library.create_template(self.root, '苏州', '淘宝闪购', mode='upload', file_base64=good_b64)
+        self.assertEqual(suzhou['template']['filename'], '苏州-template.xlsx')
+
+        # 4. Delete both a custom template and the built-in 北京 template
+        library.delete_template(self.root, '杭州余杭-template.xlsx')
+        library.delete_template(self.root, '北京-template.xlsx')
+        self.assertFalse((self.root / 'system_templates/北京-template.xlsx').exists())
+
+        # 5. Reset restores built-in 北京 template and removes custom 苏州 template
+        reset_res = library.reset_templates(self.root)
+        self.assertFalse(reset_res['has_customizations'])
+        self.assertTrue((self.root / 'system_templates/北京-template.xlsx').exists())
+        self.assertEqual((self.root / 'system_templates/北京-template.xlsx').read_bytes(), beijing_original)
+        self.assertFalse((self.root / 'system_templates/苏州-template.xlsx').exists())
 
 
 if __name__ == '__main__':

@@ -11,9 +11,12 @@ import { itemKey, newRequestId, phaseLabel, recoverable, retainAttempt, selectio
 import type { CreateSelection, DownloadUser, ItemSelection, Recovery, RequestAttempt } from '../lib/downloadCenterLogic';
 import { WorkbenchDrawer } from './WorkbenchDrawer';
 import { DownloadRecords } from './DownloadRecords';
+import { ReportBuilder } from './ReportBuilder';
 import {
+  buildGenerateBatchPayloads,
   buildUnifiedSubmissionPayloads,
   deriveSelectedMonthsFromRange,
+  mergeAvailableReports,
   type ReportDefinition,
 } from '../lib/reportBuilder';
 import { isGenerator, inferTaskKind, registerGeneratorIds } from '../lib/taskCatalog';
@@ -140,8 +143,10 @@ interface Props {
   platform?: DownloadPlatform;
   recordModule?: RecordModule;
   taskKind?: 'download' | 'generate';
+  activeReportId?: string;
   hideNavigation?: boolean;
   onSelectPlatform?: (platform: DownloadPlatform) => void;
+  onSelectReport?: (reportId: string) => void;
   onTaskKindChange?: (kind: 'download' | 'generate') => void;
   onViewChange?: (view: 'create' | 'history') => void;
   onFormLock?: (locked: boolean) => void;
@@ -175,9 +180,9 @@ const LANORANGE_CITIES = ['保定','北京','潮州','大连','东莞','广州',
 const DATASET_LABELS: Record<string, string> = {
   invitation_records:'邀请记录（全量）',attendance_detail:'骑手出勤明细',baize_employees: '商翼员工资料（全量）', benlai_employees: '本来人力灵工资料（全量）', rider_daily: '日维度骑手分析（灯塔）', rider_archive: '骑手档案（灯塔）', detail_orders: '配送订单明细（灯塔）', detail_kesu: '配送客诉明细（灯塔）', detail_reviews: '配送评价明细（灯塔）', rider_order_detail: '骑手订单明细（灯塔）', xiaoxiang_attendance_detail: '骑手出勤明细合并（灯塔）', delivery_fee: '配送费', penalty: '违规扣款', rider_monthly: '风神骑手月度 UB 账单',
   receive_account: '骑手风神绑定', rider_detail: '骑手数据明细', rider_info: '骑手信息导出', fraud: '欺诈单', problem: '问题单',
-  payment_binding: '骑手支付绑定（生成表）', goods_rent: '物资租用登记',
-  abnormal_followup: '异常骑手跟进（生成表）',
-  abnormal_riders: '异常骑手整理（生成表）',
+  payment_binding: '支付绑定（生成表）', goods_rent: '物资租用登记',
+  abnormal_followup: '异常跟进（生成表）',
+  abnormal_riders: '异常名单（生成表）',
   lanorange_summary: '蓝橙资料汇总',
 };
 const MONTHLY_DATASETS = new Set(['rider_monthly', 'receive_account']);
@@ -261,7 +266,7 @@ export function FengshenDownloadCenter(props: Props) {
   return <DownloadAccountPanel apiFetch={props.apiFetch} onAccountChange={props.onAccountChange}>{(user, authenticatedFetch) => <AuthorizedDownloadCenter key={user.id} {...props} apiFetch={authenticatedFetch} user={user} />}</DownloadAccountPanel>;
 }
 
-function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, onNavigatePayroll, onActiveCountChange, fengshenAuthStatus, user, embedded, navigation, taskKind = 'download', platform, recordModule, hideNavigation, onSelectPlatform, onTaskKindChange, onViewChange, onFormLock, onNavigateGenerate, onOpenPrice, prefill }: Props & { user: DownloadUser }) {
+function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, onNavigatePayroll, onActiveCountChange, fengshenAuthStatus, user, embedded, navigation, taskKind = 'download', platform, recordModule, activeReportId, hideNavigation, onSelectPlatform, onSelectReport, onTaskKindChange, onViewChange, onFormLock, onNavigateGenerate, onOpenPrice, prefill }: Props & { user: DownloadUser }) {
   const apiRef = useRef(apiFetch);
   apiRef.current = apiFetch;
   const [options, setOptions] = useState<DownloadOptions | null>(null);
@@ -290,12 +295,20 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     }
   }, [datasets.length, onlySelectedShown]);
   const [payoutAuthStatuses, setPayoutAuthStatuses] = useState<Record<string, any>>({});
-  const selectionScope = platform || 'download';
+  const isGenerateMode = taskKind === 'generate';
+  const availableReports = mergeAvailableReports(options?.generators || []);
+  const currentReportId =
+    activeReportId && availableReports.some(report => report.id === activeReportId)
+      ? activeReportId
+      : availableReports[0]?.id || 'payment_binding';
+  const activeReport =
+    availableReports.find(report => report.id === currentReportId) || availableReports[0];
+  const selectionScope = isGenerateMode ? `report:${currentReportId}` : (platform || 'download');
   const previousKind = useRef(selectionScope);
   const moduleDataset = (id: string) =>
     platform
       ? moduleAcceptsDataset(id, platform)
-      : !isGenerator(id) || ['payment_binding', 'abnormal_followup', 'abnormal_riders'].includes(id);
+      : !isGenerator(id);
   const visibleDatasets = options?.datasets.filter(value => moduleDataset(value.id)) || [];
   const defaultMonthRange = (forXiaoxiang: boolean) => {
     const today = shanghaiToday();
@@ -350,7 +363,12 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       setCities(prefill.cities);
     }
     if (prefill.datasets && prefill.datasets.length) {
-      setDatasets(prefill.datasets.filter(id => !options || options.datasets.some(item => item.id === id)));
+      const prefillGen = prefill.datasets.find(isGenerator);
+      if (prefill.taskKind === 'generate' && prefillGen) {
+        onSelectReport?.(prefillGen);
+      } else {
+        setDatasets(prefill.datasets.filter(id => !isGenerator(id) && (!options || options.datasets.some(item => item.id === id))));
+      }
     }
     if (prefill.start) setStart(prefill.start);
     if (prefill.end) setEnd(prefill.end);
@@ -1172,9 +1190,6 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
 
   // 用历史任务的城市/资料/日期预填新建表单
   const prefillFromRun = (run: DownloadRun) => {
-    if (run.datasets.some(isGenerator) && (!run.datasets.every(id => moduleAcceptsDataset(id, 'fengshen')))) {
-      setRequestError('此记录包含不兼容的混合选择，请重新手动选择。'); return;
-    }
     categorySelections.current[selectionScope] = datasets;
     const runMonths = Array.isArray(run.lanorange_months) && run.lanorange_months.length > 0
       ? run.lanorange_months
@@ -1182,12 +1197,15 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
           ? deriveSelectedMonthsFromRange(run.start, run.end, recentReportMonthCodes)
           : []);
     if (inferTaskKind(run.datasets) === 'generate') {
-      onSelectPlatform?.('fengshen');
+      const genId = run.datasets.find(isGenerator) || 'payment_binding';
+      onSelectReport?.(genId);
+      onTaskKindChange?.('generate');
+    } else {
+      onTaskKindChange?.('download');
+      setDatasets(run.datasets.filter(id => !isGenerator(id) && (!options || options.datasets.some(item => item.id === id))));
     }
-    onTaskKindChange?.('download');
     setCities(run.cities.filter(city => city !== '全部城市' && (!options || options.cities.some(item => item.name === city && !item.disabled))));
     setBlueCities(run.lanorange_by_city && Array.isArray(run.cities) ? run.cities.filter(city => city !== '全部城市') : []);
-    setDatasets(run.datasets.filter(id => !options || options.datasets.some(item => item.id === id)));
     if (!run.datasets.every(isLanorange) && DATE_PATTERN.test(run.start) && DATE_PATTERN.test(run.end)) { setStart(run.start); setEnd(run.end); }
     setRefreshHistory(false);
     setWaybillAllCitySend(run.waybill_all_city_send === true);
@@ -1313,6 +1331,116 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       if (rejected) { createAttempt.current = null; storeAttempt(createStorageKey, null); }
       setUncertainCreate(!rejected);
       setRequestError(rejected ? error.message : '下载请求结果尚未确认。请使用“重新确认原请求”，系统会沿用同一请求编号，不会盲目新建任务。');
+    } finally {
+      creatingRef.current = false;
+      setCreating(false);
+    }
+  };
+
+  const reportActiveMonths = selectedMonths.filter(month => recentReportMonthCodes.includes(month));
+  const reportPayloads = activeReport
+    ? buildGenerateBatchPayloads(
+        [activeReport],
+        cities,
+        start,
+        end,
+        shanghaiToday(),
+        {
+          excludeSeparation,
+          selectedMonths: reportActiveMonths.length > 0 ? reportActiveMonths : undefined,
+        },
+      )
+    : [];
+  const reportCanSubmit = Boolean(
+    activeReport &&
+    (activeReport.scope === 'all' || (cities.length > 0 && reportPayloads.length > 0 && validDates)),
+  );
+  const singleReportSelection = reportPayloads.length === 1 ? (reportPayloads[0] as CreateSelection) : undefined;
+  const singleReportKey = singleReportSelection ? selectionKey(singleReportSelection) : '';
+  const reportMatchingRun = singleReportSelection
+    ? runs.find(run => !TERMINAL_STATUSES.has(run.status) && selectionKey(run) === singleReportKey)
+      || runs.find(run => selectionKey(run) === singleReportKey && !!run.files?.length)
+    : undefined;
+  const reportCompletedMatch = Boolean(
+    reportMatchingRun && TERMINAL_STATUSES.has(reportMatchingRun.status) && reportMatchingRun.files?.length,
+  );
+
+  const startReportGeneration = async () => {
+    if (creatingRef.current || !options || !activeReport || (!createAttempt.current && !reportCanSubmit)) return;
+    if (!createAttempt.current && reportMatchingRun && !TERMINAL_STATUSES.has(reportMatchingRun.status)) {
+      selectRun(reportMatchingRun);
+      return;
+    }
+    if (!createAttempt.current && reportCompletedMatch && duplicateApproval !== singleReportKey) {
+      selectRun(reportMatchingRun!);
+      return;
+    }
+
+    if (!createAttempt.current && reportPayloads.length > 1) {
+      creatingRef.current = true;
+      setCreating(true);
+      setRequestError('');
+      if (typeof Notification !== 'undefined' && Notification.permission === 'default') void Notification.requestPermission();
+      try {
+        const createdRuns: DownloadRun[] = [];
+        for (const payload of reportPayloads) {
+          const data = await getJson(`${API_ROOT}/runs`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...payload, request_id: newRequestId() }),
+          });
+          if (!data.run?.id) throw new Error('部分报表任务未取得执行回执，请刷新记录确认');
+          createdRuns.push(data.run);
+        }
+        const lastRun = createdRuns[createdRuns.length - 1];
+        setDuplicateApproval('');
+        setRuns(previous => [...createdRuns.slice().reverse(), ...previous.filter(item => !createdRuns.some(c => c.id === item.id))]);
+        setSubmittedTaskInfo({
+          id: lastRun.id,
+          name: `${activeReport.label}（共 ${createdRuns.length} 批）`,
+        });
+        selectRun(lastRun);
+        void refreshRef.current();
+      } catch (error) {
+        setRequestError(error instanceof Error ? error.message : '专项报表提交失败，请刷新记录查看后再重试');
+      } finally {
+        creatingRef.current = false;
+        setCreating(false);
+      }
+      return;
+    }
+
+    if (!singleReportSelection && !createAttempt.current) return;
+    createAttempt.current = retainAttempt(createAttempt.current, singleReportSelection!);
+    storeAttempt(createStorageKey, createAttempt.current);
+    creatingRef.current = true;
+    setCreating(true);
+    setRequestError('');
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') void Notification.requestPermission();
+    try {
+      const data = await getJson(`${API_ROOT}/runs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...createAttempt.current.payload, request_id: createAttempt.current.request_id }),
+      });
+      if (!data.run?.id) throw new Error('未取得报表任务，请刷新记录确认后再试');
+      const run: DownloadRun = data.run;
+      createAttempt.current = null;
+      storeAttempt(createStorageKey, null);
+      setUncertainCreate(false);
+      setDuplicateApproval('');
+      setRuns(previous => [run, ...previous.filter(item => item.id !== run.id)]);
+      setSubmittedTaskInfo({ id: run.id, name: activeReport.label });
+      selectRun(run);
+      void refreshRef.current();
+    } catch (error) {
+      const rejected = error instanceof DownloadRequestError && [400, 401, 403, 404, 409, 415, 422].includes(error.status);
+      if (rejected) {
+        createAttempt.current = null;
+        storeAttempt(createStorageKey, null);
+      }
+      setUncertainCreate(!rejected);
+      setRequestError(rejected ? error.message : '报表请求结果尚未确认。请点击“确认原请求”，系统会沿用同一请求编号，不会盲目新建任务。');
     } finally {
       creatingRef.current = false;
       setCreating(false);
@@ -1599,9 +1727,82 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
 
       {(() => {
         const stageMeta = getStageHeaderMeta(taskKind === 'generate' ? 'generate' : 'download', platform, view);
+        const reportSubmitLabel = creating
+          ? '提交中…'
+          : uncertainCreate
+            ? '确认原请求'
+            : reportMatchingRun && !TERMINAL_STATUSES.has(reportMatchingRun.status)
+              ? '查看进行中任务'
+              : reportCompletedMatch && duplicateApproval !== singleReportKey
+                ? '查看已有文件'
+                : '生成报表';
         return (
           <>
-            {view === 'create' && <>
+            {view === 'create' && isGenerateMode && (
+              optionsError && !options ? (
+                <div role="alert" className={`${panel} flex flex-wrap items-center gap-3 p-5 text-sm text-rose-700`}>
+                  <AlertCircle size={17} />
+                  {optionsError}
+                  <button
+                    type="button"
+                    className={smallButton}
+                    onClick={() => optionsError.includes('请刷新工作台') || optionsError.includes('账号页面已更新') ? location.reload() : setOptionVersion(version => version + 1)}
+                  >
+                    重新加载
+                  </button>
+                </div>
+              ) : !options ? (
+                <p role="status" className={`${panel} flex items-center gap-2 p-6 text-sm text-slate-500`}>
+                  <Loader2 size={16} className="animate-spin" />
+                  正在加载专项报表配置…
+                </p>
+              ) : (
+                <ReportBuilder
+                  singleReportMode
+                  reports={availableReports}
+                  selectedIds={activeReport ? [activeReport.id] : []}
+                  cities={options.cities}
+                  selectedCities={cities}
+                  onCities={nextCities => {
+                    setCities(nextCities);
+                    setDuplicateApproval('');
+                  }}
+                  start={start}
+                  end={end}
+                  today={shanghaiToday()}
+                  onStart={value => {
+                    setStart(value);
+                    setDuplicateApproval('');
+                  }}
+                  onEnd={value => {
+                    setEnd(value);
+                    setDuplicateApproval('');
+                  }}
+                  selectedMonths={reportActiveMonths}
+                  onSelectedMonths={months => {
+                    setSelectedMonths(months);
+                    setDuplicateApproval('');
+                  }}
+                  excludeSeparation={excludeSeparation}
+                  onExcludeSeparation={value => {
+                    setExcludeSeparation(value);
+                    setDuplicateApproval('');
+                  }}
+                  locked={formLocked}
+                  creating={creating}
+                  disabled={!uncertainCreate && !reportCanSubmit}
+                  submitLabel={reportSubmitLabel}
+                  onSubmit={() => void startReportGeneration()}
+                  uncertain={uncertainCreate}
+                  duplicate={reportCompletedMatch}
+                  recollect={duplicateApproval === singleReportKey}
+                  onRecollect={checked => setDuplicateApproval(checked ? singleReportKey : '')}
+                  refreshing={optionsLoading}
+                  onRefreshCities={() => setOptionVersion(version => version + 1)}
+                />
+              )
+            )}
+            {view === 'create' && !isGenerateMode && <>
             <section className={`${panel} wb-task-form wb-download-workbench`} aria-label="新建下载配置">
               {!embedded && <div className="wb-form-heading">
                 <div className="wb-stage-heading-left">
@@ -2445,7 +2646,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                             )}
                             {hasAbnormalRiders && !abnormalRidersOnly && (
                               <div className="wb-city-count-note">
-                                <small>同时包含「异常骑手整理」，提交时该报表将自动按全部授权城市全量生成。</small>
+                                <small>同时包含「异常名单」，提交时该报表将自动按全部授权城市全量生成。</small>
                               </div>
                             )}
                             {!selectableCities.length && (
@@ -3017,16 +3218,22 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                 onOpenFengshenLogin={onOpenFengshenLogin ? () => onOpenFengshenLogin(user.id) : undefined}
                 onRetryTask={record => {
                   const nextDatasets = Array.isArray(record.datasets) ? record.datasets : [];
-                  if (nextDatasets.some(isBaize) || nextDatasets.some(isBenlai)) {
-                    onSelectPlatform?.('payout');
-                  } else if (nextDatasets.some(isXiaoxiang)) {
-                    onSelectPlatform?.('xiaoxiang');
-                  } else if (nextDatasets.some(isLanorange)) {
-                    onSelectPlatform?.('lanorange');
+                  if (inferTaskKind(nextDatasets) === 'generate') {
+                    const genId = nextDatasets.find(isGenerator) || 'payment_binding';
+                    onSelectReport?.(genId);
+                    onTaskKindChange?.('generate');
                   } else {
-                    onSelectPlatform?.('fengshen');
+                    if (nextDatasets.some(isBaize) || nextDatasets.some(isBenlai)) {
+                      onSelectPlatform?.('payout');
+                    } else if (nextDatasets.some(isXiaoxiang)) {
+                      onSelectPlatform?.('xiaoxiang');
+                    } else if (nextDatasets.some(isLanorange)) {
+                      onSelectPlatform?.('lanorange');
+                    } else {
+                      onSelectPlatform?.('fengshen');
+                    }
+                    onTaskKindChange?.('download');
                   }
-                  onTaskKindChange?.('download');
                   const nextCities = (record.cities || []).filter(
                     city => city !== '全部城市' && (!options || options.cities.some(item => item.name === city && !item.disabled)),
                   );
@@ -3055,7 +3262,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
 {selectedRun && <div className={`${panel} wb-task-detail min-w-0 space-y-4 p-4 sm:p-5`}>
 
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div><h3 className="flex flex-wrap items-center gap-2 text-base font-semibold text-slate-900">{selectedRun.datasets.every(isBaize) ? '商翼全量员工资料' : selectedRun.datasets.every(isBenlai) ? '本来人力全量灵工资料' : selectedRun.datasets.every(id => id === 'abnormal_riders') ? '异常骑手整理（全量）' : selectedRun.datasets.every(isLanorange) ? (selectedRun.lanorange_by_city ? `蓝橙 ${selectedRun.cities.join('、')}` : '蓝橙全量') : selectedRun.cities.length > 2 ? `${selectedRun.cities.length} 个城市` : selectedRun.cities.join('、')}的{selectedRun.datasets.every(isGenerator) ? '报表任务' : '下载任务'} <span className={`rounded-md px-2 py-1 text-xs font-normal ${statusInfo(selectedRun.status).color}`}>{runStatusLabel}</span></h3><p className="mt-2 text-xs text-slate-500">{selectedRun.datasets.every(id => id === 'abnormal_riders') ? '全部授权城市 · 全量最新档案整理' : selectedRun.datasets.every(isLanorange) ? (selectedRun.lanorange_by_city ? '所选城市、全部状态、不按日期筛选' : '全部城市、全部状态、不按日期筛选') : `${selectedRun.start} 至 ${selectedRun.end}`} · {selectedRun.datasets.length} 类资料</p></div>
+                <div><h3 className="flex flex-wrap items-center gap-2 text-base font-semibold text-slate-900">{selectedRun.datasets.every(isBaize) ? '商翼全量员工资料' : selectedRun.datasets.every(isBenlai) ? '本来人力全量灵工资料' : selectedRun.datasets.every(id => id === 'abnormal_riders') ? '异常名单（全量）' : selectedRun.datasets.every(isLanorange) ? (selectedRun.lanorange_by_city ? `蓝橙 ${selectedRun.cities.join('、')}` : '蓝橙全量') : selectedRun.cities.length > 2 ? `${selectedRun.cities.length} 个城市` : selectedRun.cities.join('、')}的{selectedRun.datasets.every(isGenerator) ? '报表任务' : '下载任务'} <span className={`rounded-md px-2 py-1 text-xs font-normal ${statusInfo(selectedRun.status).color}`}>{runStatusLabel}</span></h3><p className="mt-2 text-xs text-slate-500">{selectedRun.datasets.every(id => id === 'abnormal_riders') ? '全部授权城市 · 全量最新档案整理' : selectedRun.datasets.every(isLanorange) ? (selectedRun.lanorange_by_city ? '所选城市、全部状态、不按日期筛选' : '全部城市、全部状态、不按日期筛选') : `${selectedRun.start} 至 ${selectedRun.end}`} · {selectedRun.datasets.length} 类资料</p></div>
                 {!activeRun && <details><summary className="wb-link">需要重新采集？</summary><p className="text-xs">先处理下方可恢复项。新任务不会继续原导出；结果未知时请先核对原回执。</p><button type="button" className={smallButton} disabled={selectedRun.items?.some(item => item.submission_state === 'unknown')} onClick={() => prefillFromRun(selectedRun)}>重新采集并创建新任务</button></details>}
                 {activeRun && <button type="button" className={smallButton} disabled={cancelling || ['cancelling', 'canceling'].includes(selectedRun.status)} onClick={() => void cancelDownload()}>{cancelling ? <Loader2 size={13} className="animate-spin" /> : <Square size={13} />}停止任务</button>}
               </div>

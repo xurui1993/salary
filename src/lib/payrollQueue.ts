@@ -26,12 +26,44 @@ export function payrollQueueStatus(status: string) {
 export const payrollQueueRunning = (task: PayrollQueueTask) =>
   ["queued", "preparing", "calculating", "stopping"].includes(task.status);
 
-export function payrollModeName(mode: string) {
-  return mode === "manual" ? "闪购手动" : mode === "xiaoxiang" ? "小象超市" : "闪购自动";
+export const PAYROLL_SETTLEMENT_TYPES = ["周结", "半月结", "月结", "全职", "日结"] as const;
+export type PayrollSettlementType = (typeof PAYROLL_SETTLEMENT_TYPES)[number];
+
+export function payrollSettlementType(taskOrMode?: PayrollQueueTask | string | null): PayrollSettlementType {
+  if (!taskOrMode) return "月结";
+  if (typeof taskOrMode === "string") {
+    if ((PAYROLL_SETTLEMENT_TYPES as readonly string[]).includes(taskOrMode)) {
+      return taskOrMode as PayrollSettlementType;
+    }
+    if (taskOrMode === "manual") return "半月结";
+    if (taskOrMode === "xiaoxiang") return "周结";
+    return "月结";
+  }
+  const explicit = String(
+    taskOrMode.settlement_type || taskOrMode.plan?.settlement_type || taskOrMode.plan?.type || "",
+  ).trim();
+  if ((PAYROLL_SETTLEMENT_TYPES as readonly string[]).includes(explicit)) {
+    return explicit as PayrollSettlementType;
+  }
+  const text = `${taskOrMode.plan?.cycle || ""} ${taskOrMode.template_name || ""}`;
+  if (text.includes("日结")) return "日结";
+  if (text.includes("周结")) return "周结";
+  if (text.includes("全职")) return "全职";
+  if (text.includes("半月")) return "半月结";
+  if (text.includes("月结") || text.includes("整月")) return "月结";
+  return payrollSettlementType(taskOrMode.mode);
+}
+
+export function payrollModeName(taskOrMode?: PayrollQueueTask | string | null): PayrollSettlementType {
+  return payrollSettlementType(taskOrMode);
 }
 
 export function payrollTypeTone(mode: string): "auto" | "manual" | "xiaoxiang" {
-  return mode === "manual" ? "manual" : mode === "xiaoxiang" ? "xiaoxiang" : "auto";
+  return mode === "manual" || mode === "半月结"
+    ? "manual"
+    : mode === "xiaoxiang" || mode === "周结"
+      ? "xiaoxiang"
+      : "auto";
 }
 
 export function payrollPeriodShort(value?: string) {
@@ -43,7 +75,7 @@ export function payrollPeriodRange(plan?: PayrollQueueTask["plan"]) {
   if (!plan) return "";
   const start = payrollPeriodShort(plan.start);
   const end = payrollPeriodShort(plan.end);
-  if (start && end) return `${start} - ${end}`;
+  if (start && end) return `${start}-${end}`;
   return start || end || "";
 }
 
@@ -107,6 +139,21 @@ export function payrollElapsed(seconds: number) {
   if (!Number.isFinite(seconds) || seconds < 0) return "";
   const value = Math.floor(seconds);
   return value < 60 ? `${value}秒` : `${Math.floor(value / 60)}分${value % 60}秒`;
+}
+
+export function resolvePayrollElapsedText(task?: PayrollQueueTask | null, nowMs = Date.now()): string {
+  if (!task) return "";
+  if (typeof task.elapsed_seconds === "number" && Number.isFinite(task.elapsed_seconds) && task.elapsed_seconds >= 0) {
+    return payrollElapsed(task.elapsed_seconds);
+  }
+  const startMs = task.created_at ? Date.parse(task.created_at) : NaN;
+  if (Number.isFinite(startMs)) {
+    const endMs = !payrollQueueRunning(task) && task.updated_at ? Date.parse(task.updated_at) : nowMs;
+    if (Number.isFinite(endMs) && endMs >= startMs) {
+      return payrollElapsed(Math.max(1, Math.floor((endMs - startMs) / 1000)));
+    }
+  }
+  return "";
 }
 
 export function legacyPayrollTask(value: any, logs: any[] = [], progress = 0, action = ""): PayrollQueueTask {
@@ -256,6 +303,115 @@ export function detectDuplicateUploadNames(
     }
   }
   return duplicates;
+}
+
+export interface PayrollProgressPopoverData {
+  badgeLabel: string;
+  tone: "active" | "waiting" | "success" | "error" | "muted";
+  percent: number | null;
+  elapsedLabel: string;
+  elapsedValue: string;
+  currentNode: string;
+  metrics: Array<{
+    label: string;
+    value: string;
+    tone?: "default" | "accent" | "warn" | "danger" | "success";
+  }>;
+  footnote?: string;
+}
+
+function formatPayrollClock(iso?: string): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return String(iso);
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+const PAYROLL_NODE_FALLBACKS: Record<string, string> = {
+  queued: "已进入核算队列，等待分配执行槽位与模板范围解析",
+  preparing: "正在齐套拉取关联平台资料并校验字段完整性",
+  calculating: "正在匹配站点扣款口径并计算骑手应发与实发薪资",
+  stopping: "正在安全中止后台核算流程并保留当前状态",
+  waiting_confirmation: "站点扣款口径待人工确认，确认后将自动继续核算",
+  waiting_materials: "部分平台资料拉取受阻，处理完成后可自动恢复",
+  pending_download: "等待拉取核算所需原始平台数据",
+  ready: "核算所需资料已齐套，准备进入薪资计算阶段",
+  completed: "全部核算与复核校验已完成，成品包已归档可供下载",
+  error: "核算执行遇到异常中断，请点击「查看原因」排查日志",
+  cancelled: "核算批次已手动停止，已保留历史操作记录",
+  interrupted: "核算执行被意外中断，可在详情抽屉中重新发起",
+};
+
+export function buildPayrollProgressPopoverData(
+  task: PayrollQueueTask,
+  options: {
+    nowMs?: number;
+    fallbackAction?: string;
+  } = {},
+): PayrollProgressPopoverData {
+  const state = payrollQueueStatus(task.status);
+  const tone = (["active", "waiting", "success", "error", "muted"].includes(state.tone)
+    ? state.tone
+    : "muted") as PayrollProgressPopoverData["tone"];
+  const running = payrollQueueRunning(task);
+  const rawPct = Number.isFinite(task.progress)
+    ? Math.max(0, Math.min(100, Math.round(task.progress)))
+    : null;
+  const percent =
+    running && task.status !== "queued" && rawPct !== null && rawPct > 0
+      ? rawPct
+      : task.status === "completed"
+        ? 100
+        : null;
+
+  const elapsedValue = resolvePayrollElapsedText(task, options.nowMs ?? Date.now()) || "—";
+  const actionText = String(task.current_action || options.fallbackAction || "").trim();
+  const currentNode = actionText || PAYROLL_NODE_FALLBACKS[task.status] || "正在同步批次执行状态";
+
+  const metrics: PayrollProgressPopoverData["metrics"] = [];
+  const createdClock = formatPayrollClock(task.created_at);
+  if (createdClock) {
+    metrics.push({ label: "提交时间", value: createdClock });
+  }
+  const updatedClock = formatPayrollClock(task.updated_at);
+  if (updatedClock && updatedClock !== createdClock) {
+    metrics.push({
+      label: task.status === "completed" ? "完成时间" : "最近更新",
+      value: updatedClock,
+    });
+  }
+  const city = task.plan?.city;
+  const applicants = task.plan?.applicants;
+  if (city || applicants != null) {
+    metrics.push({
+      label: "核算范围",
+      value: [city || "待识别城市", applicants != null ? `${applicants} 人` : ""].filter(Boolean).join(" · "),
+    });
+  }
+  const modeLabel = payrollModeName(task);
+  const periodRange = payrollPeriodRange(task.plan);
+  if (periodRange) {
+    metrics.push({ label: "结算周期", value: `${modeLabel} · ${periodRange}` });
+  }
+
+  const reviewAlert = extractPayrollReviewAlert(task);
+  return {
+    badgeLabel: state.label,
+    tone,
+    percent,
+    elapsedLabel: "核算耗时",
+    elapsedValue,
+    currentNode,
+    metrics: metrics.slice(0, 4),
+    footnote: reviewAlert ? `复核提示：存在 ${reviewAlert.label}，建议点击查看摘要` : undefined,
+  };
 }
 
 export interface PayrollQueueTask {

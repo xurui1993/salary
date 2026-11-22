@@ -718,6 +718,63 @@ async def list_templates():
     return await asyncio.to_thread(listing, get_project_root())
 
 
+@app.post("/api/templates/create")
+async def api_create_template(request: Request):
+    from template_library import create_template, TemplateError
+    try:
+        payload = await request.json()
+        return await asyncio.to_thread(
+            create_template,
+            get_project_root(),
+            payload.get("scope", ""),
+            payload.get("business_line", "淘宝闪购"),
+            payload.get("mode", "generate"),
+            payload.get("file_base64"),
+        )
+    except TemplateError as error:
+        return JSONResponse(status_code=error.status, content={"success": False, "error": str(error)})
+
+
+@app.post("/api/templates/update")
+async def api_update_template(request: Request):
+    from template_library import update_template, TemplateError
+    try:
+        payload = await request.json()
+        return await asyncio.to_thread(
+            update_template,
+            get_project_root(),
+            payload.get("original_filename", ""),
+            payload.get("scope"),
+            payload.get("business_line"),
+            payload.get("file_base64"),
+        )
+    except TemplateError as error:
+        return JSONResponse(status_code=error.status, content={"success": False, "error": str(error)})
+
+
+@app.post("/api/templates/delete")
+async def api_delete_template(request: Request):
+    from template_library import delete_template, TemplateError
+    try:
+        payload = await request.json()
+        return await asyncio.to_thread(
+            delete_template,
+            get_project_root(),
+            payload.get("filename", ""),
+        )
+    except TemplateError as error:
+        return JSONResponse(status_code=error.status, content={"success": False, "error": str(error)})
+
+
+@app.post("/api/templates/reset")
+async def api_reset_templates():
+    from template_library import reset_templates, TemplateError
+    try:
+        return await asyncio.to_thread(reset_templates, get_project_root())
+    except TemplateError as error:
+        return JSONResponse(status_code=error.status, content={"success": False, "error": str(error)})
+
+
 @app.get("/api/download/template")
 async def download_template(file: str = ""):
     from template_library import template_path, inspect_template, TemplateError

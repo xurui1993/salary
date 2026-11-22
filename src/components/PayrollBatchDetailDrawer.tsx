@@ -380,7 +380,7 @@ export function PayrollBatchDetailDrawer({
                 }}
               >
                 <SlidersHorizontal size={13} aria-hidden="true" />
-                <span>扣款规则</span>
+                <span>扣款配置</span>
               </button>
             </div>
           </div>
@@ -503,15 +503,14 @@ export function PayrollBatchDetailDrawer({
           <div>
             <dt>结算周期</dt>
             <dd className="tabular-nums">
-              {cycleLabel || '—'}
-              {periodRange ? <small>{periodRange}</small> : null}
+              {periodRange || '—'}
             </dd>
           </div>
           <div>
             <dt>核算类型</dt>
             <dd>
               <span className={`pq-type-text is-${typeTone}`}>
-                {payrollModeName(task.mode)}
+                {payrollModeName(task)}
                 {task.legacy ? ' · 历史' : ''}
               </span>
             </dd>
@@ -649,7 +648,7 @@ export function PayrollBatchDetailDrawer({
                       onOpenDeductions();
                     }}
                   >
-                    管理扣款规则
+                    管理扣款配置
                   </button>
                 </div>
               </div>

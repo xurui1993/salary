@@ -9,6 +9,7 @@ import {
   buildReportMonthChunks,
   buildUnifiedSubmissionPayloads,
   deriveSelectedMonthsFromRange,
+  mergeAvailableReports,
   monthBounds,
   reportRange,
   selectReportMonthRange,
@@ -21,7 +22,7 @@ import { isGenerator, registerGeneratorIds } from '../src/lib/taskCatalog';
 
 const monthly: ReportDefinition = {
   id: 'payment_binding',
-  label: '骑手支付绑定',
+  label: '支付绑定',
   scope: 'city_month',
   description: '生成支付绑定表',
   systems: ['风神', '蓝橙', '商翼', '本来人力'],
@@ -31,9 +32,9 @@ const monthly: ReportDefinition = {
 
 const followup: ReportDefinition = {
   id: 'abnormal_followup',
-  label: '异常骑手跟进',
+  label: '异常跟进',
   scope: 'city_month',
-  description: '以支付绑定为基准生成异常骑手跟进表',
+  description: '以支付绑定为基准生成异常跟进表',
   systems: ['风神', '蓝橙', '商翼'],
   sources: ['跟进来源'],
   station_rule: 'separation',
@@ -41,9 +42,9 @@ const followup: ReportDefinition = {
 
 const globalReportDef: ReportDefinition = {
   id: 'abnormal_riders',
-  label: '异常骑手整理',
+  label: '异常名单',
   scope: 'all',
-  description: '整理蓝橙全量异常骑手资料',
+  description: '整理蓝橙全量异常名单资料',
   systems: ['蓝橙'],
   sources: ['蓝橙来源'],
   station_rule: 'none',
@@ -382,6 +383,47 @@ test('buildUnifiedSubmissionPayloads partitions raw Fengshen downloads and gener
       lanorange_full_delivery: true,
     },
   ]);
+});
+
+test('mergeAvailableReports keeps canonical frontend labels even when backend sends legacy names', () => {
+  const merged = mergeAvailableReports([
+    {
+      id: 'payment_binding',
+      label: '骑手支付绑定',
+      scope: 'city_month',
+      description: '旧描述',
+      systems: ['风神'],
+      sources: ['源表A'],
+      station_rule: 'separation',
+    },
+    {
+      id: 'abnormal_followup',
+      label: '异常骑手跟进',
+      scope: 'city_month',
+      description: '旧描述',
+      systems: ['风神'],
+      sources: ['源表B'],
+      station_rule: 'separation',
+    },
+    {
+      id: 'abnormal_riders',
+      label: '异常骑手整理',
+      scope: 'all',
+      description: '旧描述',
+      systems: ['蓝橙'],
+      sources: ['源表C'],
+      station_rule: 'none',
+    },
+  ]);
+  assert.deepEqual(
+    merged.map(item => [item.id, item.label]),
+    [
+      ['payment_binding', '支付绑定'],
+      ['abnormal_followup', '异常跟进'],
+      ['abnormal_riders', '异常名单'],
+    ],
+  );
+  assert.deepEqual(merged[0].sources, ['源表A']);
 });
 
 function props(report: ReportDefinition) {

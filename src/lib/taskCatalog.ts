@@ -22,7 +22,7 @@ export function initialTaskKind(): TaskKind {
   if (new URLSearchParams(window.location.search).has('batch')) return 'payroll';
   try {
     const previous = localStorage.getItem('workbench_task_kind');
-    if (previous === 'payroll') return 'payroll';
+    if (previous === 'payroll' || previous === 'generate') return previous;
   } catch {
     // ignore storage read errors
   }

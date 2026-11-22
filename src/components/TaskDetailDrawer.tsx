@@ -445,7 +445,7 @@ export function TaskDetailDrawer({
               }}
             >
               <Calculator size={13} aria-hidden="true" />
-              <span>前往核算批次</span>
+              <span>前往兼职核算</span>
             </button>
           )}
           <button

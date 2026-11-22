@@ -26,6 +26,7 @@ import {
 } from '../lib/downloadCenterLogic';
 import type { RecordModule } from '../lib/downloadModules';
 import { WorkbenchDrawer } from './WorkbenchDrawer';
+import { StatusHoverPopover } from './StatusHoverPopover';
 import { WorkbenchDatePicker } from './WorkbenchDatePicker';
 import { WorkbenchConfirmModal, WorkbenchToast, type ToastNotice } from './WorkbenchFeedback';
 import { SkeletonRows } from './SkeletonRows';
@@ -33,6 +34,7 @@ import { EmptyState } from './EmptyState';
 import { TaskDetailDrawer, type TaskDetailItem, type TaskDetailTab } from './TaskDetailDrawer';
 import { taskTone, toneClass } from '../lib/statusSemantics';
 import {
+  buildTaskProgressPopoverData,
   cleanTaskTitle,
   computeDatePresetRange,
   computeTaskDiagnosticNote,
@@ -598,32 +600,10 @@ export function DownloadRecords({
       {/* 1. 顶部极简下划线状态切换条（各分类严格互斥，总数精确相加） */}
       <div className="wbx-tc-topbar">
         <div className="wbx-tc-topbar__left">
-          <div className="wbx-tc-tabs" role="tablist" aria-label="任务状态">
-            {(
-              [
-                ['', '全部', 'all'],
-                ['active', '进行中', 'active'],
-                ['attention', '待处理', 'attention'],
-                ['success', '已完成', 'success'],
-                ['stopped', '已停止', 'stopped'],
-              ] as const
-            ).map(([key, label, count]) => (
-              <button
-                key={key}
-                type="button"
-                role="tab"
-                aria-selected={status === key}
-                className={`wbx-tc-tab${status === key ? ' is-active' : ''}`}
-                onClick={() => {
-                  setStatus(key);
-                  reset();
-                }}
-              >
-                <span>{label}</span>
-                <span className="wbx-tc-tab__count tabular-nums">{effectiveCounts[count] || 0}</span>
-              </button>
-            ))}
-          </div>
+          <h3 className="wbx-tc-title">
+            <span>{archived ? '已移出任务' : '任务中心'}</span>
+            <span className="wbx-tc-title__count tabular-nums">{effectiveCounts.all || 0}</span>
+          </h3>
         </div>
 
         <div className="wbx-tc-topbar__right">
@@ -703,166 +683,195 @@ export function DownloadRecords({
       </div>
 
       <section className="tc-center wbx-taskcenter" aria-label="任务中心列表">
-        {/* 2. 单行紧凑筛选条（平台 / 类型 / 快捷日期 / 排序） */}
+        {/* 2. 页签与筛选合并单行工具栏（左侧 5 个状态页签 + 右侧搜索/平台/类型/日期/排序/刷新） */}
         <div className="wbx-taskcenter__filters">
-          <label className="wbx-tc-search">
-            <Search size={13.5} aria-hidden="true" />
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="搜索任务名称、城市、文件名或编号…"
-              aria-label="搜索任务"
-            />
-          </label>
-
-          {!recordModule && (
-            <>
-              <select
-                className="wb-select wbx-tc-select"
-                aria-label="筛选平台"
-                value={system}
-                onChange={e => {
-                  setSystem(e.target.value);
+          <div className="wbx-tc-tabs" role="tablist" aria-label="任务状态">
+            {(
+              [
+                ['', '全部', 'all'],
+                ['active', '进行中', 'active'],
+                ['attention', '待处理', 'attention'],
+                ['success', '已完成', 'success'],
+                ['stopped', '已停止', 'stopped'],
+              ] as const
+            ).map(([key, label, count]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={status === key}
+                className={`wbx-tc-tab${status === key ? ' is-active' : ''}`}
+                onClick={() => {
+                  setStatus(key);
                   reset();
                 }}
               >
-                <option value="">全部平台</option>
-                {Object.entries(SYSTEMS).map(([key, label]) => (
-                  <option key={key} value={key}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="wb-select wbx-tc-select"
-                aria-label="筛选任务类型"
-                value={kind}
-                onChange={e => {
-                  setKind(e.target.value);
-                  reset();
-                }}
-              >
-                <option value="">全部类型</option>
-                {Object.entries(KINDS).map(([key, label]) => (
-                  <option key={key} value={key}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </>
-          )}
-
-          {/* 快捷日期筛选浮层 */}
-          <div className="tc-date-popover-wrap" ref={dateMenuRef}>
-            <button
-              type="button"
-              className={`wbx-btn wbx-btn--sm${from || to ? ' is-filter-active' : ''}`}
-              aria-expanded={dateMenuOpen}
-              onClick={() => setDateMenuOpen(prev => !prev)}
-            >
-              <Calendar size={13} aria-hidden="true" />
-              <span>{from || to ? `${from || '起'} ~ ${to || '今'}` : '日期筛选'}</span>
-            </button>
-            {dateMenuOpen && (
-              <div className="tc-date-popover" role="dialog" aria-label="按创建日期筛选">
-                <div className="tc-date-presets">
-                  {(
-                    [
-                      ['today', '今天'],
-                      ['7d', '近 7 天'],
-                      ['month', '本月'],
-                    ] as [TaskDatePreset, string][]
-                  ).map(([preset, label]) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      className="wbx-btn wbx-btn--sm"
-                      onClick={() => {
-                        const range = computeDatePresetRange(preset, nowMs);
-                        setFrom(range.from);
-                        setTo(range.to);
-                        reset();
-                        setDateMenuOpen(false);
-                      }}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                  {(from || to) && (
-                    <button
-                      type="button"
-                      className="wb-link"
-                      onClick={() => {
-                        setFrom('');
-                        setTo('');
-                        reset();
-                        setDateMenuOpen(false);
-                      }}
-                    >
-                      清除
-                    </button>
-                  )}
-                </div>
-                <div className="tc-date-custom-row">
-                  <div className="tc-filter-date-item">
-                    <span>从</span>
-                    <WorkbenchDatePicker
-                      ariaLabel="创建日期从"
-                      value={from}
-                      rangeRole="start"
-                      rangeStart={from}
-                      rangeEnd={to}
-                      allowClear
-                      align="right"
-                      onChange={v => {
-                        setFrom(v);
-                        reset();
-                      }}
-                    />
-                  </div>
-                  <div className="tc-filter-date-item">
-                    <span>至</span>
-                    <WorkbenchDatePicker
-                      ariaLabel="创建日期至"
-                      value={to}
-                      rangeRole="end"
-                      rangeStart={from}
-                      rangeEnd={to}
-                      allowClear
-                      align="right"
-                      onChange={v => {
-                        setTo(v);
-                        reset();
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
+                <span>{label}</span>
+                <span className="wbx-tc-tab__count tabular-nums">{effectiveCounts[count] || 0}</span>
+              </button>
+            ))}
           </div>
 
-          <select
-            className="wb-select wbx-tc-select"
-            aria-label="排序方式"
-            value={sortKey}
-            onChange={e => setSortKey(e.target.value as TaskCenterSortKey)}
-          >
-            <option value="created_desc">按创建时间</option>
-            <option value="elapsed_desc">按耗时从长到短</option>
-            <option value="files_desc">按产出文件数</option>
-          </select>
+          <div className="wbx-tc-filter-controls">
+            <label className="wbx-tc-search">
+              <Search size={13.5} aria-hidden="true" />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="搜索任务名称、城市、文件名或编号…"
+                aria-label="搜索任务"
+              />
+            </label>
 
-          <button
-            type="button"
-            className="wbx-btn wbx-btn--sm wbx-btn--ghost"
-            aria-label="刷新任务列表"
-            onClick={() => {
-              setVersion(v => v + 1);
-            }}
-          >
-            <RefreshCw size={13.5} aria-hidden="true" />
-            <span>刷新</span>
-          </button>
+            {!recordModule && (
+              <>
+                <select
+                  className="wb-select wbx-tc-select"
+                  aria-label="筛选平台"
+                  value={system}
+                  onChange={e => {
+                    setSystem(e.target.value);
+                    reset();
+                  }}
+                >
+                  <option value="">全部平台</option>
+                  {Object.entries(SYSTEMS).map(([key, label]) => (
+                    <option key={key} value={key}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="wb-select wbx-tc-select"
+                  aria-label="筛选任务类型"
+                  value={kind}
+                  onChange={e => {
+                    setKind(e.target.value);
+                    reset();
+                  }}
+                >
+                  <option value="">全部类型</option>
+                  {Object.entries(KINDS).map(([key, label]) => (
+                    <option key={key} value={key}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+
+            {/* 快捷日期筛选浮层 */}
+            <div className="tc-date-popover-wrap" ref={dateMenuRef}>
+              <button
+                type="button"
+                className={`wbx-btn wbx-btn--sm${from || to ? ' is-filter-active' : ''}`}
+                aria-expanded={dateMenuOpen}
+                onClick={() => setDateMenuOpen(prev => !prev)}
+              >
+                <Calendar size={13} aria-hidden="true" />
+                <span>{from || to ? `${from || '起'} ~ ${to || '今'}` : '日期筛选'}</span>
+              </button>
+              {dateMenuOpen && (
+                <div className="tc-date-popover" role="dialog" aria-label="按创建日期筛选">
+                  <div className="tc-date-presets">
+                    {(
+                      [
+                        ['today', '今天'],
+                        ['7d', '近 7 天'],
+                        ['month', '本月'],
+                      ] as [TaskDatePreset, string][]
+                    ).map(([preset, label]) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        className="wbx-btn wbx-btn--sm"
+                        onClick={() => {
+                          const range = computeDatePresetRange(preset, nowMs);
+                          setFrom(range.from);
+                          setTo(range.to);
+                          reset();
+                          setDateMenuOpen(false);
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                    {(from || to) && (
+                      <button
+                        type="button"
+                        className="wb-link"
+                        onClick={() => {
+                          setFrom('');
+                          setTo('');
+                          reset();
+                          setDateMenuOpen(false);
+                        }}
+                      >
+                        清除
+                      </button>
+                    )}
+                  </div>
+                  <div className="tc-date-custom-row">
+                    <div className="tc-filter-date-item">
+                      <span>从</span>
+                      <WorkbenchDatePicker
+                        ariaLabel="创建日期从"
+                        value={from}
+                        rangeRole="start"
+                        rangeStart={from}
+                        rangeEnd={to}
+                        allowClear
+                        align="right"
+                        onChange={v => {
+                          setFrom(v);
+                          reset();
+                        }}
+                      />
+                    </div>
+                    <div className="tc-filter-date-item">
+                      <span>至</span>
+                      <WorkbenchDatePicker
+                        ariaLabel="创建日期至"
+                        value={to}
+                        rangeRole="end"
+                        rangeStart={from}
+                        rangeEnd={to}
+                        allowClear
+                        align="right"
+                        onChange={v => {
+                          setTo(v);
+                          reset();
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <select
+              className="wb-select wbx-tc-select"
+              aria-label="排序方式"
+              value={sortKey}
+              onChange={e => setSortKey(e.target.value as TaskCenterSortKey)}
+            >
+              <option value="created_desc">按创建时间</option>
+              <option value="elapsed_desc">按耗时从长到短</option>
+              <option value="files_desc">按产出文件数</option>
+            </select>
+
+            <button
+              type="button"
+              className="wbx-btn wbx-btn--sm wbx-btn--ghost"
+              aria-label="刷新任务列表"
+              onClick={() => {
+                setVersion(v => v + 1);
+              }}
+            >
+              <RefreshCw size={13.5} aria-hidden="true" />
+              <span>刷新</span>
+            </button>
+          </div>
         </div>
 
         {archived && <p className="tc-info">已移出的任务仍保留文件和处理记录，恢复后所有同事同步可见。</p>}
@@ -939,7 +948,7 @@ export function DownloadRecords({
           </div>
         )}
 
-        {/* 3. 精简 6 列高扫读任务列表（无行内冗余折叠，操作按钮严格收敛） */}
+        {/* 3. 单行紧凑 44px 任务列表（仅状态列保留语义色，两级字重，纯文字操作列） */}
         <div className="wbx-table-scroll wbx-taskcenter__scroll">
           <table className="wbx-table tc-table wbx-taskcenter__table">
             <thead>
@@ -972,11 +981,30 @@ export function DownloadRecords({
                 const guidance = taskGuidance(context(r));
                 const isActive = ACTIVE.has(r.status);
                 const progressMeta = computeTaskProgressMeta(r);
+                const showProgressBar =
+                  progressMeta.isActive &&
+                  progressMeta.hasTotal &&
+                  r.status !== 'queued' &&
+                  (progressMeta.pct ?? 0) > 0;
+                const isPausedProgress = ['waiting_login', 'waiting_manual'].includes(r.status);
                 const elapsedSec = computeTaskElapsedSeconds(r, nowMs, syncMs);
                 const elapsedText = formatTaskDuration(elapsedSec);
                 const primaryAction = resolveTaskPrimaryAction(r, archived);
                 const isDetailOpen = activeFocused?.id === r.id;
                 const pTone = platformTone(pName);
+                const resolvedTone = taskTone(r.status);
+                const popoverTone = (['active', 'waiting', 'success', 'error', 'muted'].includes(resolvedTone)
+                  ? resolvedTone
+                  : 'muted') as 'active' | 'waiting' | 'success' | 'error' | 'muted';
+                const popoverModel = buildTaskProgressPopoverData(r, {
+                  statusLabel: guidance.label,
+                  tone: popoverTone,
+                  percent: showProgressBar ? progressMeta.pct : null,
+                  elapsedText,
+                  platformName: pName,
+                  diagNote,
+                  nowMs,
+                });
 
                 return (
                   <tr
@@ -997,57 +1025,67 @@ export function DownloadRecords({
                       />
                     </td>
 
-                    {/* 任务内容：去冗余前缀，健康任务仅 1 行，异常/阻塞任务附 1 行精准原因 */}
+                    {/* 任务内容：严格单行排版，诊断提示合入 title 与右侧详情抽屉 */}
                     <td className="tc-col-task">
-                      <span className="tc-task-title" title={rawTitle(r)}>
+                      <span
+                        className="tc-task-title"
+                        title={diagNote ? `${cleanTitle} — ${diagNote.text}` : rawTitle(r)}
+                      >
                         {cleanTitle}
                       </span>
-                      {diagNote && (
-                        <small className={`tc-task-note is-${diagNote.tone}`} title={diagNote.text}>
-                          {diagNote.text}
-                        </small>
-                      )}
                     </td>
 
-                    {/* 来源 / 类型：无底色语义文字 */}
+                    {/* 来源 / 类型：单行统一深灰黑字 */}
                     <td className="tc-col-source">
                       <span className={`tc-platform-text is-${pTone}`}>{pName}</span>
-                      <small className="tc-kind-text">{kLabel}</small>
+                      <span className="tc-source-sep" aria-hidden="true">·</span>
+                      <span className="tc-kind-text">{kLabel}</span>
                     </td>
 
-                    {/* 范围 / 周期 */}
+                    {/* 范围 / 周期：单行合并展示 */}
                     <td className="tc-col-scope">
-                      <span className="tc-scope-cities" title={citiesMeta.full}>
+                      <span
+                        className="tc-scope-inline tabular-nums"
+                        title={`${citiesMeta.full} · ${periodMeta.full}`}
+                      >
                         {citiesMeta.short}
+                        {periodMeta.short ? ` · ${periodMeta.short}` : ''}
                       </span>
-                      <small className="tc-scope-period tabular-nums" title={periodMeta.full}>
-                        {periodMeta.short}
-                      </small>
                     </td>
 
-                    {/* 状态与进度：融合状态胶囊 + 紧凑进度/文件产出 + 耗时 */}
+                    {/* 状态与进度：唯一保留语义色的列，悬停进度胶囊浮窗展示耗时与处理节点 */}
                     <td className="tc-col-progress">
                       <div className="tc-progress-top">
-                        <span className={`wbx-pill ${toneClass(taskTone(r.status))}`}>
-                          {isActive && !['stopping', 'cancelling', 'waiting_login', 'waiting_manual', 'queued'].includes(r.status) ? (
-                            <Loader2 size={11.5} className="animate-spin" aria-hidden="true" />
-                          ) : (
-                            <span className="wbx-pill__dot" aria-hidden="true" />
-                          )}
-                          {guidance.label}
-                        </span>
-                        {progressMeta.isActive && progressMeta.hasTotal && r.status !== 'queued' && (progressMeta.pct ?? 0) > 0 && (
-                          <div
-                            className={`tc-inline-progress${['waiting_login', 'waiting_manual'].includes(r.status) ? ' is-paused' : ''}`}
-                            aria-label={`进度 ${progressMeta.pct}%`}
+                        <StatusHoverPopover model={popoverModel}>
+                          <span
+                            className={`wbx-pill ${toneClass(resolvedTone)}${showProgressBar ? ' wbx-pill--has-progress' : ''}${isPausedProgress ? ' is-paused' : ''}`}
+                            aria-label={showProgressBar ? `${guidance.label} ${progressMeta.pct}%` : guidance.label}
                           >
-                            <div className="tc-inline-progress__track">
-                              <span style={{ width: `${Math.max(0, Math.min(100, progressMeta.pct ?? 0))}%` }} />
-                            </div>
-                            <span className="tabular-nums">{progressMeta.pct}%</span>
-                          </div>
-                        )}
-                        {!progressMeta.isActive && r.available_files > 0 && (
+                            {showProgressBar && (
+                              <span
+                                className="wbx-pill__fill"
+                                style={{ width: `${Math.max(0, Math.min(100, progressMeta.pct ?? 0))}%` }}
+                                aria-hidden="true"
+                              />
+                            )}
+                            <span className="wbx-pill__content">
+                              <span className="wbx-pill__lead">
+                                {isActive && !['stopping', 'cancelling', 'waiting_login', 'waiting_manual', 'queued'].includes(r.status) ? (
+                                  <Loader2 size={11.5} className="animate-spin wbx-pill__icon" aria-hidden="true" />
+                                ) : (
+                                  <span className="wbx-pill__dot" aria-hidden="true" />
+                                )}
+                                <span className="wbx-pill__label">{guidance.label}</span>
+                              </span>
+                              {showProgressBar && (
+                                <span className="wbx-pill__pct tabular-nums">{progressMeta.pct}%</span>
+                              )}
+                            </span>
+                          </span>
+                        </StatusHoverPopover>
+                        {!progressMeta.isActive && r.failed_items > 0 ? (
+                          <span className="tc-failed-count tabular-nums">· {r.failed_items} 项失败</span>
+                        ) : !progressMeta.isActive && r.available_files > 0 ? (
                           <button
                             type="button"
                             className="tc-file-count tabular-nums"
@@ -1057,22 +1095,9 @@ export function DownloadRecords({
                               openDetail(r, 'files');
                             }}
                           >
-                            {r.available_files} 个文件
+                            · {r.available_files} 个文件
                           </button>
-                        )}
-                        {!progressMeta.isActive && r.failed_items > 0 && (
-                          <span className="tc-failed-count tabular-nums">{r.failed_items} 项失败</span>
-                        )}
-                      </div>
-                      <div className="tc-progress-meta tabular-nums">
-                        {progressMeta.isActive && progressMeta.hasTotal && (
-                          <span>
-                            {r.completed_items}/{r.total_items} 项
-                          </span>
-                        )}
-                        {elapsedSec !== null && (
-                          <span>{isActive ? `已用 ${elapsedText}` : `耗时 ${elapsedText}`}</span>
-                        )}
+                        ) : null}
                       </div>
                     </td>
 
@@ -1081,7 +1106,7 @@ export function DownloadRecords({
                       {createdMeta.short}
                     </td>
 
-                    {/* 操作：严格收敛为 1 个场景主操作 + 极简辅助按钮 */}
+                    {/* 操作：清爽纯文字按钮，去除彩色块底色 */}
                     <td className="tc-col-ops">
                       <div className="tc-row-ops" onClick={e => e.stopPropagation()}>
                         {primaryAction?.type === 'restore' && (
@@ -1091,7 +1116,6 @@ export function DownloadRecords({
                             disabled={busy}
                             onClick={() => setConfirm([r])}
                           >
-                            <ArchiveRestore size={12.5} aria-hidden="true" />
                             <span>恢复</span>
                           </button>
                         )}
@@ -1104,7 +1128,6 @@ export function DownloadRecords({
                             title={r.available_files > 1 ? `打包下载全部 ${r.available_files} 个文件` : '下载结果文件'}
                             onClick={() => downloadResult(r)}
                           >
-                            <Download size={12.5} aria-hidden="true" />
                             <span>下载</span>
                           </button>
                         )}
@@ -1115,7 +1138,6 @@ export function DownloadRecords({
                             className="tc-op-cta is-primary"
                             onClick={() => openPrice(r)}
                           >
-                            <ExternalLink size={12.5} aria-hidden="true" />
                             <span>{primaryAction.label}</span>
                           </button>
                         )}
@@ -1138,7 +1160,7 @@ export function DownloadRecords({
                                 disabled={busy}
                                 onClick={() => downloadResult(r)}
                               >
-                                <Download size={14} aria-hidden="true" />
+                                <Download size={13.5} aria-hidden="true" />
                               </button>
                             )}
                           </>
@@ -1152,7 +1174,6 @@ export function DownloadRecords({
                             onClick={() => openDetail(r)}
                           >
                             <span>详情</span>
-                            <ChevronRight size={13} aria-hidden="true" />
                           </button>
                         )}
 
@@ -1171,7 +1192,6 @@ export function DownloadRecords({
                             disabled={busy || ['stopping', 'cancelling'].includes(r.status)}
                             onClick={() => stopTask(r)}
                           >
-                            <Square size={11} aria-hidden="true" />
                             <span>
                               {['stopping', 'cancelling'].includes(r.status)
                                 ? '停止中'
@@ -1183,16 +1203,19 @@ export function DownloadRecords({
                         )}
 
                         {!archived && (
-                          <button
-                            type="button"
-                            className="tc-icon-btn tc-remove-btn"
-                            title={isActive ? '停止并移出列表' : '移出列表'}
-                            aria-label={`${isActive ? '停止并移出' : '移出'} ${cleanTitle}`}
-                            disabled={busy}
-                            onClick={() => setConfirm([r])}
-                          >
-                            <X size={14} aria-hidden="true" />
-                          </button>
+                          <>
+                            <span className="tc-op-sep" aria-hidden="true" />
+                            <button
+                              type="button"
+                              className="tc-icon-btn tc-remove-btn"
+                              title={isActive ? '停止并移出列表' : '移出列表'}
+                              aria-label={`${isActive ? '停止并移出' : '移出'} ${cleanTitle}`}
+                              disabled={busy}
+                              onClick={() => setConfirm([r])}
+                            >
+                              <X size={13.5} aria-hidden="true" />
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>

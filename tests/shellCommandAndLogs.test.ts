@@ -25,13 +25,13 @@ import {
 
 test('getActiveNavGroup maps workspace views and task kinds to the expected primary nav group', () => {
   assert.equal(getActiveNavGroup({ workspaceView: 'create', taskKind: 'download' }), 'collection');
+  assert.equal(getActiveNavGroup({ workspaceView: 'create', taskKind: 'generate' }), 'reports');
   assert.equal(getActiveNavGroup({ workspaceView: 'create', taskKind: 'payroll' }), 'payroll');
-  assert.equal(getActiveNavGroup({ workspaceView: 'approval', taskKind: 'download' }), 'approval');
-  assert.equal(getActiveNavGroup({ workspaceView: 'price-export', taskKind: 'download' }), 'approval');
+  assert.equal(getActiveNavGroup({ workspaceView: 'approval', taskKind: 'download' }), 'payroll');
   assert.equal(getActiveNavGroup({ workspaceView: 'history', taskKind: 'download' }), 'history');
 });
 
-test('getBreadcrumbModel provides interactive sibling switchers for collection, payroll, and approval', () => {
+test('getBreadcrumbModel provides interactive sibling switchers for collection, reports, and payroll (including 价格审批)', () => {
   const collection = getBreadcrumbModel({
     workspaceView: 'create',
     taskKind: 'download',
@@ -43,6 +43,18 @@ test('getBreadcrumbModel provides interactive sibling switchers for collection, 
   assert.equal(collection.siblings.length, 4);
   assert.equal(collection.siblings.find(s => s.active)?.id, 'lanorange');
 
+  const reports = getBreadcrumbModel({
+    workspaceView: 'create',
+    taskKind: 'generate',
+    downloadPlatform: 'fengshen',
+    payrollSubView: 'batches',
+    reportId: 'abnormal_followup',
+  });
+  assert.equal(reports.moduleLabel, '专项报表');
+  assert.equal(reports.viewLabel, '异常跟进');
+  assert.equal(reports.siblings.length, 3);
+  assert.equal(reports.siblings.find(s => s.active)?.id, 'abnormal_followup');
+
   const payroll = getBreadcrumbModel({
     workspaceView: 'create',
     taskKind: 'payroll',
@@ -50,19 +62,19 @@ test('getBreadcrumbModel provides interactive sibling switchers for collection, 
     payrollSubView: 'deductions',
   });
   assert.equal(payroll.moduleLabel, '薪资核算');
-  assert.equal(payroll.viewLabel, '扣款规则');
-  assert.equal(payroll.siblings.length, 3);
+  assert.equal(payroll.viewLabel, '扣款配置');
+  assert.equal(payroll.siblings.length, 4);
   assert.equal(payroll.siblings.find(s => s.active)?.id, 'deductions');
 
   const approval = getBreadcrumbModel({
-    workspaceView: 'price-export',
+    workspaceView: 'approval',
     taskKind: 'download',
     downloadPlatform: 'fengshen',
     payrollSubView: 'batches',
   });
-  assert.equal(approval.moduleLabel, '价格审批');
-  assert.equal(approval.viewLabel, '待审每日价格导出');
-  assert.equal(approval.siblings.length, 2);
+  assert.equal(approval.moduleLabel, '薪资核算');
+  assert.equal(approval.viewLabel, '价格审批');
+  assert.equal(approval.siblings.length, 4);
 
   const history = getBreadcrumbModel({
     workspaceView: 'history',
@@ -84,7 +96,7 @@ test('buildShellCommands and filterShellCommands support Chinese, English, and p
     },
     { sidebarCollapsed: false },
   );
-  assert.ok(commands.length >= 12);
+  assert.ok(commands.length >= 11);
   assert.equal(commands.find(c => c.id === 'nav-fengshen')?.active, true);
   assert.equal(commands.find(c => c.id === 'act-toggle-sidebar')?.label, '收起为极简命令轨');
 
@@ -103,9 +115,10 @@ test('buildShellCommands and filterShellCommands support Chinese, English, and p
 
 test('Dual-Rail helpers compute kinetic rail indices, quick target IDs, and pin/recent lists', () => {
   assert.equal(getRailIndex('collection'), 0);
-  assert.equal(getRailIndex('payroll'), 1);
-  assert.equal(getRailIndex('approval'), 2);
-  assert.equal(getRailIndex('history'), 3);
+  assert.equal(getRailIndex('reports'), 1);
+  assert.equal(getRailIndex('payroll'), 2);
+  assert.equal(getRailIndex('approval'), 3);
+  assert.equal(getRailIndex('history'), 4);
 
   assert.equal(
     getCurrentQuickTargetId({
@@ -119,6 +132,16 @@ test('Dual-Rail helpers compute kinetic rail indices, quick target IDs, and pin/
   assert.equal(
     getCurrentQuickTargetId({
       workspaceView: 'create',
+      taskKind: 'generate',
+      downloadPlatform: 'fengshen',
+      payrollSubView: 'batches',
+      reportId: 'abnormal_riders',
+    }),
+    'report:abnormal_riders',
+  );
+  assert.equal(
+    getCurrentQuickTargetId({
+      workspaceView: 'create',
       taskKind: 'payroll',
       downloadPlatform: 'fengshen',
       payrollSubView: 'templates',
@@ -127,12 +150,12 @@ test('Dual-Rail helpers compute kinetic rail indices, quick target IDs, and pin/
   );
   assert.equal(
     getCurrentQuickTargetId({
-      workspaceView: 'price-export',
+      workspaceView: 'approval',
       taskKind: 'download',
       downloadPlatform: 'fengshen',
       payrollSubView: 'batches',
     }),
-    'workspace:price-export',
+    'workspace:approval',
   );
   assert.equal(
     getCurrentQuickTargetId({

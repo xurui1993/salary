@@ -28,8 +28,8 @@ export const DOWNLOAD_PLATFORMS: Array<{
   {
     id: 'fengshen',
     ...moduleLabels('fengshen'),
-    badgeLabel: '闪购账单与专项报表',
-    desc: '配送费、违规扣款、UB账单、考勤源表及3项关联生成报表',
+    badgeLabel: '闪购账单与考勤明细',
+    desc: '配送费、违规扣款、UB账单、风控运单与考勤源表采集',
     iconKey: 'compass',
   },
   {
@@ -56,9 +56,6 @@ export const DOWNLOAD_PLATFORMS: Array<{
 ];
 
 export function moduleAcceptsDataset(id: string, platform: DownloadPlatform): boolean {
-  if (platform === 'fengshen') {
-    return isGenerator(id) || (inferTaskKind([id]) === 'download' && datasetGroup(id) === 'fengshen');
-  }
   if (inferTaskKind([id]) !== 'download') return false;
   if (platform === 'payout') return isBaize(id) || isBenlai(id);
   return datasetGroup(id) === platform;
@@ -106,7 +103,6 @@ const FENGSHEN_NO_DATE_DATASETS = new Set([
   'invitation_records',
   'rider_info',
   'goods_rent',
-  'abnormal_riders',
 ]);
 
 export function computeDynamicScopeRequirements(
@@ -167,19 +163,7 @@ export function computeDynamicScopeRequirements(
     };
   }
 
-  // fengshen (includes 3 generated reports)
-  const abnormalRidersOnly = platformDatasets.every(id => id === 'abnormal_riders');
-  if (abnormalRidersOnly) {
-    return {
-      hasSelection: true,
-      needsCity: false,
-      cityOptional: false,
-      needsDate: false,
-      needsSeparationRule: false,
-      autoScopeBadge: '全部授权城市 · 全量最新汇总',
-      autoScopeDesc: '「异常骑手整理」固定关联蓝橙全城离职、请假与骑手档案生成成品表，免选城市与账期。',
-    };
-  }
+  // fengshen (raw collection datasets only; special reports live in dedicated 专项报表 module)
 
   const needsDate = platformDatasets.some(id => !FENGSHEN_NO_DATE_DATASETS.has(id));
   const merchantOnly = platformDatasets.every(id => id === 'invitation_records' || id === 'attendance_detail');
@@ -204,12 +188,6 @@ export function matchesRecordModule(
   if (!module) return true;
   const kind = record.kind || inferTaskKind(record.datasets);
   if (module === 'generate') return kind === 'generate';
-  if (module === 'fengshen') {
-    return (
-      (kind === 'download' || kind === 'generate') &&
-      record.datasets.some(id => moduleAcceptsDataset(id, 'fengshen'))
-    );
-  }
   return kind === 'download' && record.datasets.some(id => moduleAcceptsDataset(id, module));
 }
 

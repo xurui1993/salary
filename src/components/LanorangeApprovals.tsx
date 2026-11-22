@@ -394,16 +394,6 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
             </button>
           );
         })()}
-        {onSwitchView && (
-          <button
-            type="button"
-            className="wbx-btn wbx-btn--ghost wbx-btn--sm"
-            onClick={() => onSwitchView('price-export')}
-          >
-            <ArrowRightLeft size={13} />
-            <span>每日价格导出</span>
-          </button>
-        )}
       </div>
     </section>
 

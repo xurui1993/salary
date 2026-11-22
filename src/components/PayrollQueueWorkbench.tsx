@@ -21,12 +21,14 @@ import type { CorePageProps } from './CorePage';
 import { ControlPanel } from './ControlPanel';
 import { PayrollBatchDetailDrawer, type PayrollDetailTab } from './PayrollBatchDetailDrawer';
 import { WorkbenchDrawer } from './WorkbenchDrawer';
+import { StatusHoverPopover } from './StatusHoverPopover';
 import { WorkbenchConfirmModal, WorkbenchToast, type ToastNotice } from './WorkbenchFeedback';
 import { toneClass } from '../lib/statusSemantics';
 import { SystemTemplatesPanel } from './SystemTemplatesPanel';
 import { readDownloadResponse, saveDownloadBlob } from '../lib/outputDownload';
 import { businessLogEntries } from '../lib/payrollBusinessLogs';
 import {
+  buildPayrollProgressPopoverData,
   detectDuplicateUploadNames,
   extractPayrollAmount,
   extractPayrollReviewAlert,
@@ -39,6 +41,7 @@ import {
   payrollQueueRunning,
   payrollQueueStatus,
   payrollTypeTone,
+  resolvePayrollElapsedText,
   sortPayrollTasks,
   summarizePayrollTasks,
   type PayrollQueueTask,
@@ -265,6 +268,9 @@ export function PayrollQueueTable({
             const reviewAlert = extractPayrollReviewAlert(task);
             const pct = Number.isFinite(task.progress) ? Math.max(0, Math.min(100, Math.round(task.progress))) : 0;
             const showProgressBar = running && task.status !== 'queued' && pct > 0;
+            const popoverModel = buildPayrollProgressPopoverData(task, {
+              fallbackAction: progressDesc,
+            });
 
             return (
               <tr
@@ -294,11 +300,12 @@ export function PayrollQueueTable({
                   </span>
                 </td>
                 <td className="pq-col-period">
-                  <span className="pq-period-cycle">{cycleLabel || (task.plan ? '—' : '按上传顺序')}</span>
-                  {periodRange && <small className="pq-period-range tabular-nums">{periodRange}</small>}
+                  <span className="pq-period-inline tabular-nums">
+                    {periodRange || (task.plan ? '—' : '按上传顺序')}
+                  </span>
                 </td>
                 <td className="pq-col-type">
-                  <span className={`pq-type-text is-${typeTone}`}>{payrollModeName(task.mode)}</span>
+                  <span className={`pq-type-text is-${typeTone}`}>{payrollModeName(task)}</span>
                   {task.legacy && <small className="pq-type-legacy">历史</small>}
                 </td>
                 <td className="pq-col-applicants tabular-nums">
@@ -320,23 +327,34 @@ export function PayrollQueueTable({
                 </td>
                 <td className="pq-col-progress">
                   <div className="pq-progress-top">
-                    <span className={`wbx-pill ${toneClass(state.tone)}`}>
-                      {running && task.status !== 'stopping' && task.status !== 'queued' ? (
-                        <Loader2 size={12} className="animate-spin" />
-                      ) : (
-                        <span className="wbx-pill__dot" aria-hidden="true" />
-                      )}
-                      {state.label}
-                    </span>
-                    {showProgressBar && (
-                      <div className="pq-inline-progress" aria-label={`进度 ${pct}%`}>
-                        <div className="pq-inline-progress__track">
-                          <span style={{ width: `${pct}%` }} />
-                        </div>
-                        <span className="tabular-nums">{pct}%</span>
-                      </div>
-                    )}
-                    {reviewAlert && (
+                    <StatusHoverPopover model={popoverModel}>
+                      <span
+                        className={`wbx-pill ${toneClass(state.tone)}${showProgressBar ? ' wbx-pill--has-progress' : ''}`}
+                        aria-label={showProgressBar ? `${state.label} ${pct}%` : state.label}
+                      >
+                        {showProgressBar && (
+                          <span
+                            className="wbx-pill__fill"
+                            style={{ width: `${pct}%` }}
+                            aria-hidden="true"
+                          />
+                        )}
+                        <span className="wbx-pill__content">
+                          <span className="wbx-pill__lead">
+                            {running && task.status !== 'stopping' && task.status !== 'queued' ? (
+                              <Loader2 size={11.5} className="animate-spin wbx-pill__icon" aria-hidden="true" />
+                            ) : (
+                              <span className="wbx-pill__dot" aria-hidden="true" />
+                            )}
+                            <span className="wbx-pill__label">{state.label}</span>
+                          </span>
+                          {showProgressBar && (
+                            <span className="wbx-pill__pct tabular-nums">{pct}%</span>
+                          )}
+                        </span>
+                      </span>
+                    </StatusHoverPopover>
+                    {reviewAlert ? (
                       <button
                         type="button"
                         className="pq-review-alert-btn tabular-nums"
@@ -347,24 +365,12 @@ export function PayrollQueueTable({
                           onOpenDetail?.(task.id, 'review');
                         }}
                       >
-                        <AlertTriangle size={11.5} aria-hidden="true" />
-                        <span>{reviewAlert.label}</span>
+                        <span>· {reviewAlert.label}</span>
                       </button>
-                    )}
-                    {!!task.elapsed_seconds && (
-                      <small className="pq-elapsed tabular-nums">{payrollElapsed(task.elapsed_seconds)}</small>
-                    )}
+                    ) : null}
                   </div>
-                  {!!progressDesc && (
-                    <small
-                      className={`pq-progress-desc${task.status === 'error' ? ' is-error' : isWaiting ? ' is-warn' : ''}`}
-                      title={progressDesc}
-                    >
-                      {progressDesc}
-                    </small>
-                  )}
                 </td>
-                {/* 与任务中心统一的操作列范式：场景主操作 + 详情 > + 轻图标移出，严格 ≤3 控件 */}
+                {/* 与任务中心统一的清爽纯文字操作列：主操作文字 + 详情文字 + 轻图标移出 */}
                 <td className="pq-col-ops">
                   <div className="pq-row-actions" onClick={event => event.stopPropagation()}>
                     {hidden ? (
@@ -375,7 +381,6 @@ export function PayrollQueueTable({
                           disabled={busy}
                           onClick={() => onRestore([task])}
                         >
-                          <ArchiveRestore size={12.5} aria-hidden="true" />
                           <span>恢复</span>
                         </button>
                         <button
@@ -388,7 +393,6 @@ export function PayrollQueueTable({
                           }}
                         >
                           <span>详情</span>
-                          <ChevronRight size={13} aria-hidden="true" />
                         </button>
                       </>
                     ) : (
@@ -403,7 +407,6 @@ export function PayrollQueueTable({
                               disabled={busy}
                               onClick={() => onDownload(task)}
                             >
-                              <Download size={12.5} aria-hidden="true" />
                               <span>下载</span>
                             </button>
                             <button
@@ -414,7 +417,7 @@ export function PayrollQueueTable({
                               disabled={busy}
                               onClick={() => onOpenDirectory?.(task)}
                             >
-                              <FolderOpen size={14} aria-hidden="true" />
+                              <FolderOpen size={13.5} aria-hidden="true" />
                             </button>
                           </>
                         )}
@@ -456,7 +459,6 @@ export function PayrollQueueTable({
                             }}
                           >
                             <span>详情</span>
-                            <ChevronRight size={13} aria-hidden="true" />
                           </button>
                         )}
                         {running && (
@@ -474,19 +476,19 @@ export function PayrollQueueTable({
                             disabled={busy || task.status === 'stopping'}
                             onClick={() => onStop(task)}
                           >
-                            <Square size={11} aria-hidden="true" />
                             {task.status === 'stopping' ? '停止中' : task.status === 'queued' ? '取消' : '停止'}
                           </button>
                         )}
+                        <span className="pq-op-sep" aria-hidden="true" />
                         <button
                           type="button"
-                          className="pq-icon-button pq-remove-btn"
+                          className="pq-icon-btn pq-remove-btn"
                           title={running ? '停止并移出' : '移出任务'}
                           aria-label={`${running ? '停止并移出' : '移出'} ${taskLabel(task)}`}
                           disabled={busy || task.status === 'stopping'}
                           onClick={() => onRemove([task])}
                         >
-                          <X size={14} aria-hidden="true" />
+                          <X size={13.5} aria-hidden="true" />
                         </button>
                       </>
                     )}
@@ -1160,11 +1162,56 @@ export function FlashPayrollWorkbench({
               {hidden ? '已移出批次' : '核算批次队列'}
               <span className="tabular-nums">{visible.length}</span>
             </h3>
-            <p>
-              {visible.length > 0
-                ? '按提交时间倒序 · 点击任意行在右侧抽屉核对日志、扣款口径与复核摘要'
-                : '拖入模板文件或资料文件夹，系统自动识别并加入队列'}
-            </p>
+            {visible.length > 0 && (
+              <div className="pq-inline-summary tabular-nums" aria-label="当前筛选批次财务汇总">
+                <span>
+                  共 <strong>{summary.count}</strong> 批
+                </span>
+                <span className="pq-summary-strip__dot" aria-hidden="true">·</span>
+                <span>
+                  <strong>{summary.applicants.toLocaleString('zh-CN')}</strong> 人
+                </span>
+                <span className="pq-summary-strip__dot" aria-hidden="true">·</span>
+                <span>
+                  合计 <strong>¥{formatPayrollAmount(summary.amount)}</strong>
+                </span>
+                {summary.reviewAlertCount > 0 && (
+                  <>
+                    <span className="pq-summary-strip__dot" aria-hidden="true">·</span>
+                    <span>
+                      预警 <strong>{summary.reviewAlertCount}</strong>
+                    </span>
+                  </>
+                )}
+                <button
+                  type="button"
+                  className={`pq-summary-toggle${missingApprovalOnly ? ' is-active' : ''}`}
+                  onClick={() => {
+                    setMissingApprovalOnly(prev => !prev);
+                    setQueuePage(1);
+                  }}
+                >
+                  <span>未填编号</span>
+                  <strong className="tabular-nums">{summary.missingApprovalCount}</strong>
+                </button>
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    className="wb-link pq-reset-filter-link"
+                    onClick={() => {
+                      setQueueFilterTab('all');
+                      setQueueSearch('');
+                      setCityFilter('');
+                      setModeFilter('');
+                      setMissingApprovalOnly(false);
+                      setQueuePage(1);
+                    }}
+                  >
+                    重置筛选
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           <div className="pq-queue-actions">
             {chosen.length > 0 && <span className="pq-selection tabular-nums">已选 {chosen.length} 项</span>}
@@ -1241,9 +1288,8 @@ export function FlashPayrollWorkbench({
                     }
                   >
                     <Download size={13.5} />
-                    <span>
-                      {chosen.length ? '下载已选结果' : '下载已完成'}（{downloadable.length}）
-                    </span>
+                    <span>{chosen.length ? '下载已选结果' : '下载已完成'}</span>
+                    <span className="pq-action-count tabular-nums">{downloadable.length}</span>
                   </button>
                 )}
                 {chosen.length > 0 && (
@@ -1260,14 +1306,15 @@ export function FlashPayrollWorkbench({
             )}
             <button
               type="button"
-              className="wbx-btn wbx-btn--sm"
+              className={`wbx-btn wbx-btn--sm${hidden ? ' wbx-btn--secondary' : ''}`}
               onClick={() => {
                 setHidden(previous => !previous);
                 setQueuePage(1);
                 setDetailTaskId('');
               }}
             >
-              {hidden ? '返回队列' : '已移出'}
+              <ArchiveRestore size={13} aria-hidden="true" />
+              <span>{hidden ? '返回队列' : '已移出'}</span>
             </button>
           </div>
         </header>
@@ -1293,156 +1340,101 @@ export function FlashPayrollWorkbench({
           );
         })()}
 
-        {/* 3. 多维筛选区（状态页签 + 城市 / 类型 / 排序 / 未填编号 / 关键词） */}
+        {/* 3. 单行多维筛选栏（状态页签 + 搜索 + 城市 / 类型 / 排序） */}
         {visible.length > 0 && (
-          <>
-            <div className="wbx-payroll__filter-bar">
-              <div className="wbx-payroll__tabs" role="tablist" aria-label="按队列状态筛选">
-                {(
-                  [
-                    ['all', '全部', tabCounts.all],
-                    ['active', '执行中', tabCounts.active],
-                    ['waiting', '待处理', tabCounts.waiting],
-                    ['completed', '已完成', tabCounts.completed],
-                    ['issue', '异常/已结束', tabCounts.issue],
-                  ] as const
-                ).map(([key, label, count]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    role="tab"
-                    aria-selected={queueFilterTab === key}
-                    className={`wbx-payroll__tab ${queueFilterTab === key ? 'is-active' : ''}`}
-                    onClick={() => {
-                      setQueueFilterTab(key);
-                      setQueuePage(1);
-                      setChecked([]);
-                    }}
-                  >
-                    <span>{label}</span>
-                    <span className="wbx-payroll__tab-count tabular-nums">{count}</span>
-                  </button>
-                ))}
-              </div>
-
-              <div className="wbx-payroll__filter-controls">
-                <label className="wbx-payroll__search">
-                  <Search size={13.5} />
-                  <input
-                    type="search"
-                    value={queueSearch}
-                    onChange={e => {
-                      setQueueSearch(e.target.value);
-                      setQueuePage(1);
-                    }}
-                    placeholder="搜索审批编号、城市或模板…"
-                    aria-label="筛选核算批次"
-                  />
-                </label>
-
-                <select
-                  className="wb-select wbx-payroll__select"
-                  aria-label="按城市筛选"
-                  value={cityFilter}
-                  onChange={e => {
-                    setCityFilter(e.target.value);
-                    setQueuePage(1);
-                    setChecked([]);
-                  }}
-                >
-                  <option value="">全部城市</option>
-                  {availableCities.map(city => (
-                    <option key={city} value={city}>
-                      {city}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  className="wb-select wbx-payroll__select"
-                  aria-label="按核算类型筛选"
-                  value={modeFilter}
-                  onChange={e => {
-                    setModeFilter(e.target.value);
-                    setQueuePage(1);
-                    setChecked([]);
-                  }}
-                >
-                  <option value="">全部类型</option>
-                  <option value="fengshen">闪购自动</option>
-                  <option value="manual">闪购手动</option>
-                  <option value="xiaoxiang">小象超市</option>
-                </select>
-
-                <select
-                  className="wb-select wbx-payroll__select"
-                  aria-label="核算批次排序"
-                  value={sortKey}
-                  onChange={e => setSortKey(e.target.value as PayrollSortKey)}
-                >
-                  <option value="default">按提交时间</option>
-                  <option value="amount_desc">按金额降序</option>
-                  <option value="applicants_desc">按人数降序</option>
-                  <option value="elapsed_desc">按用时降序</option>
-                </select>
-              </div>
-            </div>
-
-            {/* 4. 面向财务核对的轻量单行汇总条 */}
-            <div className="pq-summary-strip tabular-nums" aria-label="当前筛选批次财务汇总">
-              <div className="pq-summary-strip__metrics">
-                <span>
-                  筛选批次 <strong>{summary.count}</strong> 批
-                </span>
-                <span className="pq-summary-strip__dot" aria-hidden="true">·</span>
-                <span>
-                  合计人数 <strong>{summary.applicants.toLocaleString('zh-CN')}</strong> 人
-                </span>
-                <span className="pq-summary-strip__dot" aria-hidden="true">·</span>
-                <span>
-                  核算总额 <strong className="is-amount">¥{formatPayrollAmount(summary.amount)}</strong>
-                </span>
-                {summary.reviewAlertCount > 0 && (
-                  <>
-                    <span className="pq-summary-strip__dot" aria-hidden="true">·</span>
-                    <span className="is-warn">
-                      复核预警 <strong>{summary.reviewAlertCount}</strong> 批
-                    </span>
-                  </>
-                )}
-              </div>
-
-              <div className="pq-summary-strip__actions">
+          <div className="wbx-payroll__filter-bar">
+            <div className="wbx-payroll__tabs" role="tablist" aria-label="按队列状态筛选">
+              {(
+                [
+                  ['all', '全部', tabCounts.all],
+                  ['active', '执行中', tabCounts.active],
+                  ['waiting', '待处理', tabCounts.waiting],
+                  ['completed', '已完成', tabCounts.completed],
+                  ['issue', '异常/已结束', tabCounts.issue],
+                ] as const
+              ).map(([key, label, count]) => (
                 <button
+                  key={key}
                   type="button"
-                  className={`pq-summary-toggle${missingApprovalOnly ? ' is-active' : ''}`}
+                  role="tab"
+                  aria-selected={queueFilterTab === key}
+                  className={`wbx-payroll__tab ${queueFilterTab === key ? 'is-active' : ''}`}
                   onClick={() => {
-                    setMissingApprovalOnly(prev => !prev);
+                    setQueueFilterTab(key);
                     setQueuePage(1);
+                    setChecked([]);
                   }}
                 >
-                  <span>未填编号</span>
-                  <strong className="tabular-nums">{summary.missingApprovalCount}</strong>
+                  <span>{label}</span>
+                  <span className="wbx-payroll__tab-count tabular-nums">{count}</span>
                 </button>
-                {hasActiveFilters && (
-                  <button
-                    type="button"
-                    className="wb-link"
-                    onClick={() => {
-                      setQueueFilterTab('all');
-                      setQueueSearch('');
-                      setCityFilter('');
-                      setModeFilter('');
-                      setMissingApprovalOnly(false);
-                      setQueuePage(1);
-                    }}
-                  >
-                    重置筛选
-                  </button>
-                )}
-              </div>
+              ))}
             </div>
-          </>
+
+            <div className="wbx-payroll__filter-controls">
+              <label className="wbx-payroll__search">
+                <Search size={13.5} />
+                <input
+                  type="search"
+                  value={queueSearch}
+                  onChange={e => {
+                    setQueueSearch(e.target.value);
+                    setQueuePage(1);
+                  }}
+                  placeholder="搜索审批编号、城市或模板…"
+                  aria-label="筛选核算批次"
+                />
+              </label>
+
+              <select
+                className="wb-select wbx-payroll__select"
+                aria-label="按城市筛选"
+                value={cityFilter}
+                onChange={e => {
+                  setCityFilter(e.target.value);
+                  setQueuePage(1);
+                  setChecked([]);
+                }}
+              >
+                <option value="">全部城市</option>
+                {availableCities.map(city => (
+                  <option key={city} value={city}>
+                    {city}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                className="wb-select wbx-payroll__select"
+                aria-label="按核算类型筛选"
+                value={modeFilter}
+                onChange={e => {
+                  setModeFilter(e.target.value);
+                  setQueuePage(1);
+                  setChecked([]);
+                }}
+              >
+                <option value="">全部类型</option>
+                <option value="周结">周结</option>
+                <option value="半月结">半月结</option>
+                <option value="月结">月结</option>
+                <option value="全职">全职</option>
+                <option value="日结">日结</option>
+              </select>
+
+              <select
+                className="wb-select wbx-payroll__select"
+                aria-label="核算批次排序"
+                value={sortKey}
+                onChange={e => setSortKey(e.target.value as PayrollSortKey)}
+              >
+                <option value="default">按提交时间</option>
+                <option value="amount_desc">按金额降序</option>
+                <option value="applicants_desc">按人数降序</option>
+                <option value="elapsed_desc">按用时降序</option>
+              </select>
+            </div>
+          </div>
         )}
 
         {loading && !visible.length ? (

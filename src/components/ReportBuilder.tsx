@@ -60,6 +60,7 @@ export interface ReportBuilderProps {
   onRecollect: (value: boolean) => void;
   refreshing: boolean;
   onRefreshCities: () => void;
+  singleReportMode?: boolean;
 }
 
 function reportScopeLabel(scope: ReportDefinition['scope']): string {
@@ -239,10 +240,58 @@ export function ReportBuilder(props: ReportBuilderProps) {
     allowedMonthCodes.length > 0 &&
     allowedMonthCodes.every(monthCode => activeMonths.includes(monthCode));
 
+  const singleMode = Boolean(props.singleReportMode);
+  const singleReport = singleMode ? selectedReports[0] : undefined;
+  const cityStepNumber = singleMode ? '01' : '02';
+  const monthStepNumber = singleMode ? '02' : '03';
+
   return (
-    <section className="rb-workbench" aria-label="专项报表生成">
+    <section className={`rb-workbench${singleMode ? ' is-single-module' : ''}`} aria-label="专项报表生成">
       <div className="rb-main">
-        {/* Step 01: Left Report Type Multi-Select Dropdown */}
+        {singleMode && singleReport ? (
+          <section className="wbx-card wbx-step rb-module-overview" aria-labelledby="report-type-label">
+            <div className="rb-module-overview__head">
+              <div className="rb-module-overview__title-wrap">
+                <span className="rb-module-overview__icon" aria-hidden="true">
+                  <FileSpreadsheet size={16} />
+                </span>
+                <div className="min-w-0">
+                  <div className="rb-module-overview__title-row">
+                    <h2 id="report-type-label" className="rb-module-overview__title">
+                      {singleReport.label}
+                    </h2>
+                    <span className="wb-step-count-pill">{reportScopeLabel(singleReport.scope)}</span>
+                  </div>
+                  {singleReport.description && (
+                    <p className="rb-module-overview__desc">{singleReport.description}</p>
+                  )}
+                </div>
+              </div>
+              {scopeSummary.systems.length > 0 && (
+                <div className="rb-systems">
+                  <Layers size={13} aria-hidden="true" />
+                  <span>关联系统：{scopeSummary.systems.join(' / ')}</span>
+                </div>
+              )}
+            </div>
+
+            {scopeSummary.sources.length > 0 && (
+              <details
+                className="rb-explanation"
+                key={singleReport.id}
+              >
+                <summary>报表说明与来源（{scopeSummary.sources.length}）</summary>
+                <ul>
+                  {scopeSummary.sources.map(source => (
+                    <li key={source}>{source.replaceAll('白泽', '商翼')}</li>
+                  ))}
+                </ul>
+                <p>资料不足时暂停生成，已取得的资料保留。</p>
+              </details>
+            )}
+          </section>
+        ) : (
+        /* Step 01: Left Report Type Multi-Select Dropdown */
         <section className="wb-step-card rb-step-card" aria-labelledby="report-type-label">
           <div className="wb-step-card-header">
             <div className="wb-step-badge">
@@ -447,14 +496,15 @@ export function ReportBuilder(props: ReportBuilderProps) {
             </div>
           )}
         </section>
+        )}
 
-        {/* Step 02: 处理城市与站点范围（全部取消下拉框，平铺展示） */}
+        {/* 处理城市与站点范围（全部取消下拉框，平铺展示） */}
         {selectedReports.length > 0 && (
           scopeSummary.allGlobal ? (
-            <section className="wb-step-card rb-step-card" aria-label="全局报表固定范围">
+            <section className={`${singleMode ? 'wbx-card wbx-step' : 'wb-step-card'} rb-step-card`} aria-label="全局报表固定范围">
               <div className="wb-step-card-header">
                 <div className="wb-step-badge">
-                  <span className="wb-step-number">02</span>
+                  <span className="wb-step-number">{cityStepNumber}</span>
                   <span className="wb-step-title">处理范围</span>
                   <span className="wb-step-count-pill">固定全局口径</span>
                 </div>
@@ -473,10 +523,10 @@ export function ReportBuilder(props: ReportBuilderProps) {
               </div>
             </section>
           ) : (
-            <section className="wb-step-card rb-step-card" aria-labelledby="report-city-label">
+            <section className={`${singleMode ? 'wbx-card wbx-step' : 'wb-step-card'} rb-step-card`} aria-labelledby="report-city-label">
               <div className="wb-step-card-header">
                 <div className="wb-step-badge">
-                  <span className="wb-step-number">02</span>
+                  <span className="wb-step-number">{cityStepNumber}</span>
                   <span id="report-city-label" className="wb-step-title">
                     处理城市
                   </span>
@@ -606,12 +656,12 @@ export function ReportBuilder(props: ReportBuilderProps) {
           )
         )}
 
-        {/* Step 03: 业务月份（近3个月多选 + 风神样式排除取分离站点开关） */}
+        {/* 业务月份（近3个月多选 + 风神样式排除取分离站点开关） */}
         {selectedReports.length > 0 && scopeSummary.needsDate && (
-          <section className="wb-step-card rb-step-card" aria-labelledby="report-month-label">
+          <section className={`${singleMode ? 'wbx-card wbx-step' : 'wb-step-card'} rb-step-card`} aria-labelledby="report-month-label">
             <div className="wb-step-card-header">
               <div className="wb-step-badge">
-                <span className="wb-step-number">03</span>
+                <span className="wb-step-number">{monthStepNumber}</span>
                 <span id="report-month-label" className="wb-step-title">
                   业务月份
                 </span>
@@ -719,12 +769,14 @@ export function ReportBuilder(props: ReportBuilderProps) {
         <div className="wb-compact-rail-top">
           <div className="wb-compact-rail-header">
             <div className="wb-compact-rail-title">
-              <h4>已选报表</h4>
-              <span className="wb-compact-count-pill tabular-nums">
-                {selectedReports.length > 0 ? `已选 ${selectedReports.length} 项` : '0 项'}
-              </span>
+              <h4>{singleMode ? '当前报表' : '已选报表'}</h4>
+              {!singleMode && (
+                <span className="wb-compact-count-pill tabular-nums">
+                  {selectedReports.length > 0 ? `已选 ${selectedReports.length} 项` : '0 项'}
+                </span>
+              )}
             </div>
-            {selectedReports.length > 0 && props.onSelectIds && (
+            {!singleMode && selectedReports.length > 0 && props.onSelectIds && (
               <button
                 type="button"
                 className="wb-compact-clear-btn"
@@ -755,7 +807,7 @@ export function ReportBuilder(props: ReportBuilderProps) {
                           </span>
                         </div>
                       </div>
-                      {props.onSelectIds && (
+                      {!singleMode && props.onSelectIds && (
                         <button
                           type="button"
                           className="wb-compact-item-remove"

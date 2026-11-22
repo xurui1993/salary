@@ -9,12 +9,12 @@ import {
   computeDynamicScopeRequirements,
 } from '../src/lib/downloadModules';
 
-test('platform downloads integrate generated reports into fengshen while excluding them from other platforms', () => {
+test('platform downloads exclude generated reports from all download platforms including fengshen', () => {
   assert(moduleAcceptsDataset('invitation_records', 'fengshen'));
   assert(moduleAcceptsDataset('attendance_detail', 'fengshen'));
-  assert(moduleAcceptsDataset('payment_binding', 'fengshen'));
-  assert(moduleAcceptsDataset('abnormal_followup', 'fengshen'));
-  assert(moduleAcceptsDataset('abnormal_riders', 'fengshen'));
+  assert(!moduleAcceptsDataset('payment_binding', 'fengshen'));
+  assert(!moduleAcceptsDataset('abnormal_followup', 'fengshen'));
+  assert(!moduleAcceptsDataset('abnormal_riders', 'fengshen'));
   assert(moduleAcceptsDataset('lanorange_part_price', 'lanorange'));
   assert(moduleAcceptsDataset('baize_employees', 'payout'));
   assert(moduleAcceptsDataset('benlai_employees', 'payout'));
@@ -27,10 +27,10 @@ test('platform downloads integrate generated reports into fengshen while excludi
   assert(!moduleAcceptsDataset('delivery_fee', 'payout'));
 });
 
-test('local history matches generated reports under fengshen and preserves legacy filters', () => {
+test('local history matches generated reports under generate module and excludes them from fengshen', () => {
   const report = { kind: 'generate', datasets: ['abnormal_followup', 'lanorange_part_price'] };
   assert(matchesRecordModule(report, 'generate'));
-  assert(matchesRecordModule(report, 'fengshen'));
+  assert(!matchesRecordModule(report, 'fengshen'));
   assert(!matchesRecordModule(report, 'lanorange'));
   const legacy = { datasets: ['delivery_fee', 'lanorange_part_price'] };
   assert(matchesRecordModule(legacy, 'fengshen'));
@@ -78,9 +78,10 @@ test('cross-platform cart preserves datasets across all 4 platforms and computes
   assert.equal(fengshenDatedScope.needsDate, true);
   assert.equal(fengshenDatedScope.needsSeparationRule, true);
 
-  const abnormalRidersScope = computeDynamicScopeRequirements('fengshen', ['abnormal_riders']);
-  assert.equal(abnormalRidersScope.needsCity, false);
-  assert.equal(abnormalRidersScope.needsDate, false);
-  assert.equal(abnormalRidersScope.needsSeparationRule, false);
+  const fengshenSnapshotScope = computeDynamicScopeRequirements('fengshen', ['rider_info']);
+  assert.equal(fengshenSnapshotScope.needsCity, true);
+  assert.equal(fengshenSnapshotScope.needsDate, false);
+  assert.equal(fengshenSnapshotScope.needsSeparationRule, true);
 });
+
 

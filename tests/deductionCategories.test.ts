@@ -14,6 +14,7 @@ import {
   visibleColumnsForCategory,
 } from '../src/lib/deductionCategories';
 import { CityDeductionAmounts } from '../src/components/CityDeductionAmounts';
+import { CityDeductionTableView } from '../src/components/CityDeductionTableView';
 import { DeductionAmounts, type DeductionEntry } from '../src/components/DeductionAmounts';
 
 function makeEntry(
@@ -347,28 +348,44 @@ test('groupDeductionsByCity and summarizeStationRow organize 14 cities x 10+ sta
   const cardHtml = renderToStaticMarkup(
     React.createElement(CityStationAccordionCard, {
       group: allGroups[0],
+      visibleColumns: [...CONFIG_RULE_COLUMNS],
+      onOpenCity: () => {},
+      onToggleCity: () => {},
+    }),
+  );
+  assert.match(cardHtml, /wbx-city-vcard/);
+  assert.match(cardHtml, /城市1/);
+  assert.match(cardHtml, /11 个站点/);
+  assert.match(cardHtml, /查看扣款/);
+  assert.doesNotMatch(cardHtml, /下属站点分组明细/);
+
+  const tableHtml = renderToStaticMarkup(
+    React.createElement(CityDeductionTableView, {
+      group: allGroups[0],
+      allCitySummaries: allGroups.map(g => g.summary),
       allEntries: entries,
       columns: [...CONFIG_RULE_COLUMNS],
+      categorySpecs: buildDeductionCategories([...CONFIG_RULE_COLUMNS]),
       activeCategory: 'all',
       visibleColumns: [...CONFIG_RULE_COLUMNS],
-      expanded: true,
-      expandedStations: new Set([entries[0].key]),
       selectedStations: new Set<string>(),
+      showProblemRules: true,
       disabled: false,
-      onToggleCity: () => {},
-      onToggleStation: () => {},
-      onToggleAllCityStations: () => {},
+      onBack: () => {},
+      onSelectCity: () => {},
+      onChangeCategory: () => {},
       onToggleSelectStation: () => {},
+      onToggleSelectAllStations: () => {},
       onUpdateCity: () => {},
       onApplyCityToStations: () => {},
       onUpdateStation: () => {},
       onBulkUpdateStations: () => {},
     }),
   );
-  assert.match(cardHtml, /城市1/);
-  assert.match(cardHtml, /11 个站点/);
-  assert.match(cardHtml, /下属站点分组明细/);
-  assert.match(cardHtml, /确认本站零扣款/);
+  assert.match(tableHtml, /wbx-ded-sheet/);
+  assert.match(tableHtml, /返回城市卡片/);
+  assert.match(tableHtml, /城市1 · 城市默认/);
+  assert.match(tableHtml, /零扣/);
 });
 
 test('unified Excel workbook helpers build, classify, and apply both item and keyword deduction sheets', () => {

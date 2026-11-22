@@ -109,6 +109,7 @@ export function buildDemoPayrollTasks(): PayrollQueueTask[] {
       status: 'queued',
       progress: 0,
       current_action: '排队等待前序任务释放采集通道（第 1 位）',
+      elapsed_seconds: 16,
       created_at: '2026-11-21T09:08:00+08:00',
       logs: [{ time: '09:08:02', level: 'INFO', message: '任务已入队，等待自动拉取风神资料' }],
     },
@@ -124,6 +125,7 @@ export function buildDemoPayrollTasks(): PayrollQueueTask[] {
       status: 'queued',
       progress: 0,
       current_action: '手动资料包已就绪，排队等待核算进程',
+      elapsed_seconds: 9,
       created_at: '2026-11-21T09:05:00+08:00',
       logs: [{ time: '09:05:11', level: 'INFO', message: '已上传手动资料文件夹（含 7 份补充表）' }],
     },
@@ -607,9 +609,12 @@ export function buildDemoPayrollTasks(): PayrollQueueTask[] {
     'demo-pq-12': 612480.5,
   };
 
+  const nonHalfCycleTypes = ['月结', '周结', '全职', '日结', '月结', '日结'] as const;
+
   return specs.map((item, idx) => {
     const hasCalculatedAmount = ['completed', 'calculating', 'waiting_confirmation', 'interrupted'].includes(item.status);
     const isHalfMonth = item.cycle.includes('半月');
+    const settlementType = isHalfMonth ? '半月结' : nonHalfCycleTypes[idx % nonHalfCycleTypes.length];
     const avgPerRider = item.mode === 'xiaoxiang' ? 3240 : isHalfMonth ? 2960 : 5480;
     const computedAmount = hasCalculatedAmount
       ? (amountOverrides[item.id] ??
@@ -671,6 +676,7 @@ export function buildDemoPayrollTasks(): PayrollQueueTask[] {
       batch_id: item.batch_id || '',
       approval_code: item.approval_code,
       mode: item.mode,
+      settlement_type: settlementType,
       amount: computedAmount,
       template_name: `${item.city}_${item.cycle}_${item.mode === 'xiaoxiang' ? '小象' : '兼职'}薪资申请表.xlsx`,
       plan: {
@@ -678,6 +684,7 @@ export function buildDemoPayrollTasks(): PayrollQueueTask[] {
         start: item.start,
         end: item.end,
         cycle: item.cycle,
+        settlement_type: settlementType,
         applicants: item.applicants,
         amount: computedAmount,
         template: `${item.city}_${item.cycle}_薪资申请表.xlsx`,
@@ -887,7 +894,7 @@ export function buildDemoTaskCenterRecords(): DemoTaskCenterRecord[] {
     {
       id: 'TC-20261121-006',
       kind: 'generate',
-      title: '业务报表 · 异常骑手跟进（大连/保定）',
+      title: '业务报表 · 异常跟进（大连/保定）',
       status: 'cancelling',
       created_at: minsAgo(14),
       started_at: minsAgo(13),
@@ -935,7 +942,7 @@ export function buildDemoTaskCenterRecords(): DemoTaskCenterRecord[] {
     {
       id: 'TC-20261121-008',
       kind: 'generate',
-      title: '业务报表 · 骑手支付绑定核对表（深圳/东莞）',
+      title: '业务报表 · 支付绑定核对表（深圳/东莞）',
       status: 'partial',
       created_at: minsAgo(75),
       started_at: minsAgo(74),
@@ -947,7 +954,7 @@ export function buildDemoTaskCenterRecords(): DemoTaskCenterRecord[] {
       total_items: 2,
       completed_items: 1,
       failed_items: 1,
-      files: [makeFile('tc08', 1, '深圳_202610_骑手支付绑定.xlsx', 945_600, '深圳', 'payment_binding')],
+      files: [makeFile('tc08', 1, '深圳_202610_支付绑定.xlsx', 945_600, '深圳', 'payment_binding')],
       source_files: [
         makeFile('tc08s', 1, '深圳_骑手风神绑定原始表.xlsx', 612_000, '深圳', 'receive_account'),
       ],
@@ -1148,7 +1155,7 @@ export function buildDemoTaskCenterRecords(): DemoTaskCenterRecord[] {
     {
       id: 'TC-20261120-017',
       kind: 'generate',
-      title: '业务报表 · 异常骑手整理（全授权城市）',
+      title: '业务报表 · 异常名单（全授权城市）',
       status: 'success',
       created_at: '2026-11-20T14:55:00+08:00',
       started_at: '2026-11-20T14:55:09+08:00',
@@ -1160,7 +1167,7 @@ export function buildDemoTaskCenterRecords(): DemoTaskCenterRecord[] {
       total_items: 1,
       completed_items: 1,
       failed_items: 0,
-      files: [makeFile('tc17', 1, '全城市_202610_异常骑手整理汇总.xlsx', 1_450_000, '全部城市', 'abnormal_riders')],
+      files: [makeFile('tc17', 1, '全城市_202610_异常名单汇总.xlsx', 1_450_000, '全部城市', 'abnormal_riders')],
       source_files: [
         makeFile('tc17s', 1, '风神_全城市骑手信息快照.xlsx', 3_120_000, '全部城市', 'rider_info'),
         makeFile('tc17s', 2, '蓝橙_人事资料汇总.xlsx', 1_890_000, '全部城市', 'lanorange_summary'),
@@ -1288,7 +1295,7 @@ export function buildDemoTaskCenterRecords(): DemoTaskCenterRecord[] {
     {
       id: 'TC-20261119-023',
       kind: 'generate',
-      title: '业务报表 · 骑手支付绑定（上海/宁波/泉州）',
+      title: '业务报表 · 支付绑定（上海/宁波/泉州）',
       status: 'success',
       created_at: '2026-11-19T16:40:00+08:00',
       started_at: '2026-11-19T16:40:08+08:00',
@@ -1301,9 +1308,9 @@ export function buildDemoTaskCenterRecords(): DemoTaskCenterRecord[] {
       completed_items: 3,
       failed_items: 0,
       files: [
-        makeFile('tc23', 1, '上海_202610_骑手支付绑定.xlsx', 1_128_000, '上海', 'payment_binding'),
-        makeFile('tc23', 2, '宁波_202610_骑手支付绑定.xlsx', 642_000, '宁波', 'payment_binding'),
-        makeFile('tc23', 3, '泉州_202610_骑手支付绑定.xlsx', 524_000, '泉州', 'payment_binding'),
+        makeFile('tc23', 1, '上海_202610_支付绑定.xlsx', 1_128_000, '上海', 'payment_binding'),
+        makeFile('tc23', 2, '宁波_202610_支付绑定.xlsx', 642_000, '宁波', 'payment_binding'),
+        makeFile('tc23', 3, '泉州_202610_支付绑定.xlsx', 524_000, '泉州', 'payment_binding'),
       ],
       source_files: [makeFile('tc23s', 1, '风神_骑手风神绑定_10月.xlsx', 980_000, '上海', 'receive_account')],
       has_zip: true,
@@ -1406,7 +1413,7 @@ export function buildDemoTaskCenterRecords(): DemoTaskCenterRecord[] {
     {
       id: 'TC-20261118-028',
       kind: 'generate',
-      title: '业务报表 · 异常骑手跟进（上海/广州）',
+      title: '业务报表 · 异常跟进（上海/广州）',
       status: 'success',
       created_at: '2026-11-18T11:45:00+08:00',
       started_at: '2026-11-18T11:45:06+08:00',
@@ -1419,8 +1426,8 @@ export function buildDemoTaskCenterRecords(): DemoTaskCenterRecord[] {
       completed_items: 2,
       failed_items: 0,
       files: [
-        makeFile('tc28', 1, '上海_202610_异常骑手跟进.xlsx', 540_200, '上海', 'abnormal_followup'),
-        makeFile('tc28', 2, '广州_202610_异常骑手跟进.xlsx', 462_800, '广州', 'abnormal_followup'),
+        makeFile('tc28', 1, '上海_202610_异常跟进.xlsx', 540_200, '上海', 'abnormal_followup'),
+        makeFile('tc28', 2, '广州_202610_异常跟进.xlsx', 462_800, '广州', 'abnormal_followup'),
       ],
       has_zip: true,
       can_retry: false,

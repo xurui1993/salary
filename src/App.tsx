@@ -53,6 +53,7 @@ import { TerminalPanel } from './components/TerminalPanel';
 import {
   buildShellCommands,
   getBreadcrumbModel,
+  SPECIAL_REPORT_SUBMODULES,
   type ShellCommandAction,
 } from './lib/shellNav';
 import { APP_TITLE } from './lib/appMeta';
@@ -231,6 +232,14 @@ export default function App() {
       return DOWNLOAD_PLATFORMS.find(value=>value.id===saved)?.id||'fengshen';
     }catch{return 'fengshen';}
   });
+  const [activeReportId, setActiveReportId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem('workbench_active_report_id');
+      return SPECIAL_REPORT_SUBMODULES.find(item => item.id === saved)?.id || SPECIAL_REPORT_SUBMODULES[0].id;
+    } catch {
+      return SPECIAL_REPORT_SUBMODULES[0].id;
+    }
+  });
   const [historyAll,setHistoryAll]=useState(false);
   const platformMeta=DOWNLOAD_PLATFORMS.find(value=>value.id===downloadPlatform)!;
   const platformLabel=platformMeta.label;
@@ -267,10 +276,7 @@ export default function App() {
       clearInterval(timer);
     };
   }, []);
-  const [taskKind, setTaskKind] = useState<TaskKind>(() => {
-    const initial = initialTaskKind();
-    return initial === 'generate' ? 'download' : initial;
-  });
+  const [taskKind, setTaskKind] = useState<TaskKind>(() => initialTaskKind());
   const [taskFormLocked, setTaskFormLocked] = useState(false);
   const [activeDownloadCount, setActiveDownloadCount] = useState(0);
   const [payrollResumeVersion, setPayrollResumeVersion] = useState(0);
@@ -279,6 +285,13 @@ export default function App() {
   const openDownloadModule=(platform:DownloadPlatform)=>{
     setDownloadPlatform(platform);try{localStorage.setItem('workbench_download_platform',platform);}catch{}
     setHistoryAll(false);setTaskKind('download');navigateWorkspace('create');
+  };
+  const openReportModule = (reportId: string) => {
+    setActiveReportId(reportId);
+    try { localStorage.setItem('workbench_active_report_id', reportId); } catch {}
+    setHistoryAll(false);
+    setTaskKind('generate');
+    navigateWorkspace('create');
   };
   const [platformStatuses, setPlatformStatuses] = useState<PlatformStatusMap>({});
   useEffect(() => {
@@ -294,6 +307,11 @@ export default function App() {
   const executeShellAction = (action: ShellCommandAction) => {
     if (action.type === 'platform') {
       openDownloadModule(action.platform);
+      setMobileNavOpen(false);
+      return;
+    }
+    if (action.type === 'report') {
+      openReportModule(action.reportId);
       setMobileNavOpen(false);
       return;
     }
@@ -420,23 +438,19 @@ export default function App() {
   } | null>(null);
 
   const handleNavigateGenerate = (cities: string[], start?: string, end?: string) => {
-    setHistoryAll(false);
-    setDownloadPlatform('fengshen');
-    try { localStorage.setItem('workbench_download_platform', 'fengshen'); } catch {}
-    setTaskKind('download');
-    navigateWorkspace('create');
+    openReportModule('payment_binding');
     setDownloadPrefill({
       cities,
       start,
       end,
       datasets: ['payment_binding'],
-      taskKind: 'download',
+      taskKind: 'generate',
       token: Date.now(),
     });
     showToast(
       cities.length
-        ? `已带入 ${cities.length} 个城市至风神数据，请确认专项报表与时间范围`
-        : '已跳转风神数据，请在全部资料中勾选专项报表',
+        ? `已带入 ${cities.length} 个城市至「专项报表 / 支付绑定」，请确认月份后生成`
+        : '已跳转至「专项报表 / 支付绑定」',
       'info',
     );
   };
@@ -1170,6 +1184,7 @@ export default function App() {
           workspaceView={workspaceView}
           taskKind={taskKind}
           downloadPlatform={downloadPlatform}
+          activeReportId={activeReportId}
           payrollSubView={payrollSubView}
           isDrawerMode={isDrawerMode}
           taskFormLocked={taskFormLocked}
@@ -1188,9 +1203,10 @@ export default function App() {
           {(() => {
             const breadcrumbModel = getBreadcrumbModel({
               workspaceView,
-              taskKind: taskKind === 'generate' ? 'download' : taskKind,
+              taskKind,
               downloadPlatform,
               payrollSubView,
+              reportId: activeReportId,
             });
             const errorLogCount = logs.filter(entry => entry.level === 'ERROR').length;
             const totalActiveCount =
@@ -1390,14 +1406,19 @@ export default function App() {
                 navigation={downloadNavigation}
                 embedded
                 hideNavigation
-                taskKind="download"
+                taskKind={taskKind === 'generate' ? 'generate' : 'download'}
                 platform={downloadPlatform}
+                activeReportId={activeReportId}
                 recordModule={undefined}
                 onSelectPlatform={(nextPlatform) => {
                   setDownloadPlatform(nextPlatform);
                   try { localStorage.setItem('workbench_download_platform', nextPlatform); } catch {}
                 }}
-                onTaskKindChange={(nextKind) => setTaskKind(nextKind === 'generate' ? 'download' : nextKind)}
+                onSelectReport={(nextReportId) => {
+                  setActiveReportId(nextReportId);
+                  try { localStorage.setItem('workbench_active_report_id', nextReportId); } catch {}
+                }}
+                onTaskKindChange={(nextKind) => setTaskKind(nextKind)}
                 onViewChange={setWorkspaceView}
                 onFormLock={setTaskFormLocked}
                 onNavigateGenerate={handleNavigateGenerate}
@@ -1531,9 +1552,10 @@ export default function App() {
         commands={buildShellCommands(
           {
             workspaceView,
-            taskKind: taskKind === 'generate' ? 'download' : taskKind,
+            taskKind,
             downloadPlatform,
             payrollSubView,
+            reportId: activeReportId,
           },
           { sidebarCollapsed: sidebarIsCollapsed },
         )}

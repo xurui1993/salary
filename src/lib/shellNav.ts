@@ -2,17 +2,19 @@ import type { DownloadPlatform } from './downloadModules';
 import type { PayrollSubView, PlatformDotTone, PlatformStatusMap } from './workbench';
 import { getPlatformStatusCluster } from './workbench';
 
-export type NavGroupId = 'collection' | 'payroll' | 'approval' | 'history';
+export type NavGroupId = 'collection' | 'reports' | 'payroll' | 'approval' | 'history';
 
 export interface ShellNavState {
   workspaceView: 'create' | 'history' | 'approval' | 'price-export';
   taskKind: 'download' | 'generate' | 'payroll';
   downloadPlatform: DownloadPlatform;
   payrollSubView: PayrollSubView;
+  reportId?: string;
 }
 
 export type ShellCommandAction =
   | { type: 'platform'; platform: DownloadPlatform }
+  | { type: 'report'; reportId: string }
   | { type: 'payroll'; subView: PayrollSubView }
   | { type: 'workspace'; view: 'approval' | 'price-export' | 'history' }
   | { type: 'open-dock' }
@@ -24,6 +26,9 @@ export type QuickTargetId =
   | 'platform:lanorange'
   | 'platform:payout'
   | 'platform:xiaoxiang'
+  | 'report:payment_binding'
+  | 'report:abnormal_followup'
+  | 'report:abnormal_riders'
   | 'payroll:batches'
   | 'payroll:deductions'
   | 'payroll:templates'
@@ -59,7 +64,7 @@ export interface BreadcrumbModel {
 
 export interface ShellCommandItem {
   id: string;
-  group: '数据采集' | '薪资核算' | '价格审批' | '全局调度';
+  group: '数据采集' | '专项报表' | '薪资核算' | '价格审批' | '全局调度';
   label: string;
   subtitle: string;
   keywords: string[];
@@ -68,7 +73,43 @@ export interface ShellCommandItem {
   action: ShellCommandAction;
 }
 
-export const RAIL_GROUP_ORDER: NavGroupId[] = ['collection', 'payroll', 'approval', 'history'];
+export interface SpecialReportSubModuleMeta {
+  id: 'payment_binding' | 'abnormal_followup' | 'abnormal_riders';
+  label: string;
+  shortLabel: string;
+  hint: string;
+  subtitle: string;
+  keywords: string[];
+}
+
+export const SPECIAL_REPORT_SUBMODULES: SpecialReportSubModuleMeta[] = [
+  {
+    id: 'payment_binding',
+    label: '支付绑定',
+    shortLabel: '支付绑定',
+    hint: '按城市按月关联收薪绑定与发薪档案',
+    subtitle: '自动关联风神收薪绑定与蓝橙、商翼及本来人力档案，输出多城汇总',
+    keywords: ['payment', 'binding', 'zfbd', '支付', '绑定', '专项报表'],
+  },
+  {
+    id: 'abnormal_followup',
+    label: '异常跟进',
+    shortLabel: '异常跟进',
+    hint: '按城市按月排查物资、UB账单与档案异常',
+    subtitle: '以支付绑定为基准，关联物资租用、月度 UB 账单与价格档案定位异常',
+    keywords: ['abnormal', 'followup', 'ycgj', '异常', '跟进', '专项报表'],
+  },
+  {
+    id: 'abnormal_riders',
+    label: '异常名单',
+    shortLabel: '异常名单',
+    hint: '全城全量汇总蓝橙离职、请假与骑手档案',
+    subtitle: '固定全城全量汇总蓝橙 5 类离职、请假与骑手档案，免选城市与月份',
+    keywords: ['abnormal', 'riders', 'ycmd', 'yczl', '异常', '名单', '整理', '全量', '专项报表'],
+  },
+];
+
+export const RAIL_GROUP_ORDER: NavGroupId[] = ['collection', 'reports', 'payroll', 'approval', 'history'];
 
 export const QUICK_TARGETS: QuickTargetMeta[] = [
   {
@@ -77,7 +118,7 @@ export const QUICK_TARGETS: QuickTargetMeta[] = [
     label: '风神数据',
     shortLabel: '风神',
     moduleLabel: '数据采集',
-    hint: '配送费、扣款与专项报表',
+    hint: '配送费、扣款与账单采集',
     accent: 'sapphire',
     action: { type: 'platform', platform: 'fengshen' },
   },
@@ -111,11 +152,21 @@ export const QUICK_TARGETS: QuickTargetMeta[] = [
     accent: 'violet',
     action: { type: 'platform', platform: 'xiaoxiang' },
   },
+  ...SPECIAL_REPORT_SUBMODULES.map(report => ({
+    id: `report:${report.id}` as QuickTargetId,
+    groupId: 'reports' as NavGroupId,
+    label: report.label,
+    shortLabel: report.shortLabel,
+    moduleLabel: '专项报表',
+    hint: report.hint,
+    accent: 'sapphire' as const,
+    action: { type: 'report' as const, reportId: report.id },
+  })),
   {
     id: 'payroll:batches',
     groupId: 'payroll',
-    label: '核算批次',
-    shortLabel: '批次',
+    label: '兼职核算',
+    shortLabel: '核算',
     moduleLabel: '薪资核算',
     hint: '申请表上传与自动齐套',
     accent: 'sapphire',
@@ -124,7 +175,7 @@ export const QUICK_TARGETS: QuickTargetMeta[] = [
   {
     id: 'payroll:deductions',
     groupId: 'payroll',
-    label: '扣款规则',
+    label: '扣款配置',
     shortLabel: '扣款',
     moduleLabel: '薪资核算',
     hint: '站点默认扣款与关键词',
@@ -143,23 +194,13 @@ export const QUICK_TARGETS: QuickTargetMeta[] = [
   },
   {
     id: 'workspace:approval',
-    groupId: 'approval',
-    label: '批量审批',
+    groupId: 'payroll',
+    label: '价格审批',
     shortLabel: '审批',
-    moduleLabel: '价格审批',
+    moduleLabel: '薪资核算',
     hint: '跨页勾选与批量同意',
     accent: 'amber',
     action: { type: 'workspace', view: 'approval' },
-  },
-  {
-    id: 'workspace:price-export',
-    groupId: 'approval',
-    label: '待审每日价格导出',
-    shortLabel: '每日价',
-    moduleLabel: '价格审批',
-    hint: '最新待审站点价格表',
-    accent: 'sapphire',
-    action: { type: 'workspace', view: 'price-export' },
   },
   {
     id: 'workspace:history',
@@ -183,8 +224,9 @@ export function getQuickTargetMeta(id: QuickTargetId): QuickTargetMeta | undefin
 
 export function getActiveNavGroup(state: Pick<ShellNavState, 'workspaceView' | 'taskKind'>): NavGroupId {
   if (state.workspaceView === 'history') return 'history';
-  if (state.workspaceView === 'approval' || state.workspaceView === 'price-export') return 'approval';
+  if (state.workspaceView === 'approval' || state.workspaceView === 'price-export') return 'payroll';
   if (state.taskKind === 'payroll') return 'payroll';
+  if (state.taskKind === 'generate') return 'reports';
   return 'collection';
 }
 
@@ -196,11 +238,15 @@ export function getRailIndex(groupId: NavGroupId): number {
 export function getCurrentQuickTargetId(state: ShellNavState): QuickTargetId {
   const groupId = getActiveNavGroup(state);
   if (groupId === 'history') return 'workspace:history';
-  if (groupId === 'approval') {
-    return state.workspaceView === 'price-export' ? 'workspace:price-export' : 'workspace:approval';
+  if (state.workspaceView === 'approval' || state.workspaceView === 'price-export') {
+    return 'workspace:approval';
   }
   if (groupId === 'payroll') {
     return `payroll:${state.payrollSubView}` as QuickTargetId;
+  }
+  if (groupId === 'reports') {
+    const targetId = SPECIAL_REPORT_SUBMODULES.find(item => item.id === state.reportId)?.id || SPECIAL_REPORT_SUBMODULES[0].id;
+    return `report:${targetId}` as QuickTargetId;
   }
   return `platform:${state.downloadPlatform}` as QuickTargetId;
 }
@@ -269,7 +315,7 @@ export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
 
   if (groupId === 'collection') {
     const platforms: { id: DownloadPlatform; label: string; hint: string }[] = [
-      { id: 'fengshen', label: '风神数据', hint: '账单、违规扣款与专项报表' },
+      { id: 'fengshen', label: '风神数据', hint: '配送费、违规扣款与考勤源表' },
       { id: 'lanorange', label: '蓝橙数据', hint: '人事档案、离职请假与价格表' },
       { id: 'payout', label: '发薪平台', hint: '白泽商翼与本来人力' },
       { id: 'xiaoxiang', label: '小象灯塔', hint: '商配送日维度分析与订单明细' },
@@ -289,44 +335,62 @@ export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
     };
   }
 
-  if (groupId === 'payroll') {
-    const subViews: { id: PayrollSubView; label: string; hint: string }[] = [
-      { id: 'batches', label: '核算批次', hint: '上传申请表与自动化核算' },
-      { id: 'deductions', label: '扣款规则', hint: '站点默认扣款与关键词配置' },
-      { id: 'templates', label: '模板中心', hint: '闪购与小象标准核算模板' },
-    ];
-    const current = subViews.find(item => item.id === state.payrollSubView) || subViews[0];
+  if (groupId === 'reports') {
+    const current =
+      SPECIAL_REPORT_SUBMODULES.find(item => item.id === state.reportId) ||
+      SPECIAL_REPORT_SUBMODULES[0];
     return {
       groupId,
-      moduleLabel: '薪资核算',
+      moduleLabel: '专项报表',
       viewLabel: current.label,
-      siblings: subViews.map(item => ({
+      siblings: SPECIAL_REPORT_SUBMODULES.map(item => ({
         id: item.id,
         label: item.label,
         hint: item.hint,
         active: item.id === current.id,
-        action: { type: 'payroll', subView: item.id },
+        action: { type: 'report', reportId: item.id },
       })),
     };
   }
 
-  if (groupId === 'approval') {
-    const items: { id: 'approval' | 'price-export'; label: string; hint: string }[] = [
-      { id: 'approval', label: '蓝橙批量审批', hint: '筛选本人提审并跨页批量审批' },
-      { id: 'price-export', label: '待审每日价格导出', hint: '导出最新待审版本骑手每日价格' },
+  if (groupId === 'payroll') {
+    const isApproval = state.workspaceView === 'approval' || state.workspaceView === 'price-export';
+    const subViews: { id: string; label: string; hint: string; active: boolean; action: ShellCommandAction }[] = [
+      {
+        id: 'batches',
+        label: '兼职核算',
+        hint: '上传申请表与自动化核算',
+        active: !isApproval && state.payrollSubView === 'batches',
+        action: { type: 'payroll', subView: 'batches' },
+      },
+      {
+        id: 'deductions',
+        label: '扣款配置',
+        hint: '站点默认扣款与关键词配置',
+        active: !isApproval && state.payrollSubView === 'deductions',
+        action: { type: 'payroll', subView: 'deductions' },
+      },
+      {
+        id: 'templates',
+        label: '模板中心',
+        hint: '闪购与小象标准核算模板',
+        active: !isApproval && state.payrollSubView === 'templates',
+        action: { type: 'payroll', subView: 'templates' },
+      },
+      {
+        id: 'approval',
+        label: '价格审批',
+        hint: '筛选本人提审并跨页批量审批',
+        active: isApproval,
+        action: { type: 'workspace', view: 'approval' },
+      },
     ];
-    const current = items.find(item => item.id === state.workspaceView) || items[0];
+    const current = subViews.find(item => item.active) || subViews[0];
     return {
-      groupId,
-      moduleLabel: '价格审批',
+      groupId: 'payroll',
+      moduleLabel: '薪资核算',
       viewLabel: current.label,
-      siblings: items.map(item => ({
-        id: item.id,
-        label: item.label,
-        hint: item.hint,
-        active: item.id === current.id,
-        action: { type: 'workspace', view: item.id },
-      })),
+      siblings: subViews,
     };
   }
 
@@ -352,15 +416,17 @@ export function buildShellCommands(
 ): ShellCommandItem[] {
   const groupId = getActiveNavGroup(state);
   const isCollection = groupId === 'collection';
-  const isPayroll = groupId === 'payroll';
+  const isReports = groupId === 'reports';
+  const activeReportId = state.reportId || SPECIAL_REPORT_SUBMODULES[0].id;
+  const isPayroll = groupId === 'payroll' && state.workspaceView === 'create';
 
   return [
     {
       id: 'nav-fengshen',
       group: '数据采集',
-      label: '风神数据（含专项报表）',
-      subtitle: '配送费、违规扣款、UB账单、支付绑定与异常跟进',
-      keywords: ['fengshen', 'fs', '风神', '闪购', '专项报表', '配送费', '扣款', '绑定'],
+      label: '风神数据',
+      subtitle: '配送费、违规扣款、UB账单、风控运单与考勤源表采集',
+      keywords: ['fengshen', 'fs', '风神', '闪购', '配送费', '扣款', '考勤'],
       active: isCollection && state.downloadPlatform === 'fengshen',
       action: { type: 'platform', platform: 'fengshen' },
     },
@@ -391,21 +457,30 @@ export function buildShellCommands(
       active: isCollection && state.downloadPlatform === 'xiaoxiang',
       action: { type: 'platform', platform: 'xiaoxiang' },
     },
+    ...SPECIAL_REPORT_SUBMODULES.map(report => ({
+      id: `nav-report-${report.id}`,
+      group: '专项报表' as const,
+      label: report.label,
+      subtitle: report.subtitle,
+      keywords: report.keywords,
+      active: isReports && activeReportId === report.id,
+      action: { type: 'report' as const, reportId: report.id },
+    })),
     {
       id: 'nav-payroll-batches',
       group: '薪资核算',
-      label: '核算批次队列',
+      label: '兼职核算',
       subtitle: '上传兼职薪资申请表，自动齐套资料并执行核算',
-      keywords: ['payroll', 'xz', 'hs', '薪资', '核算', '批次', '工资'],
+      keywords: ['payroll', 'xz', 'hs', '薪资', '核算', '兼职', '工资'],
       active: isPayroll && state.payrollSubView === 'batches',
       action: { type: 'payroll', subView: 'batches' },
     },
     {
       id: 'nav-payroll-deductions',
       group: '薪资核算',
-      label: '扣款规则配置',
+      label: '扣款配置',
       subtitle: '按城市与团队维护站点默认扣款金额及关键词',
-      keywords: ['deduction', 'kk', '扣款', '站点', '规则'],
+      keywords: ['deduction', 'kk', '扣款', '站点', '规则', '配置'],
       active: isPayroll && state.payrollSubView === 'deductions',
       action: { type: 'payroll', subView: 'deductions' },
     },
@@ -420,21 +495,12 @@ export function buildShellCommands(
     },
     {
       id: 'nav-approval',
-      group: '价格审批',
-      label: '蓝橙批量审批',
+      group: '薪资核算',
+      label: '价格审批',
       subtitle: '筛选本人待审单据，跨页勾选并批量审批',
       keywords: ['approval', 'sp', '审批', '价格', '蓝橙'],
       active: state.workspaceView === 'approval',
       action: { type: 'workspace', view: 'approval' },
-    },
-    {
-      id: 'nav-price-export',
-      group: '价格审批',
-      label: '待审每日价格导出',
-      subtitle: '导出权限站点最新待审版本骑手每日价格 Excel',
-      keywords: ['price', 'export', 'jg', '每日价格', '导出', '待审'],
-      active: state.workspaceView === 'price-export',
-      action: { type: 'workspace', view: 'price-export' },
     },
     {
       id: 'nav-history',
