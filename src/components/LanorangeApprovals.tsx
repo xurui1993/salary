@@ -1,9 +1,8 @@
 import { TaskOutcome } from './TaskOutcome';
 import React,{useEffect,useMemo,useRef,useState} from 'react';
-import {ApprovalScopeFilters} from './ApprovalScopeFilters';
 import {WorkbenchDrawer} from './WorkbenchDrawer';
 import {toneClass, normalizeTone} from '../lib/statusSemantics';
-import {RefreshCw, ArrowRightLeft, KeyRound, Search, CheckCircle2, ClipboardList, Download} from 'lucide-react';
+import {RefreshCw, ArrowRightLeft, KeyRound, Search, CheckCircle2, ClipboardList, Download, RotateCcw} from 'lucide-react';
 import {platformAuthRequest,PlatformAuthError} from '../lib/platformAuthApi';
 import {filterApprovalTasks,type ApprovalEligibilityFilter} from '../lib/workbenchFilters';
 import {
@@ -213,6 +212,22 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
   const eligibleScopeCount=useMemo(()=>scopeFiltered.filter(r=>!r.reason).length,[scopeFiltered]);
   const blockedScopeCount=scopeFiltered.length-eligibleScopeCount;
   const rows=filtered.slice((page-1)*20,page*20);
+
+  const rowMonth=(r:Task)=>(r.settle_month||r.period_start||'').slice(0,7);
+  const cityChoices=useMemo(()=>[...new Set(effectiveRows.map(r=>r.cityName||'').filter(Boolean))].sort(),[effectiveRows]);
+  const monthChoices=useMemo(
+    ()=>[...new Set(effectiveRows.filter(r=>!scopeCities.length||scopeCities.includes(r.cityName||'')).map(rowMonth).filter(Boolean))].sort().reverse(),
+    [effectiveRows,scopeCities],
+  );
+  const siteChoices=useMemo(
+    ()=>[...new Map(
+      effectiveRows
+        .filter(r=>(!scopeCities.length||scopeCities.includes(r.cityName||''))&&(!scopeMonths.length||scopeMonths.includes(rowMonth(r))))
+        .map(r=>[JSON.stringify([r.cityName,r.siteName]),r] as const),
+    )],
+    [effectiveRows,scopeCities,scopeMonths],
+  );
+  const hasAnyScopeFilter=scopeCities.length>0||scopeMonths.length>0||Boolean(scopeSite)||Boolean(keyword.trim())||eligibilityFilter!=='all';
 
   async function perform(kind:string,action:()=>Promise<void>){
     if(inflight.current)return;inflight.current=true;setCommand(kind);setError('');setNotice('');
@@ -457,24 +472,24 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
         <div className="wbx-approval__queue-title">
           <h3>
             本人待办审批列表
-            <span>{filtered.length}</span>
+            <span className="tabular-nums">{filtered.length}</span>
           </h3>
-          <p className="tabular-nums">
-            已勾选 {selected.length} 条（跨页保留 · 单批上限 200 条）
-          </p>
+          <span className="wbx-approval__queue-meta tabular-nums">
+            已勾选 <strong>{selected.length}</strong> 条 · 跨页保留 · 单批上限 200 条
+          </span>
         </div>
         <div className="wbx-approval__actions">
           <button
             type="button"
-            className="wb-button"
+            className="wbx-btn wbx-btn--sm"
             disabled={listBusy || !!command || !filtered.some(r => !r.reason) || filtered.length > 200}
             onClick={() => choose(filtered, true)}
           >
-            勾选当前范围全部 ({filtered.filter(r => !r.reason).length})
+            勾选当前范围 ({filtered.filter(r => !r.reason).length})
           </button>
           <button
             type="button"
-            className="wb-button"
+            className="wbx-btn wbx-btn--sm"
             disabled={!selected.length || !!command}
             onClick={() => setSelection({})}
           >
@@ -482,7 +497,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
           </button>
           <button
             type="button"
-            className="wb-primary"
+            className="wbx-btn wbx-btn--primary wbx-btn--sm"
             disabled={!selected.length || !!command || active || !!attempt || listBusy}
             onClick={() => void makePreview()}
           >
@@ -491,28 +506,10 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
         </div>
       </div>
 
-      {/* 嵌入式多维范围筛选条：仅在已同步出数据时展开，避免未登录时出现空洞筛选框 */}
+      {/* 统一工作台单行页签 + 紧凑筛选控件栏 */}
       {effectiveRows.length > 0 && (
-        <ApprovalScopeFilters
-          rows={effectiveRows}
-          cities={scopeCities}
-          months={scopeMonths}
-          site={scopeSite}
-          busy={listBusy || !!command}
-          onChange={(cities, months, site) => {
-            setScopeCities(cities);
-            setScopeMonths(months);
-            setScopeSite(site);
-            setPage(1);
-            setSelection({});
-            setPreview(null);
-          }}
-        />
-      )}
-
-      {scopeFiltered.length > 0 && (
-        <div className="wbx-approvals__filter-bar">
-          <div className="wbx-segmented" role="tablist" aria-label="按审批状态筛选">
+        <div className="wbx-approvals__toolbar">
+          <div className="wbx-approvals__tabs" role="tablist" aria-label="按审批状态筛选">
             {([
               ['all', '全部', scopeFiltered.length],
               ['eligible', '可同意提交', eligibleScopeCount],
@@ -523,37 +520,125 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
                 type="button"
                 role="tab"
                 aria-selected={eligibilityFilter === key}
-                className={`wbx-segmented__item ${eligibilityFilter === key ? 'is-active' : ''}`}
+                className={`wbx-approvals__tab${eligibilityFilter === key ? ' is-active' : ''}`}
                 onClick={() => { setEligibilityFilter(key); setPage(1); }}
               >
                 <span>{label}</span>
-                <span className="tabular-nums">({count})</span>
+                <span className="wbx-approvals__tab-count tabular-nums">{count}</span>
               </button>
             ))}
           </div>
-          <label className="wbx-approvals__search">
-            <Search size={14} />
-            <input
-              type="search"
-              value={keyword}
-              onChange={e => { setKeyword(e.target.value); setPage(1); }}
-              placeholder="搜索业务编号、城市、站点、节点或申请人..."
-              aria-label="搜索待办审批"
-            />
-          </label>
+
+          <div className="wbx-approvals__filters" aria-label="多维范围筛选">
+            <label className="wbx-approvals__search">
+              <Search size={13.5} aria-hidden="true" />
+              <input
+                type="search"
+                value={keyword}
+                onChange={e => { setKeyword(e.target.value); setPage(1); }}
+                placeholder="搜索编号、站点或申请人…"
+                aria-label="搜索待办审批"
+              />
+            </label>
+
+            <select
+              className="wbx-approvals__select"
+              aria-label="按城市筛选"
+              disabled={listBusy || !!command}
+              value={scopeCities[0] || ''}
+              onChange={e => {
+                const next = e.target.value ? [e.target.value] : [];
+                setScopeCities(next);
+                setScopeMonths([]);
+                setScopeSite('');
+                setPage(1);
+                setSelection({});
+                setPreview(null);
+              }}
+            >
+              <option value="">全部城市 ({cityChoices.length})</option>
+              {cityChoices.map(c => (
+                <option key={c} value={c}>
+                  {c} ({effectiveRows.filter(r => r.cityName === c).length})
+                </option>
+              ))}
+            </select>
+
+            <select
+              className="wbx-approvals__select"
+              aria-label="按结算月份筛选"
+              disabled={listBusy || !!command}
+              value={scopeMonths[0] || ''}
+              onChange={e => {
+                const next = e.target.value ? [e.target.value] : [];
+                setScopeMonths(next);
+                setScopeSite('');
+                setPage(1);
+                setSelection({});
+                setPreview(null);
+              }}
+            >
+              <option value="">全部月份</option>
+              {monthChoices.map(m => (
+                <option key={m} value={m}>
+                  {m} ({effectiveRows.filter(r => (!scopeCities.length || scopeCities.includes(r.cityName || '')) && rowMonth(r) === m).length})
+                </option>
+              ))}
+            </select>
+
+            <select
+              className="wbx-approvals__select wbx-approvals__select--site"
+              aria-label="待审批站点"
+              disabled={listBusy || !!command}
+              value={scopeSite}
+              onChange={e => {
+                setScopeSite(e.target.value);
+                setPage(1);
+                setSelection({});
+                setPreview(null);
+              }}
+            >
+              <option value="">全部站点 ({siteChoices.length})</option>
+              {siteChoices.map(([key, r]) => (
+                <option value={key} key={key}>
+                  {r.cityName} · {r.siteName || '未命名站点'}
+                </option>
+              ))}
+            </select>
+
+            {hasAnyScopeFilter && (
+              <button
+                type="button"
+                className="wbx-approvals__reset"
+                onClick={() => {
+                  setScopeCities([]);
+                  setScopeMonths([]);
+                  setScopeSite('');
+                  setEligibilityFilter('all');
+                  setKeyword('');
+                  setPage(1);
+                  setSelection({});
+                  setPreview(null);
+                }}
+              >
+                <RotateCcw size={12} aria-hidden="true" />
+                <span>重置</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
 
       {filtered.length > 200 && (
-        <p className="wb-muted mt-2">每批最多审批200条，请缩小城市、月份或站点范围，或按页勾选。</p>
+        <p className="wbx-approvals__subnote">每批最多审批 200 条，请缩小城市、月份或站点范围，或按页勾选。</p>
       )}
       {active && (
-        <p className="wb-muted mt-2">已有批次执行中，可在下方查看进度；离开此页仍会继续。</p>
+        <p className="wbx-approvals__subnote">已有批次执行中，可在上方「审批结果回执」查看进度；离开此页仍会继续。</p>
       )}
 
       {filtered.length > 0 ? (
         <>
-          <div className="wb-approval-table wbx-table-scroll wbx-approvals__scroll mt-3" aria-busy={listBusy}>
+          <div className="wb-approval-table wbx-table-scroll wbx-approvals__scroll" aria-busy={listBusy}>
             <table className="wbx-table wbx-approvals__table">
               <thead>
                 <tr>
@@ -602,13 +687,14 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
                       <small className="tabular-nums">{task.createTime || '—'}</small>
                     </td>
                     <td className="ap-col-node">
-                      <span className={`wbx-pill ${task.reason ? 'wbx-pill--warn' : 'wbx-pill--neutral'}`}>
+                      <span className={`wbx-approvals__node-tag${task.reason ? ' is-blocked' : ''}`}>
                         {task.nodeName || '—'}
                       </span>
                     </td>
                     <td className="wbx-table__actions">
                       <button
-                        className="wb-button"
+                        type="button"
+                        className="wbx-approvals__detail-btn"
                         disabled={!!command || !!task.reason}
                         onClick={() => void showDetail(task)}
                       >
@@ -620,14 +706,28 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
               </tbody>
             </table>
           </div>
-          <div className="wb-approval-pagination">
-            <span className="tabular-nums">第{page}/{pages}页 · 每页20条</span>
-            <button className="wb-button" disabled={page <= 1 || listBusy} onClick={() => setPage(p => p - 1)}>
-              上一页
-            </button>
-            <button className="wb-button" disabled={page >= pages || listBusy} onClick={() => setPage(p => p + 1)}>
-              下一页
-            </button>
+          <div className="wbx-approvals__pagination tabular-nums">
+            <span className="wbx-approvals__page-meta">
+              共 {filtered.length} 条 · 第 {page} / {pages} 页（每页 20 条）
+            </span>
+            <div className="wbx-approvals__page-btns">
+              <button
+                type="button"
+                className="wbx-btn wbx-btn--sm"
+                disabled={page <= 1 || listBusy}
+                onClick={() => setPage(p => p - 1)}
+              >
+                上一页
+              </button>
+              <button
+                type="button"
+                className="wbx-btn wbx-btn--sm"
+                disabled={page >= pages || listBusy}
+                onClick={() => setPage(p => p + 1)}
+              >
+                下一页
+              </button>
+            </div>
           </div>
         </>
       ) : listBusy ? (

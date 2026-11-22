@@ -329,13 +329,14 @@
   font-size: var(--wbx-fs-caption);
 }
 
-/* 4. Step 01 单行极简分类筛选条（杜绝两行折行与灰框臃肿） */
+/* 4. Step 01 统一清爽下划线分类筛选条（与兼职核算/任务中心/扣款表格页签规范一致） */
 .wbx-dc-catbar {
   display: flex;
   flex-wrap: nowrap;
-  align-items: center;
+  align-items: stretch;
   gap: 4px;
-  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #e2e8f0;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -345,13 +346,16 @@
 }
 
 .wbx-dc-cat {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  height: 28px;
+  gap: 6px;
+  height: 36px;
   padding: 0 10px;
-  border-radius: 7px;
-  border: 1px solid transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  margin-bottom: -1px;
   background: transparent;
   color: var(--wbx-text-muted);
   font-size: 12.5px;
@@ -359,19 +363,18 @@
   white-space: nowrap;
   flex-shrink: 0;
   cursor: pointer;
-  transition: background-color var(--wbx-dur-fast) var(--wbx-ease),
-              border-color var(--wbx-dur-fast) var(--wbx-ease),
-              color var(--wbx-dur-fast) var(--wbx-ease);
+  transition: color var(--wbx-dur-fast) var(--wbx-ease),
+              border-color var(--wbx-dur-fast) var(--wbx-ease);
 }
 
 .wbx-dc-cat:hover:not(:disabled) {
-  background: #f8fafc;
+  background: transparent;
   color: var(--wbx-text);
 }
 
 .wbx-dc-cat.is-active {
-  background: var(--wbx-primary-soft);
-  border-color: var(--wbx-primary-border);
+  background: transparent;
+  border-bottom-color: var(--wbx-primary);
   color: var(--wbx-primary);
   font-weight: 600;
 }
@@ -382,13 +385,23 @@
 }
 
 .wbx-dc-cat__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: #eef2f6;
   font-family: var(--wbx-font-mono);
-  font-size: 11px;
-  font-weight: 500;
-  color: #94a3b8;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #64748b;
+  line-height: 1;
 }
 
 .wbx-dc-cat.is-active .wbx-dc-cat__count {
+  background: #e0f2fe;
   color: var(--wbx-primary);
   font-weight: 600;
 }
@@ -528,18 +541,13 @@
   margin: 0;
   font-size: 12px;
   font-weight: 400;
-  line-height: 1.45;
+  line-height: 1.48;
   color: var(--wbx-text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.wbx-dc-grid.is-two-col .wbx-dc-card__desc {
   white-space: normal;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .wbx-dc-card.is-selected .wbx-dc-card__desc {
@@ -2108,4 +2116,136 @@
   font-size: 12.5px;
   color: var(--wbx-text-muted);
   line-height: 1.5;
+}
+
+/* 去嵌套：将「报表说明与来源」灰底套盒扁平化为卡片内发丝线折叠底条 */
+.rb-module-overview .rb-explanation {
+  margin: 4px 0 0;
+  padding: 10px 0 0;
+  border: 0;
+  border-top: 1px solid #eef2f6;
+  border-radius: 0;
+  background: transparent;
+}
+
+.rb-module-overview .rb-explanation summary {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rb-module-overview .rb-explanation summary::-webkit-details-marker {
+  display: none;
+}
+
+.rb-module-overview .rb-explanation summary::before {
+  content: "▸";
+  font-size: 11px;
+  color: #94a3b8;
+  transition: transform 140ms ease;
+}
+
+.rb-module-overview .rb-explanation[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.rb-module-overview .rb-explanation summary:hover {
+  color: #026aa2;
+}
+
+.rb-module-overview .rb-explanation ul {
+  margin: 8px 0 6px;
+  padding-left: 16px;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.rb-module-overview .rb-explanation p {
+  margin: 0;
+  font-size: 11.5px;
+  color: #94a3b8;
+}
+
+/* 专项报表右侧栏去嵌套：单层清爽白卡 + 发丝线分区，消除卡中卡叠框 */
+.rb-workbench .rb-rail {
+  background: #ffffff;
+  border: 1px solid var(--wbx-border);
+  border-radius: 10px;
+  box-shadow: var(--wbx-shadow-xs);
+  padding: 16px 18px;
+  gap: 0;
+}
+
+.rb-workbench .rb-rail .wb-compact-rail-top {
+  padding: 0 0 12px;
+  border-bottom: 1px solid #eef2f6;
+}
+
+.rb-workbench .rb-rail .wb-compact-rail-header {
+  margin-bottom: 8px;
+}
+
+.rb-workbench .rb-rail .wb-compact-list-surface {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.rb-workbench .rb-rail .wb-compact-dataset-item {
+  padding: 6px 0;
+  border-radius: 0;
+  border: 0;
+  background: transparent;
+}
+
+.rb-workbench .rb-rail .wb-compact-list-footer {
+  padding: 6px 0 0;
+  border-top: 0;
+  background: transparent;
+}
+
+.rb-workbench .rb-rail .wb-compact-rail-bottom {
+  padding: 12px 0 0;
+  background: transparent;
+  border: 0;
+  gap: 12px;
+}
+
+.rb-workbench .rb-rail .wb-compact-scope-box {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+
+.rb-workbench .rb-rail .wb-compact-scope-header {
+  padding: 0 0 8px;
+  border-bottom: 1px solid #f1f5f9;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.rb-workbench .rb-rail .wb-compact-scope-row {
+  padding: 6px 0;
+  border-bottom: 1px solid #f8fafc;
+}
+
+.rb-workbench .rb-rail .wb-compact-scope-row:last-child {
+  border-bottom: 0;
+}
+
+.rb-workbench .rb-rail .wb-compact-action-area {
+  padding-top: 12px;
+  border-top: 1px solid #eef2f6;
 }

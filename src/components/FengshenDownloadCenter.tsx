@@ -1656,12 +1656,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
    */
   const railHint: {text: string; tone: 'warn'; title?: string; run?: () => void} | null = (() => {
     if (!submitReady && datasets.length === 0) {
-      return {
-        text: '先在 Step 01 勾选至少 1 类资料 · 定位',
-        tone: 'warn',
-        title: '点击平滑定位至 Step 01 资料选择',
-        run: () => scrollToStep('datasets'),
-      };
+      return null;
     }
     if (!canSubmit && !uncertainCreate && !creating && fengshenMissingCities) {
       return {

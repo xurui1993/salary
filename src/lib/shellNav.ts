@@ -302,11 +302,11 @@ export function getPlatformChannelStatus(
     if (pair.some(item => item!.tone === 'busy')) return { tone: 'busy', statusText: '通道检查中' };
     if (readyCount === 1) return { tone: 'ready', statusText: '1/2 通道已连接' };
     if (pair.some(item => item!.tone === 'warn')) return { tone: 'warn', statusText: '需登录验证' };
-    return { tone: 'idle', statusText: '待连接' };
+    return { tone: 'idle', statusText: '未连接' };
   }
 
   const chip = byKey.get(platformId);
-  if (!chip) return { tone: 'idle', statusText: '待连接' };
+  if (!chip) return { tone: 'idle', statusText: '未连接' };
   return { tone: chip.tone, statusText: chip.statusText };
 }
 

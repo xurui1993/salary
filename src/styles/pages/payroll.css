@@ -4766,7 +4766,7 @@
 }
 
 .wbx-ded-search.is-compact {
-  width: 196px;
+  width: 232px;
 }
 
 .wbx-ded-tableview__cats {
@@ -4774,15 +4774,75 @@
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px 14px;
-  padding: 9px 16px;
-  border-bottom: 1px solid #edf2f7;
-  background: #f8fafc;
+  gap: 0 14px;
+  padding: 0 16px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+.wbx-ded-tableview__cats .wbx-ded-catbar {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.wbx-ded-tableview__cats .wbx-ded-cat {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: #64748b;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  margin-bottom: -1px;
+  transition: color 140ms ease, border-color 140ms ease;
+}
+
+.wbx-ded-tableview__cats .wbx-ded-cat:hover {
+  color: #0f172a;
+  background: transparent;
+}
+
+.wbx-ded-tableview__cats .wbx-ded-cat.is-active {
+  color: #026aa2;
+  font-weight: 600;
+  border-bottom-color: #026aa2;
+  background: transparent;
+}
+
+.wbx-ded-tableview__cats .wbx-ded-cat__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: #eef2f6;
+  color: #64748b;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.wbx-ded-tableview__cats .wbx-ded-cat.is-active .wbx-ded-cat__count {
+  background: #e0f2fe;
+  color: #026aa2;
 }
 
 .wbx-ded-tableview__hint {
-  font-size: 12px;
+  font-size: 11.5px;
   color: #64748b;
+  padding: 6px 0;
 }
 
 .wbx-ded-sheet-wrap {
@@ -4878,7 +4938,7 @@
 .wbx-ded-sheet__th-kw,
 .wbx-ded-sheet__td-kw {
   position: sticky;
-  right: 168px;
+  right: 184px;
   z-index: 3;
   width: 72px;
   min-width: 72px;
@@ -4886,9 +4946,9 @@
   box-sizing: border-box;
   text-align: center;
   padding: 6px 5px;
-  border-left: 1px solid #e2e8f0;
+  border-left: 1px solid #cbd5e1;
   background: inherit;
-  box-shadow: -6px 0 12px -8px rgba(15, 23, 42, 0.14);
+  box-shadow: -10px 0 16px -10px rgba(15, 23, 42, 0.22);
 }
 
 .wbx-ded-sheet thead .wbx-ded-sheet__th-kw {
@@ -4902,12 +4962,12 @@
   position: sticky;
   right: 0;
   z-index: 4;
-  width: 168px;
-  min-width: 168px;
-  max-width: 168px;
+  width: 184px;
+  min-width: 184px;
+  max-width: 184px;
   box-sizing: border-box;
   text-align: right;
-  padding: 6px 10px 6px 4px;
+  padding: 6px 12px 6px 6px;
   background: inherit;
 }
 
@@ -5093,19 +5153,28 @@
 }
 
 .wbx-ded-sheet__ops {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: 44px 66px 52px;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: end;
   gap: 5px;
   white-space: nowrap;
+}
+
+.wbx-ded-sheet__op-spacer {
+  display: block;
+  width: 100%;
+  height: 1px;
 }
 
 .wbx-ded-sheet__op-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 3px;
+  width: 100%;
   height: 25px;
-  padding: 0 7px;
+  padding: 0 5px;
   border-radius: 6px;
   border: 1px solid #e2e8f0;
   background: #ffffff;

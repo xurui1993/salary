@@ -96,7 +96,7 @@ export function PlatformDock({
       </button>
 
       <div
-        className="wbx-popover"
+        className="wbx-popover wbx-popover--platforms"
         role="dialog"
         aria-modal="false"
         aria-label="平台登录与连接状态"
@@ -106,7 +106,7 @@ export function PlatformDock({
           <div>
             <span className="wbx-popover__title">五大业务平台连接中心</span>
             <p className="text-xs text-slate-500 mt-0.5">
-              已就绪 {readyCount} / {cluster.length} 个数据源通道 · 支持扫码或账号直连
+              支持扫码或账号直连 · 授权状态实时同步
             </p>
           </div>
           <button

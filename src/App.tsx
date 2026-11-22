@@ -1543,7 +1543,6 @@ export default function App() {
       {logDrawerOpen && (
         <WorkbenchDrawer
           title="引擎运行日志终端"
-          wide
           bodyClassName="wbx-drawer__body--flush"
           onClose={() => setLogDrawerOpen(false)}
         >

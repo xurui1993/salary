@@ -420,6 +420,129 @@ export function SystemConnections({
         )}
 
         {drawerOpen && (
+          hideTrigger ? (
+            <div className="wbx-plat-embed" aria-label="平台登录状态">
+              {preflightItems.length > 0 && (
+                <div className="wb-preflight-banner mb-2.5" role="status">
+                  <strong>本次任务需要先完成认证：</strong>
+                  {preflightItems.map(item => item.label).join('、')}
+                  。完成认证后任务将自动继续创建，无需重新提交。
+                </div>
+              )}
+
+              <ul className="wbx-plat-list" role="list" aria-label="业务数据源平台列表">
+                {PLATFORM_DEFS.map(({ key, label, icon: Icon }) => {
+                  const st = statuses[key] || (key === 'fengshen' && fengshenStatus) || {};
+                  const ready = st.state === 'ready' && !st.offline;
+                  const canLogout =
+                    !!st.saved ||
+                    !!st.busy ||
+                    ready ||
+                    ['starting', 'waiting_login'].includes(st.state || '');
+                  const badge = getPlatformCardBadge(st, pendingActions[key]);
+                  const accountLine = [st.account_label, st.organization].filter(Boolean).join(' · ');
+                  const subtitle = accountLine || getCapabilitySummary(key, st);
+                  const errorMsg = errors[key] || (st.offline ? '连接状态暂不可用，请稍候再试。' : '');
+
+                  return (
+                    <li key={key} className={`wbx-plat-row is-${key}`}>
+                      <span className={`wbx-plat-row__icon is-${key}`} aria-hidden="true">
+                        <Icon size={15} />
+                      </span>
+
+                      <div className="wbx-plat-row__main">
+                        <div className="wbx-plat-row__top">
+                          <span className="wbx-plat-row__name">{label}</span>
+                          {key === 'baize' && baizeAccount?.account_type && (
+                            <span
+                              className={`wbx-plat-row__subtag is-${baizeAccount.account_type}`}
+                              title={
+                                baizeAccount.account_type === 'shanggou'
+                                  ? `当前闪购账户${baizeAccount.region_text ? ` · ${baizeAccount.region_text}` : ''}`
+                                  : `当前小象账户${baizeAccount.region_text ? ` · ${baizeAccount.region_text}` : ''}`
+                              }
+                            >
+                              {baizeAccount.account_type === 'shanggou' ? '闪购' : '小象'}
+                            </span>
+                          )}
+                          <span className={`wbx-plat-row__status is-${badge.tone}`}>
+                            <span className={`wbx-plat-row__dot is-${badge.tone}`} aria-hidden="true" />
+                            <span>{badge.label}</span>
+                          </span>
+                        </div>
+                        <p className="wbx-plat-row__desc" title={subtitle}>
+                          {subtitle}
+                        </p>
+                        {errorMsg && (
+                          <p role="alert" className="wbx-plat-row__err">
+                            {errorMsg}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="wbx-plat-row__actions">
+                        {!ready && (
+                          <button
+                            type="button"
+                            className="wbx-plat-row__login-btn"
+                            disabled={!!pendingActions[key]}
+                            onClick={() => void handleStartLogin(key)}
+                          >
+                            {getActionLabel(key, st)}
+                          </button>
+                        )}
+                        {canLogout && (
+                          <button
+                            type="button"
+                            className="wbx-plat-row__logout-btn"
+                            disabled={!!pendingActions[key]}
+                            onClick={() => void handleLogout(key)}
+                          >
+                            退出
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              <div className="wbx-plat-foot">
+                <span className="wbx-plat-foot__meta tabular-nums">
+                  已就绪 <strong>{readyCount}</strong> / {PLATFORM_DEFS.length} 个通道
+                </span>
+                <button
+                  type="button"
+                  className="wbx-plat-foot__refresh"
+                  title="重新刷新检测平台连接"
+                  onClick={() => {
+                    for (const { key } of PLATFORM_DEFS) {
+                      const st = statuses[key];
+                      const version = st?.session_version;
+                      if (st?.saved && !st?.busy && !st?.offline && version && acquireLock(key, 'verify')) {
+                        fetchPlatformAuthJson(
+                          fetchRef.current,
+                          `/api/fengshen-downloads/platform-auth/${key}/check${key === 'xiaoxiang' ? '?deep=true' : ''}`,
+                          {},
+                          key === 'xiaoxiang' ? 45000 : 20000,
+                        )
+                          .then(res =>
+                            setStatuses(prev =>
+                              prev[key]?.session_version === version ? { ...prev, [key]: res } : prev,
+                            ),
+                          )
+                          .catch(err => recordError(key, err))
+                          .finally(() => releaseLock(key));
+                      }
+                    }
+                  }}
+                >
+                  <RefreshCw size={12} aria-hidden="true" />
+                  <span>检测全部状态</span>
+                </button>
+              </div>
+            </div>
+          ) : (
             <div className="wb-connection-popover" role="dialog" aria-label="平台登录状态">
               <div className="wb-popover-header">
                 <span className="wb-popover-title">数据源平台通道</span>
@@ -432,30 +555,6 @@ export function SystemConnections({
                   <X size={15} />
                 </button>
               </div>
-              <div className="wb-connection-summary" role="list" aria-label="平台登录状态摘要">
-                {cluster.map(item => (
-                  <span
-                    key={item.key}
-                    role="listitem"
-                    className={`wb-connection-chip is-${item.tone}`}
-                    title={`${item.shortLabel}：${item.statusText}`}
-                  >
-                    <span
-                      className={`wb-dot ${
-                        item.tone === 'ready'
-                          ? 'ready'
-                          : item.tone === 'warn'
-                            ? 'offline'
-                            : item.tone === 'busy'
-                              ? 'busy'
-                              : ''
-                      }`}
-                    />
-                    <span>{item.shortLabel}</span>
-                  </span>
-                ))}
-              </div>
-
 
               <div className="wb-platform-overview-bar mb-2.5">
                 <div className="wb-platform-overview-stat">
@@ -521,22 +620,6 @@ export function SystemConnections({
                             <Icon size={17} />
                           </span>
                           <h3 className="wb-platform-name">{label}</h3>
-                          {key === 'baize' && (
-                            <span
-                              className={`wb-baize-account-badge is-${baizeAccount?.account_type || 'unknown'}`}
-                              title={baizeAccount?.account_type === 'shanggou'
-                                ? `当前闪购账户${baizeAccount.region_text ? ` · ${baizeAccount.region_text}` : ''}`
-                                : baizeAccount?.account_type === 'xiaoxiang'
-                                  ? `当前小象账户${baizeAccount.region_text ? ` · ${baizeAccount.region_text}` : ''}`
-                                  : '正在识别商翼账户类型，请稍候'}
-                            >
-                              {baizeAccount?.account_type === 'shanggou'
-                                ? '闪购'
-                                : baizeAccount?.account_type === 'xiaoxiang'
-                                  ? '小象'
-                                  : '待识别'}
-                            </span>
-                          )}
                         </div>
                         <div className="wb-platform-status-area">
                           <span className={`wb-status-badge is-${badge.tone}`}>
@@ -583,7 +666,7 @@ export function SystemConnections({
                           {[st.account_label, st.organization].filter(Boolean).join(' · ')}
                         </p>
                       )}
-                                            {(errors[key] || st.offline) && (
+                      {(errors[key] || st.offline) && (
                         <p role="alert" className="wb-error">
                           {errors[key] || '连接状态暂不可用，请稍候再试。'}
                         </p>
@@ -593,7 +676,8 @@ export function SystemConnections({
                 })}
               </div>
             </div>
-          )}
+          )
+        )}
       </div>
 
       {!!activeDef && (

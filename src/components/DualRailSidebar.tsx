@@ -168,7 +168,7 @@ export function DualRailSidebar({
         approvalActiveCount > 0
           ? '运行中'
           : approvalPendingCount > 0
-            ? `待审 ${approvalPendingCount}`
+            ? `${approvalPendingCount}`
             : undefined,
       badgeTone: approvalActiveCount > 0 ? 'active' : 'warn',
     },

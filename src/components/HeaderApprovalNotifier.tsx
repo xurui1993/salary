@@ -446,46 +446,53 @@ export function HeaderApprovalNotifier({
                 </p>
               </div>
             ) : (
-              <ul className="wbx-approval-popover__list" aria-label="待审批价格提审单列表">
-                {effectiveRows.slice(0, 6).map(task => {
-                  const code = task.businessCode || task.id;
-                  const periodText = task.period_start
-                    ? `${task.period_start.slice(0, 10)} ~ ${task.period_end?.slice(0, 10) || '—'}`
-                    : task.settle_month || '—';
-                  return (
-                    <li key={task.id} className="wbx-approval-popover__item">
-                      <button
-                        type="button"
-                        className="wbx-approval-popover__item-btn"
-                        onClick={() => {
-                          setOpen(false);
-                          onNavigateApproval();
-                        }}
-                      >
-                        <div className="wbx-approval-popover__item-top">
-                          <span className="wbx-approval-popover__city">
-                            {task.cityName || '未知城市'} · {task.siteName || '未知站点'}
-                          </span>
-                          <span
-                            className={`wbx-approval-popover__tag${
-                              task.reason ? ' is-blocked' : ' is-ready'
-                            }`}
-                          >
-                            {task.reason ? '需核实' : task.nodeName || '待审批'}
-                          </span>
-                        </div>
-                        <div className="wbx-approval-popover__item-meta tabular-nums">
-                          <span>编号 {code}</span>
-                          <span>·</span>
-                          <span>{task.rider_count ?? '—'} 人</span>
-                          <span>·</span>
-                          <span>{periodText}</span>
-                        </div>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
+              <>
+                <ul className="wbx-approval-popover__list" aria-label="待审批价格提审单列表">
+                  {effectiveRows.slice(0, 5).map(task => {
+                    const code = task.businessCode || task.id;
+                    const periodText = task.period_start
+                      ? `${task.period_start.slice(5, 10)} ~ ${task.period_end?.slice(5, 10) || '—'}`
+                      : task.settle_month || '—';
+                    return (
+                      <li key={task.id} className="wbx-approval-popover__item">
+                        <button
+                          type="button"
+                          className="wbx-approval-popover__item-btn"
+                          onClick={() => {
+                            setOpen(false);
+                            onNavigateApproval();
+                          }}
+                        >
+                          <div className="wbx-approval-popover__item-top">
+                            <span className="wbx-approval-popover__city">
+                              {task.cityName || '未知城市'} · {task.siteName || '未知站点'}
+                            </span>
+                            <span
+                              className={`wbx-approval-popover__tag${
+                                task.reason ? ' is-blocked' : ' is-ready'
+                              }`}
+                            >
+                              {task.reason ? '需核实' : task.nodeName || '待审批'}
+                            </span>
+                          </div>
+                          <div className="wbx-approval-popover__item-meta tabular-nums">
+                            <span>{code}</span>
+                            <span>·</span>
+                            <span>{task.rider_count ?? '—'} 人</span>
+                            <span>·</span>
+                            <span>{periodText}</span>
+                          </div>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {pendingCount > 5 && (
+                  <p className="wbx-approval-popover__more tabular-nums">
+                    还有 {pendingCount - 5} 条待审批记录，点击下方前往全部处理
+                  </p>
+                )}
+              </>
             )}
           </div>
 

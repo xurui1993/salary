@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import {
   ArrowLeft,
   Check,
-  Eraser,
   Layers,
   Search,
   Sparkles,
@@ -423,9 +422,9 @@ export function CityDeductionTableView({
                         title="将本行空白扣款项填入 0"
                         onClick={() => onUpdateCity(fillBlankColumnsZero(cityEntry, columns))}
                       >
-                        <Eraser size={12} aria-hidden="true" />
                         <span>填零</span>
                       </button>
+                      <span className="wbx-ded-sheet__op-spacer" aria-hidden="true" />
                       <label
                         className={`wbx-ded-sheet__zero-toggle${cityEntry.zero_confirmed ? ' is-checked' : ''}${charged ? ' is-disabled' : ''}`}
                         title={charged ? '已填写非零金额，无需确认零扣款' : '勾选确认本市默认零扣款'}
@@ -521,7 +520,7 @@ export function CityDeductionTableView({
                         >
                           <span>填零</span>
                         </button>
-                        {entry.station.id !== '*' && (
+                        {entry.station.id !== '*' ? (
                           <button
                             type="button"
                             className="wbx-ded-sheet__op-btn is-sync"
@@ -546,6 +545,8 @@ export function CityDeductionTableView({
                           >
                             <span>{selectedStations.size ? '同步已选' : '同步同城'}</span>
                           </button>
+                        ) : (
+                          <span className="wbx-ded-sheet__op-spacer" aria-hidden="true" />
                         )}
                         <label
                           className={`wbx-ded-sheet__zero-toggle${entry.zero_confirmed ? ' is-checked' : ''}${charged ? ' is-disabled' : ''}`}

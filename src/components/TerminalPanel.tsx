@@ -226,10 +226,16 @@ export function TerminalPanel({
         >
           {filtered.length === 0 ? (
             <div className="wbx-log-empty">
-              <span>
+              <span className="wbx-log-empty__icon" aria-hidden="true">
+                <Terminal size={18} />
+              </span>
+              <strong className="wbx-log-empty__title">
+                {normalized.length === 0 ? '暂无引擎运行日志' : '无匹配的日志记录'}
+              </strong>
+              <span className="wbx-log-empty__desc">
                 {normalized.length === 0
-                  ? '暂无运行日志输出，发起采集或核算任务后将在此实时流式呈现'
-                  : '当前筛选条件下无匹配日志记录'}
+                  ? '发起数据采集、专项报表或薪资核算任务后，执行节点与实时日志将在此流式呈现'
+                  : '可切换上方日志级别标签或清空搜索关键词查看完整记录'}
               </span>
               {(levelFilter !== 'ALL' || query) && (
                 <button
@@ -290,16 +296,26 @@ export function TerminalPanel({
 
       {showFooterProgress && (
         <div className="wbx-log-panel__foot">
-          <div className="wbx-log-panel__foot-meta tabular-nums">
-            <span className="truncate">{progressText || (isRunning ? '引擎执行中…' : '等待任务指令')}</span>
-            <strong>{clampedProgress}%</strong>
-          </div>
-          <div className="wbx-progress" aria-hidden="true">
-            <span
-              className={`wbx-progress__bar${isRunning ? ' is-live' : ''}`}
-              style={{ width: `${clampedProgress}%` }}
-            />
-          </div>
+          {isRunning || clampedProgress > 0 ? (
+            <>
+              <div className="wbx-log-panel__foot-meta tabular-nums">
+                <span className="truncate">{progressText || '引擎执行中…'}</span>
+                <strong>{clampedProgress}%</strong>
+              </div>
+              <div className="wbx-progress" aria-hidden="true">
+                <span
+                  className={`wbx-progress__bar${isRunning ? ' is-live' : ''}`}
+                  style={{ width: `${clampedProgress}%` }}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="wbx-log-panel__foot-idle tabular-nums">
+              <span className="wbx-log-panel__idle-dot" aria-hidden="true" />
+              <span>引擎就绪 · 等待任务指令</span>
+              <span className="wbx-log-panel__foot-count">共 {normalized.length} 条记录</span>
+            </div>
+          )}
         </div>
       )}
     </section>

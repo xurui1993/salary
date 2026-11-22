@@ -830,13 +830,11 @@ export function ReportBuilder(props: ReportBuilderProps) {
                         ? '全城全量整理 · 独立归档'
                         : '确认范围后即可生成业务表'}
                   </span>
-                  <span
-                    className={`wb-compact-ready-badge ${
-                      !blockerText ? 'is-ready' : 'is-warn'
-                    }`}
-                  >
-                    {!blockerText ? '配置就绪' : '待完善'}
-                  </span>
+                  {!blockerText && (
+                    <span className="wb-compact-ready-badge is-ready">
+                      配置就绪
+                    </span>
+                  )}
                 </div>
               </div>
             ) : (
