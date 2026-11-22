@@ -1046,7 +1046,7 @@ export function StationDeductionManager({
                     <th>团队ID</th>
                     <th>问题单类型</th>
                     <th>判责原因关键词</th>
-                    <th>单次扣款（元）</th>
+                    <th className="is-num">单次扣款（元）</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1058,10 +1058,16 @@ export function StationDeductionManager({
                           {row['团队ID'] === '*' ? '城市统一' : String(row['团队名称'])}
                         </span>
                       </td>
-                      <td className="tabular-nums">{row['团队ID']}</td>
+                      <td className="tabular-nums">
+                        {row['团队ID'] === '*' ? (
+                          <span className="wbx-problem-global-scope" title="城市统一适用 (*)">全城通用</span>
+                        ) : (
+                          row['团队ID']
+                        )}
+                      </td>
                       <td><strong>{row['问题单类型']}</strong></td>
                       <td>{row['判责原因关键词'] || '（整类适用）'}</td>
-                      <td className="tabular-nums"><strong>{row['单次扣款金额']}</strong></td>
+                      <td className="is-num tabular-nums"><strong>¥ {row['单次扣款金额']}</strong></td>
                     </tr>
                   ))}
                 </tbody>

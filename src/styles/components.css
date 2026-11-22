@@ -1811,13 +1811,13 @@
   border-top: 1px solid #eef2f6;
 }
 
-/* 11. 侧栏底部常驻展开式本机引擎资源面板（取消折叠弹窗，核心指标一目了然） */
+/* 11. 侧栏底部常驻展开式本机引擎资源面板（紧凑高对比轨道，为上方导航保留呼吸空间） */
 .wbx-res-panel {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 6px;
   width: 100%;
-  padding: 10px 11px;
+  padding: 8px 10px;
   border-radius: 9px;
   border: 1px solid var(--wbx-border);
   background: var(--wbx-bg-subtle);
@@ -1853,13 +1853,13 @@
 .wbx-res-panel__metrics {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 5px;
 }
 
 .wbx-res-panel__item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .wbx-res-panel__row {
@@ -1889,9 +1889,9 @@
 
 .wbx-res-panel__track {
   width: 100%;
-  height: 4px;
+  height: 5px;
   border-radius: 999px;
-  background: #e2e8f0;
+  background: #dce4ee;
   overflow: hidden;
 }
 
@@ -1915,7 +1915,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding-top: 7px;
+  padding-top: 6px;
   border-top: 1px solid #e8ecf2;
   font-size: 11px;
   color: var(--wbx-text-muted);
@@ -2667,6 +2667,12 @@
   max-width: 620px;
 }
 
+.wb-drawer:has(.pq-drawer),
+.wb-drawer:has(.tc-drawer) {
+  width: min(760px, 94vw);
+  max-width: 760px;
+}
+
 .wbx-log-stream-wrap {
   position: relative;
   flex: 1;
@@ -3209,6 +3215,19 @@
   color: #026aa2;
 }
 
+.wbx-tpl-ghost-btn {
+  border-color: transparent;
+  background: transparent;
+  color: #64748b;
+  padding: 0 8px;
+}
+
+.wbx-tpl-ghost-btn:hover:not(:disabled) {
+  border-color: transparent;
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
 .wbx-tpl-add-btn {
   display: inline-flex;
   align-items: center;
@@ -3549,6 +3568,13 @@
   align-items: center;
   gap: 4px;
   margin-left: -7px;
+  opacity: 0.48;
+  transition: opacity 150ms ease;
+}
+
+.wbx-tpl-card:hover .wbx-tpl-card__edit-group,
+.wbx-tpl-card:focus-within .wbx-tpl-card__edit-group {
+  opacity: 1;
 }
 
 .wbx-tpl-card-op {

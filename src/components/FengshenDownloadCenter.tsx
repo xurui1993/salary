@@ -2457,12 +2457,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                   {cities.length === selectableCities.length && cities.length ? '清空城市' : '全选城市'}
                                 </button>
                                     <span className="wbx-toolbar-sep" aria-hidden="true" />
-                                {regionPresets.length === 0 ? (
-                                  <span className="wb-preset-empty-hint">
-                                    暂无自定义片区，勾选城市后点击「+ 存为预设」
-                                  </span>
-                                ) : (
-                                  regionPresets.map(preset => {
+                                {regionPresets.map(preset => {
                                     const matched = selectableCities.filter(c =>
                                       preset.cities.some(pc => c.name.includes(pc) || pc.includes(c.name.replace(/市$/, ''))),
                                     );
@@ -2519,13 +2514,12 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                         </div>
                                       </div>
                                     );
-                                  })
-                                )}
+                                  })}
                                 <button
                                   type="button"
                                   className="wb-city-preset-btn wbx-preset-trigger"
                                   disabled={formLocked || !cities.length}
-                                  title={cities.length ? `将当前已勾选的 ${cities.length} 个城市保存为新片区预设` : '请先勾选城市再保存为新预设'}
+                                  title={cities.length ? `将当前已勾选的 ${cities.length} 个城市保存为新片区预设` : '请先勾选城市再保存为新片区预设'}
                                   onClick={() => {
                                     setPresetModal({
                                       mode: 'create',
@@ -2563,7 +2557,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                 {(!platform || platform === 'fengshen') && (
                                   <button
                                     type="button"
-                                    className="wbx-btn wbx-btn--secondary wbx-btn--sm wbx-snapshot-btn"
+                                    className="wb-city-preset-btn wbx-snapshot-btn"
                                     disabled={formLocked || !selectableCities.length}
                                     title="全选城市、仅勾选骑手信息、日期设为今天，一次导出全部城市当前骑手信息快照（不会复用历史数据）。"
                                     onClick={() => {
@@ -2712,54 +2706,59 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                           const isCustomDateRange = activeSelectedMonths.length === 0 && validDates;
                           const allMonthsSelected = enabledMonthOptions.length > 0 && enabledMonthOptions.every(m => activeSelectedMonths.includes(m));
                           return (
-                            <div className="wb-step-card-header">
-                              <div className="wb-step-badge">
-                                <span className="wb-step-number">{dynamicScopeReq.needsCity ? '03' : '02'}</span>
-                                <p id="download-dates-label" className="wb-step-title m-0">
-                                  处理月份与账期
-                                </p>
-                                {xiaoxiangAllDatesActive ? (
-                                  <span className="wb-step-count-pill tabular-nums">
-                                    不限日期（近12个月）
-                                  </span>
-                                ) : activeSelectedMonths.length > 1 ? (
-                                  <span className="wb-step-count-pill tabular-nums">
-                                    已选 {activeSelectedMonths.length} 个月（{activeSelectedMonths.join('、')}）
-                                  </span>
-                                ) : activeSelectedMonths.length === 1 ? (
-                                  <span className="wb-step-count-pill tabular-nums">
-                                    已选 {activeSelectedMonths[0]}
-                                  </span>
-                                ) : validDates ? (
-                                  <span className="wb-step-count-pill tabular-nums">
-                                    自定义区间（{start} ~ {end.slice(5)}）
-                                  </span>
-                                ) : null}
-                              </div>
-                              <div className="wb-city-preset-group">
-                                {xiaoxiangDated && (
-                                  <label className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-600">
-                                    <input
-                                      type="checkbox"
-                                      checked={xiaoxiangAllDatesActive}
+                            <>
+                              <div className="wb-step-card-header">
+                                <div className="wb-step-badge">
+                                  <span className="wb-step-number">{dynamicScopeReq.needsCity ? '03' : '02'}</span>
+                                  <p id="download-dates-label" className="wb-step-title m-0">
+                                    处理月份与账期
+                                  </p>
+                                  {xiaoxiangAllDatesActive ? (
+                                    <span className="wb-step-count-pill tabular-nums">
+                                      不限日期（近12个月）
+                                    </span>
+                                  ) : activeSelectedMonths.length > 1 ? (
+                                    <span className="wb-step-count-pill tabular-nums">
+                                      已选 {activeSelectedMonths.length} 个月（{activeSelectedMonths.join('、')}）
+                                    </span>
+                                  ) : activeSelectedMonths.length === 1 ? (
+                                    <span className="wb-step-count-pill tabular-nums">
+                                      已选 {activeSelectedMonths[0]}
+                                    </span>
+                                  ) : validDates ? (
+                                    <span className="wb-step-count-pill tabular-nums">
+                                      自定义区间（{start} ~ {end.slice(5)}）
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <div className="wb-city-preset-group">
+                                  {xiaoxiangDated && (
+                                    <label className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-600">
+                                      <input
+                                        type="checkbox"
+                                        checked={xiaoxiangAllDatesActive}
+                                        disabled={formLocked}
+                                        onChange={event => toggleXiaoxiangAllDates(event.target.checked)}
+                                        className="accent-sky-700 h-3.5 w-3.5 rounded border-slate-300"
+                                      />
+                                      <span>不限日期（近12个月）</span>
+                                    </label>
+                                  )}
+                                  {!xiaoxiangAllDatesActive && enabledMonthOptions.length > 1 && (
+                                    <button
+                                      type="button"
+                                      className={`wb-city-preset-btn ${allMonthsSelected ? 'is-active' : ''}`}
                                       disabled={formLocked}
-                                      onChange={event => toggleXiaoxiangAllDates(event.target.checked)}
-                                      className="accent-sky-700 h-3.5 w-3.5 rounded border-slate-300"
-                                    />
-                                    <span>不限日期（近12个月）</span>
-                                  </label>
-                                )}
-                                {!xiaoxiangAllDatesActive && enabledMonthOptions.length > 1 && (
-                                  <button
-                                    type="button"
-                                    className={`wb-city-preset-btn ${allMonthsSelected ? 'is-active' : ''}`}
-                                    disabled={formLocked}
-                                    onClick={() => syncMonthSelection(allMonthsSelected ? [enabledMonthOptions[0]] : [...enabledMonthOptions])}
-                                  >
-                                    {allMonthsSelected ? '仅选最新月' : `全选近${enabledMonthOptions.length}月`}
-                                  </button>
-                                )}
-                                {!blueOnly && !xiaoxiangAllDatesActive && (
+                                      onClick={() => syncMonthSelection(allMonthsSelected ? [enabledMonthOptions[0]] : [...enabledMonthOptions])}
+                                    >
+                                      {allMonthsSelected ? '仅选最新月' : `全选近${enabledMonthOptions.length}月`}
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              {!blueOnly && !xiaoxiangAllDatesActive && (
+                                <div className="wbx-period-rangebar">
+                                  <span className="wbx-period-rangebar__label">自定义区间</span>
                                   <WorkbenchDatePicker
                                     mode="range"
                                     compact
@@ -2792,9 +2791,9 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                       setDuplicateApproval('');
                                     }}
                                   />
-                                )}
-                              </div>
-                            </div>
+                                </div>
+                              )}
+                            </>
                           );
                         })()}
 
@@ -2981,7 +2980,9 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                         {datasets.length > 0
                           ? activePlatformCount > 1
                             ? `已选 ${datasets.length} 项 · 跨 ${activePlatformCount} 平台`
-                            : `已选 ${datasets.length} 项`
+                            : activePlatformList[0] && platform && activePlatformList[0] !== platform
+                              ? `已选 ${datasets.length} 项（${DOWNLOAD_PLATFORMS.find(item => item.id === activePlatformList[0])?.label || '其它平台'}）`
+                              : `已选 ${datasets.length} 项`
                           : '0 项'}
                       </span>
                     </div>
@@ -2996,6 +2997,23 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                       </button>
                     )}
                   </header>
+
+                  {datasets.length > 0 && platform && activePlatformList.some(p => p !== platform) && (
+                    <div className="wbx-rail__cross-note" role="note">
+                      <span>
+                        当前队列含{activePlatformList.filter(p => p !== platform).map(p => DOWNLOAD_PLATFORMS.find(item => item.id === p)?.label).filter(Boolean).join(' / ')}待提交项
+                      </span>
+                      {activePlatformCount === 1 && activePlatformList[0] && onSelectPlatform && (
+                        <button
+                          type="button"
+                          className="wbx-rail__cross-btn"
+                          onClick={() => onSelectPlatform(activePlatformList[0])}
+                        >
+                          切回查看 →
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   <dl className="wbx-rail__facts">
                     {activePlatformCount > 1 && (

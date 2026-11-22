@@ -116,9 +116,57 @@ function remember(key:string,value:Attempt|null){try{if(value)sessionStorage.set
 
 function PriceTable({price}:{price:Price}){
   const [page,setPage]=useState(1),limit=50;const pages=Math.max(1,Math.ceil(price.rows.length/limit));
-  return <><p className="wb-muted">{price.rows.length}名骑手 · 版本{price.version ?? '—'}{price.version_change?` · ${price.version_change}`:''}</p>{price.remark && <p>备注：{price.remark}</p>}
-    <div className="wb-approval-table"><table><thead><tr>{price.columns.map(c=><th key={c.key}>{c.label}</th>)}</tr></thead><tbody>{price.rows.slice((page-1)*limit,page*limit).map((row,index)=><tr key={index}>{price.columns.map(c=><td key={c.key}>{row[c.key]===null || row[c.key]===undefined?'—':String(row[c.key])}</td>)}</tr>)}</tbody></table></div>
-    <div className="wb-approval-pagination"><span>明细第{page}/{pages}页</span><button className="wb-button" disabled={page===1} onClick={()=>setPage(p=>p-1)}>上一页明细</button><button className="wb-button" disabled={page>=pages} onClick={()=>setPage(p=>p+1)}>下一页明细</button></div></>;
+  const moneyKeys=new Set(['base_price','subsidy','total_price']);
+  const monoKeys=new Set(['rider_id','date']);
+  return <div className="wbx-ap-price-wrap">
+    {price.remark && (
+      <div className="wbx-ap-detail__remark" role="note">
+        <span className="wbx-ap-detail__remark-label">系统校验说明</span>
+        <span className="wbx-ap-detail__remark-text">{price.remark}</span>
+      </div>
+    )}
+    <div className="wbx-table-scroll wbx-ap-detail__scroll">
+      <table className="wbx-table wbx-ap-detail__table">
+        <thead>
+          <tr>
+            {price.columns.map(c=>(
+              <th key={c.key} className={moneyKeys.has(c.key)?'is-num':c.key==='status'?'is-status':''}>{c.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {price.rows.slice((page-1)*limit,page*limit).map((row,index)=>(
+            <tr key={index}>
+              {price.columns.map(c=>{
+                const raw=row[c.key];
+                if(raw===null || raw===undefined)return <td key={c.key} className={moneyKeys.has(c.key)?'is-num tabular-nums':''}>—</td>;
+                const str=String(raw);
+                if(moneyKeys.has(c.key)){
+                  const num=Number(raw);
+                  return <td key={c.key} className="is-num tabular-nums">{Number.isFinite(num)?`¥ ${num.toFixed(2)}`:str}</td>;
+                }
+                if(c.key==='status'){
+                  const ok=/正常|通过|完整|已核/.test(str);
+                  return <td key={c.key} className="is-status"><span className={`wbx-ap-row-status ${ok?'is-ok':'is-warn'}`}><i aria-hidden="true" />{str}</span></td>;
+                }
+                if(c.key==='rider_name'){
+                  return <td key={c.key} className="is-name">{str}</td>;
+                }
+                return <td key={c.key} className={monoKeys.has(c.key)?'tabular-nums is-muted':''}>{str}</td>;
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    <div className="wbx-ap-detail__pagination tabular-nums">
+      <span>第 {page} / {pages} 页 · 共 {price.rows.length} 名骑手</span>
+      <div className="wbx-approvals__page-btns">
+        <button type="button" className="wbx-btn wbx-btn--sm" disabled={page===1} onClick={()=>setPage(p=>p-1)}>上一页明细</button>
+        <button type="button" className="wbx-btn wbx-btn--sm" disabled={page>=pages} onClick={()=>setPage(p=>p+1)}>下一页明细</button>
+      </div>
+    </div>
+  </div>;
 }
 
 export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchView,focusId}:{apiFetch:Fetcher;workspaceId:string;onActiveCount:(count:number)=>void;onSwitchView?:(view:'approval'|'price-export')=>void;focusId?:string}){
@@ -966,7 +1014,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
                   <div className="wbx-approval__receipts-head">
                     <div className="wbx-approval__receipts-title">
                       <strong>逐项审批结果</strong>
-                      <span className="wbx-pill wbx-pill--neutral tabular-nums">
+                      <span className="wbx-approval__receipts-meta tabular-nums">
                         显示 {shownItems.length} / {allItems.length} 条
                       </span>
                       {!['all', 'success', 'issue'].includes(receiptStatusFilter) && (
@@ -979,33 +1027,36 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
                         </button>
                       )}
                     </div>
-                    <div className="wbx-segmented wbx-segmented--compact" role="tablist" aria-label="按回执状态筛选">
+                    <div className="wbx-ap-receipt-tabs" role="tablist" aria-label="按回执状态筛选">
                       <button
                         type="button"
                         role="tab"
                         aria-selected={receiptStatusFilter === 'all'}
-                        className={`wbx-segmented__item ${receiptStatusFilter === 'all' ? 'is-active' : ''}`}
+                        className={`wbx-ap-receipt-tab ${receiptStatusFilter === 'all' ? 'is-active' : ''}`}
                         onClick={() => setReceiptStatusFilter('all')}
                       >
-                        全部 ({allItems.length})
+                        <span>全部</span>
+                        <span className="wbx-ap-receipt-tab__count tabular-nums">{allItems.length}</span>
                       </button>
                       <button
                         type="button"
                         role="tab"
                         aria-selected={receiptStatusFilter === 'success'}
-                        className={`wbx-segmented__item ${receiptStatusFilter === 'success' ? 'is-active' : ''}`}
+                        className={`wbx-ap-receipt-tab ${receiptStatusFilter === 'success' ? 'is-active' : ''}`}
                         onClick={() => setReceiptStatusFilter('success')}
                       >
-                        已同意 ({successCount})
+                        <span>已同意</span>
+                        <span className="wbx-ap-receipt-tab__count tabular-nums">{successCount}</span>
                       </button>
                       <button
                         type="button"
                         role="tab"
                         aria-selected={receiptStatusFilter === 'issue'}
-                        className={`wbx-segmented__item ${receiptStatusFilter === 'issue' ? 'is-active' : ''}`}
+                        className={`wbx-ap-receipt-tab ${receiptStatusFilter === 'issue' ? 'is-active' : ''}`}
                         onClick={() => setReceiptStatusFilter('issue')}
                       >
-                        异常/待核实 ({issueCount})
+                        <span>异常/待核实</span>
+                        <span className="wbx-ap-receipt-tab__count tabular-nums">{issueCount}</span>
                       </button>
                     </div>
                   </div>
@@ -1075,6 +1126,76 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
       <div className="wb-approval-preview-actions"><button className="wb-button" disabled={!!command} onClick={()=>setPreview(null)}>返回调整</button><button className="wb-primary" disabled={!preview.eligible_count || !!command || active || !!attempt} onClick={()=>void submit()}>{command==='submit'?'正在创建批次…':`同意并提交${preview.eligible_count}条`}</button></div>
       {attempt && <button className="wb-button" disabled={!!command} onClick={()=>void findAttempt()}>查找本次提交</button>}</div>
     </WorkbenchDrawer>}
-    {detail && <WorkbenchDrawer title="价格明细" wide onClose={()=>setDetail(null)}><h3>{code(detail.task)} · {detail.task.cityName} / {detail.task.siteName}</h3><p>{period(detail.task)}</p><PriceTable key={detail.task.id} price={detail.price}/></WorkbenchDrawer>}
+    {detail && (() => {
+      const navigableTasks = filtered.filter(r => !r.reason);
+      const detailIdx = navigableTasks.findIndex(r => r.id === detail.task.id);
+      const prevDetail = detailIdx > 0 ? navigableTasks[detailIdx - 1] : null;
+      const nextDetail = detailIdx >= 0 && detailIdx < navigableTasks.length - 1 ? navigableTasks[detailIdx + 1] : null;
+      return (
+        <WorkbenchDrawer title={`价格明细 · ${code(detail.task)}`} wide onClose={()=>setDetail(null)}>
+          <div className="wbx-ap-detail">
+            <div className="wbx-ap-detail__toolbar">
+              <div className="wbx-ap-detail__status">
+                <span className={`wbx-pill ${detail.task.reason ? 'wbx-pill--warn' : 'wbx-pill--info'}`}>
+                  <span className="wbx-pill__dot" aria-hidden="true" />
+                  {detail.task.nodeName || '审批节点'}
+                </span>
+                <span className="wbx-ap-detail__meta tabular-nums">
+                  {detail.price.rows.length} 名骑手 · 版本 {detail.price.version ?? '—'}{detail.price.version_change ? ` · ${detail.price.version_change}` : ''}
+                </span>
+              </div>
+              {navigableTasks.length > 1 && detailIdx >= 0 && (
+                <div className="wbx-ap-detail__pager" aria-label="切换相邻审批单">
+                  <button
+                    type="button"
+                    className="wbx-btn wbx-btn--sm wbx-btn--ghost"
+                    disabled={!prevDetail || !!command}
+                    onClick={() => prevDetail && void showDetail(prevDetail)}
+                  >
+                    上一条
+                  </button>
+                  <span className="wbx-ap-detail__pager-pos tabular-nums">
+                    {detailIdx + 1} / {navigableTasks.length}
+                  </span>
+                  <button
+                    type="button"
+                    className="wbx-btn wbx-btn--sm wbx-btn--ghost"
+                    disabled={!nextDetail || !!command}
+                    onClick={() => nextDetail && void showDetail(nextDetail)}
+                  >
+                    下一条
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <dl className="wbx-ap-detail__facts">
+              <div>
+                <dt>业务编号</dt>
+                <dd className="tabular-nums">{code(detail.task)}</dd>
+              </div>
+              <div>
+                <dt>城市 / 站点</dt>
+                <dd title={`${detail.task.cityName || '—'} · ${detail.task.siteName || '—'}`}>
+                  {detail.task.cityName || '—'} · {detail.task.siteName || '—'}
+                </dd>
+              </div>
+              <div>
+                <dt>结算周期</dt>
+                <dd className="tabular-nums">{period(detail.task)}</dd>
+              </div>
+              <div>
+                <dt>申请人 / 时间</dt>
+                <dd className="tabular-nums">
+                  {detail.task.createByName || '—'}{detail.task.createTime ? ` · ${detail.task.createTime}` : ''}
+                </dd>
+              </div>
+            </dl>
+
+            <PriceTable key={detail.task.id} price={detail.price}/>
+          </div>
+        </WorkbenchDrawer>
+      );
+    })()}
   </div>;
 }

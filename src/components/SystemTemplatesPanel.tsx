@@ -366,7 +366,7 @@ export function SystemTemplatesPanel({
 
             <button
               type="button"
-              className="wbx-tpl-tool-btn"
+              className="wbx-tpl-tool-btn wbx-tpl-ghost-btn"
               onClick={() => setConfirmTarget({ type: 'reset' })}
               title="还原系统自带的 13 份标准城市模板"
             >

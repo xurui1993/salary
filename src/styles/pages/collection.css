@@ -48,7 +48,7 @@
 
 @media (min-width: 1280px) {
   .wbx-steps2.is-pair {
-    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+    grid-template-columns: minmax(0, 1.04fr) minmax(0, 0.96fr);
     align-items: stretch;
   }
 }
@@ -324,9 +324,40 @@
 }
 
 .wbx-snapshot-btn {
-  min-height: 28px;
-  padding: 0 11px;
-  font-size: var(--wbx-fs-caption);
+  color: var(--wbx-primary);
+  border-color: #bae6fd;
+  background: #f0f9ff;
+}
+
+.wbx-snapshot-btn:hover:not(:disabled) {
+  background: #e0f2fe;
+  border-color: #7dd3fc;
+}
+
+.wbx-period-rangebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-bottom: 11px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #f1f5f9;
+  min-width: 0;
+}
+
+.wbx-period-rangebar__label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--wbx-text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.wbx-period-rangebar .wb-dp-wrap,
+.wbx-period-rangebar .wb-dp-trigger {
+  max-width: 100%;
+  min-width: 0;
 }
 
 /* 4. Step 01 统一清爽下划线分类筛选条（与兼职核算/任务中心/扣款表格页签规范一致） */
@@ -568,26 +599,73 @@
 
 .wbx-rail__head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--wbx-s2);
+  gap: 6px 8px;
   padding-bottom: 12px;
   border-bottom: 1px solid #f1f5f9;
 }
 
 .wbx-rail__title-wrap {
   display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 5px 6px;
   min-width: 0;
 }
 
 .wbx-rail__title {
   margin: 0;
-  font-size: 14.5px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--wbx-text);
   letter-spacing: -0.01em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.wbx-rail__title-wrap > .wbx-pill {
+  padding: 2px 7px;
+  font-size: 11px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.wbx-rail__head > .wbx-btn {
+  margin-left: auto;
+  padding: 0 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.wbx-rail__cross-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  font-size: 12px;
+  color: #0369a1;
+}
+
+.wbx-rail__cross-btn {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--wbx-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.wbx-rail__cross-btn:hover {
+  text-decoration: underline;
 }
 
 .wbx-rail__facts {
@@ -1708,11 +1786,18 @@
   white-space: nowrap;
 }
 
+.tc-drawer__facts .tc-platform-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
 .tc-drawer__subactions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
+  padding: 2px 0;
 }
 
 .tc-drawer__subactions-end {

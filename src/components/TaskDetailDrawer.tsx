@@ -311,7 +311,6 @@ export function TaskDetailDrawer({
                         ? '等待完成认证或人工验证后继续…'
                         : '后台持续处理中…'}
                 </span>
-                <span className="tc-drawer__livebar-clock tabular-nums">已运行 {elapsedText}</span>
               </div>
               <div className="tc-drawer__track" aria-hidden="true">
                 <span style={{ width: `${pct}%` }} />

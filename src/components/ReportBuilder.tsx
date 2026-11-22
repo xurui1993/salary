@@ -275,7 +275,7 @@ export function ReportBuilder(props: ReportBuilderProps) {
               )}
             </div>
 
-            {scopeSummary.sources.length > 0 && (
+            {!scopeSummary.allGlobal && scopeSummary.sources.length > 0 && (
               <details
                 className="rb-explanation"
                 key={singleReport.id}
@@ -521,6 +521,22 @@ export function ReportBuilder(props: ReportBuilderProps) {
                   <small>直接汇总蓝橙 5 类在职/离职与请假最新档案</small>
                 </div>
               </div>
+              {scopeSummary.sources.length > 0 && (
+                <div className="rb-fixed-sources">
+                  <div className="rb-fixed-sources__head">
+                    <span>纳入的 {scopeSummary.sources.length} 类数据来源</span>
+                    <small>资料不足时暂停生成，已取得资料自动保留</small>
+                  </div>
+                  <ul className="rb-fixed-sources__list">
+                    {scopeSummary.sources.map((source, idx) => (
+                      <li key={source}>
+                        <span className="rb-fixed-sources__idx tabular-nums">{String(idx + 1).padStart(2, '0')}</span>
+                        <span>{source.replaceAll('白泽', '商翼')}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </section>
           ) : (
             <section className={`${singleMode ? 'wbx-card wbx-step' : 'wb-step-card'} rb-step-card`} aria-labelledby="report-city-label">
