@@ -120,5 +120,6 @@ test('PayrollQueueTable renders combined status-progress bar with hover popover 
   assert.doesNotMatch(html, /pq-inline-progress__track/);
   assert.doesNotMatch(html, /pq-elapsed-text/);
   assert.doesNotMatch(html, /pq-detail-trigger|>详情</);
+  assert.doesNotMatch(html, /pq-review-alert-btn/);
   assert.doesNotMatch(html, /pq-expand-toggle|pq-row-detail/);
 });

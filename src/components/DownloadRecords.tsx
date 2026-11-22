@@ -597,14 +597,15 @@ export function DownloadRecords({
 
   return (
     <div className="wbx-tc-shell" data-workspace-id={workspaceId}>
-      {/* 1. 顶部极简下划线状态切换条（各分类严格互斥，总数精确相加） */}
-      <div className="wbx-tc-topbar">
-        <div className="wbx-tc-topbar__left">
-          <h3 className="wbx-tc-title">
-            <span>{archived ? '已移出任务' : '任务中心'}</span>
-            <span className="wbx-tc-title__count tabular-nums">{effectiveCounts.all || 0}</span>
-          </h3>
-        </div>
+      <section className="tc-center wbx-taskcenter" aria-label="任务中心列表">
+        {/* 1. 与兼职核算统一的卡片顶栏 */}
+        <header className="wbx-tc-topbar">
+          <div className="wbx-tc-topbar__left">
+            <h3 className="wbx-tc-title">
+              <span>{archived ? '已移出任务' : '任务中心'}</span>
+              <span className="wbx-tc-title__count tabular-nums">{effectiveCounts.all || 0}</span>
+            </h3>
+          </div>
 
         <div className="wbx-tc-topbar__right">
           {!hasLiveData && (
@@ -679,10 +680,9 @@ export function DownloadRecords({
             <Archive size={13.5} aria-hidden="true" />
             <span>{archived ? '返回列表' : '已移出'}</span>
           </button>
-        </div>
-      </div>
+          </div>
+        </header>
 
-      <section className="tc-center wbx-taskcenter" aria-label="任务中心列表">
         {/* 2. 页签与筛选合并单行工具栏（左侧 5 个状态页签 + 右侧搜索/平台/类型/日期/排序/刷新） */}
         <div className="wbx-taskcenter__filters">
           <div className="wbx-tc-tabs" role="tablist" aria-label="任务状态">
@@ -1083,21 +1083,6 @@ export function DownloadRecords({
                             </span>
                           </span>
                         </StatusHoverPopover>
-                        {!progressMeta.isActive && r.failed_items > 0 ? (
-                          <span className="tc-failed-count tabular-nums">· {r.failed_items} 项失败</span>
-                        ) : !progressMeta.isActive && r.available_files > 0 ? (
-                          <button
-                            type="button"
-                            className="tc-file-count tabular-nums"
-                            title="点击在右侧抽屉查看全部文件"
-                            onClick={e => {
-                              e.stopPropagation();
-                              openDetail(r, 'files');
-                            }}
-                          >
-                            · {r.available_files} 个文件
-                          </button>
-                        ) : null}
                       </div>
                     </td>
 
@@ -1106,13 +1091,16 @@ export function DownloadRecords({
                       {createdMeta.short}
                     </td>
 
-                    {/* 操作：清爽纯文字按钮，去除彩色块底色 */}
+                    {/* 4 轨定宽操作网格：[26px 辅助图标] [74px 主操作] [9px 分割线] [26px 移出] */}
                     <td className="tc-col-ops">
-                      <div className="tc-row-ops" onClick={e => e.stopPropagation()}>
+                      <div
+                        className={`tc-row-ops${archived ? ' is-archived' : ''}`}
+                        onClick={e => e.stopPropagation()}
+                      >
                         {primaryAction?.type === 'restore' && (
                           <button
                             type="button"
-                            className="tc-op-cta is-primary"
+                            className="tc-op-cta is-primary tc-op-slot-main"
                             disabled={busy}
                             onClick={() => setConfirm([r])}
                           >
@@ -1123,7 +1111,7 @@ export function DownloadRecords({
                         {primaryAction?.type === 'download' && (
                           <button
                             type="button"
-                            className="tc-op-cta is-primary"
+                            className="tc-op-cta is-primary tc-op-slot-main"
                             disabled={busy}
                             title={r.available_files > 1 ? `打包下载全部 ${r.available_files} 个文件` : '下载结果文件'}
                             onClick={() => downloadResult(r)}
@@ -1135,7 +1123,7 @@ export function DownloadRecords({
                         {primaryAction?.type === 'price' && (
                           <button
                             type="button"
-                            className="tc-op-cta is-primary"
+                            className="tc-op-cta is-primary tc-op-slot-main"
                             onClick={() => openPrice(r)}
                           >
                             <span>{primaryAction.label}</span>
@@ -1144,17 +1132,28 @@ export function DownloadRecords({
 
                         {primaryAction?.type === 'attention' && (
                           <>
-                            <button
-                              type="button"
-                              className={`tc-op-cta is-${primaryAction.tone}`}
-                              onClick={() => (r.price_id ? openPrice(r) : openDetail(r, 'history'))}
-                            >
-                              <span>{primaryAction.label}</span>
-                            </button>
+                            {!archived && isActive && (
+                              <button
+                                type="button"
+                                className="tc-icon-btn tc-stop-icon-btn tc-op-slot-aux"
+                                title={
+                                  ['stopping', 'cancelling'].includes(r.status)
+                                    ? '停止中'
+                                    : r.status === 'queued'
+                                      ? '取消排队'
+                                      : '停止任务'
+                                }
+                                aria-label={`${r.status === 'queued' ? '取消排队' : '停止'} ${cleanTitle}`}
+                                disabled={busy || ['stopping', 'cancelling'].includes(r.status)}
+                                onClick={() => stopTask(r)}
+                              >
+                                <Square size={9} fill="currentColor" strokeWidth={1.8} aria-hidden="true" />
+                              </button>
+                            )}
                             {!isActive && r.available_files > 0 && (
                               <button
                                 type="button"
-                                className="tc-icon-btn"
+                                className="tc-icon-btn tc-op-slot-aux"
                                 title={`先下载已生成的 ${r.available_files} 个文件`}
                                 aria-label={`下载 ${cleanTitle} 已有文件`}
                                 disabled={busy}
@@ -1163,13 +1162,20 @@ export function DownloadRecords({
                                 <Download size={13.5} aria-hidden="true" />
                               </button>
                             )}
+                            <button
+                              type="button"
+                              className={`tc-op-cta is-${primaryAction.tone} tc-op-slot-main`}
+                              onClick={() => (r.price_id ? openPrice(r) : openDetail(r, 'history'))}
+                            >
+                              <span>{primaryAction.label}</span>
+                            </button>
                           </>
                         )}
 
-                        {!archived && isActive && (
+                        {!archived && isActive && !primaryAction && (
                           <button
                             type="button"
-                            className="tc-stop-btn"
+                            className="tc-stop-btn tc-op-slot-main"
                             title={
                               ['stopping', 'cancelling'].includes(r.status)
                                 ? '停止中'
@@ -1193,10 +1199,10 @@ export function DownloadRecords({
 
                         {!archived && (
                           <>
-                            {(primaryAction || isActive) && <span className="tc-op-sep" aria-hidden="true" />}
+                            {(primaryAction || isActive) && <span className="tc-op-sep tc-op-slot-sep" aria-hidden="true" />}
                             <button
                               type="button"
-                              className="tc-icon-btn tc-remove-btn"
+                              className="tc-icon-btn tc-remove-btn tc-op-slot-remove"
                               title={isActive ? '停止并移出列表' : '移出列表'}
                               aria-label={`${isActive ? '停止并移出' : '移出'} ${cleanTitle}`}
                               disabled={busy}
@@ -1264,9 +1270,13 @@ export function DownloadRecords({
             />
           ))}
 
-        <footer className="tc-pagination">
+        <footer className="tc-pagination" aria-label="任务中心分页">
           <div className="tc-pagination__meta tabular-nums">
-            <span>共 {effectiveTotal} 条</span>
+            <span>
+              共 {effectiveTotal} 条 · 当前第{' '}
+              {effectiveTotal === 0 ? 0 : (effectivePage - 1) * pageSize + 1}-
+              {Math.min(effectivePage * pageSize, effectiveTotal)} 条
+            </span>
             <label className="tc-pagination__size">
               <span>每页</span>
               <select
@@ -1297,7 +1307,7 @@ export function DownloadRecords({
             >
               上一页
             </button>
-            <span className="tabular-nums">
+            <span className="tabular-nums tc-pagination__indicator">
               第 {effectivePage} / {effectivePages} 页
             </span>
             <button

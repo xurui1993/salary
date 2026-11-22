@@ -867,8 +867,10 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px 14px;
-  min-height: 36px;
-  padding: 0 2px;
+  min-height: 52px;
+  padding: 11px 16px;
+  background: #ffffff;
+  border-bottom: 1px solid #f1f5f9;
 }
 
 .wbx-tc-topbar__left {
@@ -914,7 +916,8 @@
 .wbx-tc-tabs {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
+  flex-shrink: 0;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -928,7 +931,7 @@
   align-items: center;
   gap: 5px;
   height: 40px;
-  padding: 0 9px;
+  padding: 0 8px;
   border: 0;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
@@ -990,8 +993,8 @@
   align-items: center;
   justify-content: space-between;
   flex-wrap: nowrap;
-  gap: 8px 10px;
-  padding: 0 14px;
+  gap: 8px 12px;
+  padding: 0 16px;
   background: #ffffff;
   border-bottom: 1px solid var(--wbx-border);
 }
@@ -1000,9 +1003,9 @@
   display: inline-flex;
   align-items: center;
   flex-wrap: nowrap;
-  gap: 5px;
+  gap: 6px;
   margin-left: auto;
-  padding: 4px 0;
+  padding: 6px 0;
   min-width: 0;
 }
 
@@ -1021,17 +1024,21 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-width: 160px;
-  width: 212px;
-  flex: 0 1 212px;
+  min-width: 148px;
+  width: 204px;
+  flex: 0 1 204px;
   height: 30px;
-  padding: 0 9px;
-  margin: 5px 0;
+  padding: 0 10px;
+  margin: 0;
   border-radius: 7px;
-  border: 1px solid var(--wbx-border);
-  background: #f8fafc;
+  border: 1px solid #d5e0ea;
+  background: #ffffff;
   color: #64748b;
   transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.wbx-tc-search:hover {
+  border-color: #94a3b8;
 }
 
 .wbx-tc-search:focus-within {
@@ -1046,7 +1053,7 @@
   outline: none;
   background: transparent;
   width: 100%;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--wbx-text);
 }
 
@@ -1135,8 +1142,8 @@
 .wbx-taskcenter__table tbody td.tc-col-time {
   text-align: right;
   white-space: nowrap;
-  width: 11%;
-  min-width: 104px;
+  width: 112px;
+  min-width: 112px;
   padding-right: 22px;
 }
 
@@ -1145,9 +1152,12 @@
   right: 0;
   z-index: 5;
   text-align: right;
-  width: 11%;
-  min-width: 138px;
-  padding-right: 16px;
+  width: 172px;
+  min-width: 172px;
+  max-width: 172px;
+  box-sizing: border-box;
+  padding-left: 8px;
+  padding-right: 17px;
   background: #f8fafc;
 }
 
@@ -1156,9 +1166,12 @@
   right: 0;
   z-index: 2;
   text-align: right;
-  width: 11%;
-  min-width: 138px;
-  padding-right: 16px;
+  width: 172px;
+  min-width: 172px;
+  max-width: 172px;
+  box-sizing: border-box;
+  padding-left: 8px;
+  padding-right: 17px;
   white-space: nowrap;
   background: #ffffff;
   box-shadow: -6px 0 10px -8px rgba(15, 23, 42, 0.06);
@@ -1187,7 +1200,8 @@
 }
 
 .wbx-taskcenter__table tbody tr.tc-row td.tc-col-ops {
-  padding-right: 16px;
+  padding-left: 8px;
+  padding-right: 17px;
 }
 
 .wbx-taskcenter__table tbody tr.tc-row:last-child td {
@@ -1206,7 +1220,7 @@
 
 /* 列级排版与视觉层级：仅状态列保留语义色，全表统一 13px 与两级字重（400/500） */
 .wbx-taskcenter__table .tc-col-task {
-  width: 30%;
+  width: auto;
   min-width: 220px;
   padding-right: 18px;
 }
@@ -1260,7 +1274,7 @@
 }
 
 .wbx-taskcenter__table .tc-col-scope {
-  width: 18%;
+  width: 19%;
   min-width: 176px;
   white-space: nowrap;
 }
@@ -1280,8 +1294,8 @@
 }
 
 .wbx-taskcenter__table .tc-col-progress {
-  width: 17%;
-  min-width: 188px;
+  width: 158px;
+  min-width: 158px;
   padding-right: 16px;
 }
 
@@ -1296,36 +1310,11 @@
   width: 128px;
   height: 26px;
   padding: 0 9px;
-  border-radius: 7px;
+  border-radius: 6px;
   box-sizing: border-box;
   justify-content: flex-start;
   font-size: 12px;
   font-weight: 500;
-}
-
-.tc-file-count {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 400;
-  cursor: pointer;
-  white-space: nowrap;
-  text-align: left;
-  transition: color 140ms ease;
-}
-
-.tc-file-count:hover {
-  color: #0284c7;
-  text-decoration: underline;
-}
-
-.tc-failed-count {
-  font-size: 12px;
-  font-weight: 500;
-  color: #b45309;
-  white-space: nowrap;
 }
 
 .wbx-taskcenter__table .tc-col-time {
@@ -1336,22 +1325,47 @@
   color: #64748b;
 }
 
-/* 右侧三层分级操作列：主操作轻色胶囊 + 次操作柔和文字 + 细分割线 + 圆角弱化图标 */
+/* 4 轨定宽操作网格：[26px 辅助图标] [74px 柔光主按钮] [9px 分割线] [26px 移出图标] */
 .tc-row-ops {
+  display: inline-grid;
+  grid-template-columns: 26px 74px 9px 26px;
+  column-gap: 4px;
+  align-items: center;
+  justify-items: center;
+  vertical-align: middle;
+}
+
+.tc-row-ops.is-archived {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 5px;
-  flex-wrap: nowrap;
+}
+
+.tc-op-slot-aux {
+  grid-column: 1;
+}
+
+.tc-op-slot-main {
+  grid-column: 2;
+}
+
+.tc-op-slot-sep {
+  grid-column: 3;
+}
+
+.tc-op-slot-remove {
+  grid-column: 4;
 }
 
 .tc-op-cta {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 74px;
   height: 26px;
-  padding: 0 11px;
-  border-radius: 999px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  border-radius: 6px;
   border: 1px solid #bae6fd;
   background: #f0f9ff;
   color: #0369a1;
@@ -1403,33 +1417,41 @@
 }
 
 .tc-op-cta:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
 .tc-stop-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  width: 74px;
   height: 26px;
-  padding: 0 8px;
+  padding: 0 6px;
+  box-sizing: border-box;
   border-radius: 6px;
-  border: 0;
-  background: transparent;
-  color: #64748b;
-  font-size: 12.5px;
-  font-weight: 400;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color 140ms ease, color 140ms ease;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
 }
 
 .tc-stop-btn:hover:not(:disabled) {
-  background: #fef2f2;
-  color: #dc2626;
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #be123c;
 }
 
 .tc-stop-btn:disabled {
-  opacity: 0.45;
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #64748b;
+  opacity: 1;
   cursor: not-allowed;
 }
 
@@ -1437,7 +1459,7 @@
   display: inline-block;
   width: 1px;
   height: 12px;
-  margin: 0 2px;
+  margin: 0;
   background: #e2e8f0;
   flex-shrink: 0;
 }
@@ -1449,21 +1471,30 @@
   width: 26px;
   height: 26px;
   padding: 0;
-  border-radius: 7px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: #94a3b8;
+  box-sizing: border-box;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #64748b;
   cursor: pointer;
   transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
 }
 
 .tc-icon-btn:hover:not(:disabled) {
   background: #f1f5f9;
-  border-color: #e2e8f0;
-  color: #334155;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+.tc-icon-btn.tc-stop-icon-btn:hover:not(:disabled) {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #be123c;
 }
 
 .tc-icon-btn.tc-remove-btn {
+  border-color: transparent;
+  background: transparent;
   color: #94a3b8;
 }
 
@@ -1959,9 +1990,10 @@
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px 14px;
   font-size: 12.5px;
-  color: #64748b;
+  font-weight: 500;
+  color: #475569;
 }
 
 .tc-pagination__size {
@@ -1969,22 +2001,41 @@
   align-items: center;
   gap: 6px;
   color: #475569;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 
 .tc-pagination__size .wb-select {
+  appearance: none;
+  -webkit-appearance: none;
   width: auto;
-  min-width: 72px;
+  min-width: 70px;
   min-height: 28px;
   height: 28px;
-  padding: 0 22px 0 8px;
+  padding: 0 24px 0 9px;
+  border-radius: 6px;
+  border: 1px solid #d5e0ea;
+  background-color: #ffffff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  background-size: 11px 11px;
   font-size: 12px;
+  font-weight: 500;
+  color: #334155;
+  cursor: pointer;
 }
 
 .tc-pagination__controls {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.tc-pagination__indicator {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #334155;
+  padding: 0 4px;
 }
 
 .tc-drawer__callout-actions {

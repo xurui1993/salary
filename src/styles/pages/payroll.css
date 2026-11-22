@@ -2430,14 +2430,14 @@
   text-align: right;
   white-space: nowrap;
   min-width: 148px;
-  width: 14%;
+  width: 15%;
   padding-right: 40px;
 }
 
 .wbx-payroll__table thead th.pq-col-progress,
 .wbx-payroll__table tbody td.pq-col-progress {
-  min-width: 176px;
-  width: 17%;
+  width: 162px;
+  min-width: 162px;
   padding-left: 20px;
 }
 
@@ -2446,9 +2446,12 @@
   right: 0;
   z-index: 5;
   text-align: right;
-  min-width: 132px;
-  width: 11%;
-  padding-right: 18px;
+  width: 172px;
+  min-width: 172px;
+  max-width: 172px;
+  box-sizing: border-box;
+  padding-left: 8px;
+  padding-right: 17px;
   background: #f8fafc;
 }
 
@@ -2457,9 +2460,12 @@
   right: 0;
   z-index: 2;
   text-align: right;
-  min-width: 132px;
-  width: 11%;
-  padding-right: 18px;
+  width: 172px;
+  min-width: 172px;
+  max-width: 172px;
+  box-sizing: border-box;
+  padding-left: 8px;
+  padding-right: 17px;
   white-space: nowrap;
   background: #ffffff;
   box-shadow: -6px 0 10px -8px rgba(15, 23, 42, 0.06);
@@ -2500,7 +2506,8 @@
 }
 
 .wbx-payroll__table tbody tr.pq-row td.pq-col-ops {
-  padding-right: 18px;
+  padding-left: 8px;
+  padding-right: 17px;
 }
 
 .wbx-payroll__table tbody tr.pq-row:last-child td {
@@ -2525,7 +2532,7 @@
 /* 列级排版与色彩：仅状态列保留语义色，全表统一 13px 与两级字重（400/500） */
 .wbx-payroll__table .pq-col-approval {
   min-width: 158px;
-  width: 18%;
+  width: 19%;
 }
 
 .wbx-payroll__table .pq-code-text {
@@ -2667,7 +2674,7 @@
   width: 128px;
   height: 26px;
   padding: 0 9px;
-  border-radius: 7px;
+  border-radius: 6px;
   box-sizing: border-box;
   justify-content: flex-start;
   font-size: 12px;
@@ -2675,35 +2682,67 @@
 }
 
 .wbx-payroll__table .pq-row-actions {
+  display: inline-grid;
+  grid-template-columns: 26px 74px 9px 26px;
+  column-gap: 4px;
+  align-items: center;
+  justify-items: center;
+  vertical-align: middle;
+}
+
+.wbx-payroll__table .pq-row-actions.is-archived {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 5px;
-  min-width: 0;
+}
+
+.pq-op-slot-aux {
+  grid-column: 1;
+}
+
+.pq-op-slot-main {
+  grid-column: 2;
+}
+
+.pq-op-slot-sep {
+  grid-column: 3;
+}
+
+.pq-op-slot-remove {
+  grid-column: 4;
 }
 
 .wbx-payroll__table .pq-stop-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  width: 74px;
   height: 26px;
-  padding: 0 8px;
+  padding: 0 6px;
+  box-sizing: border-box;
   border-radius: 6px;
-  border: 0;
-  background: transparent;
-  color: #64748b;
-  font-size: 12.5px;
-  font-weight: 400;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
-  transition: background-color 140ms ease, color 140ms ease;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
 }
 
 .wbx-payroll__table .pq-stop-btn:hover:not(:disabled) {
-  background: #fef2f2;
-  color: #dc2626;
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #be123c;
 }
 
 .wbx-payroll__table .pq-stop-btn:disabled {
-  opacity: 0.45;
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #64748b;
+  opacity: 1;
   cursor: not-allowed;
 }
 
@@ -2711,31 +2750,37 @@
   display: inline-block;
   width: 1px;
   height: 12px;
-  margin: 0 2px;
+  margin: 0;
   background: #e2e8f0;
   flex-shrink: 0;
 }
 
-.wbx-payroll__table .pq-icon-btn,
-.wbx-payroll__table .pq-remove-btn {
+.wbx-payroll__table .pq-icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 26px;
   height: 26px;
   padding: 0;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  background: transparent;
-  color: #94a3b8;
+  box-sizing: border-box;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #64748b;
   cursor: pointer;
   transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
 }
 
 .wbx-payroll__table .pq-icon-btn:hover:not(:disabled) {
   background: #f1f5f9;
-  border-color: #e2e8f0;
-  color: #334155;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+.wbx-payroll__table .pq-remove-btn {
+  border-color: transparent;
+  background: transparent;
+  color: #94a3b8;
 }
 
 .wbx-payroll__table .pq-remove-btn:hover:not(:disabled) {
@@ -2848,9 +2893,24 @@
 }
 
 .wbx-payroll__page-size .wb-select {
+  appearance: none;
+  -webkit-appearance: none;
+  width: auto;
+  min-width: 70px;
   min-height: 28px;
-  padding: 2px 8px;
+  height: 28px;
+  padding: 0 24px 0 9px;
+  border-radius: 6px;
+  border: 1px solid #d5e0ea;
+  background-color: #ffffff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 7px center;
+  background-size: 11px 11px;
   font-size: 12px;
+  font-weight: 500;
+  color: #334155;
+  cursor: pointer;
 }
 
 .wbx-payroll__pagination-controls {
@@ -4228,25 +4288,6 @@
   font-weight: 600;
 }
 
-.pq-review-alert-btn {
-  display: inline-flex;
-  align-items: center;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #64748b;
-  font-size: 13px;
-  font-weight: 400;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: color 0.14s ease;
-}
-
-.pq-review-alert-btn:hover {
-  color: #0f172a;
-  text-decoration: underline;
-}
-
 .pq-review-alert-chip {
   display: inline-flex;
   align-items: center;
@@ -4261,14 +4302,16 @@
   font-weight: 600;
 }
 
-/* 三层分级操作按钮：主操作轻色胶囊 */
+/* 统一规格行级操作按钮：固定 74×26px 柔光圆角矩形 */
 .pq-op-cta {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 74px;
   height: 26px;
-  padding: 0 11px;
-  border-radius: 999px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  border-radius: 6px;
   border: 1px solid #bae6fd;
   background: #f0f9ff;
   color: #0369a1;

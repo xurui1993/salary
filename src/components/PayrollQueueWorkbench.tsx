@@ -31,7 +31,6 @@ import {
   buildPayrollProgressPopoverData,
   detectDuplicateUploadNames,
   extractPayrollAmount,
-  extractPayrollReviewAlert,
   formatPayrollAmount,
   legacyPayrollTask,
   payrollCycleLabel,
@@ -265,7 +264,6 @@ export function PayrollQueueTable({
             const periodRange = payrollPeriodRange(task.plan);
             const typeTone = payrollTypeTone(task.mode);
             const amount = extractPayrollAmount(task);
-            const reviewAlert = extractPayrollReviewAlert(task);
             const pct = Number.isFinite(task.progress) ? Math.max(0, Math.min(100, Math.round(task.progress))) : 0;
             const showProgressBar = running && task.status !== 'queued' && pct > 0;
             const popoverModel = buildPayrollProgressPopoverData(task, {
@@ -354,29 +352,18 @@ export function PayrollQueueTable({
                         </span>
                       </span>
                     </StatusHoverPopover>
-                    {reviewAlert ? (
-                      <button
-                        type="button"
-                        className="pq-review-alert-btn tabular-nums"
-                        title="存在复核风险提示，点击直接查看复核摘要"
-                        onClick={event => {
-                          event.stopPropagation();
-                          onSelect(task.id);
-                          onOpenDetail?.(task.id, 'review');
-                        }}
-                      >
-                        <span>· {reviewAlert.label}</span>
-                      </button>
-                    ) : null}
                   </div>
                 </td>
-                {/* 精简操作列：仅保留场景主操作、停止与移出，点击整行直接展开详情抽屉 */}
+                {/* 4 轨定宽操作网格：[26px 辅助图标] [74px 主操作] [9px 分割线] [26px 移出] */}
                 <td className="pq-col-ops">
-                  <div className="pq-row-actions" onClick={event => event.stopPropagation()}>
+                  <div
+                    className={`pq-row-actions${hidden ? ' is-archived' : ''}`}
+                    onClick={event => event.stopPropagation()}
+                  >
                     {hidden ? (
                       <button
                         type="button"
-                        className="pq-op-cta is-primary"
+                        className="pq-op-cta is-primary pq-op-slot-main"
                         disabled={busy}
                         onClick={() => onRestore([task])}
                       >
@@ -388,17 +375,7 @@ export function PayrollQueueTable({
                           <>
                             <button
                               type="button"
-                              className="pq-op-cta is-primary"
-                              title="下载核算成品包"
-                              aria-label={`下载 ${taskLabel(task)} 核算成品包`}
-                              disabled={busy}
-                              onClick={() => onDownload(task)}
-                            >
-                              <span>下载</span>
-                            </button>
-                            <button
-                              type="button"
-                              className="pq-icon-btn"
+                              className="pq-icon-btn pq-op-slot-aux"
                               title="打开本地结果目录"
                               aria-label={`打开 ${taskLabel(task)} 结果目录`}
                               disabled={busy}
@@ -406,12 +383,22 @@ export function PayrollQueueTable({
                             >
                               <FolderOpen size={13.5} aria-hidden="true" />
                             </button>
+                            <button
+                              type="button"
+                              className="pq-op-cta is-primary pq-op-slot-main"
+                              title="下载核算成品包"
+                              aria-label={`下载 ${taskLabel(task)} 核算成品包`}
+                              disabled={busy}
+                              onClick={() => onDownload(task)}
+                            >
+                              <span>下载</span>
+                            </button>
                           </>
                         )}
                         {isWaiting && (
                           <button
                             type="button"
-                            className="pq-op-cta is-warn"
+                            className="pq-op-cta is-warn pq-op-slot-main"
                             onClick={() => {
                               onSelect(task.id);
                               onOpenDetail?.(
@@ -426,7 +413,7 @@ export function PayrollQueueTable({
                         {isError && (
                           <button
                             type="button"
-                            className="pq-op-cta is-danger"
+                            className="pq-op-cta is-danger pq-op-slot-main"
                             onClick={() => {
                               onSelect(task.id);
                               onOpenDetail?.(task.id, 'activity');
@@ -438,7 +425,7 @@ export function PayrollQueueTable({
                         {running && (
                           <button
                             type="button"
-                            className="pq-stop-btn"
+                            className="pq-stop-btn pq-op-slot-main"
                             title={
                               task.status === 'stopping'
                                 ? '停止中'
@@ -454,11 +441,11 @@ export function PayrollQueueTable({
                           </button>
                         )}
                         {((done && task.batch_id) || isWaiting || isError || running) && (
-                          <span className="pq-op-sep" aria-hidden="true" />
+                          <span className="pq-op-sep pq-op-slot-sep" aria-hidden="true" />
                         )}
                         <button
                           type="button"
-                          className="pq-icon-btn pq-remove-btn"
+                          className="pq-icon-btn pq-remove-btn pq-op-slot-remove"
                           title={running ? '停止并移出' : '移出任务'}
                           aria-label={`${running ? '停止并移出' : '移出'} ${taskLabel(task)}`}
                           disabled={busy || task.status === 'stopping'}
