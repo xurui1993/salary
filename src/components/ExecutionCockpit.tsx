@@ -317,7 +317,7 @@ export function ExecutionCockpit({
       </div>
 
       {logExpanded && (
-        <div className="shrink-0 h-[280px] rounded-xl overflow-hidden border border-slate-200">
+        <div className="shrink-0 h-[340px]">
           <TerminalPanel
             logs={logs}
             progress={progress}

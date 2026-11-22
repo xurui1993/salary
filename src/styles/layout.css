@@ -1,5 +1,5 @@
 /*
- * L3 布局骨架层 —— 侧栏导航工作台 / 顶栏上下文中心 / 主舞台 / 抽屉
+ * L3 布局骨架层 —— 澄明直展式分组侧栏（228px 固定常驻、零折叠） / 清爽内联顶栏 / 主舞台 / 抽屉
  *
  * 约束：本文件禁止出现 important 强制标记。
  */
@@ -11,18 +11,14 @@
   min-height: 100dvh;
   background: var(--wbx-bg);
   color: var(--wbx-text);
-  transition: grid-template-columns var(--wbx-dur) var(--wbx-ease);
 }
 
-.wbx-shell--collapsed,
-.wb-shell.wbx-shell.has-collapsed-sidebar,
-.wbx-shell:has(.wbx-sidebar.is-collapsed) {
-  grid-template-columns: var(--wbx-sidebar-w-collapsed) minmax(0, 1fr);
-}
-
-/* 左侧导航栏 —— 高对比精密侧栏，彻底消除文字裁切与遮挡 */
+/* ==========================================================================
+   左侧直展式分组导航栏（228px 固定常驻、不采用折叠样式、全功能一目了然）
+   ========================================================================== */
 .wbx-sidebar,
-.wb-sidebar.wbx-sidebar {
+.wb-sidebar.wbx-sidebar,
+.wbx-flat-sidebar {
   position: sticky;
   top: 0;
   width: var(--wbx-sidebar-w);
@@ -30,46 +26,67 @@
   height: 100dvh;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  background: #ffffff;
   border-right: 1px solid var(--wbx-border);
-  box-shadow: 2px 0 14px -4px rgba(15, 23, 42, 0.05);
-  z-index: 30;
-  overflow-x: hidden;
-  overflow-y: auto;
+  box-shadow: 1px 0 0 rgba(15, 23, 42, 0.015);
+  z-index: 35;
+  overflow: hidden;
   user-select: none;
 }
 
-.wbx-sidebar__brand,
-.wb-sidebar-brand.wbx-sidebar__brand {
+/* 顶部 56px 品牌栏（与右侧顶栏等高平齐） */
+.wbx-flat-sidebar__brand {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 8px;
+  height: var(--wbx-header-h);
   min-height: var(--wbx-header-h);
-  padding: 10px 14px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--wbx-border);
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  background: #ffffff;
   flex-shrink: 0;
 }
 
-.wbx-sidebar__logo,
-.wb-sidebar-logo.wbx-sidebar__logo {
-  position: relative;
+.wbx-brand-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 9px;
+  width: 100%;
+  padding: 4px 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+  transition: background-color var(--wbx-dur-fast) var(--wbx-ease);
+}
+
+.wbx-brand-logo:hover {
+  background: var(--wbx-surface-hover);
+}
+
+.wbx-brand-logo__mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #0369a1 0%, #0284c7 52%, #0ea5e9 100%);
-  color: #ffffff;
+  width: 30px;
+  height: 30px;
   flex-shrink: 0;
-  box-shadow: 0 4px 10px -2px rgba(2, 132, 199, 0.36),
-              inset 0 1px 0 rgba(255, 255, 255, 0.32);
 }
 
-.wbx-sidebar__brand-copy,
-.wb-sidebar-brand-text.wbx-sidebar__brand-copy {
+.wbx-brand-logo__svg {
+  display: block;
+  transition: transform var(--wbx-dur) var(--wbx-ease);
+}
+
+.wbx-brand-logo:hover .wbx-brand-logo__svg {
+  transform: scale(1.03);
+}
+
+.wbx-brand-logo__wordmark {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -77,385 +94,289 @@
   flex: 1;
 }
 
-.wbx-sidebar__brand-title {
-  font-size: 15px;
-  font-weight: 800;
-  color: #0b1324;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  letter-spacing: -0.015em;
-  line-height: 1.25;
-}
-
-.wbx-sidebar__brand-sub {
-  font-size: 11px;
+.wbx-brand-logo__title {
+  font-size: 13.5px;
   font-weight: 600;
-  color: #0284c7;
+  color: var(--wbx-text);
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.wbx-brand-logo__sub {
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--wbx-text-muted);
+  letter-spacing: 0;
+  line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  letter-spacing: -0.01em;
-  line-height: 1.25;
 }
 
-.wbx-sidebar__nav,
-.wb-sidebar-flat-nav.wbx-sidebar__nav {
+.wbx-flat-sidebar__mobile-close {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--wbx-border);
+  border-radius: 7px;
+  background: var(--wbx-surface);
+  color: var(--wbx-text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* 直展式三分栏分组菜单主体（数据采集 / 薪资核算 / 价格审批 9 个核心入口清晰展开） */
+.wbx-flat-sidebar__nav {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 12px 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 12px;
-  overflow-y: auto;
+  gap: 16px;
 }
 
-.wbx-sidebar__section-label {
-  padding: 4px 10px 2px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #475569;
-}
-
-.wbx-nav-group-block {
+.wbx-snav-group {
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
 
-.wbx-nav-item,
-.wb-sidebar-item.wbx-nav-item {
+.wbx-snav-group + .wbx-snav-group {
+  padding-top: 12px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.wbx-snav-group__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px 4px;
+}
+
+.wbx-snav-group__title {
+  font-size: 11px;
+  font-weight: 500;
+  color: #94a3b8;
+  letter-spacing: 0.02em;
+}
+
+.wbx-snav-group__live {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--wbx-primary);
+}
+
+.wbx-snav-group__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 单行清爽菜单项（去彩虹杂色、统一静谧图标、高辨识度激活态） */
+.wbx-snav-item {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   width: 100%;
-  min-height: 40px;
-  padding: 6px 11px;
+  height: 36px;
+  padding: 0 10px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: 8px;
   background: transparent;
-  color: #1e293b;
-  font-size: 14px;
-  font-weight: 600;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 500;
   text-align: left;
   cursor: pointer;
   transition: background-color var(--wbx-dur-fast) var(--wbx-ease),
-              color var(--wbx-dur-fast) var(--wbx-ease),
               border-color var(--wbx-dur-fast) var(--wbx-ease),
-              box-shadow var(--wbx-dur-fast) var(--wbx-ease),
-              transform var(--wbx-dur-fast) var(--wbx-ease);
+              color var(--wbx-dur-fast) var(--wbx-ease);
 }
 
-.wbx-nav-item:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
-  color: #0b1324;
+.wbx-snav-item:hover:not(:disabled) {
+  background: #f8fafc;
+  color: #0f172a;
 }
 
-.wbx-nav-item:active {
-  transform: scale(0.992);
+.wbx-snav-item:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
 }
 
-.wbx-nav-item.is-active,
-.wb-sidebar-item.wbx-nav-item.is-active:hover:not(:disabled) {
-  background: linear-gradient(90deg, #eff6ff 0%, #f0f9ff 100%);
-  color: #0369a1;
-  border-color: #7dd3fc;
-  font-weight: 700;
-  box-shadow: 0 2px 6px rgba(2, 132, 199, 0.1);
+.wbx-snav-item.is-active {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+  color: #026aa2;
+  font-weight: 600;
 }
 
-.wbx-nav-item.is-active::before,
-.wb-sidebar-item.wbx-nav-item[aria-pressed="true"]::before {
+.wbx-snav-item.is-active::before {
   content: "";
   position: absolute;
   left: -1px;
-  top: 9px;
-  bottom: 9px;
-  height: auto;
-  transform: none;
-  width: 4px;
-  border-radius: 0 4px 4px 0;
-  background: var(--wbx-primary);
-}
-
-.wbx-nav-item__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
-  background: #f1f5f9;
-  color: #334155;
-  flex-shrink: 0;
-  transition: all var(--wbx-dur-fast) var(--wbx-ease);
-}
-
-.wbx-nav-item:hover .wbx-nav-item__icon {
-  background: #e2e8f0;
-  color: #0b1324;
-}
-
-.wbx-nav-item.is-active .wbx-nav-item__icon,
-.wb-sidebar-item.wbx-nav-item.is-active:hover:not(:disabled) .wb-sidebar-icon.wbx-nav-item__icon {
-  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
-  color: #ffffff;
-  box-shadow: 0 2px 6px rgba(2, 132, 199, 0.28);
-}
-
-.wbx-nav-item__body {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  flex: 1;
-}
-
-.wbx-nav-item__label {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 14px;
-  font-weight: 700;
-  color: #0b1324;
-  line-height: 1.25;
-}
-
-.wbx-nav-item.is-active .wbx-nav-item__label {
-  color: #0369a1;
-}
-
-.wbx-nav-item__desc {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 11.5px;
-  font-weight: 500;
-  color: #475569;
-  line-height: 1.25;
-}
-
-.wbx-nav-item.is-active .wbx-nav-item__desc {
-  color: #0284c7;
-  font-weight: 600;
-}
-
-.wbx-nav-item__badge {
-  margin-left: auto;
-  padding: 2px 7px;
-  border-radius: var(--wbx-r-pill);
-  font-size: 11px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  background: var(--wbx-primary);
-  color: #ffffff;
-  box-shadow: 0 1px 2px rgba(2, 132, 199, 0.25);
-}
-
-/* 侧栏二级快捷入口（展开态下展示） */
-.wbx-subnav-tree {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin: 2px 0 8px 22px;
-  padding-left: 12px;
-  border-left: 2px solid #cbd5e1;
-}
-
-.wbx-subnav-link {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: #334155;
-  font-size: 12.5px;
-  font-weight: 500;
-  text-align: left;
-  cursor: pointer;
-  transition: all var(--wbx-dur-fast) var(--wbx-ease);
-}
-
-.wbx-subnav-link:hover {
-  background: #f1f5f9;
-  color: #0b1324;
-  font-weight: 600;
-}
-
-.wbx-subnav-link.is-active {
-  background: #e0f2fe;
-  color: #0369a1;
-  border-color: #7dd3fc;
-  font-weight: 700;
-}
-
-.wbx-subnav-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: #94a3b8;
-  flex-shrink: 0;
-}
-
-.wbx-subnav-link.is-active .wbx-subnav-dot {
-  background: var(--wbx-primary);
-  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.2);
-}
-
-/* 侧栏底部：CPU 及内存资源占用分析卡片 */
-.wbx-sidebar__footer {
-  margin-top: auto;
-  padding: 10px 12px;
-  border-top: 1px solid var(--wbx-border);
-  background: #f8fafc;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.wbx-sidebar-resource-card {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding: 10px 11px;
-  border-radius: 10px;
-  background: #ffffff;
-  border: 1px solid var(--wbx-border);
-  box-shadow: var(--wbx-shadow-xs);
-}
-
-.wbx-sidebar-resource__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
-
-.wbx-sidebar-resource__title {
-  font-size: 11.5px;
-  font-weight: 700;
-  color: #0f172a;
-  white-space: nowrap;
-}
-
-.wbx-sidebar-resource__status {
-  font-size: 10.5px;
-  font-weight: 700;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.wbx-sidebar-resource__status.is-normal {
-  color: #15803d;
-}
-
-.wbx-sidebar-resource__status.is-warn {
-  color: #b45309;
-}
-
-.wbx-sidebar-resource__status.is-high {
-  color: #b91c1c;
-}
-
-.wbx-sidebar-resource__row {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.wbx-sidebar-resource__meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  font-size: 11px;
-  color: #475569;
-}
-
-.wbx-sidebar-resource__meta strong {
-  font-size: 11px;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.wbx-sidebar-resource__bar {
-  width: 100%;
-  height: 5px;
-  border-radius: 999px;
-  background: #e2e8f0;
-  overflow: hidden;
-}
-
-.wbx-sidebar-resource__fill {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  transition: width 200ms ease;
-}
-
-.wbx-sidebar-resource__fill.is-cpu {
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
   background: #0284c7;
 }
 
-.wbx-sidebar-resource__fill.is-mem {
-  background: #0d9488;
-}
-
-.wbx-sidebar-resource-card.is-warn .wbx-sidebar-resource__fill {
-  background: #d97706;
-}
-
-.wbx-sidebar-resource-card.is-high .wbx-sidebar-resource__fill {
-  background: #dc2626;
-}
-
-.wbx-sidebar-resource__foot {
-  display: flex;
+.wbx-snav-icon {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding-top: 5px;
-  border-top: 1px dashed #e2e8f0;
-  font-size: 10.5px;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
   color: #64748b;
+  flex-shrink: 0;
+  transition: color var(--wbx-dur-fast) var(--wbx-ease);
 }
 
-/* 折叠态隐藏文案，图标与展开按钮上下堆叠居中，彻底消除横向挤压裁切 */
-.wbx-sidebar.is-collapsed,
-.wb-sidebar.wbx-sidebar.is-collapsed {
-  width: var(--wbx-sidebar-w-collapsed);
-  min-width: var(--wbx-sidebar-w-collapsed);
+.wbx-snav-item:hover .wbx-snav-icon {
+  color: #1e293b;
 }
 
-.wbx-sidebar.is-collapsed .wbx-sidebar__brand-copy,
-.wbx-sidebar.is-collapsed .wbx-nav-item__body,
-.wbx-sidebar.is-collapsed .wbx-nav-item__label,
-.wbx-sidebar.is-collapsed .wbx-nav-item__badge,
-.wbx-sidebar.is-collapsed .wbx-sidebar__section-label,
-.wbx-sidebar.is-collapsed .wbx-subnav-tree,
-.wbx-sidebar.is-collapsed .wbx-sidebar__footer {
-  display: none;
+.wbx-snav-item.is-active .wbx-snav-icon {
+  color: #0284c7;
 }
 
-.wbx-sidebar.is-collapsed .wbx-sidebar__brand {
-  flex-direction: column;
+.wbx-snav-label {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.25;
+}
+
+/* 侧栏平台可读状态微标签 */
+.wbx-snav-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #94a3b8;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.wbx-snav-status.is-ready {
+  background: #ecfdf5;
+  color: #047857;
+  font-weight: 600;
+}
+
+.wbx-snav-status.is-busy {
+  background: #e0f2fe;
+  color: #0369a1;
+  font-weight: 600;
+}
+
+.wbx-snav-status.is-warn {
+  background: #fffbeb;
+  color: #b45309;
+  font-weight: 600;
+}
+
+/* 平台实时连接状态点 */
+.wbx-channel-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  flex-shrink: 0;
+  transition: background-color var(--wbx-dur-fast) var(--wbx-ease);
+}
+
+.wbx-channel-dot.is-ready {
+  background: #10b981;
+}
+
+.wbx-channel-dot.is-busy {
+  background: #0284c7;
+}
+
+.wbx-channel-dot.is-warn {
+  background: #f59e0b;
+}
+
+.wbx-channel-dot.is-idle {
+  background: #cbd5e1;
+}
+
+/* 任务中心计数微标 */
+.wbx-snav-badge {
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 10px 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-family: var(--wbx-font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
 }
 
-.wbx-sidebar.is-collapsed .wbx-nav-item {
-  justify-content: center;
-  padding: 8px;
+.wbx-snav-badge.is-warn {
+  background: #fef3c7;
+  color: #b45309;
 }
 
-/* 右侧工作区 = 顶栏 + 主舞台 */
+.wbx-snav-badge.is-done {
+  background: #d1fae5;
+  color: #047857;
+}
+
+/* 侧栏底部主机资源状态条 */
+.wbx-flat-sidebar__footer {
+  margin-top: auto;
+  padding: 10px 12px;
+  border-top: 1px solid var(--wbx-border);
+  background: #ffffff;
+  flex-shrink: 0;
+}
+
+/* 矮屏（<=780px 高度，如 1280×720）紧凑侧栏节奏：全部 9 项导航与资源面板一屏完整展示、零滚动 */
+@media (max-height: 780px) {
+  .wbx-flat-sidebar__nav {
+    padding: 10px 12px 8px;
+    gap: 10px;
+  }
+
+  .wbx-snav-group + .wbx-snav-group {
+    padding-top: 8px;
+  }
+
+  .wbx-snav-group__head {
+    padding: 0 8px 2px;
+  }
+
+  .wbx-snav-item {
+    height: 32px;
+    font-size: 12.5px;
+  }
+
+  .wbx-flat-sidebar__footer {
+    padding: 7px 10px;
+  }
+}
+
+/* ==========================================================================
+   右侧工作区 = 清爽单行 56px 顶栏（无重复标签、带一键状态授权） + 主舞台
+   ========================================================================== */
 .wbx-workspace {
   display: flex;
   flex-direction: column;
@@ -463,90 +384,195 @@
   min-height: 100dvh;
 }
 
-.wbx-header {
+.wbx-header,
+.wb-header.wbx-header {
   position: sticky;
   top: 0;
   z-index: 25;
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--wbx-s4);
+  gap: 16px;
+  height: var(--wbx-header-h);
   min-height: var(--wbx-header-h);
-  padding: 8px var(--wbx-s6);
+  padding: 0 var(--wbx-s5);
   background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--wbx-border);
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
 }
 
-.wbx-header__lead {
+/* 顶栏底缘 2px 全局动态进度细带 */
+.wbx-header-ribbon {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: rgba(2, 106, 162, 0.12);
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.wbx-header-ribbon__bar {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #0284c7 0%, #38bdf8 60%, #0ea5e9 100%);
+  transition: width 240ms var(--wbx-ease);
+}
+
+.wbx-header-ribbon__bar.is-indeterminate {
+  width: 38%;
+  animation: wbx-ribbon-sweep 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes wbx-ribbon-sweep {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(310%); }
+}
+
+.wbx-header__lead,
+.wb-brand.wbx-header__lead {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   min-width: 0;
-  flex: 1;
-  flex-wrap: wrap;
+  flex: 1 1 auto;
 }
 
-.wbx-header__title-group {
+.wbx-header__tools,
+.wb-header-actions.wbx-header__tools {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.wbx-header__title-row {
-  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 9px;
-  min-width: 0;
-}
-
-.wbx-header__module-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 9px;
-  border-radius: 7px;
-  background: #e0f2fe;
-  border: 1px solid #7dd3fc;
-  color: #0369a1;
-  font-size: 11.5px;
-  font-weight: 700;
-  white-space: nowrap;
+  gap: 10px;
+  width: auto;
   flex-shrink: 0;
 }
 
-.wbx-header__title {
-  font-size: 17px;
-  font-weight: 800;
-  color: #0b1324;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  letter-spacing: -0.015em;
-}
-
-.wbx-header__subtitle {
-  font-size: 12px;
-  font-weight: 500;
-  color: #475569;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.wbx-header__sep {
-  width: 1px;
-  height: 24px;
-  background: var(--wbx-border);
-  flex-shrink: 0;
-}
-
-.wbx-header__tools {
+/* 顶栏左区：模块位置 + 轻量当前平台状态标签 */
+.wbx-topbar-context {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+}
+
+.wbx-topbar-location {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.wbx-topbar-module {
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748b;
+  line-height: 1.25;
   flex-shrink: 0;
+}
+
+.wbx-topbar-sep {
+  font-size: 13px;
+  color: #cbd5e1;
+  user-select: none;
+  line-height: 1.25;
+  flex-shrink: 0;
+}
+
+.wbx-topbar-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.wbx-topbar-status-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color var(--wbx-dur-fast) var(--wbx-ease),
+              border-color var(--wbx-dur-fast) var(--wbx-ease),
+              color var(--wbx-dur-fast) var(--wbx-ease);
+}
+
+.wbx-topbar-status-tag:hover {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+  color: #026aa2;
+}
+
+.wbx-topbar-status-tag.is-ready {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #047857;
+}
+
+.wbx-topbar-status-tag.is-busy {
+  background: #e0f2fe;
+  border-color: #bae6fd;
+  color: #0369a1;
+}
+
+.wbx-topbar-status-tag.is-warn {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #b45309;
+}
+
+.wbx-topbar-status-tag__action {
+  margin-left: 2px;
+  padding-left: 6px;
+  border-left: 1px solid #e2e8f0;
+  color: #0284c7;
+  font-weight: 600;
+}
+
+.wbx-topbar-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid #bae6fd;
+  background: #f0f9ff;
+  color: #0369a1;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.wbx-topbar-live-pill__icon {
+  flex-shrink: 0;
+}
+
+.wbx-topbar-live-pill__text {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 主舞台容器 */
@@ -555,16 +581,19 @@
   width: 100%;
   max-width: var(--wbx-main-max);
   margin: 0 auto;
-  padding: 16px var(--wbx-s6) var(--wbx-s8);
+  padding: 18px var(--wbx-s6) var(--wbx-s8);
   box-sizing: border-box;
   min-width: 0;
 }
 
 /* 抽屉与遮罩 */
+.wbx-scrim,
 .wbx-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.42);
+  border: 0;
+  padding: 0;
+  background: rgba(15, 23, 42, 0.32);
   backdrop-filter: blur(2px);
   z-index: 60;
 }
@@ -574,7 +603,7 @@
   top: 0;
   right: 0;
   bottom: 0;
-  width: min(var(--wbx-drawer-w), 92vw);
+  width: min(var(--wbx-drawer-w), 94vw);
   background: var(--wbx-surface);
   border-left: 1px solid var(--wbx-border);
   box-shadow: var(--wbx-shadow-pop);
@@ -593,15 +622,36 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--wbx-s3);
-  padding: var(--wbx-s4) var(--wbx-s5);
+  padding: 14px 18px;
   border-bottom: 1px solid var(--wbx-border);
-  background: #f8fafc;
+  background: var(--wbx-surface);
 }
 
 .wbx-drawer__body {
   flex: 1;
-  padding: var(--wbx-s5);
+  padding: var(--wbx-s4);
   overflow-y: auto;
+  min-height: 0;
+}
+
+.workbench-app .wb-drawer {
+  border-left: 1px solid var(--wbx-border);
+  background: var(--wbx-surface);
+  box-shadow: var(--wbx-shadow-pop);
+}
+
+.workbench-app .wb-drawer-header {
+  border-bottom: 1px solid var(--wbx-border);
+  background: var(--wbx-surface);
+}
+
+.wbx-drawer__body--flush {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .wbx-drawer__foot {
@@ -611,7 +661,7 @@
   gap: var(--wbx-s2);
   padding: var(--wbx-s3) var(--wbx-s5);
   border-top: 1px solid var(--wbx-border);
-  background: var(--wbx-surface-muted);
+  background: var(--wbx-bg-subtle);
 }
 
 .wbx-burger {
@@ -622,20 +672,22 @@
   height: 34px;
   border-radius: 8px;
   border: 1px solid var(--wbx-border);
-  background: #ffffff;
+  background: var(--wbx-surface);
   color: var(--wbx-text-secondary);
   cursor: pointer;
+  flex-shrink: 0;
 }
 
-/* 响应式断点：保持 >768px 下左侧导航完整展开无遮挡，仅在 <=768px 移动端转为抽屉 */
-@media (max-width: 1220px) {
-  .wbx-header__subtitle {
+/* 响应式断点 */
+@media (max-width: 1260px) {
+  .wbx-topbar-subtitle {
     display: none;
   }
 }
 
 @media (max-width: 1024px) {
   .wbx-header,
+  .wb-header.wbx-header,
   .wbx-main {
     padding-left: var(--wbx-s4);
     padding-right: var(--wbx-s4);
@@ -646,33 +698,53 @@
   .wbx-burger {
     display: inline-flex;
   }
+  .wbx-flat-sidebar__mobile-close {
+    display: inline-flex;
+  }
   .wbx-shell,
   .wb-shell.wbx-shell {
     grid-template-columns: minmax(0, 1fr);
   }
-  .wbx-header {
-    flex-wrap: wrap;
+  .wbx-header,
+  .wb-header.wbx-header {
+    height: 54px;
+    min-height: 54px;
+    flex-wrap: nowrap;
     gap: 8px;
-    padding: 10px 12px;
+    padding: 0 12px;
   }
-  .wbx-header__lead {
-    flex: 1 1 100%;
+  .wbx-header__lead,
+  .wb-brand.wbx-header__lead {
+    flex: 1 1 auto;
+    min-width: 0;
     gap: 8px;
   }
-  .wbx-header__tools {
-    width: 100%;
-    justify-content: space-between;
+  .wbx-header__tools,
+  .wb-header-actions.wbx-header__tools {
+    width: auto;
+    flex-shrink: 0;
+    gap: 6px;
+  }
+  .wbx-topbar-module,
+  .wbx-topbar-sep,
+  .wbx-topbar-status-tag,
+  .wbx-topbar-live-pill,
+  .wbx-topbar-status-tag__action {
+    display: none;
   }
   .wbx-sidebar,
-  .wb-sidebar.wbx-sidebar {
+  .wb-sidebar.wbx-sidebar,
+  .wbx-flat-sidebar {
     position: fixed;
     left: 0;
     top: 0;
     bottom: 0;
-    width: var(--wbx-sidebar-w);
+    width: 248px;
+    min-width: 248px;
     transform: translateX(-100%);
     transition: transform var(--wbx-dur) var(--wbx-ease);
     z-index: 70;
+    box-shadow: var(--wbx-shadow-pop);
   }
   .wbx-shell[data-mobile-open="true"] .wbx-sidebar {
     transform: translateX(0);

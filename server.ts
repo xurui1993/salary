@@ -190,7 +190,7 @@ async function startServer() {
     console.log("Local test mode: dependency installation, port cleanup and data cleanup are disabled.");
     startBackend();
   } else {
-    void setupAndStartBackend();
+    await setupAndStartBackend();
   }
 
   const getWorkspaceId = (req: any) => {

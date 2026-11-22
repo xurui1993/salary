@@ -287,23 +287,23 @@ export function HeaderDownloadCenter({
     <div className="wbx-popover-wrap" ref={containerRef}>
       <button
         type="button"
-        className={`wbx-btn wbx-popover-trigger${open ? ' is-open' : ''}${liveActiveCount > 0 ? ' is-busy' : ''}`}
+        className={`wbx-header-tool-btn wbx-cluster-item wbx-popover-trigger${open ? ' is-open' : ''}${liveActiveCount > 0 ? ' is-busy' : ''}`}
         aria-label="打开最近任务与下载中心"
         aria-expanded={open}
         onClick={() => setOpen(value => !value)}
       >
         {liveActiveCount > 0 ? (
-          <Loader2 size={15} className="wbx-spin text-sky-600" />
+          <Loader2 size={14} className="wbx-spin wbx-header-tool-icon is-active" aria-hidden="true" />
         ) : (
-          <ListChecks size={15} className="text-slate-600" />
+          <ListChecks size={14} className="wbx-header-tool-icon" aria-hidden="true" />
         )}
         <span>任务动态</span>
         {liveActiveCount > 0 ? (
-          <span className="wbx-popover-count tabular-nums" title={`${liveActiveCount} 个任务进行中`}>
-            {liveActiveCount} 进行中
+          <span className="wbx-header-tool-live tabular-nums" title={`${liveActiveCount} 个任务进行中`}>
+            {liveActiveCount} 运行中
           </span>
         ) : readyCount > 0 ? (
-          <span className="wbx-pill wbx-pill--neutral tabular-nums" title={`累计 ${readyCount} 个已完成任务`}>
+          <span className="wbx-header-tool-count tabular-nums" title={`累计 ${readyCount} 个已完成任务`}>
             {readyCount}
           </span>
         ) : null}

@@ -1,357 +1,565 @@
 /*
  * 价格审批（LanorangeApprovals / LanorangePriceExports）页级样式
- *
+ * P0 统一视觉规范：与数据采集页保持一致的清爽下划线页签、扁平容器、柔和字重与单一主色。
  * 约束：本文件禁止出现 important 强制标记。
  */
 
 .wbx-approval {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   min-width: 0;
 }
 
-/* ─── 顶部：精简连接状态与操作带 ─────────────────────────────────────────── */
-.wbx-approval__compact-bar {
+/* ─── 1. 顶部统一极简下划线操作条（审批页签 / 导出摘要共用） ────────────── */
+.wbx-ap-topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 10px 16px;
-  padding: 10px 16px;
-  border-radius: 12px;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.03);
+  min-height: 40px;
+  padding: 0 2px;
+  border-bottom: 1px solid var(--wbx-border);
 }
 
-.wbx-approval__compact-lead {
+.wbx-ap-tabs {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 10px 14px;
+  gap: 6px;
   min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
-.wbx-approval__compact-meta {
-  font-size: 12.5px;
+.wbx-ap-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.wbx-ap-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  color: var(--wbx-text-muted);
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: color var(--wbx-dur-fast) var(--wbx-ease),
+              border-color var(--wbx-dur-fast) var(--wbx-ease);
+}
+
+.wbx-ap-tab:hover:not(:disabled) {
+  color: var(--wbx-text);
+}
+
+.wbx-ap-tab.is-active {
+  color: var(--wbx-primary);
   font-weight: 600;
-  color: #475569;
-  padding-left: 12px;
-  border-left: 1px solid #e2e8f0;
+  border-bottom-color: var(--wbx-primary);
 }
 
-.wbx-approval__compact-actions {
+.wbx-ap-tab__icon {
+  color: #94a3b8;
+  flex-shrink: 0;
+  transition: color var(--wbx-dur-fast) var(--wbx-ease);
+}
+
+.wbx-ap-tab.is-active .wbx-ap-tab__icon {
+  color: var(--wbx-primary);
+}
+
+.wbx-ap-tab__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: var(--wbx-text-muted);
+  font-family: var(--wbx-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.wbx-ap-tab.is-active .wbx-ap-tab__count {
+  background: var(--wbx-primary-soft);
+  color: var(--wbx-primary);
+  font-weight: 600;
+}
+
+.wbx-ap-topbar__right {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+  padding-bottom: 6px;
 }
 
-/* ─── 顶部：双工作流模式切换卡 + 实时审批/导出总览控制台 ──────────────── */
-.wbx-approval__top-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr);
-  gap: 14px;
-  align-items: stretch;
+.wbx-ap-inline-meta {
+  font-size: 12px;
+  color: var(--wbx-text-muted);
+  padding-right: 4px;
 }
 
-.wbx-approval__mode-cards {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+.wbx-ap-inline-meta strong {
+  color: var(--wbx-text);
+  font-weight: 600;
 }
 
-.wbx-approval__mode-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 16px 18px;
-  border-radius: 16px;
-  background: #ffffff;
-  border: 1.5px solid #cbd5e1;
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
-  text-align: left;
+.wbx-ap-link-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--wbx-primary-soft);
+  color: var(--wbx-primary);
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
-  transition: border-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
-              background-color 160ms cubic-bezier(0.22, 1, 0.36, 1),
-              box-shadow 160ms cubic-bezier(0.22, 1, 0.36, 1),
-              transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: background-color var(--wbx-dur-fast) var(--wbx-ease);
 }
 
-.wbx-approval__mode-card:hover:not(:disabled) {
-  border-color: #38bdf8;
-  background: #f8fafc;
-  transform: translateY(-1px);
-  box-shadow: 0 8px 18px -6px rgba(2, 132, 199, 0.14);
+.wbx-ap-link-btn:hover {
+  background: #dff0fb;
 }
 
-.wbx-approval__mode-card.is-active {
-  background: linear-gradient(145deg, #f0f9ff 0%, #ffffff 72%);
-  border-color: #0284c7;
-  box-shadow: 0 0 0 1px #0284c7, 0 10px 22px -8px rgba(2, 132, 199, 0.22);
-}
-
-.wbx-approval__mode-head {
+/* 每日价格导出顶部单行精简指标带 */
+.wbx-ap-metrics {
   display: flex;
   align-items: center;
-  gap: 11px;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding-bottom: 6px;
 }
 
-.wbx-approval__mode-icon {
-  width: 38px;
-  height: 38px;
-  border-radius: 11px;
+.wbx-ap-metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding-right: 14px;
+  border-right: 1px solid #e2e8f0;
+  font-size: 12.5px;
+}
+
+.wbx-ap-metric:last-child {
+  padding-right: 0;
+  border-right: 0;
+}
+
+.wbx-ap-metric__label {
+  color: var(--wbx-text-muted);
+  font-weight: 400;
+}
+
+.wbx-ap-metric__val {
+  color: var(--wbx-text);
+  font-family: var(--wbx-font-mono);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.wbx-ap-metric__val.is-primary {
+  color: var(--wbx-primary);
+}
+
+/* ─── 2. 主体扁平卡片容器（与数据采集 wbx-step 完全对齐） ───────────────── */
+.wbx-ap-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 14px 18px;
+  border-radius: var(--wbx-r-lg);
+  background: var(--wbx-surface);
+  border: 1px solid var(--wbx-border);
+  box-shadow: var(--wbx-shadow-xs);
+  min-width: 0;
+}
+
+.wbx-approval__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.wbx-approval__queue-title h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--wbx-text);
+  letter-spacing: -0.01em;
+}
+
+.wbx-approval__queue-title h3 > span {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  background: #f1f5f9;
-  color: #334155;
-  border: 1px solid #e2e8f0;
-  transition: background-color 160ms ease, color 160ms ease;
-}
-
-.wbx-approval__mode-card.is-active .wbx-approval__mode-icon {
-  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
-  color: #ffffff;
-  border-color: transparent;
-  box-shadow: 0 4px 10px -2px rgba(2, 132, 199, 0.38);
-}
-
-.wbx-approval__mode-titles {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  flex: 1;
-}
-
-.wbx-approval__mode-title {
-  font-size: 16px;
-  font-weight: 800;
-  color: #0f172a;
-  letter-spacing: -0.01em;
-  line-height: 1.25;
-}
-
-.wbx-approval__mode-card.is-active .wbx-approval__mode-title {
-  color: #0369a1;
-}
-
-.wbx-approval__mode-sub {
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-family: var(--wbx-font-mono);
   font-size: 11.5px;
   font-weight: 600;
-  color: #64748b;
+  background: var(--wbx-primary-soft);
+  color: var(--wbx-primary);
 }
 
-.wbx-approval__mode-card.is-active .wbx-approval__mode-sub {
-  color: #0284c7;
-}
-
-.wbx-approval__mode-radio {
-  width: 18px;
-  height: 18px;
+.wbx-approval__queue-title h3 em.wbx-pill {
+  font-style: normal;
+  height: auto;
   border-radius: 999px;
-  border: 2px solid #cbd5e1;
+}
+
+.wbx-approval__queue-title p {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--wbx-text-muted);
+  font-weight: 400;
+}
+
+.wbx-approval__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* ─── 3. 统一轻量自定义下拉框与表单字段 ─────────────────────────────────── */
+.wbx-ap-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.wbx-ap-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 16px;
+  align-items: end;
+}
+
+.wbx-ap-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.wbx-ap-field__label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--wbx-text-secondary);
+  line-height: 1.2;
+}
+
+.wbx-ap-field__req {
+  font-style: normal;
+  color: var(--wbx-danger);
+  margin-left: 3px;
+}
+
+.wbx-ap-select {
+  appearance: none;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 32px 0 11px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background-color: #ffffff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px 14px;
+  color: var(--wbx-text);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  transition: border-color var(--wbx-dur-fast) var(--wbx-ease),
+              box-shadow var(--wbx-dur-fast) var(--wbx-ease);
+  cursor: pointer;
+}
+
+.wbx-ap-select:hover:not(:disabled) {
+  border-color: #94a3b8;
+}
+
+.wbx-ap-select:focus {
+  outline: none;
+  border-color: var(--wbx-primary);
+  box-shadow: var(--wbx-focus);
+}
+
+.wbx-ap-select:disabled {
+  background-color: #f8fafc;
+  border-color: #e2e8f0;
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+/* 可选日期范围折叠区（精致按钮式折叠触发器） */
+.wbx-ap-date-disclosure {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wbx-ap-date-disclosure > summary {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 5px 11px;
+  border-radius: 7px;
+  border: 1px solid var(--wbx-border);
+  background: #f8fafc;
+  color: var(--wbx-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color var(--wbx-dur-fast) var(--wbx-ease),
+              background-color var(--wbx-dur-fast) var(--wbx-ease),
+              color var(--wbx-dur-fast) var(--wbx-ease);
+}
+
+.wbx-ap-date-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.wbx-ap-date-disclosure > summary:hover {
+  border-color: var(--wbx-primary-border);
+  background: var(--wbx-primary-soft);
+  color: var(--wbx-primary);
+}
+
+.wbx-ap-date-disclosure[open] > summary {
+  border-color: var(--wbx-primary-border);
+  background: var(--wbx-primary-soft);
+  color: var(--wbx-primary);
+}
+
+.wbx-ap-date-badge {
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
   background: #ffffff;
-  flex-shrink: 0;
-}
-
-.wbx-approval__mode-card.is-active .wbx-approval__mode-radio {
-  border-color: #0284c7;
-  background: #0284c7;
-  box-shadow: inset 0 0 0 3px #ffffff;
-}
-
-.wbx-approval__mode-desc {
-  margin: 0;
-  font-size: 12.5px;
-  line-height: 1.55;
-  color: #334155;
+  color: var(--wbx-primary);
+  font-size: 11px;
   font-weight: 500;
 }
 
-.wbx-approval__mode-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: #475569;
-  padding-top: 2px;
-}
-
-.wbx-approval__mode-card.is-active .wbx-approval__mode-meta {
-  color: #075985;
-}
-
-/* ─── 右侧：蓝橙连接与审批统计控制台 ───────────────────────────────── */
-.wbx-approval__console-card {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px 18px;
-  border-radius: 16px;
-  background: linear-gradient(165deg, #ffffff 0%, #f8fafc 100%);
-  border: 1px solid #cbd5e1;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
-}
-
-.wbx-approval__console-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.wbx-approval__console-eyebrow {
-  display: block;
-  font-size: 10.5px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  color: #0284c7;
-  margin-bottom: 2px;
-}
-
-.wbx-approval__console-head h4 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 800;
-  color: #0f172a;
-}
-
-.wbx-approval__session-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #475569;
-}
-
-.wbx-approval__session-status.is-ready {
-  color: #059669;
-}
-
-.wbx-approval__session-status.is-warn {
-  color: #d97706;
-}
-
-.wbx-approval__kpi-grid {
+.wbx-ap-date-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.wbx-approval__kpi-box {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: #ffffff;
+  grid-template-columns: repeat(2, minmax(0, 260px));
+  gap: 12px 16px;
+  padding: 12px 14px;
+  border-radius: 9px;
+  background: #f8fafc;
   border: 1px solid #e2e8f0;
 }
 
-.wbx-approval__kpi-box span {
-  font-size: 11px;
-  font-weight: 600;
-  color: #64748b;
-}
-
-.wbx-approval__kpi-box strong {
-  font-size: 17px;
-  font-weight: 800;
-  color: #0f172a;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.25;
-}
-
-.wbx-approval__kpi-box.is-primary strong {
-  color: #0284c7;
-}
-
-.wbx-approval__kpi-box.is-amber strong {
-  color: #d97706;
-}
-
-.wbx-approval__kpi-box.is-emerald strong {
-  color: #059669;
-}
-
-.wbx-approval__console-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.wbx-approval__quick-btn {
-  flex: 1 1 auto;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 650;
-  padding: 6px 10px;
-  background: #ffffff;
-  border-color: #cbd5e1;
-  color: #1e293b;
-}
-
-.wbx-approval__quick-btn:hover:not(:disabled) {
-  border-color: #0284c7;
-  color: #0369a1;
-  background: #f0f9ff;
-}
-
-/* ─── 中部：精简多维范围筛选面板（ApprovalScopeFilters） ──────────────── */
-.wbx-approval__scope-compact {
-  padding: 11px 16px;
-  border-radius: 12px;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.03);
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
-
-.wbx-approval__scope-row {
+/* 表单底部提交操作行 */
+.wbx-ap-form-foot {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding-top: 10px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.wbx-ap-form-foot--export {
+  align-items: flex-start;
+}
+
+.wbx-ap-form-foot__left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  flex: 1 1 360px;
   min-width: 0;
 }
 
-.wbx-approval__scope-row--secondary {
-  padding-top: 8px;
-  border-top: 1px solid #f1f5f9;
+.wbx-ap-form-foot__left .wbx-ap-date-disclosure[open] {
+  width: 100%;
+}
+
+.wbx-ap-form-hint {
+  font-size: 12px;
+  color: var(--wbx-text-muted);
+}
+
+/* ─── 4. 克制的内联授权/错误提示条（彻底取代刺眼橙黄渐变大横幅） ──────── */
+.wbx-ap-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 10px 14px;
+  border-radius: 9px;
+  font-size: 12.5px;
+}
+
+.wbx-ap-notice.is-auth {
+  background: #f8fafc;
+  border: 1px solid #dbe5f0;
+  color: var(--wbx-text-secondary);
+}
+
+.wbx-ap-notice.is-danger {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+}
+
+.wbx-ap-notice__body {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.wbx-ap-notice__icon {
+  flex-shrink: 0;
+  color: var(--wbx-primary);
+}
+
+.wbx-ap-notice.is-danger .wbx-ap-notice__icon {
+  color: #dc2626;
+}
+
+.wbx-ap-notice__copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.wbx-ap-notice__copy strong {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--wbx-text);
+}
+
+.wbx-ap-notice.is-danger .wbx-ap-notice__copy strong {
+  color: #991b1b;
+}
+
+.wbx-ap-notice__copy span {
+  font-size: 12px;
+  color: var(--wbx-text-muted);
+}
+
+.wbx-ap-notice__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ─── 5. 嵌入式审批范围筛选条（ApprovalScopeFilters） ────────────────────── */
+.wbx-ap-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.wbx-ap-scope.is-empty {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+
+.wbx-ap-scope__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wbx-ap-scope__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.wbx-ap-scope__row--secondary {
   flex-wrap: wrap;
 }
 
-.wbx-approval__scope-label {
+.wbx-ap-scope__label {
   flex-shrink: 0;
-  width: 34px;
+  min-width: 32px;
   font-size: 12px;
-  font-weight: 700;
-  color: #475569;
+  font-weight: 500;
+  color: var(--wbx-text-muted);
 }
 
-.wbx-approval__scope-chips {
+.wbx-ap-scope__chips {
   flex: 1;
   min-width: 0;
 }
 
-.wbx-approval__scope-chips .approval-chips {
-  gap: 6px;
+.wbx-ap-scope__chips .approval-chips {
+  gap: 4px 5px;
 }
 
-.wbx-approval__scope-empty {
+.wbx-ap-scope__chips .approval-chips label {
+  padding: 3px 8px;
+  min-height: 25px;
   font-size: 12px;
-  color: #64748b;
+  line-height: 1.2;
+}
+
+.wbx-ap-scope__placeholder {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.wbx-ap-scope__station {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.wbx-ap-scope__station .wbx-ap-select {
+  width: 204px;
+  min-height: 28px;
+  height: 28px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  font-size: 12px;
 }
 
 .wbx-approval__scope-reset {
@@ -363,292 +571,461 @@
   white-space: nowrap;
 }
 
-.wbx-approval__station-inline {
+/* ─── 6. 统一的平静空态与精简三步流程条 ─────────────────────────────────── */
+.wbx-ap-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 20px 36px;
+  gap: 8px;
+}
+
+.wbx-ap-empty--compact {
+  padding: 20px 4px 8px;
+  align-items: stretch;
+  text-align: left;
+}
+
+.wbx-ap-empty__icon {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-  margin-left: auto;
-}
-
-.wbx-approval__station-inline > span {
-  font-size: 12px;
-  font-weight: 700;
-  color: #475569;
-  white-space: nowrap;
-}
-
-.wbx-approval__station-inline .wb-select {
-  min-width: 210px;
-  min-height: 30px;
-  font-size: 12.5px;
-}
-
-/* ─── 中部：多维范围筛选面板（ApprovalScopeFilters 兼容保留） ────────── */
-.wbx-approval__scope-panel {
-  padding: 16px 20px;
-  border-radius: 16px;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.03);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.wbx-approval__scope-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.wbx-approval__scope-title {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  color: #0284c7;
-}
-
-.wbx-approval__scope-title strong {
-  font-size: 14.5px;
-  font-weight: 800;
-  color: #0f172a;
-}
-
-.wbx-approval__scope-title span {
-  font-size: 12px;
-  font-weight: 500;
-  color: #64748b;
-}
-
-.wbx-approval__scope-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(240px, 0.9fr);
-  gap: 12px;
-  align-items: stretch;
-}
-
-.wbx-approval__scope-field {
-  margin: 0;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: #f8fafc;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: #f4f7fb;
   border: 1px solid #e2e8f0;
+  color: var(--wbx-primary);
+  margin-bottom: 4px;
+}
+
+.wbx-ap-empty strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--wbx-text);
+}
+
+.wbx-ap-empty p {
+  margin: 0;
+  max-width: 460px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--wbx-text-muted);
+}
+
+.wbx-ap-empty__actions {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 8px;
+  margin-top: 8px;
+}
+
+/* 每日价格导出底部精简横向三步指引 */
+.wbx-ap-steps {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e9eff5;
+}
+
+.wbx-ap-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   min-width: 0;
 }
 
-.wbx-approval__scope-field legend,
-.wbx-approval__station-label > span {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%;
-  padding: 0;
-  font-size: 12.5px;
-  font-weight: 700;
-  color: #1e293b;
-}
-
-.wbx-approval__scope-field legend small,
-.wbx-approval__station-label > span small {
-  font-size: 11px;
-  font-weight: 500;
-  color: #64748b;
-}
-
-.wbx-approval__station-label {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-}
-
-.wbx-approval__scope-placeholder {
-  display: flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: #ffffff;
-  border: 1px dashed #cbd5e1;
-  font-size: 12px;
-  color: #64748b;
-}
-
-/* ─── 底部：审批/导出队列卡片与三步核验指南 ────────────────────────── */
-.wbx-approval__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px 16px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.wbx-approval__queue-title h3 {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  font-size: 16px;
-  font-weight: 800;
-  color: #0f172a;
-}
-
-.wbx-approval__queue-title h3 > span {
+.wbx-ap-step__num {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: 24px;
   height: 22px;
-  padding: 0 7px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 800;
-  background: #e0f2fe;
-  color: #0369a1;
-  border: 1px solid #bae6fd;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: var(--wbx-primary-soft);
+  border: 1px solid var(--wbx-primary-border);
+  color: var(--wbx-primary);
+  font-family: var(--wbx-font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+  margin-top: 1px;
 }
 
-.wbx-approval__queue-title p {
-  margin: 4px 0 0;
-  font-size: 12.5px;
-  color: #475569;
+.wbx-ap-step strong {
+  display: block;
+  font-size: 13px;
   font-weight: 500;
+  color: var(--wbx-text);
+  line-height: 1.35;
 }
 
-.wbx-approval__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
+.wbx-ap-step p {
+  margin: 2px 0 0;
+  max-width: none;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--wbx-text-muted);
 }
 
-.wbx-approval__empty-stage {
-  margin-top: 16px;
+.wbx-ap-step__arrow {
+  color: #cbd5e1;
+  flex-shrink: 0;
 }
 
-.wbx-approval__guide-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.wbx-approval__guide-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 16px 18px;
-  border-radius: 14px;
-  background: #f8fafc;
-  border: 1px solid #cbd5e1;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.02);
-}
-
-.wbx-approval__guide-head {
+/* ─── 7. 批量审批筛选栏、滚动队列、回执看板与弹窗 ───────────────────────── */
+.wbx-approval__notice-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: #0284c7;
-}
-
-.wbx-approval__guide-step {
-  font-size: 11.5px;
-  font-weight: 800;
-  color: #0369a1;
-}
-
-.wbx-approval__guide-card h4 {
-  margin: 0;
-  font-size: 14.5px;
-  font-weight: 800;
-  color: #0f172a;
-}
-
-.wbx-approval__guide-card p {
-  margin: 0;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 9px;
+  background: var(--wbx-primary-soft);
+  border: 1px solid var(--wbx-primary-border);
+  color: var(--wbx-primary);
   font-size: 12.5px;
-  line-height: 1.55;
-  color: #475569;
+  font-weight: 500;
 }
 
-/* 修复带操作按钮的警告/错误横幅（如未登录蓝橙时） */
-.wb-error.wb-error-with-action {
+.wbx-approvals__filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 8px 0 4px;
+}
+
+.wbx-approvals__search {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 230px;
+  flex: 0 1 320px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #64748b;
+  transition: border-color var(--wbx-dur-fast) var(--wbx-ease),
+              box-shadow var(--wbx-dur-fast) var(--wbx-ease);
+}
+
+.wbx-approvals__search:focus-within {
+  border-color: var(--wbx-primary);
+  box-shadow: var(--wbx-focus);
+  color: var(--wbx-primary);
+}
+
+.wbx-approvals__search input {
+  border: 0;
+  outline: none;
+  background: transparent;
+  width: 100%;
+  font-size: 12.5px;
+  color: var(--wbx-text);
+}
+
+.wbx-approvals__scroll {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.wbx-approvals__table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: #f8fafc;
+  box-shadow: 0 1px 0 #e2e8f0;
+}
+
+.wbx-approvals__table thead th.wbx-table__actions {
+  z-index: 5;
+  background: #f8fafc;
+}
+
+.wbx-approvals__table tbody tr.is-blocked td {
+  background: #fffbeb;
+}
+
+.wbx-approvals__table tbody tr.is-blocked:hover td {
+  background: #fef3c7;
+}
+
+.wbx-approvals__code {
+  display: block;
+  font-weight: 600;
+  color: var(--wbx-text);
+  white-space: nowrap;
+}
+
+.wbx-approvals__reason {
+  display: block;
+  margin-top: 3px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: #b45309;
+  font-weight: 500;
+}
+
+.wbx-approvals__city {
+  display: block;
+  font-weight: 600;
+  color: var(--wbx-text);
+}
+
+.wbx-approvals__site {
+  display: block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--wbx-text-muted);
+}
+
+.wbx-approval__batch-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--wbx-text-muted);
+}
+
+.wbx-approval__batch-picker .wbx-ap-select {
+  width: 240px;
+  min-height: 32px;
+  font-size: 12.5px;
+}
+
+.wbx-approval__batch-picker .wbx-ap-select--history {
+  width: 268px;
+}
+
+/* 每日价格导出：精简单行采集摘要条与结果标签 */
+.wbx-export-result-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.wbx-export-receipt-strip {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 10px 16px;
-  padding: 12px 18px;
-  border-radius: 12px;
-  background: linear-gradient(90deg, #fffbeb 0%, #fef3c7 100%);
-  border: 1px solid #fcd34d;
-  color: #92400e;
-  font-size: 13px;
-  font-weight: 500;
+  padding: 9px 12px;
+  border-radius: 9px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
 }
 
-.wbx-approval__alert-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.wbx-approval__alert-copy strong {
-  font-size: 13.5px;
-  font-weight: 800;
-  color: #78350f;
-}
-
-.wbx-approval__alert-actions {
+.wbx-export-receipt-strip__left {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.wbx-export-receipt-strip__msg {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--wbx-text);
+}
+
+.wbx-export-receipt-strip__meta {
+  font-size: 12px;
+  color: var(--wbx-text-muted);
+}
+
+.wbx-export-receipt-strip__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.wbx-export-res-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  margin-right: 6px;
+}
+
+.wbx-export-res-tag.is-ok {
+  color: #047857;
+}
+
+.wbx-export-res-tag.is-fail {
+  color: #dc2626;
+}
+
+.wbx-approval__result-banner {
+  display: grid;
+  grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 12px;
+  padding: 12px 14px;
+  margin-top: 12px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.wbx-approval__result-status {
+  display: flex;
+  align-items: center;
+  padding-right: 12px;
+  border-right: 1px solid #e2e8f0;
+  min-width: 0;
+}
+
+.wbx-approval__result-status .wb-outcome {
+  width: 100%;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.wbx-approval__result-kpis {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
 }
 
-.wb-inline-login-action {
+.wbx-approval__result-kpi {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 11px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--wbx-dur-fast) var(--wbx-ease),
+              background-color var(--wbx-dur-fast) var(--wbx-ease),
+              box-shadow var(--wbx-dur-fast) var(--wbx-ease);
+}
+
+.wbx-approval__result-kpi:hover {
+  border-color: #94a3b8;
+  background: #ffffff;
+}
+
+.wbx-approval__result-kpi.is-active {
+  border-color: var(--wbx-primary);
+  background: var(--wbx-primary-soft);
+  box-shadow: 0 0 0 1px var(--wbx-primary);
+}
+
+.wbx-approval__result-kpi span {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--wbx-text-muted);
+}
+
+.wbx-approval__result-kpi strong {
+  font-family: var(--wbx-font-mono);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--wbx-text);
+  line-height: 1.2;
+}
+
+.wbx-approval__result-kpi.is-zero strong {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.wbx-approval__result-kpi.is-success strong {
+  color: #059669;
+}
+
+.wbx-approval__result-kpi.is-danger strong {
+  color: #dc2626;
+}
+
+.wbx-approval__result-kpi.is-warn strong {
+  color: #d97706;
+}
+
+.wbx-approval__result-kpi.is-primary strong {
+  color: var(--wbx-primary);
+}
+
+.wbx-approval__receipts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.wbx-approval__receipts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.wbx-approval__receipts-title {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 6px 14px;
-  border-radius: 8px;
-  background: #d97706;
-  border: 1px solid #b45309;
-  color: #ffffff;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--wbx-text);
+}
+
+.wbx-approval__receipts-scroll {
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.wbx-approval__receipts-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #f8fafc;
+  box-shadow: 0 1px 0 #e2e8f0;
+}
+
+.wbx-approval__receipts-table tbody tr:nth-child(even) td {
+  background: #f8fafc;
+}
+
+.wbx-approval__receipts-table tbody tr:hover td {
+  background: #f0f7ff;
+}
+
+.wbx-approval__receipts-empty {
+  text-align: center;
+  padding: 28px 16px;
+  color: var(--wbx-text-muted);
   font-size: 12.5px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background-color var(--wbx-dur-fast) var(--wbx-ease);
 }
 
-.wb-inline-login-action:hover {
-  background: #b45309;
-}
-
-@media (max-width: 1180px) {
-  .wbx-approval__top-grid,
-  .wbx-approval__scope-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 860px) {
-  .wbx-approval__mode-cards,
-  .wbx-approval__guide-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.wbx-approval__receipts-table td:nth-child(3) {
+  white-space: nowrap;
 }
 
 /* 审批确认弹窗 */
@@ -677,7 +1054,7 @@
 
 .wbx-modal__head h3 {
   font-size: var(--wbx-fs-section);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .wbx-modal__foot {
@@ -688,283 +1065,40 @@
   border-top: 1px solid var(--wbx-border);
 }
 
-/* ─── 批量审批筛选栏、滚动队列与异常阻断行适配 ───────────────────────────── */
-.wbx-approval__notice-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 16px;
-  border-radius: 10px;
-  background: #f0f9ff;
-  border: 1px solid #bae6fd;
-  color: #075985;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.wbx-approvals__filter-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-  padding: 10px 0 4px;
-}
-
-.wbx-approvals__search {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 240px;
-  flex: 0 1 340px;
-  height: 34px;
-  padding: 0 11px;
-  border-radius: 8px;
-  border: 1px solid #cbd5e1;
-  background: #ffffff;
-  color: #64748b;
-  transition: border-color 140ms ease, box-shadow 140ms ease;
-}
-
-.wbx-approvals__search:focus-within {
-  border-color: #0284c7;
-  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.14);
-  color: #0284c7;
-}
-
-.wbx-approvals__search input {
-  border: 0;
-  outline: none;
-  background: transparent;
-  width: 100%;
-  font-size: 12.5px;
-  color: #0f172a;
-}
-
-.wbx-approvals__scroll {
-  max-height: 560px;
-  overflow-y: auto;
-}
-
-.wbx-approvals__table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 4;
-  background: #f8fafc;
-  box-shadow: 0 1px 0 #e2e8f0;
-}
-
-.wbx-approvals__table thead th.wbx-table__actions {
-  z-index: 5;
-  background: #f8fafc;
-}
-
-.wbx-approvals__table tbody tr.is-blocked td {
-  background: #fffbeb;
-}
-
-.wbx-approvals__table tbody tr.is-blocked:hover td {
-  background: #fef3c7;
-}
-
-.wbx-approvals__code {
-  display: block;
-  font-weight: 700;
-  color: #0f172a;
-  white-space: nowrap;
-}
-
-.wbx-approvals__reason {
-  display: block;
-  margin-top: 3px;
-  font-size: 11.5px;
-  line-height: 1.4;
-  color: #b45309;
-  font-weight: 600;
-}
-
-.wbx-approvals__city {
-  display: block;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.wbx-approvals__site {
-  display: block;
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: #475569;
-}
-
-/* ─── 批量审批顶层视图切换条（待办审批列表 vs 审批结果回执） ──────────────── */
-.wbx-approval__view-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px 16px;
-  padding: 10px 16px;
-  border-radius: 12px;
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.03);
-}
-
-.wbx-approval__view-summary {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-}
-
-.wbx-approval__batch-picker {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: #475569;
-}
-
-.wbx-approval__batch-picker .wb-select {
-  min-width: 240px;
-  min-height: 32px;
-  font-size: 12.5px;
-}
-
-.wbx-approval__result-banner {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px 14px;
-  margin-top: 12px;
-  border-radius: 12px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-}
-
-.wbx-approval__result-status {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px 14px;
-}
-
-.wbx-approval__result-status .wb-outcome {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-
-.wbx-approval__result-kpis {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.wbx-approval__result-kpi {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-}
-
-.wbx-approval__result-kpi span {
-  font-size: 11px;
-  font-weight: 600;
-  color: #64748b;
-}
-
-.wbx-approval__result-kpi strong {
-  font-size: 18px;
-  font-weight: 800;
-  color: #0f172a;
-  line-height: 1.2;
-}
-
-.wbx-approval__result-kpi.is-success strong {
-  color: #059669;
-}
-
-.wbx-approval__result-kpi.is-danger strong {
-  color: #dc2626;
-}
-
-.wbx-approval__result-kpi.is-warn strong {
-  color: #d97706;
-}
-
-.wbx-approval__receipts {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.wbx-approval__receipts-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-}
-
-.wbx-approval__receipts-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  color: #0f172a;
-}
-
-.wbx-approval__receipts-scroll {
-  max-height: 520px;
-  overflow-y: auto;
-}
-
-.wbx-approval__receipts-table thead th {
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  background: #f8fafc;
-  box-shadow: 0 1px 0 #e2e8f0;
-}
-
-.wbx-approval__receipts-table tbody tr:nth-child(even) td {
-  background: #f8fafc;
-}
-
-.wbx-approval__receipts-table tbody tr:hover td {
-  background: #f0f7ff;
-}
-
-.wbx-approval__receipts-empty {
-  text-align: center;
-  padding: 28px 16px;
-  color: #64748b;
-  font-size: 13px;
-}
-
-.wbx-approval__queue-title h3 em.wbx-pill {
-  font-style: normal;
-  height: auto;
-  border-radius: 999px;
-}
-
-.wbx-approval__receipts-table td:nth-child(3) {
-  white-space: nowrap;
-}
-
 @media (max-width: 1020px) {
+  .wbx-approval__result-banner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .wbx-approval__result-status {
+    padding-right: 0;
+    padding-bottom: 10px;
+    border-right: 0;
+    border-bottom: 1px solid #e2e8f0;
+  }
   .wbx-approval__result-kpis {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .wbx-ap-steps {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .wbx-ap-step__arrow {
+    display: none;
+  }
+}
+
+@media (max-width: 820px) {
+  .wbx-ap-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .wbx-ap-date-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .wbx-ap-scope__station {
+    margin-left: 0;
+    width: 100%;
+  }
+  .wbx-ap-scope__station .wbx-ap-select {
+    width: 100%;
   }
 }

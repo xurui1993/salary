@@ -1,0 +1,512 @@
+import type { DownloadPlatform } from './downloadModules';
+import type { PayrollSubView, PlatformDotTone, PlatformStatusMap } from './workbench';
+import { getPlatformStatusCluster } from './workbench';
+
+export type NavGroupId = 'collection' | 'payroll' | 'approval' | 'history';
+
+export interface ShellNavState {
+  workspaceView: 'create' | 'history' | 'approval' | 'price-export';
+  taskKind: 'download' | 'generate' | 'payroll';
+  downloadPlatform: DownloadPlatform;
+  payrollSubView: PayrollSubView;
+}
+
+export type ShellCommandAction =
+  | { type: 'platform'; platform: DownloadPlatform }
+  | { type: 'payroll'; subView: PayrollSubView }
+  | { type: 'workspace'; view: 'approval' | 'price-export' | 'history' }
+  | { type: 'open-dock' }
+  | { type: 'open-logs' }
+  | { type: 'toggle-sidebar' };
+
+export type QuickTargetId =
+  | 'platform:fengshen'
+  | 'platform:lanorange'
+  | 'platform:payout'
+  | 'platform:xiaoxiang'
+  | 'payroll:batches'
+  | 'payroll:deductions'
+  | 'payroll:templates'
+  | 'workspace:approval'
+  | 'workspace:price-export'
+  | 'workspace:history';
+
+export interface QuickTargetMeta {
+  id: QuickTargetId;
+  groupId: NavGroupId;
+  label: string;
+  shortLabel: string;
+  moduleLabel: string;
+  hint: string;
+  accent: 'sapphire' | 'amber' | 'emerald' | 'violet' | 'slate';
+  action: ShellCommandAction;
+}
+
+export interface BreadcrumbSibling {
+  id: string;
+  label: string;
+  hint?: string;
+  active: boolean;
+  action: ShellCommandAction;
+}
+
+export interface BreadcrumbModel {
+  groupId: NavGroupId;
+  moduleLabel: string;
+  viewLabel: string;
+  siblings: BreadcrumbSibling[];
+}
+
+export interface ShellCommandItem {
+  id: string;
+  group: '数据采集' | '薪资核算' | '价格审批' | '全局调度';
+  label: string;
+  subtitle: string;
+  keywords: string[];
+  shortcut?: string;
+  active: boolean;
+  action: ShellCommandAction;
+}
+
+export const RAIL_GROUP_ORDER: NavGroupId[] = ['collection', 'payroll', 'approval', 'history'];
+
+export const QUICK_TARGETS: QuickTargetMeta[] = [
+  {
+    id: 'platform:fengshen',
+    groupId: 'collection',
+    label: '风神数据',
+    shortLabel: '风神',
+    moduleLabel: '数据采集',
+    hint: '配送费、扣款与专项报表',
+    accent: 'sapphire',
+    action: { type: 'platform', platform: 'fengshen' },
+  },
+  {
+    id: 'platform:lanorange',
+    groupId: 'collection',
+    label: '蓝橙数据',
+    shortLabel: '蓝橙',
+    moduleLabel: '数据采集',
+    hint: '原雷神人事与兼职价格',
+    accent: 'amber',
+    action: { type: 'platform', platform: 'lanorange' },
+  },
+  {
+    id: 'platform:payout',
+    groupId: 'collection',
+    label: '发薪平台',
+    shortLabel: '发薪',
+    moduleLabel: '数据采集',
+    hint: '白泽商翼 · 本来人力',
+    accent: 'emerald',
+    action: { type: 'platform', platform: 'payout' },
+  },
+  {
+    id: 'platform:xiaoxiang',
+    groupId: 'collection',
+    label: '小象灯塔',
+    shortLabel: '灯塔',
+    moduleLabel: '数据采集',
+    hint: '美团商配送日维度看板',
+    accent: 'violet',
+    action: { type: 'platform', platform: 'xiaoxiang' },
+  },
+  {
+    id: 'payroll:batches',
+    groupId: 'payroll',
+    label: '核算批次',
+    shortLabel: '批次',
+    moduleLabel: '薪资核算',
+    hint: '申请表上传与自动齐套',
+    accent: 'sapphire',
+    action: { type: 'payroll', subView: 'batches' },
+  },
+  {
+    id: 'payroll:deductions',
+    groupId: 'payroll',
+    label: '扣款规则',
+    shortLabel: '扣款',
+    moduleLabel: '薪资核算',
+    hint: '站点默认扣款与关键词',
+    accent: 'amber',
+    action: { type: 'payroll', subView: 'deductions' },
+  },
+  {
+    id: 'payroll:templates',
+    groupId: 'payroll',
+    label: '模板中心',
+    shortLabel: '模板',
+    moduleLabel: '薪资核算',
+    hint: '闪购与小象标准 Excel',
+    accent: 'emerald',
+    action: { type: 'payroll', subView: 'templates' },
+  },
+  {
+    id: 'workspace:approval',
+    groupId: 'approval',
+    label: '批量审批',
+    shortLabel: '审批',
+    moduleLabel: '价格审批',
+    hint: '跨页勾选与批量同意',
+    accent: 'amber',
+    action: { type: 'workspace', view: 'approval' },
+  },
+  {
+    id: 'workspace:price-export',
+    groupId: 'approval',
+    label: '待审每日价格导出',
+    shortLabel: '每日价',
+    moduleLabel: '价格审批',
+    hint: '最新待审站点价格表',
+    accent: 'sapphire',
+    action: { type: 'workspace', view: 'price-export' },
+  },
+  {
+    id: 'workspace:history',
+    groupId: 'history',
+    label: '任务中心',
+    shortLabel: '任务',
+    moduleLabel: '全局交付',
+    hint: '进度追踪与打包领取',
+    accent: 'slate',
+    action: { type: 'workspace', view: 'history' },
+  },
+];
+
+const QUICK_TARGET_MAP = new Map<QuickTargetId, QuickTargetMeta>(
+  QUICK_TARGETS.map(item => [item.id, item]),
+);
+
+export function getQuickTargetMeta(id: QuickTargetId): QuickTargetMeta | undefined {
+  return QUICK_TARGET_MAP.get(id);
+}
+
+export function getActiveNavGroup(state: Pick<ShellNavState, 'workspaceView' | 'taskKind'>): NavGroupId {
+  if (state.workspaceView === 'history') return 'history';
+  if (state.workspaceView === 'approval' || state.workspaceView === 'price-export') return 'approval';
+  if (state.taskKind === 'payroll') return 'payroll';
+  return 'collection';
+}
+
+export function getRailIndex(groupId: NavGroupId): number {
+  const idx = RAIL_GROUP_ORDER.indexOf(groupId);
+  return idx >= 0 ? idx : 0;
+}
+
+export function getCurrentQuickTargetId(state: ShellNavState): QuickTargetId {
+  const groupId = getActiveNavGroup(state);
+  if (groupId === 'history') return 'workspace:history';
+  if (groupId === 'approval') {
+    return state.workspaceView === 'price-export' ? 'workspace:price-export' : 'workspace:approval';
+  }
+  if (groupId === 'payroll') {
+    return `payroll:${state.payrollSubView}` as QuickTargetId;
+  }
+  return `platform:${state.downloadPlatform}` as QuickTargetId;
+}
+
+export function sanitizeStoredTargets(raw: unknown, maxItems = 4): QuickTargetId[] {
+  if (!Array.isArray(raw)) return [];
+  const valid: QuickTargetId[] = [];
+  for (const entry of raw) {
+    if (typeof entry === 'string' && QUICK_TARGET_MAP.has(entry as QuickTargetId)) {
+      const id = entry as QuickTargetId;
+      if (!valid.includes(id)) valid.push(id);
+      if (valid.length >= maxItems) break;
+    }
+  }
+  return valid;
+}
+
+export function togglePinnedTarget(
+  currentPins: ReadonlyArray<QuickTargetId>,
+  targetId: QuickTargetId,
+  maxPins = 4,
+): QuickTargetId[] {
+  if (!QUICK_TARGET_MAP.has(targetId)) return [...currentPins];
+  if (currentPins.includes(targetId)) {
+    return currentPins.filter(id => id !== targetId);
+  }
+  return [targetId, ...currentPins].slice(0, maxPins);
+}
+
+export function recordRecentTarget(
+  currentRecent: ReadonlyArray<QuickTargetId>,
+  targetId: QuickTargetId,
+  maxRecent = 4,
+): QuickTargetId[] {
+  if (!QUICK_TARGET_MAP.has(targetId)) return [...currentRecent];
+  const next = [targetId, ...currentRecent.filter(id => id !== targetId)];
+  return next.slice(0, maxRecent);
+}
+
+export function getPlatformChannelStatus(
+  platformId: DownloadPlatform,
+  statuses: PlatformStatusMap,
+): { tone: PlatformDotTone; statusText: string } {
+  const cluster = getPlatformStatusCluster(statuses);
+  const byKey = new Map(cluster.map(item => [item.key, item]));
+
+  if (platformId === 'payout') {
+    const baize = byKey.get('baize');
+    const benlai = byKey.get('benlai');
+    const pair = [baize, benlai].filter(Boolean);
+    const readyCount = pair.filter(item => item!.tone === 'ready').length;
+    if (readyCount === 2) return { tone: 'ready', statusText: '商翼/本来均已连' };
+    if (pair.some(item => item!.tone === 'busy')) return { tone: 'busy', statusText: '通道检查中' };
+    if (readyCount === 1) return { tone: 'ready', statusText: '1/2 通道已连接' };
+    if (pair.some(item => item!.tone === 'warn')) return { tone: 'warn', statusText: '需登录验证' };
+    return { tone: 'idle', statusText: '待连接' };
+  }
+
+  const chip = byKey.get(platformId);
+  if (!chip) return { tone: 'idle', statusText: '待连接' };
+  return { tone: chip.tone, statusText: chip.statusText };
+}
+
+export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
+  const groupId = getActiveNavGroup(state);
+
+  if (groupId === 'collection') {
+    const platforms: { id: DownloadPlatform; label: string; hint: string }[] = [
+      { id: 'fengshen', label: '风神数据', hint: '账单、违规扣款与专项报表' },
+      { id: 'lanorange', label: '蓝橙数据', hint: '人事档案、离职请假与价格表' },
+      { id: 'payout', label: '发薪平台', hint: '白泽商翼与本来人力' },
+      { id: 'xiaoxiang', label: '小象灯塔', hint: '商配送日维度分析与订单明细' },
+    ];
+    const current = platforms.find(item => item.id === state.downloadPlatform) || platforms[0];
+    return {
+      groupId,
+      moduleLabel: '数据采集',
+      viewLabel: current.label,
+      siblings: platforms.map(item => ({
+        id: item.id,
+        label: item.label,
+        hint: item.hint,
+        active: item.id === current.id,
+        action: { type: 'platform', platform: item.id },
+      })),
+    };
+  }
+
+  if (groupId === 'payroll') {
+    const subViews: { id: PayrollSubView; label: string; hint: string }[] = [
+      { id: 'batches', label: '核算批次', hint: '上传申请表与自动化核算' },
+      { id: 'deductions', label: '扣款规则', hint: '站点默认扣款与关键词配置' },
+      { id: 'templates', label: '模板中心', hint: '闪购与小象标准核算模板' },
+    ];
+    const current = subViews.find(item => item.id === state.payrollSubView) || subViews[0];
+    return {
+      groupId,
+      moduleLabel: '薪资核算',
+      viewLabel: current.label,
+      siblings: subViews.map(item => ({
+        id: item.id,
+        label: item.label,
+        hint: item.hint,
+        active: item.id === current.id,
+        action: { type: 'payroll', subView: item.id },
+      })),
+    };
+  }
+
+  if (groupId === 'approval') {
+    const items: { id: 'approval' | 'price-export'; label: string; hint: string }[] = [
+      { id: 'approval', label: '蓝橙批量审批', hint: '筛选本人提审并跨页批量审批' },
+      { id: 'price-export', label: '待审每日价格导出', hint: '导出最新待审版本骑手每日价格' },
+    ];
+    const current = items.find(item => item.id === state.workspaceView) || items[0];
+    return {
+      groupId,
+      moduleLabel: '价格审批',
+      viewLabel: current.label,
+      siblings: items.map(item => ({
+        id: item.id,
+        label: item.label,
+        hint: item.hint,
+        active: item.id === current.id,
+        action: { type: 'workspace', view: item.id },
+      })),
+    };
+  }
+
+  return {
+    groupId: 'history',
+    moduleLabel: '全局交付',
+    viewLabel: '任务中心',
+    siblings: [
+      {
+        id: 'history',
+        label: '任务中心',
+        hint: '全部历史任务与文件下载',
+        active: true,
+        action: { type: 'workspace', view: 'history' },
+      },
+    ],
+  };
+}
+
+export function buildShellCommands(
+  state: ShellNavState,
+  options: { sidebarCollapsed?: boolean } = {},
+): ShellCommandItem[] {
+  const groupId = getActiveNavGroup(state);
+  const isCollection = groupId === 'collection';
+  const isPayroll = groupId === 'payroll';
+
+  return [
+    {
+      id: 'nav-fengshen',
+      group: '数据采集',
+      label: '风神数据（含专项报表）',
+      subtitle: '配送费、违规扣款、UB账单、支付绑定与异常跟进',
+      keywords: ['fengshen', 'fs', '风神', '闪购', '专项报表', '配送费', '扣款', '绑定'],
+      active: isCollection && state.downloadPlatform === 'fengshen',
+      action: { type: 'platform', platform: 'fengshen' },
+    },
+    {
+      id: 'nav-lanorange',
+      group: '数据采集',
+      label: '蓝橙数据',
+      subtitle: '骑手档案、兼职价格、离职报备与请假全量采集',
+      keywords: ['lanorange', 'lc', '蓝橙', '雷神', '离职', '请假', '骑手档案'],
+      active: isCollection && state.downloadPlatform === 'lanorange',
+      action: { type: 'platform', platform: 'lanorange' },
+    },
+    {
+      id: 'nav-payout',
+      group: '数据采集',
+      label: '发薪平台（白泽商翼 + 本来人力）',
+      subtitle: '商翼员工总表与本来人力灵工档案实时直采',
+      keywords: ['payout', 'fx', 'baize', 'shangyi', 'benlai', '发薪', '白泽', '商翼', '本来'],
+      active: isCollection && state.downloadPlatform === 'payout',
+      action: { type: 'platform', platform: 'payout' },
+    },
+    {
+      id: 'nav-xiaoxiang',
+      group: '数据采集',
+      label: '小象灯塔',
+      subtitle: '商配送日维度骑手分析、档案与订单客诉明细',
+      keywords: ['xiaoxiang', 'xx', 'dengta', 'dt', '小象', '灯塔', '美团'],
+      active: isCollection && state.downloadPlatform === 'xiaoxiang',
+      action: { type: 'platform', platform: 'xiaoxiang' },
+    },
+    {
+      id: 'nav-payroll-batches',
+      group: '薪资核算',
+      label: '核算批次队列',
+      subtitle: '上传兼职薪资申请表，自动齐套资料并执行核算',
+      keywords: ['payroll', 'xz', 'hs', '薪资', '核算', '批次', '工资'],
+      active: isPayroll && state.payrollSubView === 'batches',
+      action: { type: 'payroll', subView: 'batches' },
+    },
+    {
+      id: 'nav-payroll-deductions',
+      group: '薪资核算',
+      label: '扣款规则配置',
+      subtitle: '按城市与团队维护站点默认扣款金额及关键词',
+      keywords: ['deduction', 'kk', '扣款', '站点', '规则'],
+      active: isPayroll && state.payrollSubView === 'deductions',
+      action: { type: 'payroll', subView: 'deductions' },
+    },
+    {
+      id: 'nav-payroll-templates',
+      group: '薪资核算',
+      label: '标准模板中心',
+      subtitle: '下载与管理淘宝闪购、美团小象标准 Excel 模板',
+      keywords: ['template', 'mb', '模板', 'excel', '下载'],
+      active: isPayroll && state.payrollSubView === 'templates',
+      action: { type: 'payroll', subView: 'templates' },
+    },
+    {
+      id: 'nav-approval',
+      group: '价格审批',
+      label: '蓝橙批量审批',
+      subtitle: '筛选本人待审单据，跨页勾选并批量审批',
+      keywords: ['approval', 'sp', '审批', '价格', '蓝橙'],
+      active: state.workspaceView === 'approval',
+      action: { type: 'workspace', view: 'approval' },
+    },
+    {
+      id: 'nav-price-export',
+      group: '价格审批',
+      label: '待审每日价格导出',
+      subtitle: '导出权限站点最新待审版本骑手每日价格 Excel',
+      keywords: ['price', 'export', 'jg', '每日价格', '导出', '待审'],
+      active: state.workspaceView === 'price-export',
+      action: { type: 'workspace', view: 'price-export' },
+    },
+    {
+      id: 'nav-history',
+      group: '全局调度',
+      label: '任务中心',
+      subtitle: '查看跨平台任务执行记录并一键打包下载成果文件',
+      keywords: ['history', 'task', 'rw', '任务', '记录', '下载', '归档'],
+      active: state.workspaceView === 'history',
+      action: { type: 'workspace', view: 'history' },
+    },
+    {
+      id: 'act-platform-dock',
+      group: '全局调度',
+      label: '打开五大平台连接中心',
+      subtitle: '巡检风神、蓝橙、商翼、灯塔、本来登录态与授权',
+      keywords: ['auth', 'login', 'dl', 'pt', '平台', '登录', '授权', '通道', '扫码'],
+      active: false,
+      action: { type: 'open-dock' },
+    },
+    {
+      id: 'act-log-drawer',
+      group: '全局调度',
+      label: '打开运行日志终端',
+      subtitle: '实时检索、按级别筛选、复制与导出引擎运行日志',
+      keywords: ['log', 'rz', 'console', 'terminal', '日志', '终端', '调试', '排查'],
+      shortcut: 'L',
+      active: false,
+      action: { type: 'open-logs' },
+    },
+    {
+      id: 'act-toggle-sidebar',
+      group: '全局调度',
+      label: options.sidebarCollapsed ? '展开左侧情境导航栏' : '收起为极简命令轨',
+      subtitle: '在双轨导航舱与 56px 极简深空图标轨之间切换工作区视野',
+      keywords: ['sidebar', 'ce', 'nav', '侧栏', '折叠', '收起', '展开'],
+      shortcut: '[',
+      active: false,
+      action: { type: 'toggle-sidebar' },
+    },
+  ];
+}
+
+export function filterShellCommands(commands: ShellCommandItem[], rawQuery: string): ShellCommandItem[] {
+  const query = rawQuery.trim().toLowerCase();
+  if (!query) return commands;
+
+  const tokens = query.split(/\s+/).filter(Boolean);
+  const scored: { item: ShellCommandItem; score: number }[] = [];
+
+  for (const item of commands) {
+    const label = item.label.toLowerCase();
+    const subtitle = item.subtitle.toLowerCase();
+    const group = item.group.toLowerCase();
+    const keywords = item.keywords.map(k => k.toLowerCase());
+    const haystack = `${label} ${subtitle} ${group} ${keywords.join(' ')}`;
+
+    const matchesAll = tokens.every(token => haystack.includes(token));
+    if (!matchesAll) continue;
+
+    let score = 0;
+    for (const token of tokens) {
+      if (label === token) score += 100;
+      else if (label.startsWith(token)) score += 60;
+      else if (label.includes(token)) score += 40;
+      else if (keywords.some(k => k === token)) score += 35;
+      else if (keywords.some(k => k.startsWith(token))) score += 25;
+      else if (keywords.some(k => k.includes(token))) score += 15;
+      else if (group.includes(token)) score += 10;
+      else if (subtitle.includes(token)) score += 5;
+    }
+    scored.push({ item, score });
+  }
+
+  return scored.sort((a, b) => b.score - a.score).map(entry => entry.item);
+}

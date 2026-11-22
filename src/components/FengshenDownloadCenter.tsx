@@ -160,6 +160,7 @@ interface Props {
   apiFetch: (url: string, options?: RequestInit) => Promise<Response>;
   workspaceId: string;
   onOpenFengshenLogin?: (accountId?: string) => void;
+  onNavigatePayroll?: () => void;
   onAccountChange?: (accountId?: string) => void;
   onActiveCountChange?: (count: number) => void;
   fengshenAuthStatus?: FengshenAuthStatus | null;
@@ -260,7 +261,7 @@ export function FengshenDownloadCenter(props: Props) {
   return <DownloadAccountPanel apiFetch={props.apiFetch} onAccountChange={props.onAccountChange}>{(user, authenticatedFetch) => <AuthorizedDownloadCenter key={user.id} {...props} apiFetch={authenticatedFetch} user={user} />}</DownloadAccountPanel>;
 }
 
-function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, onActiveCountChange, fengshenAuthStatus, user, embedded, navigation, taskKind = 'download', platform, recordModule, hideNavigation, onSelectPlatform, onTaskKindChange, onViewChange, onFormLock, onNavigateGenerate, onOpenPrice, prefill }: Props & { user: DownloadUser }) {
+function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, onNavigatePayroll, onActiveCountChange, fengshenAuthStatus, user, embedded, navigation, taskKind = 'download', platform, recordModule, hideNavigation, onSelectPlatform, onTaskKindChange, onViewChange, onFormLock, onNavigateGenerate, onOpenPrice, prefill }: Props & { user: DownloadUser }) {
   const apiRef = useRef(apiFetch);
   apiRef.current = apiFetch;
   const [options, setOptions] = useState<DownloadOptions | null>(null);
@@ -1528,7 +1529,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const railHint: {text: string; tone: 'warn'; title?: string; run?: () => void} | null = (() => {
     if (!submitReady && datasets.length === 0) {
       return {
-        text: '请先在 Step 01 勾选至少 1 类资料（点击定位）',
+        text: '先在 Step 01 勾选至少 1 类资料 · 定位',
         tone: 'warn',
         title: '点击平滑定位至 Step 01 资料选择',
         run: () => scrollToStep('datasets'),
@@ -1536,7 +1537,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     }
     if (!canSubmit && !uncertainCreate && !creating && fengshenMissingCities) {
       return {
-        text: '请为风神数据至少选择 1 个处理城市（点击定位）',
+        text: '请为风神数据选择至少 1 个城市 · 定位',
         tone: 'warn',
         title: '点击定位至风神数据 Step 02 城市选择',
         run: goToCitiesStep,
@@ -1617,44 +1618,41 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
               {/* @wbx:collection-main-start */}
               <div className="wb-download-main wbx-collection">
                 {platform ? (
-                  <div className="wb-platform-switcher-bar wbx-platformbar" role="tablist" aria-label="四大采集平台切换">
-                    {DOWNLOAD_PLATFORMS.map(p => {
-                      const isPlatActive = activePlatform === p.id;
-                      const platSelectedCount = groupedByPlatform[p.id].length;
-                      const PlatIcon =
-                        p.id === 'fengshen'
-                          ? Compass
-                          : p.id === 'lanorange'
-                            ? Layers
-                            : p.id === 'payout'
-                              ? UsersRound
-                              : Radar;
-                      return (
-                        <button
-                          key={p.id}
-                          type="button"
-                          role="tab"
-                          aria-selected={isPlatActive}
-                          disabled={formLocked}
-                          onClick={() => onSelectPlatform?.(p.id)}
-                          className={`wb-platform-switch-card is-${p.id} ${isPlatActive ? 'is-active' : ''} ${platSelectedCount > 0 ? 'has-selection' : ''}`}
-                        >
-                          <div className="wb-platform-switch-top">
-                            <span className="wb-platform-switch-icon" aria-hidden="true">
-                              <PlatIcon size={15} />
-                            </span>
-                            <span className="wb-platform-switch-name">{p.navLabel}</span>
+                  !hideNavigation && (
+                    <div className="wbx-dc-tabs" role="tablist" aria-label="四大采集平台切换">
+                      {DOWNLOAD_PLATFORMS.map(p => {
+                        const isPlatActive = activePlatform === p.id;
+                        const platSelectedCount = groupedByPlatform[p.id].length;
+                        const PlatIcon =
+                          p.id === 'fengshen'
+                            ? Compass
+                            : p.id === 'lanorange'
+                              ? Layers
+                              : p.id === 'payout'
+                                ? UsersRound
+                                : Radar;
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            role="tab"
+                            aria-selected={isPlatActive}
+                            disabled={formLocked}
+                            onClick={() => onSelectPlatform?.(p.id)}
+                            className={`wbx-dc-tab is-${p.id}${isPlatActive ? ' is-active' : ''}${platSelectedCount > 0 ? ' has-selection' : ''}`}
+                          >
+                            <PlatIcon size={14.5} className="wbx-dc-tab__icon" aria-hidden="true" />
+                            <span className="wbx-dc-tab__name">{p.navLabel}</span>
                             {platSelectedCount > 0 && (
-                              <span className="wb-platform-switch-count tabular-nums">
-                                已选 {platSelectedCount}
+                              <span className="wbx-dc-tab__count tabular-nums" title={`该平台已选 ${platSelectedCount} 项`}>
+                                {platSelectedCount}
                               </span>
                             )}
-                          </div>
-                          <span className="wb-platform-switch-sub">{p.badgeLabel}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )
                 ) : (
                   <div className="wb-system-overview-bar mb-4" role="group" aria-label="四大系统数据源切换">
                     <div className="wb-row">
@@ -1993,43 +1991,47 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                             )}
                           </div>
                           {group === 'fengshen' && (
-                            <div className="wbx-datasetbar" role="tablist" aria-label="风神资料分类筛选">
-                              <div className="wb-dataset-cat-tabs">
-                                {FENGSHEN_DATASET_CATEGORIES.map(cat => {
-                                  const catCount = countFengshenDatasetsByCategory(filteredDatasets, cat.id);
-                                  const active = fengshenCategory === cat.id;
-                                  return (
-                                    <button
-                                      key={cat.id}
-                                      type="button"
-                                      role="tab"
-                                      aria-selected={active}
-                                      disabled={formLocked}
-                                      onClick={() => setFengshenCategory(cat.id)}
-                                      className={`wb-dataset-cat-btn ${active ? 'is-active' : ''}`}
-                                    >
-                                      <span>{cat.label}</span>
-                                      <span className="wb-dataset-cat-count tabular-nums">{catCount}</span>
-                                    </button>
-                                  );
-                                })}
-                                {(datasets.length > 0 || onlySelectedShown) && (
+                            <div className="wbx-dc-catbar" role="tablist" aria-label="风神资料分类筛选">
+                              {FENGSHEN_DATASET_CATEGORIES.map(cat => {
+                                const catCount = countFengshenDatasetsByCategory(filteredDatasets, cat.id);
+                                const active = fengshenCategory === cat.id;
+                                return (
                                   <button
+                                    key={cat.id}
                                     type="button"
-                                    aria-pressed={onlySelectedShown}
+                                    role="tab"
+                                    aria-selected={active}
                                     disabled={formLocked}
-                                    title={onlySelectedShown ? '点击关闭「只看已选」恢复显示全部资料' : '点击只显示已勾选的资料'}
-                                    onClick={() => setOnlySelectedShown(value => !value)}
-                                    className={`wb-dataset-cat-btn wbx-dataset-only-selected ${onlySelectedShown ? 'is-active' : ''}`}
+                                    onClick={() => setFengshenCategory(cat.id)}
+                                    className={`wbx-dc-cat${active ? ' is-active' : ''}`}
                                   >
-                                    <span>{onlySelectedShown ? '只看已选 ×' : '只看已选'}</span>
-                                    <span className="wb-dataset-cat-count tabular-nums">{datasets.length}</span>
+                                    <span>{cat.label}</span>
+                                    <span className="wbx-dc-cat__count tabular-nums">{catCount}</span>
                                   </button>
-                                )}
-                              </div>
+                                );
+                              })}
+                              {(datasets.length > 0 || onlySelectedShown) && (
+                                <button
+                                  type="button"
+                                  aria-pressed={onlySelectedShown}
+                                  disabled={formLocked}
+                                  title={onlySelectedShown ? '点击关闭「只看已选」恢复显示全部资料' : '点击只显示已勾选的资料'}
+                                  onClick={() => setOnlySelectedShown(value => !value)}
+                                  className={`wbx-dc-cat wbx-dc-cat--selected${onlySelectedShown ? ' is-active' : ''}`}
+                                >
+                                  <span>{onlySelectedShown ? '只看已选 ×' : '只看已选'}</span>
+                                  <span className="wbx-dc-cat__count tabular-nums">{datasets.length}</span>
+                                </button>
+                              )}
                             </div>
                           )}
-                          <div className={group === 'baize' || group === 'benlai' ? 'wb-baize-single-grid gap-2.5' : 'wbx-dataset-grid grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3'}>
+                          <div
+                            className={
+                              group === 'baize' || group === 'benlai'
+                                ? 'wb-baize-single-grid gap-2.5'
+                                : `wbx-dc-grid${group === 'lanorange' || group === 'xiaoxiang' ? ' is-two-col' : ''}`
+                            }
+                          >
                             {displayedDatasets.length === 0 && onlySelectedShown && (
                               <div className="col-span-full flex items-center justify-between gap-3 rounded-lg border border-sky-200 bg-sky-50/70 px-3.5 py-2.5 text-xs text-slate-700">
                                 <span>当前分类下没有已勾选的资料。</span>
@@ -2048,6 +2050,12 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                               const selected = datasets.includes(dataset.id);
                               const cardMeta = getDatasetCardMeta(dataset.id, dataset.label);
                               const showExceptionTag = Boolean(cardMeta.scopeTag);
+                              const descText =
+                                group === 'baize'
+                                  ? '含员工工号、姓名、身份证号、所属站点、入离职日期及当前在职状态，导出全站原始档案并独立归档'
+                                  : group === 'benlai'
+                                    ? '含姓名、证件号、手机号、城市与签约状态；导出全站原始档案，签约城市在每次任务开始时实时读取'
+                                    : cardMeta.desc;
                               const handleToggle = () => {
                                 setDatasets(values =>
                                   platform ? toggleCrossPlatformDataset(values, dataset.id) : toggleDownloadDataset(values, dataset.id),
@@ -2060,28 +2068,28 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                               };
 
                               return (
-                                <label key={dataset.id} className={`${choiceStyle(selected)} wb-dataset-card ${selected ? 'is-selected' : ''} !items-start`}>
+                                <label
+                                  key={dataset.id}
+                                  title={`${cardMeta.title}：${descText}`}
+                                  className={`wbx-dc-card${selected ? ' is-selected' : ''}${formLocked ? ' is-disabled' : ''}`}
+                                >
                                   <input
                                     type="checkbox"
                                     checked={selected}
                                     disabled={formLocked}
                                     onChange={handleToggle}
-                                    className="accent-sky-700 shrink-0 mt-0.5 h-4 w-4 rounded border-slate-300 wb-dataset-checkbox"
+                                    className="wbx-dc-card__checkbox"
                                   />
-                                  <div className="wb-dataset-body flex-1 min-w-0">
-                                    <div className="wb-dataset-top-row flex items-center justify-between gap-2 !flex-nowrap">
-                                      <span className="wb-dataset-title truncate">{cardMeta.title}</span>
+                                  <div className="wbx-dc-card__body">
+                                    <div className="wbx-dc-card__head">
+                                      <span className="wbx-dc-card__title">{cardMeta.title}</span>
                                       {showExceptionTag && (
-                                        <span className={`wb-dataset-tag is-${cardMeta.tone} shrink-0 whitespace-nowrap`}>{cardMeta.scopeTag}</span>
+                                        <span className={`wbx-dc-card__scope is-${cardMeta.tone}`}>
+                                          {cardMeta.scopeTag}
+                                        </span>
                                       )}
                                     </div>
-                                    <span className="wb-dataset-desc">
-                                      {group === 'baize'
-                                        ? '含员工工号、姓名、身份证号、所属站点、入离职日期及当前在职状态，导出全站原始档案并独立归档'
-                                        : group === 'benlai'
-                                          ? '含姓名、证件号、手机号、城市与签约状态；导出全站原始档案，签约城市在每次任务开始时实时读取'
-                                          : cardMeta.desc}
-                                    </span>
+                                    <p className="wbx-dc-card__desc" title={descText}>{descText}</p>
                                   </div>
                                 </label>
                               );
@@ -2359,7 +2367,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                 {(!platform || platform === 'fengshen') && (
                                   <button
                                     type="button"
-                                    className="wbx-btn wbx-btn--primary wbx-snapshot-btn"
+                                    className="wbx-btn wbx-btn--secondary wbx-btn--sm wbx-snapshot-btn"
                                     disabled={formLocked || !selectableCities.length}
                                     title="全选城市、仅勾选骑手信息、日期设为今天，一次导出全部城市当前骑手信息快照（不会复用历史数据）。"
                                     onClick={() => {
@@ -2510,7 +2518,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                           return (
                             <div className="wb-step-card-header">
                               <div className="wb-step-badge">
-                                <span className="wb-step-number">02</span>
+                                <span className="wb-step-number">{dynamicScopeReq.needsCity ? '03' : '02'}</span>
                                 <p id="download-dates-label" className="wb-step-title m-0">
                                   处理月份与账期
                                 </p>
@@ -2805,17 +2813,23 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                     <div className="wbx-rail__fact">
                       <dt>处理城市</dt>
                       <dd title={(blueOnly ? blueCities : cities).join('、')}>
-                        {railSummary.cityLabel === '未选择城市' ? (
-                          <button
-                            type="button"
-                            className="wbx-rail__missing-chip"
-                            onClick={() => {
-                              setPulsingStep('cities');
-                              document.getElementById('step-01-cities')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            }}
-                          >
-                            <span>未选择城市 · 去勾选 →</span>
-                          </button>
+                        {datasets.length === 0 ? (
+                          <span className="wbx-rail__pending-hint">待选资料后配置</span>
+                        ) : railSummary.cityLabel === '未选择城市' ? (
+                          railHint ? (
+                            <span className="wbx-rail__missing-text">待勾选城市</span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="wbx-rail__missing-chip"
+                              onClick={() => {
+                                setPulsingStep('cities');
+                                document.getElementById('step-01-cities')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                              }}
+                            >
+                              <span>未选择城市 · 去勾选 →</span>
+                            </button>
+                          )
                         ) : (
                           railSummary.cityLabel
                         )}
@@ -2999,6 +3013,36 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
               <DownloadRecords initialRunId={historyFocusId} onInitialFocusHandled={()=>setHistoryFocusId('')} key={recordModule||'all'} recordModule={recordModule} apiFetch={apiFetch} workspaceId={workspaceId} selectedRunId={selectedId}
                 datasetLabel={datasetLabel} refreshVersion={navigation?.version} unified
                 onNavigateGenerate={onNavigateGenerate}
+                onNavigatePayroll={onNavigatePayroll}
+                onOpenFengshenLogin={onOpenFengshenLogin ? () => onOpenFengshenLogin(user.id) : undefined}
+                onRetryTask={record => {
+                  const nextDatasets = Array.isArray(record.datasets) ? record.datasets : [];
+                  if (nextDatasets.some(isBaize) || nextDatasets.some(isBenlai)) {
+                    onSelectPlatform?.('payout');
+                  } else if (nextDatasets.some(isXiaoxiang)) {
+                    onSelectPlatform?.('xiaoxiang');
+                  } else if (nextDatasets.some(isLanorange)) {
+                    onSelectPlatform?.('lanorange');
+                  } else {
+                    onSelectPlatform?.('fengshen');
+                  }
+                  onTaskKindChange?.('download');
+                  const nextCities = (record.cities || []).filter(
+                    city => city !== '全部城市' && (!options || options.cities.some(item => item.name === city && !item.disabled)),
+                  );
+                  if (nextCities.length) setCities(nextCities);
+                  const validDatasets = nextDatasets.filter(
+                    id => !options || options.datasets.some(item => item.id === id),
+                  );
+                  if (validDatasets.length) setDatasets(validDatasets);
+                  if (record.start && record.end && DATE_PATTERN.test(record.start) && DATE_PATTERN.test(record.end)) {
+                    setStart(record.start);
+                    setEnd(record.end);
+                  }
+                  setDuplicateApproval('');
+                  setRequestError('');
+                  setView('create');
+                }}
                 onOpenPrice={onOpenPrice}
         onOpenAttempt={id => {
           setRequestError('');

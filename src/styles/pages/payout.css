@@ -29,19 +29,18 @@
   gap: 12px;
   background: var(--wbx-surface);
   border: 1px solid var(--wbx-border);
-  border-radius: 14px;
-  padding: 16px 18px;
+  border-radius: 10px;
+  padding: 14px 16px;
   cursor: pointer;
   transition: border-color var(--wbx-dur-fast) var(--wbx-ease),
     background-color var(--wbx-dur-fast) var(--wbx-ease),
     box-shadow var(--wbx-dur-fast) var(--wbx-ease);
-  box-shadow: var(--wbx-sh-1);
   outline: none;
 }
 
 .wb-payout-source-card:hover:not(.is-disabled) {
-  border-color: rgba(15, 110, 140, 0.5);
-  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.05);
+  border-color: var(--wbx-border-strong);
+  background: #fafcff;
 }
 
 .wb-payout-source-card:focus-visible {
@@ -51,8 +50,8 @@
 
 .wb-payout-source-card.is-selected {
   border-color: var(--wbx-primary);
-  background: linear-gradient(180deg, var(--wbx-primary-soft) 0%, var(--wbx-surface) 42%);
-  box-shadow: 0 2px 8px rgba(15, 110, 140, 0.09);
+  background: #f4faff;
+  box-shadow: 0 0 0 1px rgba(2, 106, 162, 0.14);
 }
 
 .wb-payout-source-card.is-disabled {
@@ -62,10 +61,10 @@
 
 .wb-payout-card-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px 10px;
+  flex-wrap: nowrap;
+  gap: 10px;
 }
 
 .wb-payout-card-title-wrap {
@@ -79,14 +78,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
   border-radius: 5px;
   border: 1.5px solid var(--wbx-border-strong);
   background: var(--wbx-surface);
   color: transparent;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   flex-shrink: 0;
   transition: all var(--wbx-dur-fast) var(--wbx-ease);
 }
@@ -94,16 +93,16 @@
 .wb-payout-check.is-checked {
   background: var(--wbx-primary);
   border-color: var(--wbx-primary);
-  color: var(--wbx-text-inverse);
+  color: #ffffff;
 }
 
 .wb-payout-card-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
   background: var(--wbx-neutral-soft);
   color: var(--wbx-text-muted);
   flex-shrink: 0;
@@ -116,73 +115,90 @@
 
 .wb-payout-card-title {
   margin: 0;
-  font-size: 14.5px;
-  font-weight: 600;
+  font-size: 13.5px;
+  font-weight: 500;
   color: var(--wbx-text);
-  line-height: 1.3;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .wb-payout-source-card.is-selected .wb-payout-card-title {
   color: var(--wbx-primary);
+  font-weight: 600;
 }
 
 .wb-payout-card-sub {
   display: block;
-  margin-top: 2px;
-  font-size: 12px;
+  margin-top: 1px;
+  font-size: 11.5px;
+  font-weight: 400;
   color: var(--wbx-text-muted);
 }
 
 .wb-payout-card-auth {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
+  padding-top: 2px;
+}
+
+.wb-payout-card-auth .wb-status-badge {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--wbx-text-muted);
 }
 
 .wb-payout-auth-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 26px;
-  padding: 2px 9px;
+  min-height: 22px;
+  padding: 0 2px;
   font-size: 11.5px;
   font-weight: 500;
   color: var(--wbx-primary);
-  background: var(--wbx-surface);
-  border: 1px solid rgba(15, 110, 140, 0.28);
-  border-radius: 7px;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
   cursor: pointer;
-  transition: all var(--wbx-dur-fast) var(--wbx-ease);
+  transition: color var(--wbx-dur-fast) var(--wbx-ease);
   white-space: nowrap;
 }
 
 .wb-payout-auth-btn:hover {
-  background: var(--wbx-primary-soft);
-  border-color: var(--wbx-primary);
+  color: var(--wbx-primary-hover);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .wb-payout-spec-list {
   margin: 0;
   padding: 0;
-  border-top: 1px solid var(--wb-border-subtle);
+  border-top: 1px solid #f1f5f9;
   display: flex;
   flex-direction: column;
 }
 
 .wb-payout-spec-row {
   display: grid;
-  grid-template-columns: 68px minmax(0, 1fr);
+  grid-template-columns: 64px minmax(0, 1fr);
   gap: 10px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--wb-border-subtle);
-  font-size: 12.5px;
-  line-height: 1.45;
+  padding: 7px 0;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .wb-payout-spec-row:last-child {
   border-bottom: 0;
-  padding-bottom: 2px;
+  padding-bottom: 0;
 }
 
 .wb-payout-spec-row dt {
@@ -193,7 +209,7 @@
 
 .wb-payout-spec-row dd {
   margin: 0;
-  color: var(--wbx-text);
+  color: var(--wbx-text-secondary);
 }
 
 /* 最近采集记录（发薪平台页内列表） */

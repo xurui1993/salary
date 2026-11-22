@@ -7,7 +7,19 @@ import { THEMES } from "./constants";
 import { LogEntry, AppConfig, TaskHistoryRecord } from "./types";
 import { FengshenLoginModal, FengshenAuthStatus } from "./components/FengshenLoginModal";
 import { CorePage, TaskItem } from "./components/CorePage";
-import { X, Menu, SlidersHorizontal, Calculator, FileSpreadsheet, Compass, Layers, UsersRound, Radar, WalletCards, BadgeDollarSign, FolderCheck, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import {
+  X,
+  Menu,
+  SlidersHorizontal,
+  Calculator,
+  FileSpreadsheet,
+  FolderCheck,
+  Layers,
+  UsersRound,
+  Radar,
+  Search,
+  Terminal,
+} from "lucide-react";
 import { UploadProgressOverlay } from "./components/UploadProgressOverlay";
 import type { PayrollPreparationState } from './components/PayrollPreparation';
 import type { RunResult } from './components/RunResultCard';
@@ -18,7 +30,7 @@ import { getWorkspaceId } from "./utils";
 import { WorkbenchDrawer } from "./components/WorkbenchDrawer";
 import { SystemConnections } from "./components/SystemConnections";
 import { fetchWithPreflight } from "./lib/authPreflight";
-import { HeaderDownloadCenter } from "./components/HeaderDownloadCenter";
+import { HeaderApprovalNotifier } from "./components/HeaderApprovalNotifier";
 import { LanorangeApprovals } from "./components/LanorangeApprovals";
 import { LanorangePriceExports } from "./components/LanorangePriceExports";
 import { StationDeductionManager } from "./components/StationDeductionManager";
@@ -27,18 +39,23 @@ import { SystemTemplatesPanel } from "./components/SystemTemplatesPanel";
 import { initialTaskKind, TASK_KIND_LABELS, type TaskKind } from "./lib/taskCatalog";
 import {
   COLLECTION_SUB_VIEWS,
-  formatSystemResourceStats,
-  getHeaderModuleContext,
   getPayrollSidebarBadge,
-  getPrimaryHeaderContext,
-  PAYROLL_SUB_VIEWS,
-  PRIMARY_NAV_ITEMS,
   type PayrollSubView,
+  type PlatformStatusMap,
   type SystemResourceStatsInput,
 } from "./lib/workbench";
 import { DOWNLOAD_PLATFORMS,type DownloadPlatform } from './lib/downloadModules';
 import { PlatformDock } from './components/PlatformDock';
-import { APP_TITLE, SIDEBAR_BRAND, SIDEBAR_BRAND_HINT } from './lib/appMeta';
+import { DualRailSidebar } from './components/DualRailSidebar';
+import { HeaderBreadcrumb } from './components/HeaderBreadcrumb';
+import { CommandPaletteModal } from './components/CommandPaletteModal';
+import { TerminalPanel } from './components/TerminalPanel';
+import {
+  buildShellCommands,
+  getBreadcrumbModel,
+  type ShellCommandAction,
+} from './lib/shellNav';
+import { APP_TITLE } from './lib/appMeta';
 import { BP, currentViewportWidth } from './lib/breakpoints';
 
 const showDesktopNotification = (title: string, body: string) => {
@@ -155,13 +172,13 @@ export default function App() {
 
   const [deductionOpen, setDeductionOpen] = useState(false);
   const [globalTemplatesOpen, setGlobalTemplatesOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    try { return localStorage.getItem('sidebar_collapsed') === 'true'; } catch { return false; }
-  });
+  const quickPayrollInputRef = useRef<HTMLInputElement>(null);
   // 外壳断点状态（D6：只用 1280/1024/768 三档；纯函数来自 lib/breakpoints）
   const [viewportWidth, setViewportWidth] = useState<number>(() => currentViewportWidth());
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [dockOpen, setDockOpen] = useState(false);
+  const [cmdkOpen, setCmdkOpen] = useState(false);
+  const [logDrawerOpen, setLogDrawerOpen] = useState(false);
   useEffect(() => {
     let frame = 0;
     const onResize = () => {
@@ -179,6 +196,30 @@ export default function App() {
   useEffect(() => {
     if (!isDrawerMode) setMobileNavOpen(false);
   }, [isDrawerMode]);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setCmdkOpen(prev => !prev);
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      const isEditable =
+        !!target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable);
+      if (isEditable) return;
+      if (event.key.toLowerCase() === 'l') {
+        event.preventDefault();
+        setLogDrawerOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isDrawerMode]);
   const [deductionDefaultOnly, setDeductionDefaultOnly] = useState(false);
   const [deductionVersion, setDeductionVersion] = useState(0);
   const [payrollSubView, setPayrollSubView] = useState<PayrollSubView>('batches');
@@ -195,6 +236,7 @@ export default function App() {
   const platformLabel=platformMeta.label;
   const platformNavLabel=platformMeta.navLabel;
   const [approvalActiveCount,setApprovalActiveCount]=useState(0);
+  const [approvalPendingCount,setApprovalPendingCount]=useState(0);
   const [priceExportActiveCount,setPriceExportActiveCount]=useState(0);
   const [priceRecordId,setPriceRecordId]=useState<string|undefined>();
   const [systemStats, setSystemStats] = useState<SystemResourceStatsInput | null>(null);
@@ -237,6 +279,50 @@ export default function App() {
   const openDownloadModule=(platform:DownloadPlatform)=>{
     setDownloadPlatform(platform);try{localStorage.setItem('workbench_download_platform',platform);}catch{}
     setHistoryAll(false);setTaskKind('download');navigateWorkspace('create');
+  };
+  const [platformStatuses, setPlatformStatuses] = useState<PlatformStatusMap>({});
+  useEffect(() => {
+    const onStatuses = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail && typeof detail === 'object') {
+        setPlatformStatuses(detail as PlatformStatusMap);
+      }
+    };
+    window.addEventListener('workbench:platform-statuses', onStatuses);
+    return () => window.removeEventListener('workbench:platform-statuses', onStatuses);
+  }, []);
+  const executeShellAction = (action: ShellCommandAction) => {
+    if (action.type === 'platform') {
+      openDownloadModule(action.platform);
+      setMobileNavOpen(false);
+      return;
+    }
+    if (action.type === 'payroll') {
+      setPayrollSubView(action.subView);
+      setTaskKind('payroll');
+      navigateWorkspace('create');
+      setMobileNavOpen(false);
+      return;
+    }
+    if (action.type === 'workspace') {
+      if (action.view === 'history') {
+        setHistoryAll(true);
+        setTaskKind('download');
+        navigateWorkspace('history');
+      } else {
+        setPriceRecordId(undefined);
+        navigateWorkspace(action.view);
+      }
+      setMobileNavOpen(false);
+      return;
+    }
+    if (action.type === 'open-dock') {
+      setDockOpen(true);
+      return;
+    }
+    if (action.type === 'open-logs') {
+      setLogDrawerOpen(true);
+    }
   };
   const [downloadNavigation, setDownloadNavigation] = useState({ view: 'create' as 'create' | 'history', version: 0 });
   const uploadSubmission = useRef(false);
@@ -1080,307 +1166,35 @@ export default function App() {
             onClick={() => setMobileNavOpen(false)}
           />
         )}
-        <aside
-          className={`wb-sidebar wbx-sidebar ${sidebarIsCollapsed ? 'is-collapsed' : ''}`}
-          data-collapsed={sidebarIsCollapsed ? 'true' : 'false'}
-          aria-label="工作台侧栏"
-        >
-          <div className="wb-sidebar-brand wbx-sidebar__brand">
-            <span className="wb-sidebar-logo wbx-sidebar__logo" title={SIDEBAR_BRAND} aria-hidden="true">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path
-                  d="M12 2.25L20.25 6.75V17.25L12 21.75L3.75 17.25V6.75L12 2.25Z"
-                  fill="rgba(255,255,255,0.16)"
-                  stroke="currentColor"
-                  strokeWidth="1.75"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M7.75 10.25H16.25M7.75 13.75H13.25"
-                  stroke="currentColor"
-                  strokeWidth="1.9"
-                  strokeLinecap="round"
-                />
-                <circle cx="15.75" cy="13.75" r="1.35" fill="#7DD3FC" />
-                <path
-                  d="M12 5.75V7.5"
-                  stroke="#BAE6FD"
-                  strokeWidth="1.75"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </span>
-            <div className="wb-sidebar-brand-text wbx-sidebar__brand-copy">
-              <strong className="wbx-sidebar__brand-title" title={SIDEBAR_BRAND}>{SIDEBAR_BRAND}</strong>
-              <small className="wbx-sidebar__brand-sub" title={SIDEBAR_BRAND_HINT}>{SIDEBAR_BRAND_HINT}</small>
-            </div>
-          </div>
-          <div className="wb-sidebar-scroll flex-1 flex flex-col min-h-0">
-            <nav className="wb-sidebar-flat-nav wbx-sidebar__nav" aria-label="主业务导航">
-              <span className="wbx-sidebar__section-label">核心业务模块</span>
-              {PRIMARY_NAV_ITEMS.map(item => {
-                const isCollectionActive =
-                  item.id === 'collection' &&
-                  workspaceView === 'create' &&
-                  taskKind !== 'payroll';
-                const isPayrollActive =
-                  item.id === 'payroll' && workspaceView === 'create' && taskKind === 'payroll';
-                const isApprovalActive =
-                  item.id === 'approval' && (workspaceView === 'approval' || workspaceView === 'price-export');
-                const isActive = isCollectionActive || isPayrollActive || isApprovalActive;
-                const payrollBadge = item.id === 'payroll' ? getPayrollSidebarBadge(payrollPreparation?.status, isRunning) : null;
-                const NavIcon =
-                  item.id === 'collection'
-                    ? Compass
-                    : item.id === 'payroll'
-                      ? WalletCards
-                      : BadgeDollarSign;
-
-                return (
-                  <div key={item.id} className="wbx-nav-group-block">
-                    <button
-                      type="button"
-                      title={item.label}
-                      disabled={taskFormLocked}
-                      aria-pressed={isActive}
-                      onClick={() => {
-                        if (item.id === 'collection') {
-                          setHistoryAll(false);
-                          setTaskKind('download');
-                          navigateWorkspace('create');
-                        } else if (item.id === 'payroll') {
-                          setPayrollSubView('batches');
-                          setTaskKind('payroll');
-                          navigateWorkspace('create');
-                        } else {
-                          setPriceRecordId(undefined);
-                          navigateWorkspace('approval');
-                        }
-                        setMobileNavOpen(false);
-                      }}
-                      className={`wb-sidebar-item wbx-nav-item ${isActive ? 'is-active' : ''}`}
-                    >
-                      <span className="wb-sidebar-icon wbx-nav-item__icon" aria-hidden="true">
-                        <NavIcon size={16} />
-                      </span>
-                      <span className="wb-sidebar-text wbx-nav-item__body">
-                        <span className="wbx-nav-item__label">{item.label}</span>
-                      </span>
-                      {item.id === 'collection' && activeDownloadCount > 0 && (
-                        <span className="wb-sidebar-badge wbx-nav-item__badge tabular-nums">{activeDownloadCount}</span>
-                      )}
-                      {item.id === 'payroll' && payrollBadge && (
-                        <span className={`wb-sidebar-badge wbx-nav-item__badge is-${payrollBadge.tone}`}>{payrollBadge.label}</span>
-                      )}
-                      {item.id === 'approval' && approvalActiveCount + priceExportActiveCount > 0 && (
-                        <span className="wb-sidebar-badge wbx-nav-item__badge">进行中</span>
-                      )}
-                    </button>
-
-                    {item.id === 'collection' && (
-                      <div className="wbx-subnav-tree" role="group" aria-label="数据采集快捷直达">
-                        {DOWNLOAD_PLATFORMS.map(plat => {
-                          const platSelected = isCollectionActive && workspaceView === 'create' && downloadPlatform === plat.id;
-                          return (
-                            <button
-                              key={plat.id}
-                              type="button"
-                              disabled={taskFormLocked}
-                              onClick={() => {
-                                openDownloadModule(plat.id);
-                                setMobileNavOpen(false);
-                              }}
-                              className={`wbx-subnav-link ${platSelected ? 'is-active' : ''}`}
-                            >
-                              <span className="inline-flex items-center gap-2 min-w-0">
-                                <span className="wbx-subnav-dot" />
-                                <span className="truncate">{plat.navLabel}</span>
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {item.id === 'payroll' && (
-                      <div className="wbx-subnav-tree" role="group" aria-label="薪资核算快捷直达">
-                        {PAYROLL_SUB_VIEWS.map(sub => {
-                          const subActive = isPayrollActive && payrollSubView === sub.id;
-                          return (
-                            <button
-                              key={sub.id}
-                              type="button"
-                              disabled={taskFormLocked}
-                              onClick={() => {
-                                setPayrollSubView(sub.id);
-                                setTaskKind('payroll');
-                                navigateWorkspace('create');
-                                setMobileNavOpen(false);
-                              }}
-                              className={`wbx-subnav-link ${subActive ? 'is-active' : ''}`}
-                            >
-                              <span className="inline-flex items-center gap-2 min-w-0">
-                                <span className="wbx-subnav-dot" />
-                                <span className="truncate">{sub.label}</span>
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {item.id === 'approval' && (
-                      <div className="wbx-subnav-tree" role="group" aria-label="价格审批快捷直达">
-                        <button
-                          type="button"
-                          disabled={taskFormLocked}
-                          onClick={() => {
-                            setPriceRecordId(undefined);
-                            navigateWorkspace('approval');
-                            setMobileNavOpen(false);
-                          }}
-                          className={`wbx-subnav-link ${workspaceView === 'approval' ? 'is-active' : ''}`}
-                        >
-                          <span className="inline-flex items-center gap-2 min-w-0">
-                            <span className="wbx-subnav-dot" />
-                            <span className="truncate">批量审批</span>
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          disabled={taskFormLocked}
-                          onClick={() => {
-                            setPriceRecordId(undefined);
-                            navigateWorkspace('price-export');
-                            setMobileNavOpen(false);
-                          }}
-                          className={`wbx-subnav-link ${workspaceView === 'price-export' ? 'is-active' : ''}`}
-                        >
-                          <span className="inline-flex items-center gap-2 min-w-0">
-                            <span className="wbx-subnav-dot" />
-                            <span className="truncate">待审每日价格导出</span>
-                          </span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-
-              <div className="wbx-nav-group-block wbx-nav-group-block--global">
-                <span className="wbx-sidebar__section-label mt-2">全局记录与交付</span>
-                <button
-                  type="button"
-                  title="任务中心"
-                  disabled={taskFormLocked}
-                  aria-pressed={workspaceView === 'history'}
-                  onClick={() => {
-                    setHistoryAll(true);
-                    setTaskKind('download');
-                    navigateWorkspace('history');
-                    setMobileNavOpen(false);
-                  }}
-                  className={`wb-sidebar-item wbx-nav-item ${workspaceView === 'history' ? 'is-active' : ''}`}
-                >
-                  <span className="wb-sidebar-icon wbx-nav-item__icon" aria-hidden="true">
-                    <FolderCheck size={16} />
-                  </span>
-                  <span className="wb-sidebar-text wbx-nav-item__body">
-                    <span className="wbx-nav-item__label">任务中心</span>
-                  </span>
-                  {activeDownloadCount + (isRunning ? 1 : 0) + approvalActiveCount + priceExportActiveCount > 0 && (
-                    <span className="wb-sidebar-badge wbx-nav-item__badge tabular-nums">
-                      {activeDownloadCount + (isRunning ? 1 : 0) + approvalActiveCount + priceExportActiveCount}
-                    </span>
-                  )}
-                </button>
-              </div>
-            </nav>
-
-            <div className="wbx-sidebar__footer">
-              {(() => {
-                const resView = formatSystemResourceStats(systemStats);
-                return (
-                  <div
-                    className={`wbx-sidebar-resource-card is-${resView.level}`}
-                    aria-label="CPU及内存资源占用分析"
-                  >
-                    <div className="wbx-sidebar-resource__head">
-                      <span className="wbx-sidebar-resource__title">CPU 及内存资源分析</span>
-                      <span className={`wbx-sidebar-resource__status is-${resView.level}`}>
-                        {resView.statusText}
-                      </span>
-                    </div>
-                    <div className="wbx-sidebar-resource__row">
-                      <div className="wbx-sidebar-resource__meta tabular-nums">
-                        <span>CPU ({resView.cpuCores}核)</span>
-                        <strong>{resView.cpuText}</strong>
-                      </div>
-                      <div className="wbx-sidebar-resource__bar" aria-hidden="true">
-                        <span
-                          className="wbx-sidebar-resource__fill is-cpu"
-                          style={{ width: `${Math.max(4, resView.cpuPercent)}%` }}
-                        />
-                      </div>
-                    </div>
-                    <div className="wbx-sidebar-resource__row">
-                      <div className="wbx-sidebar-resource__meta tabular-nums">
-                        <span>内存 ({resView.memDetailText})</span>
-                        <strong>{resView.memText}</strong>
-                      </div>
-                      <div className="wbx-sidebar-resource__bar" aria-hidden="true">
-                        <span
-                          className="wbx-sidebar-resource__fill is-mem"
-                          style={{ width: `${Math.max(4, resView.memPercent)}%` }}
-                        />
-                      </div>
-                    </div>
-                    <div className="wbx-sidebar-resource__foot tabular-nums">
-                      <span>引擎进程内存</span>
-                      <span>{resView.procMemMb} MB</span>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-        </aside>
+        <DualRailSidebar
+          workspaceView={workspaceView}
+          taskKind={taskKind}
+          downloadPlatform={downloadPlatform}
+          payrollSubView={payrollSubView}
+          isDrawerMode={isDrawerMode}
+          taskFormLocked={taskFormLocked}
+          platformStatuses={platformStatuses}
+          systemStats={systemStats}
+          activeDownloadCount={activeDownloadCount}
+          payrollBadge={getPayrollSidebarBadge(payrollPreparation?.status, isRunning)}
+          approvalActiveCount={approvalActiveCount + priceExportActiveCount}
+          approvalPendingCount={approvalPendingCount}
+          totalActiveCount={activeDownloadCount + (isRunning ? 1 : 0) + approvalActiveCount + priceExportActiveCount}
+          onExecuteAction={executeShellAction}
+          onCloseMobile={() => setMobileNavOpen(false)}
+          onOpenPlatformDock={() => setDockOpen(true)}
+        />
         <div className="wb-viewport wbx-workspace">
           {(() => {
-            const headerCtx = getPrimaryHeaderContext({
+            const breadcrumbModel = getBreadcrumbModel({
               workspaceView,
               taskKind: taskKind === 'generate' ? 'download' : taskKind,
               downloadPlatform,
               payrollSubView,
             });
-            const HeaderModuleIcon =
-              headerCtx.iconKey === 'compass'
-                ? Compass
-                : headerCtx.iconKey === 'layers'
-                  ? Layers
-                  : headerCtx.iconKey === 'users-round'
-                    ? UsersRound
-                    : headerCtx.iconKey === 'radar'
-                      ? Radar
-                      : headerCtx.iconKey === 'wallet-cards'
-                        ? WalletCards
-                        : headerCtx.iconKey === 'sliders-horizontal'
-                          ? SlidersHorizontal
-                          : headerCtx.iconKey === 'file-spreadsheet'
-                            ? FileSpreadsheet
-                            : headerCtx.iconKey === 'badge-dollar-sign'
-                              ? BadgeDollarSign
-                              : FolderCheck;
-            const isPriceModule = workspaceView === 'approval' || workspaceView === 'price-export';
-            const isPayrollModule = workspaceView === 'create' && taskKind === 'payroll';
-            const isHistoryModule = workspaceView === 'history';
-            const moduleBadgeText = isHistoryModule
-              ? '任务中心'
-              : isPriceModule
-                ? '价格审批'
-                : isPayrollModule
-                  ? '薪资核算'
-                  : '数据采集';
+            const errorLogCount = logs.filter(entry => entry.level === 'ERROR').length;
+            const totalActiveCount =
+              activeDownloadCount + (isRunning ? 1 : 0) + approvalActiveCount + priceExportActiveCount;
 
             return (
               <header className="wb-header wbx-header">
@@ -1392,60 +1206,103 @@ export default function App() {
                     aria-expanded={mobileNavOpen}
                     onClick={() => setMobileNavOpen(value => !value)}
                   >
-                    <Menu size={18} />
+                    <Menu size={17} />
                   </button>
 
-                  <div className="wbx-header__title-group">
-                    <div className="wbx-header__title-row">
-                      <span className="wbx-header__module-badge">
-                        <HeaderModuleIcon size={12} className="mr-1" />
-                        {moduleBadgeText}
-                      </span>
-                      <h1 className="wb-breadcrumb-current wbx-header__title" title={headerCtx.title}>
-                        {headerCtx.title}
-                      </h1>
-                    </div>
-                    {(headerCtx.description || headerCtx.subtitle) && (
-                      <p className="wbx-header__subtitle" title={headerCtx.description || headerCtx.subtitle}>
-                        {headerCtx.description || headerCtx.subtitle}
-                      </p>
-                    )}
-                  </div>
+                  <HeaderBreadcrumb
+                    model={breadcrumbModel}
+                    disabled={taskFormLocked}
+                    platformStatuses={platformStatuses}
+                    isRunning={isRunning}
+                    progress={progress}
+                    progressText={progressText}
+                    activeDownloadCount={activeDownloadCount}
+                    errorLogCount={errorLogCount}
+                    onOpenLogDrawer={() => setLogDrawerOpen(true)}
+                    onSelect={executeShellAction}
+                    onOpenPlatformAuth={plat => {
+                      if (plat === 'fengshen') {
+                        setFengshenLoginRequest(value => value + 1);
+                      } else {
+                        setDockOpen(true);
+                      }
+                    }}
+                  />
                 </div>
 
-                <div className="wb-header-actions wbx-header__tools">
-                  <div className="wb-global-dock wbx-dock flex items-center gap-2.5" role="group" aria-label="全局平台连接与任务通知">
-                    <PlatformDock open={dockOpen} onToggle={() => setDockOpen(value => !value)} onClose={() => setDockOpen(false)}>
-                      <SystemConnections
-                        apiFetch={fetchWithAuth}
-                        fengshenStatus={fengshenAuthStatus}
-                        onOpenFengshen={() => setFengshenLoginRequest(value => value + 1)}
-                        hideTrigger
-                        open={dockOpen}
-                        onOpenChange={setDockOpen}
-                      />
-                    </PlatformDock>
-                    <HeaderDownloadCenter
+                <div
+                  className="wb-header-actions wbx-header__tools"
+                  role="group"
+                  aria-label="全局审批待办通知、平台授权、任务中心与运行日志"
+                >
+                  <HeaderApprovalNotifier
+                    apiFetch={fetchWithAuth}
+                    workspaceId={workspaceId}
+                    isApprovalViewActive={workspaceView === 'approval'}
+                    onNavigateApproval={() => navigateWorkspace('approval')}
+                    onOpenLanorangeAuth={() => setDockOpen(true)}
+                    onPendingCountChange={setApprovalPendingCount}
+                    onShowToast={showToast}
+                    onDesktopNotify={showDesktopNotification}
+                  />
+
+                  <PlatformDock
+                    open={dockOpen}
+                    onToggle={() => setDockOpen(value => !value)}
+                    onClose={() => setDockOpen(false)}
+                  >
+                    <SystemConnections
                       apiFetch={fetchWithAuth}
-                      activeCount={activeDownloadCount}
-                      runningTask={runningTask}
-                      progress={progress}
-                      progressText={progressText}
-                      onNavigateHistory={() => {
-                        setHistoryAll(true);
-                        setTaskKind('download');
-                        navigateWorkspace('history');
-                      }}
-                      onOpenPlatformAuth={platformKey => {
-                        if (platformKey === 'fengshen') {
-                          setFengshenLoginRequest(value => value + 1);
-                        } else {
-                          setDockOpen(true);
-                        }
-                      }}
-                      onShowToast={showToast}
+                      fengshenStatus={fengshenAuthStatus}
+                      onOpenFengshen={() => setFengshenLoginRequest(value => value + 1)}
+                      hideTrigger
+                      open={dockOpen}
+                      onOpenChange={setDockOpen}
                     />
-                  </div>
+                  </PlatformDock>
+
+                  <button
+                    type="button"
+                    data-nav-key="workspace:history"
+                    disabled={taskFormLocked}
+                    aria-current={workspaceView === 'history' ? 'page' : undefined}
+                    className={`wbx-header-tool-btn${workspaceView === 'history' ? ' is-open' : ''}`}
+                    title="打开任务中心，查看全部采集、核算与导出任务记录"
+                    onClick={() => {
+                      setHistoryAll(true);
+                      setTaskKind('download');
+                      navigateWorkspace('history');
+                    }}
+                  >
+                    <FolderCheck
+                      size={13.5}
+                      className={`wbx-header-tool-icon${workspaceView === 'history' || totalActiveCount > 0 ? ' is-active' : ''}`}
+                      aria-hidden="true"
+                    />
+                    <span className="wbx-header-taskcenter-label">任务中心</span>
+                    {totalActiveCount > 0 && (
+                      <span className="wbx-header-tool-live tabular-nums">
+                        {totalActiveCount} 进行中
+                      </span>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`wbx-header-tool-btn wbx-header-tool-btn--log relative${logDrawerOpen ? ' is-open' : ''}${errorLogCount > 0 ? ' has-errors' : ''}`}
+                    aria-label={errorLogCount > 0 ? `打开运行日志（${errorLogCount} 条异常）` : '打开运行日志（快捷键 L）'}
+                    aria-expanded={logDrawerOpen}
+                    title="运行日志 (快捷键 L)"
+                    onClick={() => setLogDrawerOpen(v => !v)}
+                  >
+                    <Terminal size={13.5} className="wbx-header-tool-icon" aria-hidden="true" />
+                    <span className="wbx-header-log-label">运行日志</span>
+                    {errorLogCount > 0 && (
+                      <span className="wbx-header-tool-badge tabular-nums">
+                        {errorLogCount > 99 ? '99+' : errorLogCount}
+                      </span>
+                    )}
+                  </button>
                 </div>
               </header>
             );
@@ -1525,7 +1382,7 @@ export default function App() {
             )}
 
             {workspaceView==='approval' && <LanorangeApprovals focusId={priceRecordId} apiFetch={fetchWithAuth} workspaceId={workspaceId} onActiveCount={setApprovalActiveCount} onSwitchView={view => navigateWorkspace(view)} />}
-            {workspaceView==='price-export' && <LanorangePriceExports focusId={priceRecordId} apiFetch={fetchWithAuth} workspaceId={workspaceId} onActiveCount={setPriceExportActiveCount} onSwitchView={view => navigateWorkspace(view)} />}
+            {workspaceView==='price-export' && <LanorangePriceExports focusId={priceRecordId} apiFetch={fetchWithAuth} workspaceId={workspaceId} lanorangeConnected={['ready', 'saved'].includes(platformStatuses.lanorange?.state || '')} onActiveCount={setPriceExportActiveCount} onSwitchView={view => navigateWorkspace(view)} />}
             <section hidden={workspaceView==='approval' || workspaceView==='price-export' || (workspaceView !== 'history' && taskKind === 'payroll')} aria-label="任务下载">
               <FengshenDownloadCenter
                 apiFetch={fetchWithAuth}
@@ -1548,6 +1405,11 @@ export default function App() {
                 prefill={downloadPrefill}
                 onActiveCountChange={setActiveDownloadCount}
                 onOpenFengshenLogin={() => setFengshenLoginRequest(value => value + 1)}
+                onNavigatePayroll={() => {
+                  setTaskKind('payroll');
+                  setPayrollSubView('batches');
+                  navigateWorkspace('create');
+                }}
                 fengshenAuthStatus={fengshenAuthStatus}
                 onAccountChange={setDownloadAccountId}
               />
@@ -1558,6 +1420,7 @@ export default function App() {
                   onOpenDeductions={(defaultOnly = false) => { setDeductionDefaultOnly(defaultOnly); setPayrollSubView('deductions'); }}
                   onOpenConnections={() => window.dispatchEvent(new CustomEvent('workbench:connections'))}
                   onNavigateDownloadCenter={() => { setTaskKind('download'); navigateWorkspace('create'); }}
+                  onNavigateTaskCenter={() => navigateWorkspace('history')}
                   deductionVersion={deductionVersion}
                   appTheme={appTheme}
                   config={{...appConfig,cities:directoryCities}}
@@ -1602,26 +1465,81 @@ export default function App() {
               )}
 
               {payrollSubView === 'templates' && (
-                <section className="wb-inline-subview-card" aria-label="系统模板中心">
-                  <div className="wb-inline-subview-header">
-                    <div>
-                      <h3 className="wb-inline-subview-title">兼职薪资核算标准模板中心</h3>
-                      <p className="wb-inline-subview-subtitle">
-                        下载淘宝闪购、美团小象灯塔等最新标准薪资申请表模板，填写后可在「核算批次」直接上传执行。
-                      </p>
-                    </div>
-                  </div>
-                  <SystemTemplatesPanel onNavigatePayroll={() => setPayrollSubView('batches')} />
-                </section>
+                <SystemTemplatesPanel
+                  onNavigatePayroll={() => setPayrollSubView('batches')}
+                  onQuickUpload={files => {
+                    setPayrollSubView('batches');
+                    void uploadFilesAndExecute(
+                      files.map(file => ({ file, relativePath: file.name })),
+                    );
+                  }}
+                />
               )}
             </section>
             </div>
           </main>
         </div>
       </div>
-      {globalTemplatesOpen && <WorkbenchDrawer title="系统模板" wide bodyClassName="wb-template-body" onClose={() => setGlobalTemplatesOpen(false)}><SystemTemplatesPanel onNavigatePayroll={()=>{setGlobalTemplatesOpen(false);handleNavigatePayroll();}} /></WorkbenchDrawer>}
+      {globalTemplatesOpen && (
+        <WorkbenchDrawer
+          title="系统标准模板"
+          wide
+          bodyClassName="wb-template-body"
+          onClose={() => setGlobalTemplatesOpen(false)}
+        >
+          <SystemTemplatesPanel
+            embeddedInDrawer
+            onNavigatePayroll={() => {
+              setGlobalTemplatesOpen(false);
+              handleNavigatePayroll();
+            }}
+            onQuickUpload={files => {
+              setGlobalTemplatesOpen(false);
+              setPayrollSubView('batches');
+              setTaskKind('payroll');
+              navigateWorkspace('create');
+              void uploadFilesAndExecute(
+                files.map(file => ({ file, relativePath: file.name })),
+              );
+            }}
+          />
+        </WorkbenchDrawer>
+      )}
       {deductionOpen && <StationDeductionManager platform={(!deductionDefaultOnly && payrollPreparation ? payrollPreparation.mode : appConfig.payrollSourceMode)==='xiaoxiang'?'xiaoxiang':'fengshen'} apiFetch={fetchWithAuth} onClose={() => { setDeductionOpen(false); setDeductionVersion(value => value + 1); }} onSaved={() => setDeductionVersion(value => value + 1)} />}
 
+      {logDrawerOpen && (
+        <WorkbenchDrawer
+          title="引擎运行日志终端"
+          wide
+          bodyClassName="wbx-drawer__body--flush"
+          onClose={() => setLogDrawerOpen(false)}
+        >
+          <TerminalPanel
+            logs={logs}
+            progress={progress}
+            progressText={progressText}
+            isRunning={isRunning}
+            showFooterProgress
+            embeddedInDrawer
+            onClear={() => setLogs([], 'core')}
+          />
+        </WorkbenchDrawer>
+      )}
+
+      <CommandPaletteModal
+        open={cmdkOpen}
+        commands={buildShellCommands(
+          {
+            workspaceView,
+            taskKind: taskKind === 'generate' ? 'download' : taskKind,
+            downloadPlatform,
+            payrollSubView,
+          },
+          { sidebarCollapsed: sidebarIsCollapsed },
+        )}
+        onClose={() => setCmdkOpen(false)}
+        onExecute={executeShellAction}
+      />
 
       <UploadProgressOverlay status={uploadStatus} appTheme={appTheme} />
       <FengshenLoginModal workspaceId={workspaceId} downloadAccountId="shared" requestVersion={fengshenLoginRequest} eventStatus={fengshenAuthEvent} onStatus={setFengshenAuthStatus} />

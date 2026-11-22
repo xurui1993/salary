@@ -1,0 +1,426 @@
+import { isGlobalDataset } from './downloadCenterLogic';
+
+export type TaskPlatformTone = 'fengshen' | 'xiaoxiang' | 'lanorange' | 'payout' | 'neutral';
+
+export interface TaskDisplayRecord {
+  id: string;
+  kind: string;
+  title?: string;
+  price_id?: string;
+  cities: string[];
+  datasets: string[];
+  start: string;
+  end: string;
+  status: string;
+  created_at: string;
+  updated_at?: string;
+  elapsed_seconds?: number;
+  error?: string;
+  files: { id: string; run_id?: string; name: string; city?: string; bytes: number; available?: boolean; unavailable_reason?: string }[];
+  source_files?: { id: string; run_id?: string; name: string; city?: string; bytes: number; available?: boolean; unavailable_reason?: string }[];
+  available_files: number;
+  failed_items: number;
+  completed_items: number;
+  total_items: number;
+  summary_issue?: boolean;
+}
+
+export interface TaskPrimaryAction {
+  type: 'restore' | 'attention' | 'download' | 'price';
+  label: string;
+  tone: 'primary' | 'warn' | 'danger' | 'neutral';
+}
+
+const KNOWN_PREFIXES = [
+  '风神',
+  '灯塔',
+  '小象灯塔',
+  '蓝橙',
+  '蓝橙价格审批',
+  '待审每日价格导出',
+  '商翼',
+  '本来人力',
+  '业务报表',
+  '资料下载',
+  '价格审批',
+  '每日价格',
+];
+
+/**
+ * 去除任务标题中与「来源 / 类型」列重复的前缀，让首列只保留核心业务内容。
+ */
+export function cleanTaskTitle(rawTitle: string, platformName?: string, kindLabel?: string): string {
+  const trimmed = (rawTitle || '').trim();
+  if (!trimmed) return '未命名任务';
+  const prefixes = new Set(KNOWN_PREFIXES);
+  if (platformName) prefixes.add(platformName.trim());
+  if (kindLabel) prefixes.add(kindLabel.trim());
+
+  const sepMatch = /^([^·\-—:：]{2,12})\s*[·\-—:：]\s*(.+)$/.exec(trimmed);
+  if (sepMatch) {
+    const head = sepMatch[1].trim();
+    const rest = sepMatch[2].trim();
+    if (rest && prefixes.has(head)) {
+      return rest;
+    }
+  }
+  return trimmed;
+}
+
+export function platformTone(platformName: string): TaskPlatformTone {
+  if (/风神/.test(platformName)) return 'fengshen';
+  if (/灯塔|小象/.test(platformName)) return 'xiaoxiang';
+  if (/蓝橙/.test(platformName)) return 'lanorange';
+  if (/商翼|本来/.test(platformName)) return 'payout';
+  return 'neutral';
+}
+
+export function formatCitiesCompact(cities: string[]): { short: string; full: string } {
+  const list = (cities || []).map(c => c.trim()).filter(Boolean);
+  if (!list.length) return { short: '全部城市', full: '全部城市' };
+  const full = list.join('、');
+  if (list.length <= 2) return { short: full, full };
+  return { short: `${list.slice(0, 2).join('、')}等${list.length}城`, full };
+}
+
+function shortDate(value?: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec((value || '').trim());
+  return match ? `${match[2]}.${match[3]}` : (value || '').trim();
+}
+
+export function formatPeriodCompact(
+  start: string,
+  end: string,
+  datasets: string[],
+): { short: string; full: string } {
+  if (!datasets.length) return { short: '业务记录', full: '详见业务记录' };
+  if (datasets.every(isGlobalDataset)) return { short: '全量范围', full: '全量数据' };
+  if (datasets.every(id => id === 'rider_archive')) return { short: '当前快照', full: '当前最新快照' };
+  const s = shortDate(start);
+  const e = shortDate(end);
+  if (s && e) {
+    if (s === e) return { short: s, full: start };
+    return { short: `${s} - ${e}`, full: `${start} 至 ${end}` };
+  }
+  const fallback = s || e || '—';
+  return { short: fallback, full: start || end || '—' };
+}
+
+/**
+ * 列表紧凑时间：今天/昨天仅显示时分，跨天显示 MM-DD HH:mm，悬停展示完整时间。
+ */
+export function formatCompactTimestamp(iso?: string, nowMs: number = Date.now()): { short: string; full: string } {
+  if (!iso) return { short: '—', full: '—' };
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) return { short: iso, full: iso };
+
+  const full = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(date);
+
+  const fmtParts = (d: Date) => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(d);
+    const get = (t: string) => parts.find(p => p.type === t)?.value || '';
+    return {
+      ymd: `${get('year')}-${get('month')}-${get('day')}`,
+      md: `${get('month')}-${get('day')}`,
+      hm: `${get('hour')}:${get('minute')}`,
+    };
+  };
+
+  const target = fmtParts(date);
+  const today = fmtParts(new Date(nowMs));
+  const yesterday = fmtParts(new Date(nowMs - 86_400_000));
+
+  if (target.ymd === today.ymd) {
+    return { short: `今天 ${target.hm}`, full };
+  }
+  if (target.ymd === yesterday.ymd) {
+    return { short: `昨天 ${target.hm}`, full };
+  }
+  return { short: `${target.md} ${target.hm}`, full };
+}
+
+/**
+ * 为列表行收敛唯一场景主操作，消除「查看进度 + 详情」「停止 + 停止并移出」等重复按钮噪音。
+ */
+export function resolveTaskPrimaryAction(
+  task: Pick<TaskDisplayRecord, 'status' | 'kind' | 'price_id' | 'available_files' | 'failed_items' | 'summary_issue'>,
+  archived = false,
+): TaskPrimaryAction | null {
+  if (archived) {
+    return { type: 'restore', label: '恢复', tone: 'primary' };
+  }
+  if (task.status === 'waiting_login' || task.status === 'waiting_manual') {
+    return { type: 'attention', label: '去验证', tone: 'warn' };
+  }
+  if (task.status === 'needs_review') {
+    return { type: 'attention', label: '去核实', tone: 'warn' };
+  }
+  if (['error', 'failed', 'interrupted'].includes(task.status)) {
+    return { type: 'attention', label: '查看原因', tone: 'danger' };
+  }
+  if (task.status === 'partial' || (task.failed_items > 0 && task.status !== 'running' && task.status !== 'queued') || task.summary_issue) {
+    return { type: 'attention', label: '处理异常', tone: 'warn' };
+  }
+  if (task.status === 'success') {
+    if (task.price_id && task.kind === 'approval') {
+      return { type: 'price', label: '看回执', tone: 'primary' };
+    }
+    if (task.available_files > 0) {
+      return { type: 'download', label: '下载', tone: 'primary' };
+    }
+  }
+  return null;
+}
+
+/**
+ * 仅在存在真实异常、阻塞或空数据时返回一行诊断说明；健康任务返回空串以保持首列极致清爽。
+ */
+export function computeTaskDiagnosticNote(
+  task: Pick<TaskDisplayRecord, 'status' | 'error' | 'failed_items' | 'completed_items' | 'total_items'>,
+): { text: string; tone: 'warn' | 'error' | 'muted' } | null {
+  const err = (task.error || '').trim();
+  if (['error', 'failed', 'interrupted'].includes(task.status)) {
+    return { text: err || '执行遇到异常，点击查看原因并处理', tone: 'error' };
+  }
+  if (['waiting_login', 'waiting_manual', 'partial'].includes(task.status)) {
+    if (err) return { text: err, tone: 'warn' };
+    if (task.failed_items > 0) {
+      return { text: `${task.failed_items} 项未完成，已有文件可先下载`, tone: 'warn' };
+    }
+    return {
+      text: task.status === 'waiting_login' ? '平台登录态失效，请重新授权后继续' : '等待人工安全验证完成后继续',
+      tone: 'warn',
+    };
+  }
+  if (task.status === 'empty') {
+    return { text: err || '所选区间无业务数据，未生成空文件', tone: 'muted' };
+  }
+  return null;
+}
+
+export function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 KB';
+  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`;
+  return `${Math.max(1, Math.ceil(bytes / 1024))} KB`;
+}
+
+export interface TaskTimelineStep {
+  time: string;
+  text: string;
+  tone?: 'normal' | 'warn' | 'error' | 'success';
+}
+
+export function buildTaskTimelineSteps(task: TaskDisplayRecord, platformName: string): TaskTimelineStep[] {
+  const clock = (iso?: string) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (!Number.isFinite(d.getTime())) return '—';
+    return new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).format(d);
+  };
+
+  const steps: TaskTimelineStep[] = [
+    {
+      time: clock(task.created_at),
+      text: `任务已创建（${platformName} · 共 ${Math.max(1, task.total_items)} 项采集/生成子任务）`,
+      tone: 'normal',
+    },
+  ];
+
+  if (task.status === 'queued') {
+    steps.push({ time: '当前', text: '正在排队等待采集通道释放', tone: 'normal' });
+    return steps;
+  }
+
+  if (task.completed_items > 0 && task.status !== 'success') {
+    steps.push({
+      time: clock(task.updated_at || task.created_at),
+      text: `已完成 ${task.completed_items} / ${Math.max(1, task.total_items)} 项，产出 ${task.available_files} 个可用文件`,
+      tone: 'normal',
+    });
+  }
+
+  if (task.status === 'running') {
+    steps.push({ time: '进行中', text: '后台持续同步中，完成后将自动归档结果文件', tone: 'normal' });
+  } else if (task.status === 'waiting_login' || task.status === 'waiting_manual') {
+    steps.push({
+      time: clock(task.updated_at),
+      text: task.error || '任务已暂停，等待完成平台认证或人工验证后自动继续',
+      tone: 'warn',
+    });
+  } else if (task.status === 'partial') {
+    steps.push({
+      time: clock(task.updated_at),
+      text: task.error || `部分完成：成功 ${task.completed_items} 项，失败 ${task.failed_items} 项`,
+      tone: 'warn',
+    });
+  } else if (['error', 'failed', 'interrupted'].includes(task.status)) {
+    steps.push({
+      time: clock(task.updated_at),
+      text: task.error || '任务执行中断，请核对原因后重新发起',
+      tone: 'error',
+    });
+  } else if (task.status === 'cancelled' || task.status === 'cancelling') {
+    steps.push({
+      time: clock(task.updated_at),
+      text: task.status === 'cancelling' ? '正在安全中止执行中的子请求' : '任务已手动停止，历史记录已保留',
+      tone: 'normal',
+    });
+  } else if (task.status === 'empty') {
+    steps.push({
+      time: clock(task.updated_at),
+      text: task.error || '平台返回 0 条业务记录，未生成空文件',
+      tone: 'normal',
+    });
+  } else if (task.status === 'success') {
+    steps.push({
+      time: clock(task.updated_at),
+      text: `全部 ${Math.max(1, task.total_items)} 项处理完成，已归档 ${task.available_files} 个可下载结果文件`,
+      tone: 'success',
+    });
+  }
+
+  return steps;
+}
+
+export type TaskAuthSystem = 'fengshen' | 'baize' | 'benlai' | 'xiaoxiang' | 'lanorange';
+
+const XIAOXIANG_DATASETS = new Set([
+  'rider_daily',
+  'rider_archive',
+  'detail_orders',
+  'detail_kesu',
+  'detail_reviews',
+  'rider_order_detail',
+  'xiaoxiang_attendance_detail',
+]);
+
+/**
+ * 根据任务数据集或业务类型解析需要触发认证/验证的来源平台标识。
+ */
+export function resolveTaskAuthSystem(
+  task: Pick<TaskDisplayRecord, 'kind' | 'price_id' | 'datasets'>,
+): TaskAuthSystem {
+  if (task.price_id || task.kind === 'approval' || task.kind === 'price-export') {
+    return 'lanorange';
+  }
+  const sets = task.datasets || [];
+  if (sets.some(id => id === 'baize_employees')) return 'baize';
+  if (sets.some(id => id === 'benlai_employees')) return 'benlai';
+  if (sets.some(id => id === 'lanorange_summary')) return 'lanorange';
+  if (sets.some(id => XIAOXIANG_DATASETS.has(id))) return 'xiaoxiang';
+  return 'fengshen';
+}
+
+export function isTaskRetryable(task: Pick<TaskDisplayRecord, 'status' | 'kind'>): boolean {
+  if (!['download', 'generate', 'payroll_source'].includes(task.kind)) return false;
+  return ['error', 'failed', 'interrupted', 'partial', 'cancelled'].includes(task.status);
+}
+
+export type TaskDatePreset = 'today' | '7d' | 'month';
+
+export function computeDatePresetRange(
+  preset: TaskDatePreset,
+  nowMs: number = Date.now(),
+): { from: string; to: string } {
+  const toYmd = (ms: number) => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date(ms));
+    const get = (t: string) => parts.find(p => p.type === t)?.value || '';
+    return `${get('year')}-${get('month')}-${get('day')}`;
+  };
+  const today = toYmd(nowMs);
+  if (preset === 'today') {
+    return { from: today, to: today };
+  }
+  if (preset === '7d') {
+    return { from: toYmd(nowMs - 6 * 86_400_000), to: today };
+  }
+  return { from: `${today.slice(0, 7)}-01`, to: today };
+}
+
+export interface TaskBatchSelectionSummary {
+  total: number;
+  downloadableIds: string[];
+  downloadableCount: number;
+  skippedDownloadCount: number;
+  activeIds: string[];
+  activeCount: number;
+}
+
+const BATCH_ACTIVE_SET = new Set([
+  'queued',
+  'running',
+  'waiting_login',
+  'waiting_manual',
+  'preparing',
+]);
+
+/**
+ * 智能拆分已选任务中的「可打包下载子集」与「可停止运行中子集」，避免全选混入不可下载任务导致按钮整体失效。
+ */
+export function summarizeTaskBatchSelection(
+  chosen: Pick<TaskDisplayRecord, 'id' | 'kind' | 'status' | 'available_files'>[],
+): TaskBatchSelectionSummary {
+  const downloadableIds = chosen
+    .filter(r => ['download', 'generate', 'payroll_source'].includes(r.kind) && r.available_files > 0)
+    .slice(0, 20)
+    .map(r => r.id);
+  const activeIds = chosen
+    .filter(r => BATCH_ACTIVE_SET.has(r.status))
+    .map(r => r.id);
+  return {
+    total: chosen.length,
+    downloadableIds,
+    downloadableCount: downloadableIds.length,
+    skippedDownloadCount: Math.max(0, chosen.length - downloadableIds.length),
+    activeIds,
+    activeCount: activeIds.length,
+  };
+}
+
+export type TaskCenterSortKey = 'created_desc' | 'elapsed_desc' | 'files_desc';
+
+export function sortTaskDisplayRecords<T extends Pick<TaskDisplayRecord, 'created_at' | 'elapsed_seconds' | 'available_files'>>(
+  records: T[],
+  sortKey: TaskCenterSortKey,
+): T[] {
+  const copy = [...records];
+  if (sortKey === 'created_desc') {
+    copy.sort((a, b) => (Date.parse(b.created_at || '') || 0) - (Date.parse(a.created_at || '') || 0));
+    return copy;
+  }
+  if (sortKey === 'elapsed_desc') {
+    copy.sort((a, b) => (b.elapsed_seconds || 0) - (a.elapsed_seconds || 0));
+  } else if (sortKey === 'files_desc') {
+    copy.sort((a, b) => (b.available_files || 0) - (a.available_files || 0));
+  }
+  return copy;
+}
+

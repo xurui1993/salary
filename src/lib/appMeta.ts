@@ -15,4 +15,4 @@ export const APP_DESCRIPTION = '兼职运力采集、薪资核算与价格审批
 export const SIDEBAR_BRAND = '薪酬结算中心';
 
 /** 侧栏品牌副标题：宽屏展开时显示，窄栏折叠时作为 `title` 悬浮提示。 */
-export const SIDEBAR_BRAND_HINT = '多平台数据采集与自动化核算';
+export const SIDEBAR_BRAND_HINT = '多平台数据采集自动化核算';

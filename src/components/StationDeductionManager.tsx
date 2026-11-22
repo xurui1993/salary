@@ -21,6 +21,7 @@ import {
   type DeductionCategoryId,
 } from '../lib/deductionCategories';
 import { applyCityAmounts } from '../lib/payrollReviewActions';
+import { buildDemoDeductionData } from '../lib/showcaseDemoData';
 import {
   AlertCircle,
   Check,
@@ -31,6 +32,7 @@ import {
   FolderCog,
   RefreshCw,
   RotateCcw,
+  Search,
   Tag,
   Upload,
   X,
@@ -91,6 +93,10 @@ export function StationDeductionManager({
   const [problemDirty, setProblemDirty] = useState(false);
   const configUpload = useRef<HTMLInputElement>(null);
   const initializedExpandRef = useRef<string>('');
+  const [demoEnabled, setDemoEnabled] = useState(true);
+  const [hasLiveData, setHasLiveData] = useState(false);
+  const [demoDirectoryCities, setDemoDirectoryCities] = useState<Array<{ id: string; name: string; station_count?: number }>>([]);
+  const isDemoMode = !hasLiveData && demoEnabled;
 
   const directory = useStationDirectory(currentPlatform, apiFetch);
 
@@ -101,25 +107,61 @@ export function StationDeductionManager({
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || '扣款读取失败');
         if (controller.signal.aborted) return;
-        setProfile((prev: any) => (dirty && prev ? prev : data));
-        setEntries((prev: any[]) => {
-          if (!dirty) return data.entries;
-          const map = new Map(prev.map(item => [item.key, item]));
-          return data.entries.map((item: any) => map.get(item.key) || item);
-        });
-        setCities((prev: any[]) => (dirty ? prev : data.cities || []));
-        setError('');
+        const liveHasRows = (data.entries?.length || 0) > 0 || (data.cities?.length || 0) > 0;
+        setHasLiveData(liveHasRows);
+        if (liveHasRows) {
+          setDemoDirectoryCities([]);
+          setProfile((prev: any) => (dirty && prev ? prev : data));
+          setEntries((prev: any[]) => {
+            if (!dirty) return data.entries;
+            const map = new Map(prev.map(item => [item.key, item]));
+            return data.entries.map((item: any) => map.get(item.key) || item);
+          });
+          setCities((prev: any[]) => (dirty ? prev : data.cities || []));
+          setError('');
+        } else if (demoEnabled) {
+          if (!dirty) {
+            const demo = buildDemoDeductionData(currentPlatform);
+            setProfile(demo.profile);
+            setEntries(demo.entries);
+            setCities(demo.cities);
+            setDemoDirectoryCities(demo.directoryCities);
+          }
+          setError('');
+        } else {
+          setProfile(data);
+          setEntries([]);
+          setCities([]);
+          setDemoDirectoryCities([]);
+          setError('');
+        }
       })
       .catch(err => {
         if (controller.signal.aborted) return;
-        setError(readErrorMessage(err, '扣款配置读取失败，请检查后台连接后重试'));
+        setHasLiveData(false);
+        if (demoEnabled) {
+          if (!dirty) {
+            const demo = buildDemoDeductionData(currentPlatform);
+            setProfile(demo.profile);
+            setEntries(demo.entries);
+            setCities(demo.cities);
+            setDemoDirectoryCities(demo.directoryCities);
+          }
+          setError('');
+        } else {
+          setProfile(null);
+          setEntries([]);
+          setCities([]);
+          setDemoDirectoryCities([]);
+          setError(readErrorMessage(err, '扣款配置读取失败，请检查后台连接后重试'));
+        }
       });
     return () => controller.abort();
-  }, [currentPlatform, directory.data?.stations.length, directory.data?.fetched_at, directory.data?.status, reloadKey, dirty]);
+  }, [currentPlatform, directory.data?.stations.length, directory.data?.fetched_at, directory.data?.status, reloadKey, dirty, demoEnabled]);
 
   const effectiveDirectoryCities = useMemo(
-    () => directory.data?.cities || [],
-    [directory.data?.cities],
+    () => (isDemoMode ? demoDirectoryCities : directory.data?.cities || []),
+    [isDemoMode, demoDirectoryCities, directory.data?.cities],
   );
 
   const activeColumns: string[] = useMemo(
@@ -225,11 +267,42 @@ export function StationDeductionManager({
     switchPlatform(next);
   };
 
+  const modifiedCityCount = cities.filter(item => item.edited).length;
+  const modifiedStationCount = entries.filter(item => item.edited).length;
+  const hasUnsavedChanges = dirty || problemDirty || Boolean(pendingProblemRows?.length);
+
+  const handleDiscard = () => {
+    if (saving) return;
+    setDirty(false);
+    setProblemDirty(false);
+    setPendingProblemRows(null);
+    setProblemPreview(null);
+    setUndoEntries(null);
+    setError('');
+    setNotice('已放弃未保存的修改，恢复为上次保存的扣款规则。');
+    setReloadKey(val => val + 1);
+  };
+
   async function handleSave() {
     if (!profile) return;
     setSaving(true);
     setError('');
     try {
+      if (isDemoMode) {
+        setCities(prev => prev.map(c => (c.edited ? { ...c, edited: false, configured: true } : c)));
+        setEntries(prev => prev.map(e => (e.edited ? { ...e, edited: false, configured: true } : e)));
+        setDirty(false);
+        setProblemDirty(false);
+        setPendingProblemRows(null);
+        setProblemPreview(null);
+        setUndoEntries(null);
+        setNotice(
+          currentPlatform === 'xiaoxiang'
+            ? '示例小象超市扣款规则已本地保存（共 30 站），连接灯塔后将自动切换为真实数据。'
+            : '示例站点扣款与问题单关键词规则已本地保存（共 30 站），连接风神后将自动切换为真实数据。',
+        );
+        return;
+      }
       const editedEntries = entries.filter(item => item.edited);
       const editedCities = cities.filter(item => item.edited);
       const hasProblemUpdates =
@@ -466,12 +539,14 @@ export function StationDeductionManager({
     else onClose?.();
   };
 
-  const errorMessage = String(
-    error ||
-      (directory.error ? readErrorMessage(directory.error, '扣款配置读取失败，请检查后台连接后重试') : '') ||
-      directory.data?.message ||
-      '',
-  );
+  const errorMessage = isDemoMode
+    ? ''
+    : String(
+        error ||
+          (directory.error ? readErrorMessage(directory.error, '扣款配置读取失败，请检查后台连接后重试') : '') ||
+          directory.data?.message ||
+          '',
+      );
 
   const visibleProblemRules = useMemo(() => {
     const visibleCityIds = new Set(cityGroups.map(g => g.summary.cityId));
@@ -493,43 +568,74 @@ export function StationDeductionManager({
     });
   }, [citySummaries, citySearch, onlyPendingCities]);
 
+  const activeCategorySpec = useMemo(
+    () => (activeCategory === 'all' ? null : categorySpecs.find(cat => cat.id === activeCategory) || null),
+    [activeCategory, categorySpecs],
+  );
+
+  const isOfflineLoginEmpty =
+    entries.length === 0 &&
+    cities.length === 0 &&
+    Boolean(errorMessage && errorMessage.includes('登录'));
+
   const content = (
     <>
-      {/* 1. 顶部操作卡 */}
-      <div className="wbx-toolbar wbx-deduction-head">
-        <div className="wbx-toolbar__lead wbx-deduction-head__lead">
-          <div>
-            <h3 className="wbx-deduction-head__title">
-              {currentPlatform === 'xiaoxiang' ? '小象超市扣款规则配置' : '站点扣款规则配置'}
-            </h3>
-            <p className="wbx-hint tabular-nums">
-              {citySummaries.length} 城 / {entries.length} 站 · 已配 {configuredCount} · 待配 {pendingCount} ·{' '}
-              {currentPlatform === 'xiaoxiang' ? '小象超市' : '风神/闪购'}（{activeColumns.length} 项）
-            </p>
+      {/* 1. 顶部统一极简下划线操作条：业务线页签 + 精简计数 + Excel 导入导出与保存 */}
+      <div className="wbx-ded-topbar">
+        <div className="wbx-ded-topbar__left">
+          <div className="wbx-ded-tabs" role="group" aria-label="扣款业务切换">
+            <button
+              type="button"
+              className={`wbx-ded-tab${currentPlatform === 'fengshen' ? ' is-active' : ''}`}
+              aria-pressed={currentPlatform === 'fengshen'}
+              disabled={saving}
+              onClick={() => requestPlatform('fengshen')}
+            >
+              <span>风神 / 闪购</span>
+              {currentPlatform === 'fengshen' && (
+                <span className="wbx-ded-tab__count tabular-nums">{activeColumns.length}</span>
+              )}
+            </button>
+            <button
+              type="button"
+              className={`wbx-ded-tab${currentPlatform === 'xiaoxiang' ? ' is-active' : ''}`}
+              aria-pressed={currentPlatform === 'xiaoxiang'}
+              disabled={saving}
+              onClick={() => requestPlatform('xiaoxiang')}
+            >
+              <span>小象超市</span>
+              {currentPlatform === 'xiaoxiang' && (
+                <span className="wbx-ded-tab__count tabular-nums">{activeColumns.length}</span>
+              )}
+            </button>
           </div>
-          <div className="wbx-row gap-2 items-center">
-            <div className="wb-segment" role="group" aria-label="扣款业务切换">
-              <button
-                type="button"
-                aria-pressed={currentPlatform === 'fengshen'}
-                disabled={saving}
-                onClick={() => requestPlatform('fengshen')}
-              >
-                风神
-              </button>
-              <button
-                type="button"
-                aria-pressed={currentPlatform === 'xiaoxiang'}
-                disabled={saving}
-                onClick={() => requestPlatform('xiaoxiang')}
-              >
-                小象超市
-              </button>
-            </div>
-            {dirty && <span className="wbx-hint">有未保存修改</span>}
-          </div>
+
+          <span className="wbx-ded-inline-meta tabular-nums">
+            <strong>{citySummaries.length}</strong> 城 / <strong>{entries.length}</strong> 站 · 已配 {configuredCount} · 待配 {pendingCount}
+          </span>
+          {dirty && <span className="wbx-ded-dirty-tag">有未保存修改</span>}
         </div>
-        <div className="wbx-toolbar__actions">
+
+        <div className="wbx-ded-topbar__right">
+          {!hasLiveData && (
+            <span className="wbx-demo-group">
+              {isDemoMode && <span className="wbx-demo-badge">示例数据</span>}
+              <button
+                type="button"
+                className="wbx-btn wbx-btn--sm wbx-btn--ghost"
+                disabled={saving}
+                onClick={() => {
+                  setDirty(false);
+                  setProblemDirty(false);
+                  setExpandedCities(new Set());
+                  setExpandedStations(new Set());
+                  setDemoEnabled(prev => !prev);
+                }}
+              >
+                {demoEnabled ? '隐藏示例' : '加载 30 站示例'}
+              </button>
+            </span>
+          )}
           <button
             type="button"
             className="wbx-btn wbx-btn--sm"
@@ -539,8 +645,8 @@ export function StationDeductionManager({
               : '支持导入含「城市与站点扣款项」及「问题单关键词扣款」的多表 Excel（.xlsx/.xls）'}
             onClick={() => configUpload.current?.click()}
           >
-            <Upload size={14} />
-            导入配置 Excel
+            <Upload size={13.5} aria-hidden="true" />
+            <span>导入配置 Excel</span>
           </button>
           <button
             type="button"
@@ -551,17 +657,19 @@ export function StationDeductionManager({
               : '导出含城市/站点扣款项与问题单关键词明细的多表 Excel'}
             onClick={() => void handleExportConfigExcel()}
           >
-            <FileSpreadsheet size={14} />
-            导出配置 Excel
+            <FileSpreadsheet size={13.5} aria-hidden="true" />
+            <span>导出配置 Excel</span>
           </button>
           <button
-            className="wbx-btn wbx-btn--primary"
-            disabled={saving || !dirty || directory.data?.status !== 'ready'}
+            type="button"
+            className="wbx-btn wbx-btn--primary wbx-btn--sm"
+            disabled={saving || !dirty || (!isDemoMode && directory.data?.status !== 'ready')}
             onClick={() => void handleSave()}
           >
             {saving ? '保存中…' : '保存后续默认扣款'}
           </button>
         </div>
+
         <input
           ref={configUpload}
           type="file"
@@ -602,10 +710,11 @@ export function StationDeductionManager({
         </div>
       )}
 
-      {errorMessage && (
+      {/* 仅在非「未登录空状态」时展示顶部错误条，避免与空态主引导重复 */}
+      {errorMessage && !isOfflineLoginEmpty && (
         <div className="wbx-deduction-alert" role="alert">
           <div className="wbx-deduction-alert__body">
-            <AlertCircle size={15} />
+            <AlertCircle size={15} aria-hidden="true" />
             <span>{errorMessage}</span>
           </div>
           {errorMessage.includes('登录') && (
@@ -620,66 +729,133 @@ export function StationDeductionManager({
         </div>
       )}
 
-      {/* 2. 单行扣款项类目切换条（替代原重复标签+大卡两层结构） */}
-      <section className="wbx-category-strip" aria-label="切换扣款项类目">
-        <button
-          type="button"
-          className={`wbx-category-card is-all ${activeCategory === 'all' ? 'is-active' : ''}`}
-          onClick={() => setActiveCategory('all')}
-        >
-          <div className="wbx-category-card__head">
-            <strong>全部类目</strong>
-            <span className="tabular-nums">{activeColumns.length} 项</span>
-          </div>
-          <p className="wbx-category-card__fields">
-            展示全部 {categorySpecs.length} 个类目扣款金额{currentPlatform === 'xiaoxiang' ? '' : '与天数阈值'}
-          </p>
-        </button>
-        {categorySpecs.map(cat => {
-          const isSelected = activeCategory === cat.id;
-          return (
-            <button
-              key={cat.id}
-              type="button"
-              className={`wbx-category-card ${isSelected ? 'is-active' : ''}`}
-              onClick={() => setActiveCategory(prev => (prev === cat.id ? 'all' : cat.id))}
-            >
-              <div className="wbx-category-card__head">
-                <strong>{cat.label}</strong>
-                <span className="tabular-nums">{cat.columns.length} 项 · {cat.unitHint}</span>
-              </div>
-              <p className="wbx-category-card__fields">
-                {cat.columns.map(col => columnDisplayLabel(col)).join(' · ')}
-              </p>
-            </button>
-          );
-        })}
-      </section>
+      {notice && (
+        <p role="status" className="wb-notice">
+          {notice}
+        </p>
+      )}
 
-      {/* 3. 城市与站点层级精简工具栏 + 20城快选矩阵 */}
-      <section className="wbx-hierarchy-toolbar" aria-label="城市站点筛选与层级控制">
-        <div className="wbx-hierarchy-toolbar__row">
-          <div className="wbx-hierarchy-toolbar__filters">
-            <input
-              className="wb-input wbx-hierarchy-search"
-              aria-label="搜索城市或站点"
-              placeholder="搜索城市、站点名称或编号..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
+      {/* 2. 主容器一：类目筛选条 + 城市/站点搜索过滤 + 城市快选 + 主体内容 */}
+      <section className="wbx-ded-workspace" aria-label="城市与站点扣款规则工作区">
+        {/* 单行轻量类目切换条（对齐数据采集页 .wbx-dc-catbar） */}
+        <div className="wbx-ded-catbar-wrap">
+          <div className="wbx-ded-catbar" role="group" aria-label="切换扣款项类目">
             <button
               type="button"
-              className={`wbx-btn wbx-btn--sm ${onlyUnconfigured ? 'wbx-btn--primary' : ''}`}
+              className={`wbx-ded-cat${activeCategory === 'all' ? ' is-active' : ''}`}
+              aria-pressed={activeCategory === 'all'}
+              onClick={() => setActiveCategory('all')}
+              title={`展示全部 ${categorySpecs.length} 个类目共 ${activeColumns.length} 个扣款字段`}
+            >
+              <span>全部类目</span>
+              <span className="wbx-ded-cat__count tabular-nums">{activeColumns.length}</span>
+            </button>
+            {categorySpecs.map(cat => {
+              const isSelected = activeCategory === cat.id;
+              const fieldNames = cat.columns.map(col => columnDisplayLabel(col)).join(' · ');
+              return (
+                <button
+                  key={cat.id}
+                  type="button"
+                  className={`wbx-ded-cat${isSelected ? ' is-active' : ''}`}
+                  aria-pressed={isSelected}
+                  onClick={() => setActiveCategory(prev => (prev === cat.id ? 'all' : cat.id))}
+                  title={`${cat.label}（${cat.unitHint}）：${fieldNames}`}
+                >
+                  <span>{cat.label}</span>
+                  <span className="wbx-ded-cat__count tabular-nums">{cat.columns.length}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="wbx-ded-cat-summary">
+            {activeCategorySpec ? (
+              <span>
+                <strong>{activeCategorySpec.label}</strong>（{activeCategorySpec.unitHint}）：
+                {activeCategorySpec.columns.map(col => columnDisplayLabel(col)).join(' · ')}
+              </span>
+            ) : (
+              <span>
+                共 {categorySpecs.length} 大类目、{activeColumns.length} 个字段
+                {currentPlatform === 'xiaoxiang'
+                  ? '（保险费 · 循环物资使用费 · 附加险）'
+                  : '，支持按城市默认与站点例外两级配置'}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* 紧凑搜索与筛选条 */}
+        <div className="wbx-ded-filterbar" aria-label="城市站点筛选与层级控制">
+          <div className="wbx-ded-filterbar__left">
+            <div className="wbx-ded-search">
+              <Search size={13.5} className="wbx-ded-search__icon" aria-hidden="true" />
+              <input
+                className="wbx-ded-search__input"
+                aria-label="搜索城市或站点"
+                placeholder="搜索城市、站点名称或编号…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+              {search.trim() && (
+                <button
+                  type="button"
+                  className="wbx-ded-search__clear"
+                  aria-label="清空搜索"
+                  onClick={() => setSearch('')}
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+
+            {citySummaries.length > 0 && (
+              <select
+                className="wb-select wbx-ded-city-select"
+                aria-label="按城市筛选扣款规则"
+                value={cityFilter}
+                onChange={event => {
+                  const targetId = event.target.value;
+                  const { nextCityFilter, nextExpandedCities } = resolveCityChipAction(cityFilter, targetId);
+                  setCityFilter(targetId ? nextCityFilter : '');
+                  setExpandedCities(targetId ? nextExpandedCities : new Set());
+                  if (targetId && nextCityFilter) {
+                    const cityStations = entries.filter(e => e.station.city_id === nextCityFilter);
+                    if (cityStations.length > 0) {
+                      setExpandedStations(prev => {
+                        if (cityStations.some(s => prev.has(s.key))) return prev;
+                        const next = new Set(prev);
+                        next.add(cityStations[0].key);
+                        return next;
+                      });
+                    }
+                  } else {
+                    setExpandedStations(new Set());
+                  }
+                }}
+              >
+                <option value="">全部城市 ({citySummaries.length})</option>
+                {filteredCityJumpSummaries.map(item => (
+                  <option key={item.cityId} value={item.cityId}>
+                    {item.cityName} · {item.configuredStations}/{item.totalStations} 站
+                  </option>
+                ))}
+              </select>
+            )}
+
+            <button
+              type="button"
+              className={`wbx-ded-filter-chip${onlyUnconfigured ? ' is-active' : ''}`}
               aria-pressed={onlyUnconfigured}
               onClick={() => setOnlyUnconfigured(v => !v)}
             >
-              <span className="tabular-nums">
-                {onlyUnconfigured ? `仅看未配 (${pendingCount})` : `仅看未配 (${pendingCount})`}
-              </span>
+              <span className="tabular-nums">仅看未配 ({pendingCount})</span>
             </button>
+
             <button
               type="button"
-              className={`wbx-btn wbx-btn--sm ${onlyPendingCities ? 'wbx-btn--primary' : ''}`}
+              className={`wbx-ded-filter-chip${onlyPendingCities ? ' is-active' : ''}`}
               aria-pressed={onlyPendingCities}
               onClick={() => setOnlyPendingCities(v => !v)}
             >
@@ -687,7 +863,7 @@ export function StationDeductionManager({
             </button>
           </div>
 
-          <div className="wbx-hierarchy-toolbar__actions">
+          <div className="wbx-ded-filterbar__right">
             {undoEntries && (
               <button
                 type="button"
@@ -699,8 +875,8 @@ export function StationDeductionManager({
                   setNotice('已撤销上次站点批量同步操作。');
                 }}
               >
-                <RotateCcw size={13} />
-                撤销同步
+                <RotateCcw size={13} aria-hidden="true" />
+                <span>撤销同步</span>
               </button>
             )}
             {cityGroups.length > 0 && (
@@ -715,122 +891,76 @@ export function StationDeductionManager({
                   }
                 }}
               >
-                {allCitiesExpanded ? <ChevronsDownUp size={13} /> : <ChevronsUpDown size={13} />}
-                {allCitiesExpanded ? '收起全部城市' : '展开全部城市'}
+                {allCitiesExpanded ? <ChevronsDownUp size={13} aria-hidden="true" /> : <ChevronsUpDown size={13} aria-hidden="true" />}
+                <span>{allCitiesExpanded ? '收起全部城市' : '展开全部城市'}</span>
               </button>
             )}
             {directory.data?.fetched_at && (
-              <span className="wbx-hint wbx-deduction-updated tabular-nums">
+              <span className="wbx-ded-updated tabular-nums">
                 更新于 {new Date(directory.data.fetched_at).toLocaleString('zh-CN')}
               </span>
             )}
             <button
+              type="button"
               className="wbx-btn wbx-btn--sm"
               onClick={() => directory.refresh()}
             >
-              <RefreshCw size={13} />
-              刷新目录
+              <RefreshCw size={13} aria-hidden="true" />
+              <span>刷新目录</span>
             </button>
           </div>
         </div>
 
-        {citySummaries.length > 0 && (
-          <div className="wbx-city-jump-strip" aria-label="城市快速定位">
-            <button
-              type="button"
-              className={`wbx-city-jump-chip ${cityFilter === '' ? 'is-active' : ''}`}
-              onClick={() => {
-                const { nextCityFilter, nextExpandedCities } = resolveCityChipAction(cityFilter, '');
-                setCityFilter(nextCityFilter);
-                setExpandedCities(nextExpandedCities);
-                setExpandedStations(new Set());
-              }}
-            >
-              <strong>全部 ({citySummaries.length})</strong>
-            </button>
-            {filteredCityJumpSummaries.map(item => {
-              const active = cityFilter === item.cityId;
-              const isComplete = item.totalStations > 0 && item.pendingStations === 0;
-              return (
+        {/* 工作区主体：统一克制的空态引导 OR 城市折叠卡片网格 */}
+        <div className="wbx-ded-workspace__body">
+          {entries.length === 0 && cities.length === 0 ? (
+            <div className="wbx-ded-empty">
+              <span className="wbx-ded-empty__icon" aria-hidden="true">
+                <FolderCog size={20} />
+              </span>
+              <h4 className="wbx-ded-empty__title">
+                {currentPlatform === 'xiaoxiang'
+                  ? '登录小象超市后同步城市与站点目录'
+                  : '登录风神 / 闪购后同步城市与站点目录'}
+              </h4>
+              <p className="wbx-ded-empty__desc">
+                {currentPlatform === 'xiaoxiang'
+                  ? '小象超市扣款包含保险费、循环物资使用费、附加险 3 项。完成授权同步后即可按城市默认与站点例外配置，也可先下载标准模板离线整理。'
+                  : '已就绪 3 大扣款类目、共 15 个配置字段。完成平台登录同步后将展开全部城市与下属站点，也可先下载标准配置模板离线维护。'}
+              </p>
+              <div className="wbx-ded-empty__actions">
                 <button
-                  key={item.cityId}
                   type="button"
-                  className={`wbx-city-jump-chip ${active ? 'is-active' : ''} ${isComplete ? 'is-complete' : 'is-pending'}`}
-                  onClick={() => {
-                    const { nextCityFilter, nextExpandedCities } = resolveCityChipAction(cityFilter, item.cityId);
-                    setCityFilter(nextCityFilter);
-                    setExpandedCities(nextExpandedCities);
-                    if (nextCityFilter) {
-                      const cityStations = entries.filter(e => e.station.city_id === nextCityFilter);
-                      if (cityStations.length > 0) {
-                        setExpandedStations(prev => {
-                          if (cityStations.some(s => prev.has(s.key))) return prev;
-                          const next = new Set(prev);
-                          next.add(cityStations[0].key);
-                          return next;
-                        });
-                      }
-                    } else {
-                      setExpandedStations(new Set());
-                    }
-                  }}
+                  className="wbx-btn wbx-btn--primary wbx-btn--sm"
+                  onClick={() => window.dispatchEvent(new CustomEvent('workbench:connections'))}
                 >
-                  <strong>{item.cityName}</strong>
-                  <span className="tabular-nums">
-                    {item.configuredStations}/{item.totalStations}
-                  </span>
+                  登录平台同步城市站点
                 </button>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      {notice && (
-        <p role="status" className="wb-notice">
-          {notice}
-        </p>
-      )}
-
-      {/* 4. 主体卡片区：未登录引导 OR 14+城市紧凑折叠面板列表 */}
-      {entries.length === 0 && cities.length === 0 ? (
-        <section className="wbx-panel wbx-deduction-offline-panel">
-          <EmptyState
-            icon={FolderCog}
-            title={currentPlatform === 'xiaoxiang' ? '等待读取小象超市城市与站点目录' : '等待读取平台城市与站点目录'}
-            description={currentPlatform === 'xiaoxiang'
-              ? '小象超市扣款规则包含保险费、循环物资使用费、附加险 3 项。登录小象平台并同步目录后，将按「城市折叠面板 → 站点分组卡片」展开城市与下属站点。'
-              : '已按标准 config 规则模板就绪 3 大扣款类目卡片、共 13 个配置字段。登录风神/闪购平台并同步目录后，将按「城市折叠面板 → 站点分组卡片」展开全部 14+ 城市与下属站点。'}
-            actions={[
-              {
-                label: '登录平台同步城市站点',
-                tone: 'primary',
-                onClick: () => window.dispatchEvent(new CustomEvent('workbench:connections')),
-              },
-              {
-                label: '下载标准配置模板',
-                onClick: () => void handleExportConfigExcel(),
-              },
-            ]}
-          />
-        </section>
-      ) : cityGroups.length === 0 ? (
-        <section className="wbx-panel wbx-deduction-offline-panel">
-          <EmptyState
-            icon={FilterX}
-            title="当前筛选下没有匹配的城市或站点"
-            description="换个城市或关键词，或清除筛选查看全部城市与站点卡片。"
-            actions={[
-              { label: '清除筛选', tone: 'primary', icon: X, onClick: clearFilters },
-            ]}
-          />
-        </section>
-      ) : (
-        <div className="wbx-city-accordion-list is-grid">
-          {cityGroups.map(group => {
-            const cityId = group.summary.cityId;
-            return (
-              <CityStationAccordionCard
+                <button
+                  type="button"
+                  className="wbx-btn wbx-btn--sm"
+                  onClick={() => void handleExportConfigExcel()}
+                >
+                  <FileSpreadsheet size={13.5} aria-hidden="true" />
+                  <span>下载标准配置模板</span>
+                </button>
+              </div>
+            </div>
+          ) : cityGroups.length === 0 ? (
+            <EmptyState
+              icon={FilterX}
+              title="当前筛选下没有匹配的城市或站点"
+              description="换个城市或关键词，或清除筛选查看全部城市与站点卡片。"
+              actions={[
+                { label: '清除筛选', tone: 'primary', icon: X, onClick: clearFilters },
+              ]}
+            />
+          ) : (
+            <div className="wbx-city-accordion-list is-grid">
+              {cityGroups.map(group => {
+                const cityId = group.summary.cityId;
+                return (
+                  <CityStationAccordionCard
                 key={cityId}
                 group={group}
                 allEntries={entries}
@@ -927,21 +1057,23 @@ export function StationDeductionManager({
             );
           })}
         </div>
-      )}
+          )}
+        </div>
+      </section>
 
-      {/* 5. 问题单关键词扣款汇总面板（小象超市仅 3 项扣款，不展示） */}
+      {/* 3. 主容器二：问题单关键词扣款明细面板（小象超市仅 3 项扣款，不展示） */}
       {profile && currentPlatform !== 'xiaoxiang' && (
         <section className="wbx-problem-panel" aria-label="问题单关键词扣款明细">
           <header className="wbx-problem-panel__head">
             <div className="wbx-problem-panel__title">
-              <Tag size={15} />
+              <Tag size={14.5} aria-hidden="true" />
               <strong>问题单关键词扣款明细</strong>
-              <span className="wbx-pill wbx-pill--neutral tabular-nums">
-                当前显示 {visibleProblemRules.length} 条 / 总计 {totalProblemRules} 条
+              <span className="wbx-problem-panel__count tabular-nums">
+                当前 {visibleProblemRules.length} / 总计 {totalProblemRules} 条
               </span>
             </div>
-            <span className="wbx-hint">
-              站点关键词优先于城市默认；可通过上方「导出配置 Excel / 导入配置 Excel」一次性维护扣款项与关键词工作表。
+            <span className="wbx-problem-panel__hint">
+              站点关键词优先于城市默认；可通过上方「导出 / 导入配置 Excel」统一维护
             </span>
           </header>
 
@@ -1046,6 +1178,12 @@ export function StationDeductionManager({
               </table>
             </div>
           )}
+
+          {!problemPreview && visibleProblemRules.length === 0 && (
+            <p className="wbx-problem-panel__empty">
+              暂无已配置的问题单关键词扣款规则。同步城市目录后，可在城市/站点内添加或通过 Excel 批量导入。
+            </p>
+          )}
         </section>
       )}
 
@@ -1062,6 +1200,46 @@ export function StationDeductionManager({
             {saving ? '保存中…' : '保存后续默认扣款'}
           </button>
         </footer>
+      )}
+
+      {inline && hasUnsavedChanges && (
+        <div className="wbx-ded-sticky-bar" role="region" aria-label="未保存的扣款规则更改">
+          <div className="wbx-ded-sticky-bar__info">
+            <span className="wbx-ded-sticky-bar__dot" aria-hidden="true" />
+            <span>
+              有未保存的扣款规则修改
+              {(modifiedCityCount > 0 || modifiedStationCount > 0) && (
+                <strong className="tabular-nums">
+                  （{[
+                    modifiedCityCount > 0 ? `${modifiedCityCount} 个城市` : '',
+                    modifiedStationCount > 0 ? `${modifiedStationCount} 个站点` : '',
+                    problemDirty || pendingProblemRows?.length ? '问题单关键词' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}）
+                </strong>
+              )}
+            </span>
+          </div>
+          <div className="wbx-ded-sticky-bar__actions">
+            <button
+              type="button"
+              className="wbx-btn wbx-btn--sm wbx-btn--ghost"
+              disabled={saving}
+              onClick={handleDiscard}
+            >
+              放弃修改
+            </button>
+            <button
+              type="button"
+              className="wbx-btn wbx-btn--primary wbx-btn--sm"
+              disabled={saving || (!isDemoMode && directory.data?.status !== 'ready')}
+              onClick={() => void handleSave()}
+            >
+              {saving ? '保存中…' : '保存后续默认扣款'}
+            </button>
+          </div>
+        </div>
       )}
 
       {confirmClose && (

@@ -1,18 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { UploadCloud } from 'lucide-react';
+import { FileSpreadsheet, UploadCloud } from 'lucide-react';
 
 interface ControlPanelProps {
   onUploadFiles?: (files: { file: File; relativePath: string }[]) => Promise<void>;
   onOpenTemplates?: () => void;
   isRunning?: boolean;
   separationOption?: React.ReactNode;
+  collapseAction?: React.ReactNode;
 }
 
 /**
  * 统一核算上传区：不再切换手动/自动模式。
  * 拖入模板文件=自动核算；拖入资料文件夹=手动核算；小象模板按文件名自动识别。
  */
-export function ControlPanel({ onUploadFiles, onOpenTemplates, isRunning = false, separationOption }: ControlPanelProps) {
+export function ControlPanel({ onUploadFiles, onOpenTemplates, isRunning = false, separationOption, collapseAction }: ControlPanelProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState('');
   const templateInputRef = useRef<HTMLInputElement>(null);
@@ -140,21 +141,14 @@ export function ControlPanel({ onUploadFiles, onOpenTemplates, isRunning = false
 
       <div className="wbx-payroll__upload-main">
         <div className="pq-upload-copy wbx-payroll__upload-copy">
-          <div className="wbx-payroll__upload-icon">
-            <UploadCloud size={24} />
+          <div className="wbx-payroll__upload-icon" aria-hidden="true">
+            <UploadCloud size={20} strokeWidth={1.85} />
           </div>
           <div className="wbx-payroll__upload-text">
-            <h3>拖入模板或资料文件夹</h3>
+            <h3>拖入模板文件或资料文件夹</h3>
             <p>
-              拖入 .xlsx 模板=自动核算；拖入包含模板及补充资料文件夹=手动核算；小象模板按文件名自动识别。
-              支持多模板同时入队，执行中可继续添加。
+              .xlsx 模板自动核算 · 含模板及补充资料的文件夹手动核算 · 小象与风神自动识别，执行中可继续叠加上传
             </p>
-            <div className="wbx-payroll__upload-hints">
-              <span>模板文件自动核算</span>
-              <span>资料文件夹手动核算</span>
-              <span>小象/风神自动识别</span>
-              <span>执行中可叠加上传</span>
-            </div>
           </div>
         </div>
 
@@ -171,7 +165,7 @@ export function ControlPanel({ onUploadFiles, onOpenTemplates, isRunning = false
             </button>
             <button
               type="button"
-              className="wbx-btn wbx-btn--ghost"
+              className="wbx-btn"
               disabled={isRunning}
               onClick={() => folderInputRef.current?.click()}
             >
@@ -180,12 +174,14 @@ export function ControlPanel({ onUploadFiles, onOpenTemplates, isRunning = false
             {onOpenTemplates && (
               <button
                 type="button"
-                className="wbx-btn wbx-btn--ghost"
+                className="wbx-btn"
                 onClick={onOpenTemplates}
               >
-                标准模板
+                <FileSpreadsheet size={14} aria-hidden="true" />
+                <span>标准模板</span>
               </button>
             )}
+            {collapseAction}
           </div>
         </div>
       </div>

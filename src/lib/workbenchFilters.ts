@@ -22,8 +22,31 @@ export function filterPayrollQueueTasks(
       return false;
     }
     if (!q) return true;
-    const hay = `${task.template_name || ''} ${task.plan?.city || ''} ${task.batch_id || ''} ${task.current_action || ''}`.toLowerCase();
+    const hay = `${task.approval_code || ''} ${task.template_name || ''} ${task.plan?.city || ''} ${task.batch_id || ''} ${task.current_action || ''}`.toLowerCase();
     return hay.includes(q);
+  });
+}
+
+export interface PayrollQueueAdvancedFilter {
+  tab: PayrollQueueFilterTab;
+  keyword: string;
+  city?: string;
+  mode?: string;
+  missingApprovalOnly?: boolean;
+}
+
+export function filterPayrollQueueAdvanced(
+  tasks: PayrollQueueTask[],
+  filter: PayrollQueueAdvancedFilter,
+): PayrollQueueTask[] {
+  const base = filterPayrollQueueTasks(tasks, filter.tab, filter.keyword);
+  const city = (filter.city || '').trim();
+  const mode = (filter.mode || '').trim();
+  return base.filter(task => {
+    if (city && (task.plan?.city || '') !== city) return false;
+    if (mode && task.mode !== mode) return false;
+    if (filter.missingApprovalOnly && (task.approval_code || '').trim() !== '') return false;
+    return true;
   });
 }
 
@@ -52,20 +75,23 @@ export function filterTaskCenterRecords<T extends TaskCenterFilterRecord>(
   },
 ): {
   items: T[];
-  counts: Record<string, number>;
+  counts: { all: number; active: number; attention: number; success: number; stopped: number };
 } {
   const archivedIds = params.archivedIds || new Set<string>();
   const q = (params.q || '').trim().toLowerCase();
   const baseVisible = records.filter(r => (params.archivedOnly ? archivedIds.has(r.id) : !archivedIds.has(r.id)));
 
-  const activeSet = new Set(['queued', 'running', 'waiting_login', 'waiting_manual', 'cancelling', 'preparing', 'stopping']);
-  const attentionSet = new Set(['waiting_login', 'waiting_manual', 'partial', 'error', 'interrupted', 'empty']);
+  // Mutually exclusive buckets: active + attention + success + stopped = all (no overlap for waiting_login/waiting_manual)
+  const activeSet = new Set(['queued', 'running', 'cancelling', 'preparing', 'stopping']);
+  const attentionSet = new Set(['waiting_login', 'waiting_manual', 'partial', 'error', 'failed', 'interrupted', 'empty', 'needs_review']);
+  const stoppedSet = new Set(['cancelled']);
 
   const counts = {
     all: baseVisible.length,
     active: baseVisible.filter(r => activeSet.has(r.status)).length,
     attention: baseVisible.filter(r => attentionSet.has(r.status)).length,
     success: baseVisible.filter(r => r.status === 'success').length,
+    stopped: baseVisible.filter(r => stoppedSet.has(r.status)).length,
   };
 
   const inferSys = (r: TaskCenterFilterRecord) => {
@@ -86,6 +112,7 @@ export function filterTaskCenterRecords<T extends TaskCenterFilterRecord>(
     if (params.status === 'active' && !activeSet.has(r.status)) return false;
     if (params.status === 'attention' && !attentionSet.has(r.status)) return false;
     if (params.status === 'success' && r.status !== 'success') return false;
+    if (params.status === 'stopped' && !stoppedSet.has(r.status)) return false;
     if (params.kind && r.kind !== params.kind) return false;
     if (params.system && !inferSys(r).includes(params.system)) return false;
     const createdDay = (r.created_at || '').slice(0, 10);

@@ -6,12 +6,16 @@ from pathlib import Path
 from desktop_auth_page import trusted
 
 
+CONTAINER_HEADLESS_CHROMIUM = '/ms-playwright/chrome-headless-shell-linux64/chrome-headless-shell'
+
+
 def edge_executable():
     """按 channel 解析 Edge 在本机要十几秒，直接定位可执行文件可降到半秒内。"""
     candidates = [os.environ.get('EDGE_EXECUTABLE')]
     for root in (os.environ.get('PROGRAMFILES(X86)'), os.environ.get('PROGRAMFILES'), os.environ.get('LOCALAPPDATA')):
         if root:
             candidates.append(str(Path(root) / 'Microsoft' / 'Edge' / 'Application' / 'msedge.exe'))
+    candidates.append(CONTAINER_HEADLESS_CHROMIUM)
     for candidate in candidates:
         if candidate and Path(candidate).is_file():
             return candidate
@@ -23,6 +27,7 @@ def chrome_executable():
     for root in (os.environ.get('PROGRAMFILES'), os.environ.get('PROGRAMFILES(X86)'), os.environ.get('LOCALAPPDATA')):
         if root:
             candidates.append(str(Path(root) / 'Google' / 'Chrome' / 'Application' / 'chrome.exe'))
+    candidates.append(CONTAINER_HEADLESS_CHROMIUM)
     for candidate in candidates:
         if candidate and Path(candidate).is_file():
             return candidate

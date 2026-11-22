@@ -24,6 +24,7 @@ export interface CorePageProps {
   onOpenDeductions: (defaultOnly?: boolean) => void;
   onOpenConnections: () => void;
   onNavigateDownloadCenter?: () => void;
+  onNavigateTaskCenter?: () => void;
   deductionVersion: number;
   resumeVersion: number;
   appTheme: 'light' | 'dark';

@@ -6,6 +6,99 @@ import {toneClass, normalizeTone} from '../lib/statusSemantics';
 import {RefreshCw, ArrowRightLeft, KeyRound, Search, CheckCircle2, ClipboardList, Download} from 'lucide-react';
 import {platformAuthRequest,PlatformAuthError} from '../lib/platformAuthApi';
 import {filterApprovalTasks,type ApprovalEligibilityFilter} from '../lib/workbenchFilters';
+import {
+  buildDemoApprovalHistory,
+  buildDemoApprovalPriceDetail,
+  buildDemoLanorangeApprovals,
+  type DemoApprovalTask,
+} from '../lib/showcaseDemoData';
+
+const RECEIPT_LABELS: Record<string, string> = {
+  success: '已同意',
+  failed: '被拒绝',
+  uncertain: '待核实',
+  changed: '状态已变',
+  not_sent: '未提交',
+  pending: '等待中',
+};
+
+function toApprovalTask(row: DemoApprovalTask): Task {
+  return {
+    id: row.id,
+    business_id: row.id,
+    businessCode: row.businessCode,
+    businessTitle: `${row.cityName} ${row.siteName} 薪资单价审批`,
+    cityName: row.cityName,
+    siteName: row.siteName,
+    nodeName: row.nodeName,
+    createByName: row.createByName,
+    createTime: row.createTime,
+    period_start: row.period_start,
+    period_end: row.period_end,
+    rider_count: row.rider_count,
+    settle_month: row.settle_month,
+    revision: 'demo-rev-1',
+    reason: row.reason,
+  };
+}
+
+function toApprovalPrice(task: Task): Price {
+  const detail = buildDemoApprovalPriceDetail({
+    id: task.id,
+    businessCode: task.businessCode || task.id,
+    cityName: task.cityName || '',
+    siteName: task.siteName || '',
+    period_start: task.period_start || '2026-10-01',
+    period_end: task.period_end || '2026-10-31',
+    settle_month: task.settle_month || '2026-10',
+    rider_count: task.rider_count || 0,
+    nodeName: task.nodeName || '',
+    createByName: task.createByName || '',
+    createTime: task.createTime || '',
+    reason: task.reason || '',
+  });
+  return {
+    columns: [
+      { key: 'rider_name', label: '骑手姓名' },
+      { key: 'rider_id', label: '骑手ID' },
+      { key: 'date', label: '日期' },
+      { key: 'base_price', label: '基础单价(元)' },
+      { key: 'subsidy', label: '补贴(元)' },
+      { key: 'total_price', label: '合计单价(元)' },
+      { key: 'status', label: '状态' },
+    ],
+    rows: detail.rows,
+    remark: task.reason ? `阻断原因：${task.reason}` : '系统自动校验通过，单价明细完整无缺失日期',
+    version: 3,
+  };
+}
+
+function toDemoBatches(): Batch[] {
+  return buildDemoApprovalHistory().map(b => ({
+    id: b.id,
+    actor_label: '演示审批账号（区域经理）',
+    status: b.status,
+    created: Math.floor(Date.parse(b.created_at) / 1000),
+    counts: b.summary,
+    items: b.items.map(it => ({
+      task: {
+        id: it.id,
+        business_id: it.id,
+        businessCode: it.businessCode,
+        cityName: it.cityName,
+        siteName: it.siteName,
+        settle_month: it.settle_month,
+        period_start: `${it.settle_month}-01`,
+        period_end: `${it.settle_month}-31`,
+        revision: 'demo-rev-1',
+        reason: '',
+      },
+      status: it.status,
+      status_label: RECEIPT_LABELS[it.status] || it.status,
+      message: it.message,
+    })),
+  }));
+}
 
 type Fetcher=(url:string,init?:RequestInit)=>Promise<Response>;
 type Query={city:string;station:string;period:string};
@@ -44,7 +137,11 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
   const [history,setHistory]=useState<Batch[]>([]),[batch,setBatch]=useState<Batch|null>(null),[attempt,setAttempt]=useState<Attempt|null>(null);
   const [attemptMissing,setAttemptMissing]=useState(false);
   const [activeViewTab,setActiveViewTab]=useState<'pending'|'results'>('pending');
-  const [receiptStatusFilter,setReceiptStatusFilter]=useState<'all'|'success'|'issue'>('all');
+  const [receiptStatusFilter,setReceiptStatusFilter]=useState<'all'|'success'|'issue'|'failed'|'uncertain'|'changed'|'not_sent'|'pending'>('all');
+  const [demoEnabled,setDemoEnabled]=useState(true);
+  const [demoRows,setDemoRows]=useState<Task[]>(()=>buildDemoLanorangeApprovals().map(toApprovalTask));
+  const [demoHistory,setDemoHistory]=useState<Batch[]>(()=>toDemoBatches());
+  const [demoSelectedBatchId,setDemoSelectedBatchId]=useState<string>('');
 
   
   const listSequence=useRef(0),inflight=useRef(false),versionRef=useRef(''),batchRef=useRef<Batch|null>(null),alive=useRef(true);
@@ -85,12 +182,14 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
         setSelection({});
         setPreview(null);
         setError('请先登录蓝橙，再读取本人待办');
+        window.dispatchEvent(new CustomEvent('workbench:lanorange-approvals-updated', { detail: { loggedOut: true } }));
         return;
       }
       const value=await request<{rows:Task[];total:number;actor_label:string;session_version:string}>('/pending-scope');
       if(!alive.current || sequence!==listSequence.current)return;
       if(versionRef.current && versionRef.current!==value.session_version){setSelection({});setPreview(null);setError('蓝橙会话已变化，已清除旧勾选，请重新选择。');}
       versionRef.current=value.session_version;setSessionVersion(value.session_version);setAllRows(value.rows);setSelection({});setPreview(null);setActor(value.actor_label);
+      window.dispatchEvent(new CustomEvent('workbench:lanorange-approvals-updated', { detail: { rows: value.rows, actor_label: value.actor_label } }));
     })().catch(err=>{
       if(alive.current && sequence===listSequence.current){
         setAllRows([]);
@@ -99,10 +198,15 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
     }).finally(()=>{if(alive.current && sequence===listSequence.current)setListBusy(false);});
   },[refresh,workspaceId]);
 
-  const effectiveRows=allRows;
-  const effectiveHistory=history;
-  const effectiveBatch=batch;
-  const effectiveActor=actor;
+  const hasLiveData=allRows.length>0||history.length>0;
+  const usingDemo=!hasLiveData&&demoEnabled;
+  const effectiveRows=usingDemo?demoRows:allRows;
+  const effectiveHistory=usingDemo?demoHistory:history;
+  const effectiveBatch=usingDemo
+    ?(demoHistory.find(b=>b.id===demoSelectedBatchId)||demoHistory[0]||null)
+    :batch;
+  const effectiveActor=usingDemo?'演示审批账号（区域经理）':actor;
+  const effectiveError=usingDemo&&error.includes('登录')?'':error;
 
   const scopeFiltered=useMemo(()=>filterApprovalTasks(effectiveRows,{scopeCities,scopeMonths,scopeSite,eligibility:'all',keyword:''}),[effectiveRows,scopeCities,scopeMonths,scopeSite]);
   const filtered=useMemo(()=>filterApprovalTasks(effectiveRows,{scopeCities,scopeMonths,scopeSite,eligibility:eligibilityFilter,keyword}),[effectiveRows,scopeCities,scopeMonths,scopeSite,eligibilityFilter,keyword]);
@@ -120,9 +224,30 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
     if(Object.keys(next).length>200){setError('每批最多选择200条，请分批处理。');return;}setSelection(next);
   }
   async function showDetail(task:Task){
+    if(usingDemo){
+      setDetail({task,price:toApprovalPrice(task)});
+      return;
+    }
     await perform('detail',async()=>setDetail(await request<{task:Task;price:Price}>(`/pending/${encodeURIComponent(task.id)}?session_version=${encodeURIComponent(sessionVersion)}`)));
   }
   async function makePreview(){
+    if(usingDemo){
+      setPreview({
+        id:`DEMO-PREVIEW-${Date.now()}`,
+        actor_label:effectiveActor,
+        expires_at:Math.floor(Date.now()/1000)+600,
+        eligible_count:selected.filter(t=>!t.reason).length,
+        opinion:'同意',
+        filters:query,
+        items:selected.map(t=>({
+          eligible:!t.reason,
+          reason:t.reason||'',
+          task:t,
+          price:toApprovalPrice(t),
+        })),
+      });
+      return;
+    }
     await perform('preview',async()=>{
       const value=await request<Preview>('/previews',{selected:selected.map(t=>({id:t.id,revision:t.revision})),filters:query,session_version:sessionVersion},180000);
       if(alive.current)setPreview(value);
@@ -137,6 +262,33 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
   });}
   async function submit(){
     if(!preview)return;
+    if(usingDemo){
+      const eligibleItems=preview.items.filter(it=>it.eligible);
+      const batchId=`AP-DEMO-${Date.now().toString().slice(-6)}`;
+      const nextBatch:Batch={
+        id:batchId,
+        actor_label:effectiveActor,
+        status:'completed',
+        created:Math.floor(Date.now()/1000),
+        counts:{total:eligibleItems.length,success:eligibleItems.length,failed:0,uncertain:0,changed:0,not_sent:0,pending:0},
+        items:eligibleItems.map(it=>({
+          task:it.task,
+          status:'success',
+          status_label:'已同意',
+          message:'示例审批已模拟同意（未实际提交至蓝橙）',
+        })),
+      };
+      const doneIds=new Set(eligibleItems.map(it=>it.task.id));
+      setDemoRows(prev=>prev.filter(r=>!doneIds.has(r.id)));
+      setDemoHistory(prev=>[nextBatch,...prev]);
+      setDemoSelectedBatchId(batchId);
+      setPreview(null);
+      setSelection({});
+      setReceiptStatusFilter('all');
+      setActiveViewTab('results');
+      setNotice(`示例模式已模拟同意 ${eligibleItems.length} 条审批单，可在结果回执中查看。`);
+      return;
+    }
     await sendAttempt(attempt?.preview_id===preview.id?attempt:{preview_id:preview.id,request_id:crypto.randomUUID()});
   }
   async function findAttempt(){if(!attempt)return;await perform('find',async()=>{
@@ -145,6 +297,10 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
   });}
   async function downloadResult(){
     if(!effectiveBatch)return;
+    if(usingDemo){
+      setNotice(`示例回执批次「${effectiveBatch.id}」仅用于预览，登录蓝橙并提交真实审批后可导出 CSV。`);
+      return;
+    }
     await perform('export',async()=>{
       const response=await fetchRef.current(`${BASE}/batches/${effectiveBatch.id}/result.csv`);if(!response.ok)throw new Error('结果下载失败，请稍后重试');
       const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=url;link.download=`蓝橙价格审批结果_${effectiveBatch.id.slice(0,8)}.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -155,37 +311,89 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
     window.dispatchEvent(new CustomEvent('workbench:connections', { detail: 'lanorange' }));
   };
 
+  const isAuthBlocked = Boolean(effectiveError && effectiveError.includes('登录') && effectiveRows.length === 0);
+
   return <div className="wb-approvals wbx-approval">
-    {/* 顶部：精简连接状态与操作带 */}
-    <section className="wbx-approval__compact-bar" aria-label="蓝橙连接与操作">
-      <div className="wbx-approval__compact-lead">
-        <span className={`wbx-approval__session-status ${effectiveActor ? 'is-ready' : 'is-warn'}`}>
-          <span className="wbx-dot" />
-          {effectiveActor ? `已连接 · ${effectiveActor}` : '待登录蓝橙平台'}
-        </span>
-        <span className="wbx-approval__compact-meta tabular-nums">
-          待办 {effectiveRows.length} · 可同意 {eligibleScopeCount} · 阻断 {blockedScopeCount}
-        </span>
+    {/* 顶层清爽下划线视图切换条（与数据采集页保持统一） */}
+    <section className="wbx-ap-topbar" aria-label="审批视图切换与操作">
+      <div className="wbx-ap-tabs" role="tablist" aria-label="批量审批工作台视图">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeViewTab === 'pending'}
+          className={`wbx-ap-tab ${activeViewTab === 'pending' ? 'is-active' : ''}`}
+          onClick={() => setActiveViewTab('pending')}
+        >
+          <ClipboardList size={15} className="wbx-ap-tab__icon" aria-hidden="true" />
+          <span>待办审批列表</span>
+          <span className="wbx-ap-tab__count tabular-nums">{effectiveRows.length}</span>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeViewTab === 'results'}
+          className={`wbx-ap-tab ${activeViewTab === 'results' ? 'is-active' : ''}`}
+          onClick={() => setActiveViewTab('results')}
+        >
+          <CheckCircle2 size={15} className="wbx-ap-tab__icon" aria-hidden="true" />
+          <span>审批结果回执</span>
+          <span className="wbx-ap-tab__count tabular-nums">{effectiveHistory.length}</span>
+        </button>
       </div>
 
-      <div className="wbx-approval__compact-actions">
-        <button
-          type="button"
-          className="wbx-btn wbx-btn--ghost wbx-btn--sm"
-          disabled={listBusy || !!command}
-          onClick={() => { setPage(1); setRefresh(v => v + 1); }}
-        >
-          <RefreshCw size={13} className={listBusy ? 'wbx-spin' : ''} />
-          <span>{listBusy ? '正在同步…' : '同步本人待办'}</span>
-        </button>
-        <button
-          type="button"
-          className="wbx-btn wbx-btn--ghost wbx-btn--sm"
-          onClick={openLanorangeLogin}
-        >
-          <KeyRound size={13} />
-          <span>蓝橙授权</span>
-        </button>
+      <div className="wbx-ap-topbar__right">
+        {activeViewTab === 'pending' && effectiveRows.length > 0 && (
+          <span className="wbx-ap-inline-meta tabular-nums">
+            可同意 <strong>{eligibleScopeCount}</strong> · 阻断 <strong>{blockedScopeCount}</strong>
+          </span>
+        )}
+        {activeViewTab === 'pending' && effectiveBatch && (
+          <button
+            type="button"
+            className="wbx-ap-link-btn tabular-nums"
+            onClick={() => setActiveViewTab('results')}
+          >
+            最近批次：{batchLabels[effectiveBatch.status] || effectiveBatch.status}（{effectiveBatch.counts.success || 0}/{effectiveBatch.items.length}）→
+          </button>
+        )}
+        {!hasLiveData && (
+          <span className="wbx-demo-group">
+            {usingDemo && <span className="wbx-demo-badge">示例数据</span>}
+            <button
+              type="button"
+              className="wbx-btn wbx-btn--ghost wbx-btn--sm"
+              onClick={() => {
+                setDemoEnabled(prev => !prev);
+                setSelection({});
+                setPage(1);
+              }}
+            >
+              {demoEnabled ? '隐藏示例' : '加载 30 条示例'}
+            </button>
+          </span>
+        )}
+        {(() => {
+          const needsLogin = !hasLiveData && Boolean(error && error.includes('登录'));
+          return (
+            <button
+              type="button"
+              className="wbx-btn wbx-btn--sm"
+              disabled={listBusy || !!command}
+              title={needsLogin ? '需先登录蓝橙账号后同步实时待办' : '刷新并同步本人蓝橙待办'}
+              onClick={() => {
+                if (needsLogin) {
+                  openLanorangeLogin();
+                  return;
+                }
+                setPage(1);
+                setRefresh(v => v + 1);
+              }}
+            >
+              {needsLogin ? <KeyRound size={13} /> : <RefreshCw size={13} className={listBusy ? 'wbx-spin' : ''} />}
+              <span>{listBusy ? '正在同步…' : needsLogin ? '登录并同步' : '同步本人待办'}</span>
+            </button>
+          );
+        })()}
         {onSwitchView && (
           <button
             type="button"
@@ -199,98 +407,19 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
       </div>
     </section>
 
-    {/* 顶层视图切换条：待办审批队列 vs 审批结果回执（无需再滑到页尾并点开折叠详情） */}
-    <section className="wbx-approval__view-bar" aria-label="审批视图切换">
-      <div className="wbx-segmented" role="tablist" aria-label="批量审批工作台视图">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeViewTab === 'pending'}
-          className={`wbx-segmented__item ${activeViewTab === 'pending' ? 'is-active' : ''}`}
-          onClick={() => setActiveViewTab('pending')}
-        >
-          <ClipboardList size={14} />
-          <span>待办审批列表</span>
-          <span className="tabular-nums">({effectiveRows.length})</span>
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeViewTab === 'results'}
-          className={`wbx-segmented__item ${activeViewTab === 'results' ? 'is-active' : ''}`}
-          onClick={() => setActiveViewTab('results')}
-        >
-          <CheckCircle2 size={14} />
-          <span>审批结果回执</span>
-          <span className="tabular-nums">({effectiveHistory.length})</span>
-        </button>
-      </div>
-
-      <div className="wbx-approval__view-summary">
-        {activeViewTab === 'pending' && effectiveBatch ? (
-          <>
-            <span className={`wbx-pill ${toneClass(normalizeTone(effectiveBatch.status))}`}>
-              <span className="wbx-pill__dot" aria-hidden="true" />
-              最近批次：{batchLabels[effectiveBatch.status] || effectiveBatch.status}
-            </span>
-            <span className="wbx-hint tabular-nums">
-              已同意 {effectiveBatch.counts.success || 0} / {effectiveBatch.items.length} 条
-            </span>
-            <button
-              type="button"
-              className="wbx-btn wbx-btn--sm"
-              onClick={() => setActiveViewTab('results')}
-            >
-              查看审批结果 →
-            </button>
-          </>
-        ) : activeViewTab === 'results' ? (
-          <button
-            type="button"
-            className="wbx-btn wbx-btn--sm"
-            onClick={() => setActiveViewTab('pending')}
-          >
-            ← 返回待办审批列表 ({effectiveRows.length})
-          </button>
-        ) : (
-          <span className="wbx-hint">提交审批后将自动定位到最新审批结果回执</span>
-        )}
-      </div>
-    </section>
-
-    {/* 中部：多维范围筛选面板（待办视图展示） */}
-    {activeViewTab === 'pending' && (
-      <ApprovalScopeFilters
-        rows={effectiveRows}
-        cities={scopeCities}
-        months={scopeMonths}
-        site={scopeSite}
-        busy={listBusy || !!command}
-        onChange={(cities, months, site) => {
-          setScopeCities(cities);
-          setScopeMonths(months);
-          setScopeSite(site);
-          setPage(1);
-          setSelection({});
-          setPreview(null);
-        }}
-        onRefresh={() => {
-          setPage(1);
-          setRefresh(v => v + 1);
-        }}
-      />
-    )}
-
-    {error && (
-      <div className="wb-error wb-error-with-action" role="alert">
-        <div className="wbx-approval__alert-copy">
-          <strong>{error.includes('登录') ? '需先完成蓝橙平台登录授权' : '操作提示'}</strong>
-          <span>{error}</span>
+    {effectiveError && !isAuthBlocked && (
+      <div className={`wbx-ap-notice ${effectiveError.includes('登录') ? 'is-auth' : 'is-danger'}`} role="alert">
+        <div className="wbx-ap-notice__body">
+          <KeyRound size={15} className="wbx-ap-notice__icon" aria-hidden="true" />
+          <div className="wbx-ap-notice__copy">
+            <strong>{effectiveError.includes('登录') ? '需先完成蓝橙平台登录授权' : '操作提示'}</strong>
+            <span>{effectiveError}</span>
+          </div>
         </div>
-        <div className="wbx-approval__alert-actions">
-          {error.includes('登录') && (
-            <button type="button" className="wb-inline-login-action" onClick={openLanorangeLogin}>
-              立即登录蓝橙
+        <div className="wbx-ap-notice__actions">
+          {effectiveError.includes('登录') && (
+            <button type="button" className="wbx-btn wbx-btn--primary wbx-btn--sm" onClick={openLanorangeLogin}>
+              登录蓝橙
             </button>
           )}
           <button
@@ -299,7 +428,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
             disabled={listBusy || !!command}
             onClick={() => { setPage(1); setRefresh(v => v + 1); }}
           >
-            <RefreshCw size={13} className={listBusy ? 'wbx-spin' : ''} />
+            <RefreshCw size={12.5} className={listBusy ? 'wbx-spin' : ''} />
             <span>重新同步</span>
           </button>
         </div>
@@ -329,7 +458,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
 
     {/* 主体视图 A：本人待办审批队列 */}
     {activeViewTab === 'pending' && (
-    <section className="wb-approval-card wbx-section wbx-approvals__pending">
+    <section className="wbx-ap-card wbx-approvals__pending">
       <div className="wbx-approval__head">
         <div className="wbx-approval__queue-title">
           <h3>
@@ -367,6 +496,25 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
           </button>
         </div>
       </div>
+
+      {/* 嵌入式多维范围筛选条：仅在已同步出数据时展开，避免未登录时出现空洞筛选框 */}
+      {effectiveRows.length > 0 && (
+        <ApprovalScopeFilters
+          rows={effectiveRows}
+          cities={scopeCities}
+          months={scopeMonths}
+          site={scopeSite}
+          busy={listBusy || !!command}
+          onChange={(cities, months, site) => {
+            setScopeCities(cities);
+            setScopeMonths(months);
+            setScopeSite(site);
+            setPage(1);
+            setSelection({});
+            setPreview(null);
+          }}
+        />
+      )}
 
       {scopeFiltered.length > 0 && (
         <div className="wbx-approvals__filter-bar">
@@ -503,19 +651,43 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
             重置列表筛选
           </button>
         </div>
+      ) : isAuthBlocked ? (
+        <div className="wbx-ap-empty">
+          <span className="wbx-ap-empty__icon" aria-hidden="true">
+            <KeyRound size={20} />
+          </span>
+          <strong>需先完成蓝橙平台登录授权</strong>
+          <p>登录蓝橙账号后将自动读取本人名下待审价格提审单，支持按城市、月份与站点多维筛选并批量同意。</p>
+          <div className="wbx-ap-empty__actions">
+            <button type="button" className="wbx-btn wbx-btn--primary" onClick={openLanorangeLogin}>
+              立即登录蓝橙
+            </button>
+            <button
+              type="button"
+              className="wbx-btn"
+              disabled={listBusy || !!command}
+              onClick={() => { setPage(1); setRefresh(v => v + 1); }}
+            >
+              <RefreshCw size={13} className={listBusy ? 'wbx-spin' : ''} />
+              <span>重新同步</span>
+            </button>
+          </div>
+        </div>
       ) : (
-        <div className="pq-empty">
-          <Search size={24} />
-          <strong>暂无待办审批流程</strong>
-          <p>请完成蓝橙平台账号授权并点击“同步本人待办”，系统会自动按城市、结算月份与站点读取待审价格提审单。</p>
+        <div className="wbx-ap-empty">
+          <span className="wbx-ap-empty__icon" aria-hidden="true">
+            <ClipboardList size={20} />
+          </span>
+          <strong>当前暂无待办审批流程</strong>
+          <p>您名下暂无待审批的价格提审单，可点击右上角「同步本人待办」随时刷新最新状态。</p>
         </div>
       )}
     </section>
     )}
 
-    {/* 主体视图 B：独立置顶的审批结果回执面板（默认展开逐项明细，无需滑至页尾与展开折叠） */}
+    {/* 主体视图 B：独立置顶的审批结果回执面板 */}
     {activeViewTab === 'results' && (
-      <section className="wb-approval-card wbx-section wbx-approval__results-panel" id="price-record-result" aria-label="审批结果回执">
+      <section className="wbx-ap-card wbx-approval__results-panel" id="price-record-result" aria-label="审批结果回执">
         <div className="wbx-approval__head">
           <div className="wbx-approval__queue-title">
             <h3>
@@ -539,13 +711,14 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
               <label className="wbx-approval__batch-picker">
                 <span>切换批次</span>
                 <select
-                  className="wb-select"
+                  className="wbx-ap-select"
                   aria-label="选择审批回执批次"
                   value={effectiveBatch?.id || ''}
                   onChange={e => {
                     const found = effectiveHistory.find(b => b.id === e.target.value) || null;
                     setReceiptStatusFilter('all');
-                    setBatch(found);
+                    if (usingDemo) setDemoSelectedBatchId(e.target.value);
+                    else setBatch(found);
                   }}
                 >
                   {effectiveBatch && !effectiveHistory.some(b => b.id === effectiveBatch.id) && (
@@ -575,12 +748,19 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
                 type="button"
                 className="wbx-btn wbx-btn--sm wbx-btn--danger"
                 disabled={!!command || effectiveBatch.status === 'stopping'}
-                onClick={() =>
+                onClick={() => {
+                  if (usingDemo) {
+                    setDemoHistory(prev =>
+                      prev.map(b => (b.id === effectiveBatch.id ? { ...b, status: 'partial' } : b)),
+                    );
+                    setNotice('已停止示例批次后续审批。');
+                    return;
+                  }
                   void perform('stop', async () => {
                     setBatch(await request<Batch>(`/batches/${effectiveBatch.id}/stop`, { confirm: true }));
                     void readHistory();
-                  })
-                }
+                  });
+                }}
               >
                 停止后续审批
               </button>
@@ -591,6 +771,10 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
                 className="wbx-btn wbx-btn--sm"
                 disabled={!!command}
                 onClick={() => {
+                  if (usingDemo) {
+                    setNotice('示例模式已完成待核实结果状态校验。');
+                    return;
+                  }
                   void perform('recheck', async () => {
                     setBatch(await request<Batch>(`/batches/${effectiveBatch.id}/recheck`, {}, 120000));
                     void readHistory();
@@ -616,17 +800,21 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
         </div>
 
         {!effectiveBatch ? (
-          <div className="pq-empty">
-            <CheckCircle2 size={26} />
+          <div className="wbx-ap-empty">
+            <span className="wbx-ap-empty__icon" aria-hidden="true">
+              <CheckCircle2 size={20} />
+            </span>
             <strong>暂无审批结果回执</strong>
             <p>可先切换回“待办审批列表”勾选并提交价格提审单，提交完成后将在此直接展示逐项回执。</p>
-            <button
-              type="button"
-              className="wbx-btn wbx-btn--primary wbx-btn--sm"
-              onClick={() => setActiveViewTab('pending')}
-            >
-              前往待办审批列表
-            </button>
+            <div className="wbx-ap-empty__actions">
+              <button
+                type="button"
+                className="wbx-btn wbx-btn--primary"
+                onClick={() => setActiveViewTab('pending')}
+              >
+                前往待办审批列表
+              </button>
+            </div>
           </div>
         ) : (
           <>
@@ -635,31 +823,31 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
                 <TaskOutcome task={{ status: effectiveBatch.status, kind: 'approval', availableFiles: 1 }} />
               </div>
 
-              <div className="wbx-approval__result-kpis tabular-nums">
-                <div className="wbx-approval__result-kpi is-success">
-                  <span>已同意</span>
-                  <strong>{effectiveBatch.counts.success || 0}</strong>
-                </div>
-                <div className="wbx-approval__result-kpi is-danger">
-                  <span>被拒绝</span>
-                  <strong>{effectiveBatch.counts.failed || 0}</strong>
-                </div>
-                <div className="wbx-approval__result-kpi is-warn">
-                  <span>待核实</span>
-                  <strong>{effectiveBatch.counts.uncertain || 0}</strong>
-                </div>
-                <div className="wbx-approval__result-kpi">
-                  <span>状态变化</span>
-                  <strong>{effectiveBatch.counts.changed || 0}</strong>
-                </div>
-                <div className="wbx-approval__result-kpi">
-                  <span>未提交</span>
-                  <strong>{effectiveBatch.counts.not_sent || 0}</strong>
-                </div>
-                <div className="wbx-approval__result-kpi">
-                  <span>等待中</span>
-                  <strong>{effectiveBatch.counts.pending || 0}</strong>
-                </div>
+              <div className="wbx-approval__result-kpis tabular-nums" role="group" aria-label="按审批结果快捷筛选">
+                {([
+                  { key: 'success', label: '已同意', count: effectiveBatch.counts.success || 0, tone: 'is-success' },
+                  { key: 'failed', label: '被拒绝', count: effectiveBatch.counts.failed || 0, tone: 'is-danger' },
+                  { key: 'uncertain', label: '待核实', count: effectiveBatch.counts.uncertain || 0, tone: 'is-warn' },
+                  { key: 'changed', label: '状态变化', count: effectiveBatch.counts.changed || 0, tone: 'is-warn' },
+                  { key: 'not_sent', label: '未提交', count: effectiveBatch.counts.not_sent || 0, tone: '' },
+                  { key: 'pending', label: '等待中', count: effectiveBatch.counts.pending || 0, tone: 'is-primary' },
+                ] as const).map(kpi => {
+                  const isActive = receiptStatusFilter === kpi.key;
+                  const toneCls = kpi.count > 0 ? kpi.tone : 'is-zero';
+                  return (
+                    <button
+                      key={kpi.key}
+                      type="button"
+                      aria-pressed={isActive}
+                      title={kpi.count > 0 ? `点击仅查看「${kpi.label}」明细` : `当前无「${kpi.label}」记录`}
+                      className={`wbx-approval__result-kpi ${toneCls}${isActive ? ' is-active' : ''}`}
+                      onClick={() => setReceiptStatusFilter(prev => (prev === kpi.key ? 'all' : kpi.key))}
+                    >
+                      <span>{kpi.label}</span>
+                      <strong>{kpi.count}</strong>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -672,11 +860,13 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
               const issueCount = allItems.filter(it => it.status !== 'success').length;
               const successCount = allItems.length - issueCount;
               const shownItems =
-                receiptStatusFilter === 'success'
-                  ? allItems.filter(it => it.status === 'success')
-                  : receiptStatusFilter === 'issue'
-                    ? allItems.filter(it => it.status !== 'success')
-                    : allItems;
+                receiptStatusFilter === 'all'
+                  ? allItems
+                  : receiptStatusFilter === 'success'
+                    ? allItems.filter(it => it.status === 'success')
+                    : receiptStatusFilter === 'issue'
+                      ? allItems.filter(it => it.status !== 'success')
+                      : allItems.filter(it => it.status === receiptStatusFilter);
               return (
                 <div className="wbx-approval__receipts">
                   <div className="wbx-approval__receipts-head">
@@ -685,6 +875,15 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
                       <span className="wbx-pill wbx-pill--neutral tabular-nums">
                         显示 {shownItems.length} / {allItems.length} 条
                       </span>
+                      {!['all', 'success', 'issue'].includes(receiptStatusFilter) && (
+                        <button
+                          type="button"
+                          className="wbx-ap-link-btn"
+                          onClick={() => setReceiptStatusFilter('all')}
+                        >
+                          清除状态筛选
+                        </button>
+                      )}
                     </div>
                     <div className="wbx-segmented wbx-segmented--compact" role="tablist" aria-label="按回执状态筛选">
                       <button

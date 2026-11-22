@@ -1,15 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ShieldCheck, ChevronDown, X } from 'lucide-react';
+import { ChevronDown, ShieldCheck, X } from 'lucide-react';
 import { getPlatformStatusCluster, type PlatformStatusMap } from '../lib/workbench';
-
-const dotClass = (tone: 'ready' | 'busy' | 'warn' | 'idle') =>
-  tone === 'ready'
-    ? 'wb-dot ready'
-    : tone === 'busy'
-      ? 'wb-dot busy'
-      : tone === 'warn'
-        ? 'wb-dot offline'
-        : 'wb-dot';
 
 export function PlatformDock({
   open: controlledOpen,
@@ -20,6 +11,7 @@ export function PlatformDock({
   open?: boolean;
   onToggle?: () => void;
   onClose?: () => void;
+  onOpenFengshen?: () => void;
   children?: React.ReactNode;
 }) {
   const [internalOpen, setInternalOpen] = useState(false);
@@ -68,41 +60,39 @@ export function PlatformDock({
   const cluster = getPlatformStatusCluster(statuses);
   const readyCount = cluster.filter(item => item.tone === 'ready').length;
   const busyCount = cluster.filter(item => item.tone === 'busy').length;
+  const warnCount = cluster.filter(item => item.tone === 'warn').length;
+  const summaryTitle = cluster.map(item => `${item.shortLabel}：${item.statusText}`).join(' · ');
+
+  const overallTone =
+    warnCount > 0 ? 'warn' : busyCount > 0 ? 'busy' : readyCount > 0 ? 'ready' : 'idle';
 
   return (
     <div className="wbx-popover-wrap" ref={wrapRef}>
       <button
         type="button"
-        className={`wbx-plat-dock-trigger${isOpen ? ' is-open' : ''}`}
+        className={`wbx-header-tool-btn wbx-plat-btn${isOpen ? ' is-open' : ''}`}
         aria-expanded={isOpen}
         aria-haspopup="dialog"
-        aria-label="打开平台登录状态与连接管理"
+        aria-label={`打开平台授权（已就绪 ${readyCount} / ${cluster.length}）`}
+        title={summaryTitle}
         onClick={handleToggle}
       >
-        <ShieldCheck size={15} className="text-sky-600 shrink-0" />
-        <span>平台登录</span>
-        <span className="wbx-plat-dock-dots" aria-hidden="true">
-          {cluster.map(item => (
-            <span key={item.key} className="wbx-plat-mini-item" title={`${item.shortLabel}：${item.statusText}`}>
-              <span className={dotClass(item.tone)} />
-              <span className="hidden xl:inline">{item.shortLabel}</span>
-            </span>
-          ))}
-        </span>
+        <ShieldCheck
+          size={13.5}
+          className={`wbx-header-tool-icon${readyCount > 0 ? ' is-active' : ''}`}
+          aria-hidden="true"
+        />
+        <span className="wbx-plat-btn__label">平台授权</span>
         <span
-          className={`wbx-pill ${
-            readyCount === cluster.length
-              ? 'wbx-pill--success'
-              : busyCount > 0
-                ? 'wbx-pill--progress'
-                : readyCount > 0
-                  ? 'wbx-pill--neutral'
-                  : 'wbx-pill--warn'
-          } tabular-nums`}
+          className={`wbx-plat-dock-ratio tabular-nums is-${overallTone}`}
         >
-          {readyCount}/{cluster.length} 就绪
+          {readyCount}/{cluster.length}
         </span>
-        <ChevronDown size={13} className={`text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          size={12}
+          className={`wbx-plat-dock-chevron${isOpen ? ' is-open' : ''}`}
+          aria-hidden="true"
+        />
       </button>
 
       <div
@@ -112,24 +102,24 @@ export function PlatformDock({
         aria-label="平台登录与连接状态"
         style={isOpen ? undefined : { display: 'none' }}
       >
-          <div className="wbx-popover__head">
-            <div>
-              <span className="wbx-popover__title">五大业务平台连接中心</span>
-              <p className="text-xs text-slate-500 mt-0.5">
-                已就绪 {readyCount} / {cluster.length} 个数据源通道 · 支持扫码或账号直连
-              </p>
-            </div>
-            <button
-              type="button"
-              className="wbx-btn wbx-btn--ghost wbx-btn--sm"
-              aria-label="关闭平台登录弹窗"
-              onClick={handleClose}
-            >
-              <X size={15} />
-            </button>
+        <div className="wbx-popover__head">
+          <div>
+            <span className="wbx-popover__title">五大业务平台连接中心</span>
+            <p className="text-xs text-slate-500 mt-0.5">
+              已就绪 {readyCount} / {cluster.length} 个数据源通道 · 支持扫码或账号直连
+            </p>
           </div>
-          {children}
+          <button
+            type="button"
+            className="wbx-btn wbx-btn--ghost wbx-btn--sm"
+            aria-label="关闭平台登录弹窗"
+            onClick={handleClose}
+          >
+            <X size={15} />
+          </button>
         </div>
+        {children}
+      </div>
     </div>
   );
 }

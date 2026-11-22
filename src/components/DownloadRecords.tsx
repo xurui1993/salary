@@ -1,391 +1,1405 @@
-import { taskGuidance, taskHandoffs } from '../lib/taskGuidance';
+import { taskGuidance } from '../lib/taskGuidance';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Clock, Download, FolderOpen, RefreshCw, Search, ChevronDown, Archive, Inbox, RotateCcw } from 'lucide-react';
+import {
+  Archive,
+  ArchiveRestore,
+  Calendar,
+  ChevronRight,
+  Download,
+  ExternalLink,
+  FolderOpen,
+  Inbox,
+  Loader2,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  Square,
+  X,
+} from 'lucide-react';
 import { readDownloadResponse, saveDownloadBlob, downloadErrorMessage } from '../lib/outputDownload';
 import {
   computeTaskElapsedSeconds,
   computeTaskProgressMeta,
   datasetGroup,
   formatTaskDuration,
-  isGlobalDataset,
   type DownloadFetch,
 } from '../lib/downloadCenterLogic';
 import type { RecordModule } from '../lib/downloadModules';
 import { WorkbenchDrawer } from './WorkbenchDrawer';
 import { WorkbenchDatePicker } from './WorkbenchDatePicker';
+import { WorkbenchConfirmModal, WorkbenchToast, type ToastNotice } from './WorkbenchFeedback';
 import { SkeletonRows } from './SkeletonRows';
 import { EmptyState } from './EmptyState';
+import { TaskDetailDrawer, type TaskDetailItem, type TaskDetailTab } from './TaskDetailDrawer';
 import { taskTone, toneClass } from '../lib/statusSemantics';
+import {
+  cleanTaskTitle,
+  computeDatePresetRange,
+  computeTaskDiagnosticNote,
+  formatCitiesCompact,
+  formatCompactTimestamp,
+  formatPeriodCompact,
+  platformTone,
+  resolveTaskPrimaryAction,
+  sortTaskDisplayRecords,
+  summarizeTaskBatchSelection,
+  type TaskAuthSystem,
+  type TaskCenterSortKey,
+  type TaskDatePreset,
+} from '../lib/taskCenterDisplay';
+import {
+  buildDemoTaskCenterRecords,
+  queryDemoTaskCenter,
+  type DemoTaskCenterRecord,
+} from '../lib/showcaseDemoData';
 
-interface File { id:string; run_id:string; name:string; city:string; bytes:number; available:boolean; unavailable_reason?:string }
-interface Task {
-  id:string; kind:string; title?:string; price_id?:string; batch_id?:string; output?:string;
-  cities:string[]; datasets:string[]; start:string; end:string; status:string; created_at:string;
-  updated_at?:string; elapsed_seconds?:number;
-  files:File[]; source_files?:File[]; available_files:number; failed_items:number; completed_items:number; total_items:number;
-  member_ids:string[]; attempts:{id:string;status:string}[]; action_run_id:string; summary_issue?:boolean;
+interface File {
+  id: string;
+  run_id?: string;
+  name: string;
+  city?: string;
+  bytes: number;
+  available?: boolean;
+  unavailable_reason?: string;
 }
-const API='/api/workbench/task-center';
-const ACTIVE=new Set(['queued','running','waiting_login','waiting_manual','cancelling','preparing','stopping']);
-const ENDED=new Set(['success','partial','error','cancelled','interrupted','empty']);
-const statusLabel=(status:string)=>taskGuidance({status}).label;
-const pollErrorMessage=(error:unknown)=>{
-  const name=(error as {name?:string})?.name||'';
-  const text=String((error as {message?:string})?.message||'');
-  if(name==='TimeoutError'||name==='AbortError'||/timed out|aborted/i.test(text))return '后台仍在启动或响应较慢，正在自动重试…';
-  if(error instanceof TypeError)return '后台连接暂时中断，正在自动重试…';
+
+type Task = TaskDetailItem;
+
+function toTaskCenterRow(item: DemoTaskCenterRecord): Task {
+  const startMs = Date.parse(item.started_at || item.created_at);
+  const endMs = item.finished_at ? Date.parse(item.finished_at) : NaN;
+  const elapsed =
+    Number.isFinite(startMs) && Number.isFinite(endMs) && endMs >= startMs
+      ? Math.max(1, Math.round((endMs - startMs) / 1000))
+      : undefined;
+  const mapFiles = (list?: DemoTaskCenterRecord['files']): File[] =>
+    (list || []).map(f => ({
+      id: f.id,
+      run_id: item.id,
+      name: f.name,
+      city: f.city || item.cities[0] || '全量',
+      bytes: f.bytes,
+      available: true,
+    }));
+  const mappedFiles = mapFiles(item.files);
+  return {
+    id: item.id,
+    kind: item.kind,
+    title: item.title,
+    price_id: item.price_id,
+    cities: item.cities,
+    datasets: item.datasets,
+    start: item.start,
+    end: item.end,
+    status: item.status,
+    created_at: item.created_at,
+    updated_at: item.finished_at || item.started_at || item.created_at,
+    elapsed_seconds: elapsed,
+    error: item.error,
+    demo: true,
+    files: mappedFiles,
+    source_files: item.source_files ? mapFiles(item.source_files) : undefined,
+    available_files: mappedFiles.length,
+    failed_items: item.failed_items,
+    completed_items: item.completed_items,
+    total_items: item.total_items,
+    member_ids: [item.id],
+    attempts: [{ id: item.id, status: item.status }],
+    action_run_id: '',
+  };
+}
+
+const API = '/api/workbench/task-center';
+const ACTIVE = new Set(['queued', 'running', 'waiting_login', 'waiting_manual', 'cancelling', 'preparing', 'stopping']);
+const pollErrorMessage = (error: unknown) => {
+  const name = (error as { name?: string })?.name || '';
+  const text = String((error as { message?: string })?.message || '');
+  if (name === 'TimeoutError' || name === 'AbortError' || /timed out|aborted/i.test(text))
+    return '后台仍在启动或响应较慢，正在自动重试…';
+  if (error instanceof TypeError) return '后台连接暂时中断，正在自动重试…';
   return downloadErrorMessage(error);
 };
-const KINDS:Record<string,string>={download:'资料下载',generate:'业务报表',approval:'价格审批','price-export':'每日价格'};
-const SYSTEMS:Record<string,string>={fengshen:'风神',lanorange:'蓝橙',baize:'商翼',benlai:'本来人力',xiaoxiang:'灯塔'};
-const stamp=(v:string)=>v?new Date(v).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'—';
-const size=(n:number)=>n>=1048576?`${(n/1048576).toFixed(1)} MB`:`${Math.max(1,Math.ceil(n/1024))} KB`;
+const KINDS: Record<string, string> = {
+  download: '资料下载',
+  generate: '业务报表',
+  approval: '价格审批',
+  'price-export': '每日价格',
+};
+const SYSTEMS: Record<string, string> = {
+  fengshen: '风神',
+  lanorange: '蓝橙',
+  baize: '商翼',
+  benlai: '本来人力',
+  xiaoxiang: '灯塔',
+};
 
-export function DownloadRecords({apiFetch,workspaceId,selectedRunId,onOpenAttempt,execution,datasetLabel,refreshVersion=0,recordModule,onNavigateGenerate,onOpenPrice,initialRunId,onInitialFocusHandled}:{
-  initialRunId?:string; onInitialFocusHandled?:()=>void;
-  apiFetch:DownloadFetch; workspaceId:string; selectedRunId:string; onOpenAttempt:(id:string)=>void; execution:React.ReactNode;
-  datasetLabel:(id:string)=>string; refreshVersion?:number; unified?:boolean; recordModule?:RecordModule;
-  onNavigateGenerate?:(cities:string[],start:string,end:string)=>void; onOpenPrice?:(view:'approval'|'price-export',id?:string)=>void;
+export function DownloadRecords({
+  apiFetch,
+  workspaceId,
+  selectedRunId,
+  onOpenAttempt,
+  execution,
+  datasetLabel,
+  refreshVersion = 0,
+  recordModule,
+  onNavigateGenerate,
+  onNavigatePayroll,
+  onOpenPrice,
+  onOpenFengshenLogin,
+  onRetryTask,
+  initialRunId,
+  onInitialFocusHandled,
+}: {
+  initialRunId?: string;
+  onInitialFocusHandled?: () => void;
+  apiFetch: DownloadFetch;
+  workspaceId: string;
+  selectedRunId: string;
+  onOpenAttempt: (id: string) => void;
+  execution: React.ReactNode;
+  datasetLabel: (id: string) => string;
+  refreshVersion?: number;
+  unified?: boolean;
+  recordModule?: RecordModule;
+  onNavigateGenerate?: (cities: string[], start: string, end: string) => void;
+  onNavigatePayroll?: () => void;
+  onOpenPrice?: (view: 'approval' | 'price-export', id?: string) => void;
+  onOpenFengshenLogin?: () => void;
+  onRetryTask?: (task: TaskDetailItem) => void;
 }) {
-  const api=useRef(apiFetch);api.current=apiFetch;
-  const [records,setRecords]=useState<Task[]>([]),[total,setTotal]=useState(0),[page,setPage]=useState(1),[pages,setPages]=useState(1);
-  const [counts,setCounts]=useState<Record<string,number>>({}),[search,setSearch]=useState(''),[query,setQuery]=useState('');
-  const [status,setStatus]=useState(''),[system,setSystem]=useState(''),[kind,setKind]=useState('');
-  const [from,setFrom]=useState(''),[to,setTo]=useState(''),[archived,setArchived]=useState(false);
-  const [selected,setSelected]=useState<string[]>([]),[focused,setFocused]=useState<Task|null>(null),[filesOpen,setFilesOpen]=useState('');
-  const [version,setVersion]=useState(0),[loading,setLoading]=useState(true),[busy,setBusy]=useState(false);
-  const [error,setError]=useState(''),[notice,setNotice]=useState(''),[pollError,setPollError]=useState('');
-  const [confirm,setConfirm]=useState<Task[]|null>(null);
-  const [directory,setDirectory]=useState<{path:string;exists:boolean;can_open:boolean;record_id?:string}|null>(null);
+  const api = useRef(apiFetch);
+  api.current = apiFetch;
+  const [records, setRecords] = useState<Task[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [pages, setPages] = useState(1);
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState('');
+  const [system, setSystem] = useState('');
+  const [kind, setKind] = useState('');
+  const [sortKey, setSortKey] = useState<TaskCenterSortKey>('created_desc');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [dateMenuOpen, setDateMenuOpen] = useState(false);
+  const [archived, setArchived] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [focused, setFocused] = useState<Task | null>(null);
+  const [detailTab, setDetailTab] = useState<TaskDetailTab>('files');
+  const [version, setVersion] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [toast, setToast] = useState<ToastNotice | null>(null);
+  const [pollError, setPollError] = useState('');
+  const [confirm, setConfirm] = useState<Task[] | null>(null);
+  const [directory, setDirectory] = useState<{
+    path: string;
+    exists: boolean;
+    can_open: boolean;
+    record_id?: string;
+  } | null>(null);
+  const [demoEnabled, setDemoEnabled] = useState(true);
+  const [demoRecords, setDemoRecords] = useState<DemoTaskCenterRecord[]>(() => buildDemoTaskCenterRecords());
+  const [demoArchivedIds, setDemoArchivedIds] = useState<string[]>([]);
 
-  const [nowMs,setNowMs]=useState(()=>Date.now());
-  const [syncMs,setSyncMs]=useState(()=>Date.now());
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [syncMs, setSyncMs] = useState(() => Date.now());
 
-  const busyRef=useRef(false),focusRef=useRef<Task|null>(null),selectedRef=useRef<string[]>([]);
-  focusRef.current=focused;selectedRef.current=selected;
-  const reset=()=>{setPage(1);setSelected([]);setFilesOpen('');};
-  useEffect(()=>{const timer=setTimeout(()=>{setQuery(search);reset();},300);return()=>clearTimeout(timer);},[search]);
-  useEffect(()=>{
-    const controller=new AbortController();let timer:ReturnType<typeof setTimeout>;
-    const poll=async()=>{
+  const dateMenuRef = useRef<HTMLDivElement | null>(null);
+  const busyRef = useRef(false);
+  const focusRef = useRef<Task | null>(null);
+  const selectedRef = useRef<string[]>([]);
+  focusRef.current = focused;
+  selectedRef.current = selected;
+
+  const pushToast = (text: string, tone: ToastNotice['tone'] = 'success') => {
+    setToast({ id: Date.now() + Math.random(), tone, text });
+  };
+
+  useEffect(() => {
+    if (!dateMenuOpen) return;
+    const onOutside = (event: MouseEvent) => {
+      if (dateMenuRef.current && !dateMenuRef.current.contains(event.target as Node)) {
+        setDateMenuOpen(false);
+      }
+    };
+    const onEsc = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setDateMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onOutside);
+    window.addEventListener('keydown', onEsc);
+    return () => {
+      document.removeEventListener('mousedown', onOutside);
+      window.removeEventListener('keydown', onEsc);
+    };
+  }, [dateMenuOpen]);
+
+  const reset = () => {
+    setPage(1);
+    setSelected([]);
+    setFocused(null);
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setQuery(search);
+      setPage(1);
+      setSelected([]);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
       try {
-        const params=new URLSearchParams({page:String(page),q:query,status,system,kind,from,to,archived:archived?'1':'0',module:recordModule||'',focus:focusRef.current?.id||''});
-        const response=await api.current(`${API}?${params}`,{signal:AbortSignal.any([controller.signal,AbortSignal.timeout(45000)])});
-        const data=await response.json();if(!response.ok)throw new Error(data.detail||'任务列表暂不可读');
-        if(controller.signal.aborted)return;
-        setRecords(previous=>selectedRef.current.length?previous.map(r=>data.records.find((next:Task)=>next.id===r.id)||r):data.records);setSyncMs(Date.now());setTotal(data.total);setPages(data.pages);setPage(data.page);setCounts(data.counts);setLoading(false);setPollError((data.warnings||[]).join('；'));
-        setFocused(previous=>previous?(data.focused?.id===previous.id?data.focused:data.records.find((r:Task)=>r.id===previous.id)||previous):null);
-      }catch(e){
-        if(!controller.signal.aborted){
-          setPollError(pollErrorMessage(e));setLoading(false);
+        const params = new URLSearchParams({
+          page: String(page),
+          q: query,
+          status,
+          system,
+          kind,
+          from,
+          to,
+          archived: archived ? '1' : '0',
+          module: recordModule || '',
+          focus: focusRef.current?.id || '',
+        });
+        const response = await api.current(`${API}?${params}`, {
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(45000)]),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || '任务列表暂不可读');
+        if (controller.signal.aborted) return;
+        const serverHasLive =
+          (data.records?.length || 0) > 0 || (data.counts?.all || 0) > 0 || (data.counts?.archived || 0) > 0;
+        setRecords(previous =>
+          selectedRef.current.length
+            ? previous.map(r => data.records.find((next: Task) => next.id === r.id) || r)
+            : data.records,
+        );
+        setSyncMs(Date.now());
+        setTotal(data.total);
+        setPages(data.pages);
+        if (serverHasLive) {
+          setPage(data.page);
+        }
+        setCounts(data.counts);
+        setLoading(false);
+        setPollError((data.warnings || []).join('；'));
+        setFocused(previous =>
+          previous
+            ? data.focused?.id === previous.id
+              ? data.focused
+              : data.records.find((r: Task) => r.id === previous.id) || previous
+            : null,
+        );
+      } catch (e) {
+        if (!controller.signal.aborted) {
+          setPollError(pollErrorMessage(e));
+          setLoading(false);
         }
       }
-      if(!controller.signal.aborted)timer=setTimeout(poll,5000);
-    };setLoading(true);void poll();return()=>{controller.abort();clearTimeout(timer);};
-  },[page,query,status,system,kind,from,to,archived,recordModule,version,refreshVersion]);
+      if (!controller.signal.aborted) timer = setTimeout(poll, 5000);
+    };
+    setLoading(true);
+    void poll();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [page, query, status, system, kind, from, to, archived, recordModule, version, refreshVersion]);
 
-  const effectiveRecords=records;
-  const effectiveTotal=total;
-  const effectivePages=pages;
-  const effectivePage=page;
-  const effectiveCounts=counts;
+  const hasLiveData = records.length > 0 || (counts.all || 0) > 0 || (counts.archived || 0) > 0;
+  const usingDemo = !hasLiveData && demoEnabled;
+  const demoResult = useMemo(() => {
+    if (!usingDemo) return null;
+    return queryDemoTaskCenter(demoRecords, {
+      q: query,
+      status: status || 'all',
+      system,
+      kind,
+      from,
+      to,
+      archivedIds: new Set(demoArchivedIds),
+      archivedOnly: archived,
+      page,
+      pageSize,
+    });
+  }, [usingDemo, demoRecords, query, status, system, kind, from, to, demoArchivedIds, archived, page, pageSize]);
 
-  const hasActiveTasks=useMemo(
-    ()=>effectiveRecords.some(r=>ACTIVE.has(r.status))||(focused?ACTIVE.has(focused.status):false),
-    [effectiveRecords,focused],
+  const effectiveRecords = useMemo(() => {
+    const raw = usingDemo && demoResult ? demoResult.items.map(toTaskCenterRow) : records;
+    return sortTaskDisplayRecords(raw, sortKey);
+  }, [usingDemo, demoResult, records, sortKey]);
+  const effectiveTotal = usingDemo && demoResult ? demoResult.total : total;
+  const effectivePages = usingDemo && demoResult ? Math.max(1, Math.ceil(demoResult.total / pageSize)) : pages;
+  const effectivePage = usingDemo && demoResult ? Math.min(page, effectivePages) : page;
+  const effectiveCounts = usingDemo && demoResult ? demoResult.counts : counts;
+
+  // 同步抽屉内展示的任务对象（确保示例停止/刷新状态实时更新）
+  const activeFocused = useMemo(() => {
+    if (!focused) return null;
+    return effectiveRecords.find(r => r.id === focused.id) || focused;
+  }, [focused, effectiveRecords]);
+
+  const hasActiveTasks = useMemo(
+    () => effectiveRecords.some(r => ACTIVE.has(r.status)) || (activeFocused ? ACTIVE.has(activeFocused.status) : false),
+    [effectiveRecords, activeFocused],
   );
-  useEffect(()=>{
-    if(!hasActiveTasks)return;
+  useEffect(() => {
+    if (!hasActiveTasks) return;
     setNowMs(Date.now());
-    const id=setInterval(()=>setNowMs(Date.now()),1000);
-    return()=>clearInterval(id);
-  },[hasActiveTasks]);
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [hasActiveTasks]);
 
-  useEffect(()=>{
-    if(!initialRunId)return;
-    const record=records.find(r=>r.member_ids.includes(initialRunId)||r.action_run_id===initialRunId);
-    if(record){setFocused(record);onInitialFocusHandled?.();}
-  },[initialRunId,records,onInitialFocusHandled]);
-  const title=(r:Task)=>r.title||r.datasets.map(datasetLabel).join('、').replaceAll('（生成表）','');
-  const platform=(r:Task)=>r.price_id?'蓝橙':[...new Set(r.datasets.map(id=>SYSTEMS[datasetGroup(id)]))].filter(Boolean).join(' / ') || '风神';
-  const scope=(r:Task)=>!r.datasets.length?'详见业务记录':r.datasets.every(isGlobalDataset)?'全量':r.datasets.every(id=>id==='rider_archive')?'当前快照':`${r.start} 至 ${r.end}`;
-  const open=(r:Task)=>{
+  useEffect(() => {
+    if (!initialRunId) return;
+    const record = effectiveRecords.find(r => r.member_ids.includes(initialRunId) || r.action_run_id === initialRunId);
+    if (record) {
+      setDetailTab(record.files.length ? 'files' : 'history');
+      setFocused(record);
+      onInitialFocusHandled?.();
+    }
+  }, [initialRunId, effectiveRecords, onInitialFocusHandled]);
+
+  const rawTitle = (r: Task) => r.title || r.datasets.map(datasetLabel).join('、').replaceAll('（生成表）', '');
+  const platform = (r: Task) =>
+    r.price_id ? '蓝橙' : [...new Set(r.datasets.map(id => SYSTEMS[datasetGroup(id)]))].filter(Boolean).join(' / ') || '风神';
+  const kindLabel = (k: string) => KINDS[k] || '资料下载';
+
+  const openDetail = (r: Task, preferredTab?: TaskDetailTab) => {
+    const nextTab: TaskDetailTab =
+      preferredTab || (r.files.length > 0 && ['success', 'partial'].includes(r.status) ? 'files' : 'history');
+    setDetailTab(nextTab);
     setFocused(r);
-    if(r.action_run_id){onOpenAttempt(r.action_run_id);}
+    if (r.action_run_id) {
+      onOpenAttempt(r.action_run_id);
+    }
   };
-  const request=async(url:string,payload?:unknown)=>{
-    const response=await api.current(url,payload===undefined?{signal:AbortSignal.timeout(120000)}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(120000)});
-    if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.detail||'操作未完成，请重试');}return response;
-  };
-  const act=async(work:()=>Promise<void>)=>{
-    if(busyRef.current)return;busyRef.current=true;setBusy(true);setError('');setNotice('');
-    try{await work();}catch(e){setError(downloadErrorMessage(e));}finally{busyRef.current=false;setBusy(false);}
-  };
-  const download=(r:Task,file?:File,sources=false)=>act(async()=>{
-    let url:string,filename:string;
-    if(r.kind==='approval'){url=`/api/fengshen-downloads/lanorange-approvals/batches/${r.price_id}/result.csv`;filename='蓝橙价格审批回执.csv';}
-    else if(r.kind==='price-export'){url=`/api/fengshen-downloads/lanorange-prices/exports/${r.price_id}/result.xlsx`;filename='蓝橙待审每日价格.xlsx';}
-    else{url=file?`/api/fengshen-downloads/runs/${file.run_id}/files/${file.id}`:`/api/fengshen-downloads/records/${r.id}/bundle${sources?'?purpose=sources':''}`;filename=file?.name||`${sources?'来源':'结果'}_${r.id.slice(0,8)}.zip`;}
-    const response=await request(url);
-    const disposition=response.headers.get('content-disposition')||'';
-    const encoded=/filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
-    if(encoded){try{const actual=decodeURIComponent(encoded);if(actual&&!/[\\/\x00-\x1f]/.test(actual))filename=actual;}catch{}}
-    saveDownloadBlob(await readDownloadResponse(response,filename),filename);setNotice('已发起文件保存，请在浏览器下载记录中确认。');
-  });
-  const downloadResult=(r:Task)=>{const files=r.files.filter(f=>f.available);void download(r,files.length===1?files[0]:undefined);};
-  const showDirectory=(r?:Task)=>act(async()=>{
-    const response=await request(`${API}/directory${r?`?record_id=${encodeURIComponent(r.id)}`:''}`);const info=await response.json();setDirectory({...info,record_id:r?.id});if(info.exists&&info.can_open)await request(`${API}/directory/open`,{record_id:r?.id});
-  });
-  const changeVisibility=(rows:Task[])=>act(async()=>{
-    await request(`${API}/visibility`,{ids:rows.map(r=>r.id),restore:archived,stop_first:true});setConfirm(null);setSelected([]);setFocused(null);setVersion(v=>v+1);
-    setNotice(archived?`已恢复 ${rows.length} 个任务，所有同事同步可见。`:'已提交移出请求，进行中任务确认停止后移出。文件保留，可在“已移出”恢复。');
-  });
-  const chosen=effectiveRecords.filter(r=>selected.includes(r.id));
-  const canBatch=chosen.length>0&&chosen.length<=20&&chosen.every(r=>['download','generate','payroll_source'].includes(r.kind)&&r.available_files>0);
-  const context=(r:Task)=>({status:r.status,kind:r.kind,availableFiles:r.available_files,failedItems:r.failed_items,summaryIssue:r.summary_issue});
-  const needsAction=(r:Task)=>taskGuidance(context(r)).needsAction;
-  const actionLabel=(r:Task)=>taskGuidance(context(r)).action;
-  const files=(r:Task,list:File[])=> <ul className="tc-files">{list.map(f=><li key={`${f.run_id}:${f.id}`}><div><span>{f.name}</span><small>{f.city} · {f.available?size(f.bytes):f.unavailable_reason||'文件不可用'}</small></div><button className="wb-button" disabled={busy||!f.available} onClick={()=>void download(r,f)}><Download size={14}/>下载</button></li>)}</ul>;
-  const openPrice=(r:Task)=>{setFocused(null);onOpenPrice?.(r.kind as 'approval'|'price-export',r.price_id);};
-  const mainAction=(r:Task)=>r.price_id?openPrice(r):open(r);
-  const handoffs=focused?taskHandoffs(focused.kind,focused.datasets,focused.cities):null;
-  return <section className="tc-center wbx-taskcenter" aria-label="任务中心列表">
-    {/* @wbx:tc-toolbar-start 筛选与批量操作同一水平带 */}
-    <div className="wbx-toolbar wbx-taskcenter__bar">
-      <div className="wbx-toolbar__lead wbx-taskcenter__lead">
-      <div className="wb-quick-filters" role="group" aria-label="任务状态">{[['','全部','all'],['active','进行中','active'],['attention','待处理','attention'],['success','已完成','success']].map(([key,label,count])=><button key={key} aria-pressed={status===key} onClick={()=>{setStatus(key);reset();}}>{label}<span className="tc-count tabular-nums">{effectiveCounts[count]||0}</span></button>)}</div>
-      </div>
-      <div className="wbx-toolbar__actions wbx-taskcenter__actions">
-        {!archived&&<button className="wbx-btn" disabled={busy} onClick={()=>void act(async()=>{const params=new URLSearchParams({q:query,system,kind,from,to,module:recordModule||''});const response=await request(`${API}/organize-preview?${params}`);const data=await response.json();if(data.records.length)setConfirm(data.records);else setNotice('当前筛选范围内没有可整理的已完成任务。');})}>整理已完成</button>}
-        <button className="wbx-btn" disabled={busy} onClick={()=>void showDirectory()}><FolderOpen size={16}/>打开生成根目录</button>
-        <button className={`wbx-btn${archived?' wbx-btn--secondary':''}`} onClick={()=>{setArchived(!archived);reset();}}><Archive size={15}/>{archived?'返回任务列表':'已移出'}</button>
-      </div>
-    </div>
-    {/* 第二行：搜索 / 平台 / 类型 / 日期 / 刷新 */}
-    <div className="wbx-toolbar wbx-taskcenter__filters">
-      <label className="tc-search wbx-taskcenter__search"><Search size={16}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="搜索任务、城市、文件名或编号" aria-label="搜索任务"/></label>
 
-      {!recordModule&&<><select className="wb-select" aria-label="筛选平台" value={system} onChange={e=>{setSystem(e.target.value);reset();}}><option value="">全部平台</option>{Object.entries(SYSTEMS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select><select className="wb-select" aria-label="筛选任务类型" value={kind} onChange={e=>{setKind(e.target.value);reset();}}><option value="">全部类型</option>{Object.entries(KINDS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></>}
-            <details className="tc-filters"><summary className="wb-button">日期筛选{from||to?' · 已启用':''}</summary><div><div className="tc-filter-date-item"><span>创建日期从</span><WorkbenchDatePicker ariaLabel="创建日期从" value={from} rangeRole="start" rangeStart={from} rangeEnd={to} allowClear align="right" onChange={v=>{setFrom(v);reset();}}/></div><div className="tc-filter-date-item"><span>至</span><WorkbenchDatePicker ariaLabel="创建日期至" value={to} rangeRole="end" rangeStart={from} rangeEnd={to} allowClear align="right" onChange={v=>{setTo(v);reset();}}/></div><button className="wb-link" onClick={()=>{setFrom('');setTo('');reset();}}>清除日期</button></div></details>
-      <button className="wb-icon" aria-label="刷新任务列表" onClick={()=>{setVersion(v=>v+1);}}><RefreshCw size={17}/></button>
-    </div>
-    {/* @wbx:tc-toolbar-end */}
-    {archived&&<p className="tc-info">已移出的任务仍保留文件和处理记录，恢复后所有同事同步可见。</p>}
-    {pollError&&<p role="status" className="wb-notice">{pollError}现有记录保留。</p>}{error&&<p role="alert" className="wb-error">{error}</p>}{notice&&<p role="status" className="tc-info">{notice}</p>}
-    {!!selected.length&&<div className="tc-batchbar"><strong className="tabular-nums">已选 {selected.length} 项（当前页）</strong><button className="wb-button" disabled={busy||!canBatch} title="最多20个有文件的资料或报表任务" onClick={()=>void act(async()=>{const response=await request(`${API}/bundle`,{ids:selected});saveDownloadBlob(await readDownloadResponse(response,'批量任务结果.zip'),'批量任务结果.zip');setNotice('已发起批量文件保存。');})}><Download size={15}/>批量下载</button><button className="wb-button" disabled={busy||!chosen.length} onClick={()=>setConfirm(chosen)}>{archived?'恢复显示':'移出列表'}</button><button className="wb-link" onClick={()=>setSelected([])}>取消选择</button></div>}
-    {/* @wbx:tc-table-start 列序：任务/平台 → 状态 → 进度与耗时 → 任务编号 → 创建时间 → 操作（sticky） */}
-    <div className="wbx-table-scroll wbx-taskcenter__scroll">
-      <table className="wbx-table tc-table wbx-taskcenter__table">
-        <thead><tr>
-          <th className="wbx-taskcenter__check"><input type="checkbox" aria-label="选择当前页任务" checked={effectiveRecords.length>0&&effectiveRecords.every(r=>selected.includes(r.id))} onChange={e=>setSelected(e.target.checked?effectiveRecords.map(r=>r.id):[])}/></th>
-          <th>任务 / 平台</th>
-          <th>状态</th>
-          <th>进度与耗时</th>
-          <th>任务编号</th>
-          <th>创建时间</th>
-          <th className="wbx-table__actions">操作</th>
-        </tr></thead>
-        <tbody>{effectiveRecords.map((r,index)=><React.Fragment key={r.id}>
-          <tr data-task-ids={r.member_ids.join(' ')} className={`wbx-taskcenter__row${index%2===1?' is-alt':''}`}>
-            <td><input type="checkbox" aria-label={`选择${title(r)}`} checked={selected.includes(r.id)} onChange={e=>setSelected(v=>e.target.checked?[...v,r.id]:v.filter(id=>id!==r.id))}/></td>
-            <td className="wbx-taskcenter__task">
-              <button type="button" className="wbx-taskcenter__title" onClick={()=>open(r)} title={title(r)}>{title(r)}</button>
-              <small
-                className="wbx-taskcenter__sub"
-                title={`${platform(r)} · ${KINDS[r.kind]||'资料下载'} · ${r.cities.join('、')||'全部城市'} · ${scope(r)}`}
+  const request = async (url: string, payload?: unknown) => {
+    const response = await api.current(
+      url,
+      payload === undefined
+        ? { signal: AbortSignal.timeout(120000) }
+        : {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(120000),
+          },
+    );
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.detail || '操作未完成，请重试');
+    }
+    return response;
+  };
+
+  const act = async (work: () => Promise<void>) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      await work();
+    } catch (e) {
+      const msg = downloadErrorMessage(e);
+      setError(msg);
+      pushToast(msg, 'error');
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  };
+
+  const download = (r: Task, file?: File, sources = false) =>
+    act(async () => {
+      if (r.demo) {
+        pushToast(`示例文件「${file?.name || cleanTaskTitle(rawTitle(r), platform(r), kindLabel(r.kind))}」仅用于界面预览，实际任务提交后可直接下载。`, 'info');
+        return;
+      }
+      let url: string;
+      let filename: string;
+      if (r.kind === 'approval') {
+        url = `/api/fengshen-downloads/lanorange-approvals/batches/${r.price_id}/result.csv`;
+        filename = '蓝橙价格审批回执.csv';
+      } else if (r.kind === 'price-export') {
+        url = `/api/fengshen-downloads/lanorange-prices/exports/${r.price_id}/result.xlsx`;
+        filename = '蓝橙待审每日价格.xlsx';
+      } else {
+        url = file
+          ? `/api/fengshen-downloads/runs/${file.run_id || r.id}/files/${file.id}`
+          : `/api/fengshen-downloads/records/${r.id}/bundle${sources ? '?purpose=sources' : ''}`;
+        filename = file?.name || `${sources ? '来源' : '结果'}_${r.id.slice(0, 8)}.zip`;
+      }
+      const response = await request(url);
+      const disposition = response.headers.get('content-disposition') || '';
+      const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
+      if (encoded) {
+        try {
+          const actual = decodeURIComponent(encoded);
+          if (actual && !/[\\/\x00-\x1f]/.test(actual)) filename = actual;
+        } catch {
+          // fallback
+        }
+      }
+      saveDownloadBlob(await readDownloadResponse(response, filename), filename);
+      pushToast('已发起文件保存，请在浏览器下载记录中确认。');
+    });
+
+  const downloadResult = (r: Task) => {
+    const avail = r.files.filter(f => f.available !== false);
+    void download(r, avail.length === 1 ? avail[0] : undefined);
+  };
+
+  const stopTask = (r: Task) =>
+    void act(async () => {
+      if (r.demo) {
+        setDemoRecords(prev =>
+          prev.map(item => (item.id === r.id ? { ...item, status: 'cancelled', can_cancel: false } : item)),
+        );
+        pushToast('已停止示例任务。');
+        return;
+      }
+      await request(`${API}/stop`, { id: r.id });
+      setVersion(v => v + 1);
+      pushToast('已请求停止，确认停止前任务保留在列表。', 'info');
+    });
+
+  const batchStopTasks = (ids: string[]) =>
+    void act(async () => {
+      if (!ids.length) return;
+      const targetSet = new Set(ids);
+      const targets = effectiveRecords.filter(r => targetSet.has(r.id));
+      if (targets.every(r => r.demo)) {
+        setDemoRecords(prev =>
+          prev.map(item => (targetSet.has(item.id) ? { ...item, status: 'cancelled', can_cancel: false } : item)),
+        );
+        setSelected([]);
+        pushToast(`已批量停止 ${targets.length} 项进行中示例任务。`);
+        return;
+      }
+      for (const item of targets) {
+        await request(`${API}/stop`, { id: item.id });
+      }
+      setSelected([]);
+      setVersion(v => v + 1);
+      pushToast(`已提交 ${targets.length} 项任务的停止请求。`, 'info');
+    });
+
+  const handleOpenAuth = (authSys: TaskAuthSystem) => {
+    if (authSys === 'fengshen' && onOpenFengshenLogin) {
+      onOpenFengshenLogin();
+      return;
+    }
+    window.dispatchEvent(new CustomEvent('workbench:connections', { detail: authSys }));
+  };
+
+  const handleRetryTask = (r: Task) => {
+    if (r.demo) {
+      const nowIso = new Date().toISOString();
+      const retryId = `TC-RETRY-${String(Date.now()).slice(-4)}`;
+      const cloned: DemoTaskCenterRecord = {
+        id: retryId,
+        kind: (['download', 'generate', 'approval', 'price-export'].includes(r.kind) ? r.kind : 'download') as DemoTaskCenterRecord['kind'],
+        title: `${cleanTaskTitle(rawTitle(r), platform(r), kindLabel(r.kind))}（重试）`,
+        status: 'running',
+        created_at: nowIso,
+        started_at: nowIso,
+        cities: r.cities,
+        datasets: r.datasets,
+        start: r.start,
+        end: r.end,
+        total_items: Math.max(1, r.failed_items || r.total_items),
+        completed_items: 0,
+        failed_items: 0,
+        can_cancel: true,
+        can_retry: false,
+        has_zip: false,
+        files: [],
+      };
+      setDemoRecords(prev => [cloned, ...prev]);
+      setFocused(toTaskCenterRow(cloned));
+      setDetailTab('history');
+      pushToast(`已重新发起「${cleanTaskTitle(rawTitle(r), platform(r), kindLabel(r.kind))}」，正在执行中。`);
+      return;
+    }
+    if (onRetryTask) {
+      setFocused(null);
+      onRetryTask(r);
+      return;
+    }
+    pushToast('请返回对应采集平台重新发起该任务。', 'info');
+  };
+
+  const showDirectory = (r?: Task) =>
+    act(async () => {
+      if (usingDemo && (!r || r.demo)) {
+        setDirectory({
+          path: r ? `/workspace/outputs/${r.id}` : '/workspace/outputs',
+          exists: false,
+          can_open: false,
+          record_id: r?.id,
+        });
+        return;
+      }
+      const response = await request(`${API}/directory${r ? `?record_id=${encodeURIComponent(r.id)}` : ''}`);
+      const info = await response.json();
+      setDirectory({ ...info, record_id: r?.id });
+      if (info.exists && info.can_open) await request(`${API}/directory/open`, { record_id: r?.id });
+    });
+
+  const changeVisibility = (rows: Task[]) =>
+    act(async () => {
+      if (rows.every(r => r.demo)) {
+        const idSet = new Set(rows.map(r => r.id));
+        setDemoArchivedIds(prev => (archived ? prev.filter(id => !idSet.has(id)) : Array.from(new Set([...prev, ...idSet]))));
+        setConfirm(null);
+        setSelected([]);
+        if (focused && idSet.has(focused.id)) setFocused(null);
+        pushToast(archived ? `已恢复 ${rows.length} 条示例任务。` : `已移出 ${rows.length} 条示例任务，可在「已移出」恢复。`);
+        return;
+      }
+      await request(`${API}/visibility`, { ids: rows.map(r => r.id), restore: archived, stop_first: true });
+      setConfirm(null);
+      setSelected([]);
+      setFocused(null);
+      setVersion(v => v + 1);
+      pushToast(
+        archived
+          ? `已恢复 ${rows.length} 个任务，所有同事同步可见。`
+          : '已提交移出请求，进行中任务确认停止后移出。文件保留，可在「已移出」恢复。',
+      );
+    });
+
+  const chosen = effectiveRecords.filter(r => selected.includes(r.id));
+  const batchSummary = useMemo(() => summarizeTaskBatchSelection(chosen), [chosen]);
+  const context = (r: Task) => ({
+    status: r.status,
+    kind: r.kind,
+    availableFiles: r.available_files,
+    failedItems: r.failed_items,
+    summaryIssue: r.summary_issue,
+  });
+  const openPrice = (r: Task) => {
+    setFocused(null);
+    onOpenPrice?.(r.kind as 'approval' | 'price-export', r.price_id);
+  };
+
+  return (
+    <div className="wbx-tc-shell" data-workspace-id={workspaceId}>
+      {/* 1. 顶部极简下划线状态切换条（各分类严格互斥，总数精确相加） */}
+      <div className="wbx-tc-topbar">
+        <div className="wbx-tc-topbar__left">
+          <div className="wbx-tc-tabs" role="tablist" aria-label="任务状态">
+            {(
+              [
+                ['', '全部', 'all'],
+                ['active', '进行中', 'active'],
+                ['attention', '待处理', 'attention'],
+                ['success', '已完成', 'success'],
+                ['stopped', '已停止', 'stopped'],
+              ] as const
+            ).map(([key, label, count]) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={status === key}
+                className={`wbx-tc-tab${status === key ? ' is-active' : ''}`}
+                onClick={() => {
+                  setStatus(key);
+                  reset();
+                }}
               >
-                {platform(r)} · {KINDS[r.kind]||'资料下载'} · {r.cities.length>2?`${r.cities.slice(0,2).join('、')}等${r.cities.length}城`:(r.cities.join('、')||'全部城市')} · {scope(r)}
-              </small>
-            </td>
-            <td><span className={`wbx-pill ${toneClass(taskTone(r.status))}`}><span className="wbx-pill__dot" aria-hidden="true"/>{taskGuidance(context(r)).label}</span></td>
-            <td className="wbx-taskcenter__progress">
-              {(()=>{
-                const meta=computeTaskProgressMeta(r);
-                const elapsedSec=computeTaskElapsedSeconds(r,nowMs,syncMs);
-                const elapsedText=formatTaskDuration(elapsedSec);
-                if(meta.isActive){
-                  const progressLabel=meta.hasTotal
-                    ?`${r.completed_items}/${r.total_items} · ${meta.pct}%`
-                    :r.status==='queued'
-                      ?'排队等待'
-                      :r.status==='waiting_login'
-                        ?'待认证'
-                        :r.status==='waiting_manual'
-                          ?'待核验'
-                          :'执行中';
-                  return (
-                    <div className="wbx-taskcenter__progress-box">
-                      <div className="wbx-taskcenter__progress-top">
-                        <span className="wbx-taskcenter__pct tabular-nums">{progressLabel}</span>
-                        <span className="wbx-taskcenter__duration tabular-nums" title="任务当前已运行时长">
-                          <Clock size={11} aria-hidden="true" />
-                          {elapsedText}
-                        </span>
-                      </div>
-                      <span
-                        className="wbx-progress"
-                        role="progressbar"
-                        aria-label={`${title(r)} 执行进度`}
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                        aria-valuenow={meta.indeterminate?undefined:(meta.pct??0)}
-                      >
-                        <span
-                          className={`wbx-progress__bar is-live${meta.indeterminate?' is-indeterminate':''}`}
-                          style={{width:`${meta.pct??20}%`}}
-                        />
-                      </span>
-                    </div>
-                  );
-                }
-                return (
-                  <div className="wbx-taskcenter__progress-ended">
-                    {r.available_files>0
-                      ?<span className="tabular-nums">{r.available_files} 个文件</span>
-                      :r.files.length>0
-                        ?<span className="wbx-taskcenter__muted">文件不可用</span>
-                        :<span className="wbx-taskcenter__muted">—</span>}
-                    {elapsedSec!==null&&(
-                      <span className="wbx-taskcenter__duration is-ended tabular-nums" title="任务总耗时">
-                        <Clock size={11} aria-hidden="true" />
-                        耗时 {elapsedText}
-                      </span>
-                    )}
+                <span>{label}</span>
+                <span className="wbx-tc-tab__count tabular-nums">{effectiveCounts[count] || 0}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="wbx-tc-topbar__right">
+          {!hasLiveData && (
+            <span className="wbx-demo-group">
+              {usingDemo && <span className="wbx-demo-badge">示例数据</span>}
+              <button
+                type="button"
+                className="wbx-btn wbx-btn--sm wbx-btn--ghost"
+                onClick={() => {
+                  setDemoEnabled(prev => !prev);
+                  reset();
+                }}
+              >
+                {demoEnabled ? '隐藏示例' : '加载 30 条示例'}
+              </button>
+            </span>
+          )}
+          {!archived && (
+            <button
+              type="button"
+              className="wbx-btn wbx-btn--sm"
+              disabled={busy}
+              onClick={() =>
+                void act(async () => {
+                  if (usingDemo) {
+                    const fullDone = queryDemoTaskCenter(demoRecords, {
+                      q: query,
+                      status: 'success',
+                      system,
+                      kind,
+                      from,
+                      to,
+                      archivedIds: new Set(demoArchivedIds),
+                      archivedOnly: false,
+                      page: 1,
+                      pageSize: 200,
+                    }).items.map(toTaskCenterRow);
+                    if (fullDone.length) setConfirm(fullDone);
+                    else pushToast('当前筛选范围内没有可整理的已完成任务。', 'info');
+                    return;
+                  }
+                  const params = new URLSearchParams({
+                    q: query,
+                    system,
+                    kind,
+                    from,
+                    to,
+                    module: recordModule || '',
+                  });
+                  const response = await request(`${API}/organize-preview?${params}`);
+                  const data = await response.json();
+                  if (data.records.length) setConfirm(data.records);
+                  else pushToast('当前筛选范围内没有可整理的已完成任务。', 'info');
+                })
+              }
+            >
+              整理已完成
+            </button>
+          )}
+          <button type="button" className="wbx-btn wbx-btn--sm" disabled={busy} onClick={() => void showDirectory()}>
+            <FolderOpen size={14} aria-hidden="true" />
+            <span>生成根目录</span>
+          </button>
+          <button
+            type="button"
+            className={`wbx-btn wbx-btn--sm${archived ? ' wbx-btn--secondary' : ''}`}
+            onClick={() => {
+              setArchived(!archived);
+              reset();
+            }}
+          >
+            <Archive size={13.5} aria-hidden="true" />
+            <span>{archived ? '返回列表' : '已移出'}</span>
+          </button>
+        </div>
+      </div>
+
+      <section className="tc-center wbx-taskcenter" aria-label="任务中心列表">
+        {/* 2. 单行紧凑筛选条（平台 / 类型 / 快捷日期 / 排序） */}
+        <div className="wbx-taskcenter__filters">
+          <label className="wbx-tc-search">
+            <Search size={13.5} aria-hidden="true" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="搜索任务名称、城市、文件名或编号…"
+              aria-label="搜索任务"
+            />
+          </label>
+
+          {!recordModule && (
+            <>
+              <select
+                className="wb-select wbx-tc-select"
+                aria-label="筛选平台"
+                value={system}
+                onChange={e => {
+                  setSystem(e.target.value);
+                  reset();
+                }}
+              >
+                <option value="">全部平台</option>
+                {Object.entries(SYSTEMS).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="wb-select wbx-tc-select"
+                aria-label="筛选任务类型"
+                value={kind}
+                onChange={e => {
+                  setKind(e.target.value);
+                  reset();
+                }}
+              >
+                <option value="">全部类型</option>
+                {Object.entries(KINDS).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
+
+          {/* 快捷日期筛选浮层 */}
+          <div className="tc-date-popover-wrap" ref={dateMenuRef}>
+            <button
+              type="button"
+              className={`wbx-btn wbx-btn--sm${from || to ? ' is-filter-active' : ''}`}
+              aria-expanded={dateMenuOpen}
+              onClick={() => setDateMenuOpen(prev => !prev)}
+            >
+              <Calendar size={13} aria-hidden="true" />
+              <span>{from || to ? `${from || '起'} ~ ${to || '今'}` : '日期筛选'}</span>
+            </button>
+            {dateMenuOpen && (
+              <div className="tc-date-popover" role="dialog" aria-label="按创建日期筛选">
+                <div className="tc-date-presets">
+                  {(
+                    [
+                      ['today', '今天'],
+                      ['7d', '近 7 天'],
+                      ['month', '本月'],
+                    ] as [TaskDatePreset, string][]
+                  ).map(([preset, label]) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      className="wbx-btn wbx-btn--sm"
+                      onClick={() => {
+                        const range = computeDatePresetRange(preset, nowMs);
+                        setFrom(range.from);
+                        setTo(range.to);
+                        reset();
+                        setDateMenuOpen(false);
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  {(from || to) && (
+                    <button
+                      type="button"
+                      className="wb-link"
+                      onClick={() => {
+                        setFrom('');
+                        setTo('');
+                        reset();
+                        setDateMenuOpen(false);
+                      }}
+                    >
+                      清除
+                    </button>
+                  )}
+                </div>
+                <div className="tc-date-custom-row">
+                  <div className="tc-filter-date-item">
+                    <span>从</span>
+                    <WorkbenchDatePicker
+                      ariaLabel="创建日期从"
+                      value={from}
+                      rangeRole="start"
+                      rangeStart={from}
+                      rangeEnd={to}
+                      allowClear
+                      align="right"
+                      onChange={v => {
+                        setFrom(v);
+                        reset();
+                      }}
+                    />
                   </div>
-                );
-              })()}
-            </td>
-            <td className="wbx-taskcenter__num tabular-nums">{r.id.slice(-6).toUpperCase()}</td>
-            <td className="wbx-taskcenter__time tabular-nums">{stamp(r.created_at)}</td>
-            <td className="wbx-table__actions"><div className="tc-actions wbx-taskcenter__ops">{needsAction(r)?<button type="button" className="wbx-btn wbx-btn--primary wbx-btn--sm" onClick={()=>mainAction(r)}>{actionLabel(r)}</button>:r.available_files>0?<button type="button" className="wbx-btn wbx-btn--primary wbx-btn--sm" disabled={busy} onClick={()=>downloadResult(r)}>下载结果</button>:null}{r.files.length>1&&<button type="button" className="wbx-btn wbx-btn--ghost wbx-btn--sm" aria-expanded={filesOpen===r.id} onClick={()=>setFilesOpen(filesOpen===r.id?'':r.id)}>文件<ChevronDown size={13}/></button>}<button type="button" className="wbx-btn wbx-btn--ghost wbx-btn--sm" onClick={()=>open(r)}>详情</button>{!archived&&ACTIVE.has(r.status)&&<button type="button" className="wbx-btn wbx-btn--ghost wbx-btn--sm" disabled={busy||['stopping','cancelling'].includes(r.status)} onClick={()=>{void act(async()=>{await request(`${API}/stop`,{id:r.id});setVersion(v=>v+1);setNotice('已请求停止，确认停止前任务保留在列表。');});}}>停止</button>}<button type="button" className="wbx-btn wbx-btn--ghost wbx-btn--sm" disabled={busy} onClick={()=>setConfirm([r])}>{archived?'恢复':ACTIVE.has(r.status)?'停止并移出':'移出'}</button></div></td>
-          </tr>
-          {filesOpen===r.id&&<tr className="tc-file-row"><td/><td colSpan={6}>{r.failed_items>0&&<p className="wb-notice">另有 {r.failed_items} 项未完成，已有文件可先领取。</p>}{files(r,r.files)}</td></tr>}
-        </React.Fragment>)}</tbody>
-      </table>
-    </div>
-    {/* @wbx:tc-table-end */}
-    {!effectiveRecords.length && (
-      loading ? (
-        <div className="wbx-taskcenter__skeleton">
-          <SkeletonRows rows={5} columns={6} label="任务列表加载中" />
-        </div>
-      ) : (
-        <EmptyState
-          icon={Inbox}
-          title={pollError ? '正在连接后台服务' : archived ? '暂无已移出的归档任务' : '当前条件下暂无匹配任务'}
-          description={
-            pollError
-              ? '正在同步最新任务记录，请稍候自动刷新或手动点击刷新。'
-              : archived
-                ? '被移出列表的历史任务会保存在此处，文件与处理记录均完整保留。'
-                : (search || status || system || kind || from || to)
-                  ? '可尝试清空搜索词或筛选条件，恢复查看全部采集、报表与核算任务。'
-                  : '在「新建采集」或「薪资核算」提交任务后，可在此实时追踪进度并一键领取结果文件。'
-          }
-          actions={
-            (search || status || system || kind || from || to)
-              ? [
-                  {
-                    label: '重置筛选条件',
-                    tone: 'primary',
-                    icon: RotateCcw,
-                    onClick: () => {
-                      setSearch('');
-                      setQuery('');
-                      setStatus('');
-                      setSystem('');
-                      setKind('');
-                      setFrom('');
-                      setTo('');
-                      reset();
-                    },
-                  },
-                ]
-              : [
-                  {
-                    label: '刷新任务列表',
-                    tone: 'secondary',
-                    icon: RefreshCw,
-                    onClick: () => setVersion(v => v + 1),
-                  },
-                ]
-          }
-        />
-      )
-    )}
-    <footer className="tc-pagination"><span className="tabular-nums">共 {effectiveTotal} 条 · 每页 20 条</span><div><button className="wb-button" disabled={effectivePage<=1||loading} onClick={()=>{setPage(p=>p-1);setSelected([]);}}>上一页</button><span className="tabular-nums">{effectivePage} / {effectivePages}</span><button className="wb-button" disabled={effectivePage>=effectivePages||loading} onClick={()=>{setPage(p=>p+1);setSelected([]);}}>下一页</button></div></footer>
-    {focused&&<WorkbenchDrawer title="任务详情" wide onClose={()=>setFocused(null)} bodyClassName="tc-detail wbx-tc-detail">
-      <div className="wbx-tc-detail__head">
-        <div className="wbx-tc-detail__title-row">
-          <h3>{title(focused)}</h3>
-          <span className={`wbx-pill ${toneClass(taskTone(focused.status))}`}><span className="wbx-pill__dot" aria-hidden="true"/>{statusLabel(focused.status)}</span>
-        </div>
-        <div className="wbx-tc-detail__meta tabular-nums">
-          <span>{platform(focused)} · {KINDS[focused.kind]||'资料下载'}</span>
-          <span>{focused.cities.join('、')||'全部城市'}</span>
-          <span>{scope(focused)}</span>
-          <span>{stamp(focused.created_at)}</span>
-          <span>{ACTIVE.has(focused.status)?'已耗时':'总耗时'} {formatTaskDuration(computeTaskElapsedSeconds(focused,nowMs,syncMs))}</span>
-          <span>编号 {focused.id.slice(-8).toUpperCase()}</span>
-        </div>
-        {(()=>{
-          const meta=computeTaskProgressMeta(focused);
-          if(!meta.isActive)return null;
-          return (
-            <div className="wbx-tc-detail__livebar">
-              <div className="wbx-taskcenter__progress-top">
-                <span className="wbx-taskcenter__pct tabular-nums">
-                  {meta.hasTotal?`实时进度：${focused.completed_items}/${focused.total_items}（${meta.pct}%）`:'正在执行中'}
-                </span>
-                <span className="wbx-taskcenter__duration tabular-nums">
-                  <Clock size={12} aria-hidden="true" />
-                  已运行 {formatTaskDuration(computeTaskElapsedSeconds(focused,nowMs,syncMs))}
-                </span>
+                  <div className="tc-filter-date-item">
+                    <span>至</span>
+                    <WorkbenchDatePicker
+                      ariaLabel="创建日期至"
+                      value={to}
+                      rangeRole="end"
+                      rangeStart={from}
+                      rangeEnd={to}
+                      allowClear
+                      align="right"
+                      onChange={v => {
+                        setTo(v);
+                        reset();
+                      }}
+                    />
+                  </div>
+                </div>
               </div>
-              <span className="wbx-progress" aria-hidden="true">
-                <span
-                  className={`wbx-progress__bar is-live${meta.indeterminate?' is-indeterminate':''}`}
-                  style={{width:`${meta.pct??20}%`}}
-                />
-              </span>
-            </div>
-          );
-        })()}
-      </div>
+            )}
+          </div>
 
-      {needsAction(focused)&&<p className="wbx-tc-detail__hint">{taskGuidance(context(focused)).hint}</p>}
+          <select
+            className="wb-select wbx-tc-select"
+            aria-label="排序方式"
+            value={sortKey}
+            onChange={e => setSortKey(e.target.value as TaskCenterSortKey)}
+          >
+            <option value="created_desc">按创建时间</option>
+            <option value="elapsed_desc">按耗时从长到短</option>
+            <option value="files_desc">按产出文件数</option>
+          </select>
 
-      <div className="tc-detail-actions wbx-tc-detail__actions">
-        {focused.available_files>0&&<button className="wbx-btn wbx-btn--primary" disabled={busy} onClick={()=>downloadResult(focused)}><Download size={14}/>下载结果</button>}
-        {focused.price_id&&<button className="wbx-btn" onClick={()=>openPrice(focused)}>查看{focused.kind==='approval'?'审批':'价格导出'}记录</button>}
-        {['download','generate','payroll_source'].includes(focused.kind)&&ENDED.has(focused.status)&&<button className="wbx-btn" disabled={busy} onClick={()=>void download(focused,undefined,true)}><Download size={14}/>下载复核资料包</button>}
-        <button className="wbx-btn" disabled={busy} onClick={()=>void showDirectory(focused)}><FolderOpen size={14}/>打开任务目录</button>
-        {focused.status==='success'&&handoffs?.generate&&onNavigateGenerate&&<button className="wbx-btn" onClick={()=>{setFocused(null);onNavigateGenerate(handoffs.cities,focused.start,focused.end);}}>生成专项报表</button>}
-        <button className="wbx-btn wbx-btn--ghost" disabled={busy} onClick={()=>setConfirm([focused])}>{archived?'恢复显示':ACTIVE.has(focused.status)?'停止并移出':'移出列表'}</button>
-      </div>
-
-      {error&&<p role="alert" className="wb-error">{error}</p>}
-
-      {!!focused.files.length&&<section className="wbx-tc-detail__section">
-        <h4>结果文件（{focused.available_files} 个可用）</h4>
-        {focused.failed_items>0&&<p className="wb-notice">另有 {focused.failed_items} 项未完成，已生成文件可先下载。</p>}
-        {files(focused,focused.files)}
-      </section>}
-
-      {['download','generate','payroll_source'].includes(focused.kind)&&ENDED.has(focused.status)&&!!focused.source_files?.length&&<section className="wbx-tc-detail__section">
-        <h4>关联来源原件（{focused.source_files.length} 个）</h4>
-        {files(focused,focused.source_files)}
-      </section>}
-
-      {focused.action_run_id&&<section className="wbx-tc-detail__section">
-        <h4>执行记录</h4>
-        <div className="wbx-tc-detail__exec">
-          {focused.attempts.length>1&&<div className="tc-attempts">{focused.attempts.map((a,i)=><button key={a.id} className="wbx-btn wbx-btn--sm" aria-pressed={selectedRunId===a.id} onClick={()=>{onOpenAttempt(a.id);}}>{i?'后续处理':'首次下载'} · {statusLabel(a.status)}</button>)}</div>}
-          {focused.member_ids.includes(selectedRunId)?execution:<button className="wb-link" onClick={()=>open(focused)}>加载处理记录</button>}
+          <button
+            type="button"
+            className="wbx-btn wbx-btn--sm wbx-btn--ghost"
+            aria-label="刷新任务列表"
+            onClick={() => {
+              setVersion(v => v + 1);
+            }}
+          >
+            <RefreshCw size={13.5} aria-hidden="true" />
+            <span>刷新</span>
+          </button>
         </div>
-      </section>}
-    </WorkbenchDrawer>}
-    {directory&&<WorkbenchDrawer title="生成文件目录" onClose={()=>setDirectory(null)}><p className="wb-muted">这是运行本系统的电脑上的目录，浏览器下载位置由浏览器设置决定。</p><label className="tc-path">{directory.record_id?'本次任务目录':'生成根目录'}<textarea readOnly value={directory.path} onFocus={e=>e.target.select()}/></label>{!directory.exists&&<p className="wb-notice">目录尚未生成或已被移动。</p>}<div className="tc-detail-actions"><button className="wb-primary" disabled={busy||!directory.exists||!directory.can_open} onClick={()=>void act(async()=>{await request(`${API}/directory/open`,{record_id:directory.record_id});setNotice('已打开资源管理器。');})}><FolderOpen size={16}/>打开文件夹</button><button className="wb-button" onClick={()=>void act(async()=>{await navigator.clipboard.writeText(directory.path);setNotice('目录路径已复制。');})}>复制路径</button></div>{!directory.can_open&&<p className="wb-muted">远程访问请下载文件，或使用管理员提供的共享路径。</p>}{error&&<p className="wb-error" role="alert">{error}</p>}<details><summary>新任务目录结构</summary><pre className="tc-tree">{'任务名称_生成时间_编号 /\n  汇总报表.xlsx\n  城市_报表.xlsx\n  文件清单.csv\n\n成品直接平铺；原始资料单独保留，需要时领取复核资料包。'}</pre></details></WorkbenchDrawer>}
-    {confirm&&<WorkbenchDrawer title={archived?'恢复任务显示':'移出任务列表'} onClose={()=>setConfirm(null)}><p>将{archived?'恢复':'移出'} {confirm.length} 个任务，对共享工作台所有同事生效。</p><p className="wb-muted">进行中的任务确认停止后移出。文件、处理记录和业务资料均保留。{archived?'':'之后可在“已移出”中恢复。'}</p><ul className="tc-confirm-list">{confirm.slice(0,30).map(r=><li key={r.id}>{title(r)} · {r.id.slice(-6).toUpperCase()}</li>)}</ul>{error&&<p className="wb-error" role="alert">{error}</p>}<div className="tc-detail-actions"><button className="wb-button" onClick={()=>setConfirm(null)}>取消</button><button className="wb-primary" disabled={busy} onClick={()=>void changeVisibility(confirm)}>{busy?'处理中…':archived?'确认恢复':'确认移出，保留文件'}</button></div></WorkbenchDrawer>}
-  </section>;
+
+        {archived && <p className="tc-info">已移出的任务仍保留文件和处理记录，恢复后所有同事同步可见。</p>}
+        {pollError && !usingDemo && (
+          <p role="status" className="wb-notice">
+            {pollError}现有记录保留。
+          </p>
+        )}
+        {error && (
+          <p role="alert" className="wb-error">
+            {error}
+          </p>
+        )}
+        {!!selected.length && (
+          <div className="tc-batchbar">
+            <strong className="tabular-nums">已选 {batchSummary.total} 项</strong>
+            <button
+              type="button"
+              className="wbx-btn wbx-btn--sm wbx-btn--primary"
+              disabled={busy || batchSummary.downloadableCount === 0}
+              title={
+                batchSummary.downloadableCount === 0
+                  ? '所选任务暂无可打包下载的结果文件'
+                  : `打包下载 ${batchSummary.downloadableCount} 项可用任务（自动跳过无文件或审批类任务）`
+              }
+              onClick={() =>
+                void act(async () => {
+                  const targets = chosen.filter(r => batchSummary.downloadableIds.includes(r.id));
+                  if (targets.every(r => r.demo)) {
+                    pushToast(
+                      `示例模式已筛选 ${targets.length} 项可下载任务${batchSummary.skippedDownloadCount ? `（自动跳过 ${batchSummary.skippedDownloadCount} 项）` : ''}，实际任务可直接打包下载。`,
+                      'info',
+                    );
+                    return;
+                  }
+                  const response = await request(`${API}/bundle`, { ids: batchSummary.downloadableIds });
+                  saveDownloadBlob(await readDownloadResponse(response, '批量任务结果.zip'), '批量任务结果.zip');
+                  pushToast(`已发起 ${targets.length} 项任务的批量文件保存。`);
+                })
+              }
+            >
+              <Download size={13.5} />
+              <span>
+                批量下载{batchSummary.downloadableCount > 0 ? ` (${batchSummary.downloadableCount})` : ''}
+              </span>
+            </button>
+            {batchSummary.skippedDownloadCount > 0 && batchSummary.downloadableCount > 0 && (
+              <span className="tc-batchbar__hint tabular-nums">
+                自动跳过 {batchSummary.skippedDownloadCount} 项不可下载
+              </span>
+            )}
+            {!archived && batchSummary.activeCount > 0 && (
+              <button
+                type="button"
+                className="wbx-btn wbx-btn--sm wbx-btn--danger"
+                disabled={busy}
+                onClick={() => batchStopTasks(batchSummary.activeIds)}
+              >
+                <Square size={11.5} aria-hidden="true" />
+                <span>批量停止 ({batchSummary.activeCount})</span>
+              </button>
+            )}
+            <button
+              type="button"
+              className="wbx-btn wbx-btn--sm"
+              disabled={busy || !chosen.length}
+              onClick={() => setConfirm(chosen)}
+            >
+              {archived ? '恢复显示' : '移出列表'}
+            </button>
+            <button type="button" className="wb-link" onClick={() => setSelected([])}>
+              取消选择
+            </button>
+          </div>
+        )}
+
+        {/* 3. 精简 6 列高扫读任务列表（无行内冗余折叠，操作按钮严格收敛） */}
+        <div className="wbx-table-scroll wbx-taskcenter__scroll">
+          <table className="wbx-table tc-table wbx-taskcenter__table">
+            <thead>
+              <tr>
+                <th className="tc-col-check">
+                  <input
+                    type="checkbox"
+                    aria-label="选择当前页任务"
+                    checked={effectiveRecords.length > 0 && effectiveRecords.every(r => selected.includes(r.id))}
+                    onChange={e => setSelected(e.target.checked ? effectiveRecords.map(r => r.id) : [])}
+                  />
+                </th>
+                <th className="tc-col-task">任务内容</th>
+                <th className="tc-col-source">来源 / 类型</th>
+                <th className="tc-col-scope">范围 / 周期</th>
+                <th className="tc-col-progress">状态与进度</th>
+                <th className="tc-col-time">创建时间</th>
+                <th className="tc-col-ops">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {effectiveRecords.map(r => {
+                const pName = platform(r);
+                const kLabel = kindLabel(r.kind);
+                const cleanTitle = cleanTaskTitle(rawTitle(r), pName, kLabel);
+                const diagNote = computeTaskDiagnosticNote(r);
+                const citiesMeta = formatCitiesCompact(r.cities);
+                const periodMeta = formatPeriodCompact(r.start, r.end, r.datasets);
+                const createdMeta = formatCompactTimestamp(r.created_at, nowMs);
+                const guidance = taskGuidance(context(r));
+                const isActive = ACTIVE.has(r.status);
+                const progressMeta = computeTaskProgressMeta(r);
+                const elapsedSec = computeTaskElapsedSeconds(r, nowMs, syncMs);
+                const elapsedText = formatTaskDuration(elapsedSec);
+                const primaryAction = resolveTaskPrimaryAction(r, archived);
+                const isDetailOpen = activeFocused?.id === r.id;
+                const pTone = platformTone(pName);
+
+                return (
+                  <tr
+                    key={r.id}
+                    data-task-ids={r.member_ids.join(' ')}
+                    className={`tc-row${isDetailOpen ? ' is-detail-open' : ''}`}
+                    onClick={() => openDetail(r)}
+                  >
+                    <td className="tc-col-check">
+                      <input
+                        type="checkbox"
+                        aria-label={`选择${cleanTitle}`}
+                        checked={selected.includes(r.id)}
+                        onClick={e => e.stopPropagation()}
+                        onChange={e =>
+                          setSelected(v => (e.target.checked ? [...v, r.id] : v.filter(id => id !== r.id)))
+                        }
+                      />
+                    </td>
+
+                    {/* 任务内容：去冗余前缀，健康任务仅 1 行，异常/阻塞任务附 1 行精准原因 */}
+                    <td className="tc-col-task">
+                      <span className="tc-task-title" title={rawTitle(r)}>
+                        {cleanTitle}
+                      </span>
+                      {diagNote && (
+                        <small className={`tc-task-note is-${diagNote.tone}`} title={diagNote.text}>
+                          {diagNote.text}
+                        </small>
+                      )}
+                    </td>
+
+                    {/* 来源 / 类型：无底色语义文字 */}
+                    <td className="tc-col-source">
+                      <span className={`tc-platform-text is-${pTone}`}>{pName}</span>
+                      <small className="tc-kind-text">{kLabel}</small>
+                    </td>
+
+                    {/* 范围 / 周期 */}
+                    <td className="tc-col-scope">
+                      <span className="tc-scope-cities" title={citiesMeta.full}>
+                        {citiesMeta.short}
+                      </span>
+                      <small className="tc-scope-period tabular-nums" title={periodMeta.full}>
+                        {periodMeta.short}
+                      </small>
+                    </td>
+
+                    {/* 状态与进度：融合状态胶囊 + 紧凑进度/文件产出 + 耗时 */}
+                    <td className="tc-col-progress">
+                      <div className="tc-progress-top">
+                        <span className={`wbx-pill ${toneClass(taskTone(r.status))}`}>
+                          {isActive && !['stopping', 'cancelling', 'waiting_login', 'waiting_manual', 'queued'].includes(r.status) ? (
+                            <Loader2 size={11.5} className="animate-spin" aria-hidden="true" />
+                          ) : (
+                            <span className="wbx-pill__dot" aria-hidden="true" />
+                          )}
+                          {guidance.label}
+                        </span>
+                        {progressMeta.isActive && progressMeta.hasTotal && r.status !== 'queued' && (progressMeta.pct ?? 0) > 0 && (
+                          <div
+                            className={`tc-inline-progress${['waiting_login', 'waiting_manual'].includes(r.status) ? ' is-paused' : ''}`}
+                            aria-label={`进度 ${progressMeta.pct}%`}
+                          >
+                            <div className="tc-inline-progress__track">
+                              <span style={{ width: `${Math.max(0, Math.min(100, progressMeta.pct ?? 0))}%` }} />
+                            </div>
+                            <span className="tabular-nums">{progressMeta.pct}%</span>
+                          </div>
+                        )}
+                        {!progressMeta.isActive && r.available_files > 0 && (
+                          <button
+                            type="button"
+                            className="tc-file-count tabular-nums"
+                            title="点击在右侧抽屉查看全部文件"
+                            onClick={e => {
+                              e.stopPropagation();
+                              openDetail(r, 'files');
+                            }}
+                          >
+                            {r.available_files} 个文件
+                          </button>
+                        )}
+                        {!progressMeta.isActive && r.failed_items > 0 && (
+                          <span className="tc-failed-count tabular-nums">{r.failed_items} 项失败</span>
+                        )}
+                      </div>
+                      <div className="tc-progress-meta tabular-nums">
+                        {progressMeta.isActive && progressMeta.hasTotal && (
+                          <span>
+                            {r.completed_items}/{r.total_items} 项
+                          </span>
+                        )}
+                        {elapsedSec !== null && (
+                          <span>{isActive ? `已用 ${elapsedText}` : `耗时 ${elapsedText}`}</span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* 创建时间 */}
+                    <td className="tc-col-time tabular-nums" title={createdMeta.full}>
+                      {createdMeta.short}
+                    </td>
+
+                    {/* 操作：严格收敛为 1 个场景主操作 + 极简辅助按钮 */}
+                    <td className="tc-col-ops">
+                      <div className="tc-row-ops" onClick={e => e.stopPropagation()}>
+                        {primaryAction?.type === 'restore' && (
+                          <button
+                            type="button"
+                            className="tc-op-cta is-primary"
+                            disabled={busy}
+                            onClick={() => setConfirm([r])}
+                          >
+                            <ArchiveRestore size={12.5} aria-hidden="true" />
+                            <span>恢复</span>
+                          </button>
+                        )}
+
+                        {primaryAction?.type === 'download' && (
+                          <button
+                            type="button"
+                            className="tc-op-cta is-primary"
+                            disabled={busy}
+                            title={r.available_files > 1 ? `打包下载全部 ${r.available_files} 个文件` : '下载结果文件'}
+                            onClick={() => downloadResult(r)}
+                          >
+                            <Download size={12.5} aria-hidden="true" />
+                            <span>下载</span>
+                          </button>
+                        )}
+
+                        {primaryAction?.type === 'price' && (
+                          <button
+                            type="button"
+                            className="tc-op-cta is-primary"
+                            onClick={() => openPrice(r)}
+                          >
+                            <ExternalLink size={12.5} aria-hidden="true" />
+                            <span>{primaryAction.label}</span>
+                          </button>
+                        )}
+
+                        {primaryAction?.type === 'attention' && (
+                          <>
+                            <button
+                              type="button"
+                              className={`tc-op-cta is-${primaryAction.tone}`}
+                              onClick={() => (r.price_id ? openPrice(r) : openDetail(r, 'history'))}
+                            >
+                              <span>{primaryAction.label}</span>
+                            </button>
+                            {!isActive && r.available_files > 0 && (
+                              <button
+                                type="button"
+                                className="tc-icon-btn"
+                                title={`先下载已生成的 ${r.available_files} 个文件`}
+                                aria-label={`下载 ${cleanTitle} 已有文件`}
+                                disabled={busy}
+                                onClick={() => downloadResult(r)}
+                              >
+                                <Download size={14} aria-hidden="true" />
+                              </button>
+                            )}
+                          </>
+                        )}
+
+                        {primaryAction?.type !== 'attention' && (
+                          <button
+                            type="button"
+                            className={`tc-detail-trigger${isDetailOpen ? ' is-active' : ''}`}
+                            aria-label={`查看 ${cleanTitle} 详情`}
+                            onClick={() => openDetail(r)}
+                          >
+                            <span>详情</span>
+                            <ChevronRight size={13} aria-hidden="true" />
+                          </button>
+                        )}
+
+                        {!archived && isActive && (
+                          <button
+                            type="button"
+                            className="tc-stop-btn"
+                            title={
+                              ['stopping', 'cancelling'].includes(r.status)
+                                ? '停止中'
+                                : r.status === 'queued'
+                                  ? '取消排队'
+                                  : '停止任务'
+                            }
+                            aria-label={`${r.status === 'queued' ? '取消排队' : '停止'} ${cleanTitle}`}
+                            disabled={busy || ['stopping', 'cancelling'].includes(r.status)}
+                            onClick={() => stopTask(r)}
+                          >
+                            <Square size={11} aria-hidden="true" />
+                            <span>
+                              {['stopping', 'cancelling'].includes(r.status)
+                                ? '停止中'
+                                : r.status === 'queued'
+                                  ? '取消'
+                                  : '停止'}
+                            </span>
+                          </button>
+                        )}
+
+                        {!archived && (
+                          <button
+                            type="button"
+                            className="tc-icon-btn tc-remove-btn"
+                            title={isActive ? '停止并移出列表' : '移出列表'}
+                            aria-label={`${isActive ? '停止并移出' : '移出'} ${cleanTitle}`}
+                            disabled={busy}
+                            onClick={() => setConfirm([r])}
+                          >
+                            <X size={14} aria-hidden="true" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {!effectiveRecords.length &&
+          (loading ? (
+            <div className="wbx-taskcenter__skeleton">
+              <SkeletonRows rows={5} columns={6} label="任务列表加载中" />
+            </div>
+          ) : (
+            <EmptyState
+              icon={Inbox}
+              title={pollError ? '正在连接后台服务' : archived ? '暂无已移出的归档任务' : '当前条件下暂无匹配任务'}
+              description={
+                pollError
+                  ? '正在同步最新任务记录，请稍候自动刷新或手动点击刷新。'
+                  : archived
+                    ? '被移出列表的历史任务会保存在此处，文件与处理记录均完整保留。'
+                    : search || status || system || kind || from || to
+                      ? '可尝试清空搜索词或筛选条件，恢复查看全部采集、报表与核算任务。'
+                      : '在「新建采集」或「薪资核算」提交任务后，可在此实时追踪进度并一键领取结果文件。'
+              }
+              actions={
+                search || status || system || kind || from || to
+                  ? [
+                      {
+                        label: '重置筛选条件',
+                        tone: 'primary',
+                        icon: RotateCcw,
+                        onClick: () => {
+                          setSearch('');
+                          setQuery('');
+                          setStatus('');
+                          setSystem('');
+                          setKind('');
+                          setFrom('');
+                          setTo('');
+                          reset();
+                        },
+                      },
+                    ]
+                  : [
+                      {
+                        label: '刷新任务列表',
+                        tone: 'secondary',
+                        icon: RefreshCw,
+                        onClick: () => setVersion(v => v + 1),
+                      },
+                    ]
+              }
+            />
+          ))}
+
+        <footer className="tc-pagination">
+          <div className="tc-pagination__meta tabular-nums">
+            <span>共 {effectiveTotal} 条</span>
+            <label className="tc-pagination__size">
+              <span>每页</span>
+              <select
+                className="wb-select"
+                aria-label="任务中心每页条数"
+                value={pageSize}
+                onChange={e => {
+                  setPageSize(Number(e.target.value));
+                  setPage(1);
+                  setSelected([]);
+                }}
+              >
+                <option value={10}>10 条</option>
+                <option value={20}>20 条</option>
+                <option value={50}>50 条</option>
+              </select>
+            </label>
+          </div>
+          <div className="tc-pagination__controls">
+            <button
+              type="button"
+              className="wbx-btn wbx-btn--sm"
+              disabled={effectivePage <= 1 || (loading && !usingDemo)}
+              onClick={() => {
+                setPage(p => p - 1);
+                setSelected([]);
+              }}
+            >
+              上一页
+            </button>
+            <span className="tabular-nums">
+              第 {effectivePage} / {effectivePages} 页
+            </span>
+            <button
+              type="button"
+              className="wbx-btn wbx-btn--sm"
+              disabled={effectivePage >= effectivePages || (loading && !usingDemo)}
+              onClick={() => {
+                setPage(p => p + 1);
+                setSelected([]);
+              }}
+            >
+              下一页
+            </button>
+          </div>
+        </footer>
+
+        <TaskDetailDrawer
+          task={activeFocused}
+          tasks={effectiveRecords}
+          initialTab={detailTab}
+          archived={archived}
+          busy={busy}
+          nowMs={nowMs}
+          syncMs={syncMs}
+          selectedRunId={selectedRunId}
+          execution={execution}
+          error={error}
+          platformName={platform}
+          kindLabel={kindLabel}
+          rawTitle={rawTitle}
+          onClose={() => setFocused(null)}
+          onSelectTask={next => {
+            setFocused(next);
+            if (next.action_run_id) onOpenAttempt(next.action_run_id);
+          }}
+          onDownloadResult={downloadResult}
+          onDownloadFile={(r, file) => void download(r, file)}
+          onDownloadSources={r => void download(r, undefined, true)}
+          onShowDirectory={r => void showDirectory(r)}
+          onStopTask={stopTask}
+          onArchiveOrRestore={r => setConfirm([r])}
+          onRetryTask={handleRetryTask}
+          onOpenAuth={authSys => handleOpenAuth(authSys)}
+          onNavigatePayroll={onNavigatePayroll}
+          onOpenPrice={onOpenPrice ? openPrice : undefined}
+          onNavigateGenerate={onNavigateGenerate}
+          onOpenAttempt={onOpenAttempt}
+          onReloadExecution={r => openDetail(r, 'history')}
+        />
+
+        {directory && (
+          <WorkbenchDrawer title="生成文件目录" onClose={() => setDirectory(null)}>
+            <p className="wb-muted">这是运行本系统的电脑上的目录，浏览器下载位置由浏览器设置决定。</p>
+            <label className="tc-path">
+              {directory.record_id ? '本次任务目录' : '生成根目录'}
+              <textarea readOnly value={directory.path} onFocus={e => e.target.select()} />
+            </label>
+            {!directory.exists && <p className="wb-notice">目录尚未生成或已被移动。</p>}
+            <div className="tc-detail-actions">
+              <button
+                type="button"
+                className="wbx-btn wbx-btn--primary wbx-btn--sm"
+                disabled={busy || !directory.exists || !directory.can_open}
+                onClick={() =>
+                  void act(async () => {
+                    await request(`${API}/directory/open`, { record_id: directory.record_id });
+                    pushToast('已打开资源管理器。');
+                  })
+                }
+              >
+                <FolderOpen size={14} />
+                <span>打开文件夹</span>
+              </button>
+              <button
+                type="button"
+                className="wbx-btn wbx-btn--sm"
+                onClick={() =>
+                  void act(async () => {
+                    await navigator.clipboard.writeText(directory.path);
+                    pushToast('目录路径已复制到剪贴板。');
+                  })
+                }
+              >
+                复制路径
+              </button>
+            </div>
+            {!directory.can_open && <p className="wb-muted">远程访问请下载文件，或使用管理员提供的共享路径。</p>}
+            <details>
+              <summary>新任务目录结构</summary>
+              <pre className="tc-tree">
+                {'任务名称_生成时间_编号 /\n  汇总报表.xlsx\n  城市_报表.xlsx\n  文件清单.csv\n\n成品直接平铺；原始资料单独保留，需要时领取复核资料包。'}
+              </pre>
+            </details>
+          </WorkbenchDrawer>
+        )}
+
+        {confirm && (
+          <WorkbenchConfirmModal
+            title={archived ? '恢复任务显示' : '移出任务列表'}
+            description={`将${archived ? '恢复' : '移出'} ${confirm.length} 个任务，对共享工作台所有同事生效。`}
+            hint={`进行中的任务确认停止后移出。文件、处理记录和业务资料均保留。${archived ? '' : '之后可在「已移出」中恢复。'}`}
+            items={confirm.map(r => `${cleanTaskTitle(rawTitle(r), platform(r), kindLabel(r.kind))} · ${r.id.slice(-6).toUpperCase()}`)}
+            confirmLabel={archived ? '确认恢复' : '确认移出，保留文件'}
+            confirmTone={archived ? 'primary' : 'danger'}
+            busy={busy}
+            error={error}
+            onCancel={() => setConfirm(null)}
+            onConfirm={() => void changeVisibility(confirm)}
+          />
+        )}
+
+        <WorkbenchToast toast={toast} onDismiss={() => setToast(null)} />
+      </section>
+    </div>
+  );
 }
+

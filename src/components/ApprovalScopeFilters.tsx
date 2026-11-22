@@ -12,29 +12,52 @@ export function ApprovalScopeFilters({rows,cities,months,site,busy,onChange}:{ro
   const hasActiveFilter=cities.length>0||months.length>0||Boolean(site);
   const isEmptyRows=rows.length===0;
 
+  if (isEmptyRows) {
+    return (
+      <div className="wbx-ap-scope is-empty" aria-label="本人待审批范围">
+        <div className="wbx-ap-scope__item">
+          <span className="wbx-ap-scope__label">城市</span>
+          <span className="wbx-ap-scope__placeholder">同步本人待办后生成</span>
+        </div>
+        <div className="wbx-ap-scope__item">
+          <span className="wbx-ap-scope__label">结算月份</span>
+          <span className="wbx-ap-scope__placeholder">全部月份</span>
+        </div>
+        <label className="wbx-ap-scope__station">
+          <span className="wbx-ap-scope__label">站点</span>
+          <select
+            className="wbx-ap-select"
+            aria-label="待审批站点"
+            disabled
+            value=""
+            onChange={() => {}}
+          >
+            <option value="">全部站点（待同步）</option>
+          </select>
+        </label>
+      </div>
+    );
+  }
+
   return (
-    <section className="approval-scope wbx-approval__scope-compact" aria-label="本人待审批范围">
-      <div className="wbx-approval__scope-row">
-        <span className="wbx-approval__scope-label">城市</span>
-        <div className="wbx-approval__scope-chips">
-          {cityChoices.length > 0 ? (
-            <div className="approval-chips">
-              {cityChoices.map(c => (
-                <label key={c} className={cities.includes(c) ? 'is-selected' : ''}>
-                  <input
-                    type="checkbox"
-                    disabled={busy || isEmptyRows}
-                    checked={cities.includes(c)}
-                    onChange={() => onChange(toggle(cities, c), [], '')}
-                  />
-                  {c}
-                  <span>{rows.filter(r => r.cityName === c).length}</span>
-                </label>
-              ))}
-            </div>
-          ) : (
-            <span className="wbx-approval__scope-empty">全部城市（同步本人待办后生成）</span>
-          )}
+    <div className="wbx-ap-scope" aria-label="本人待审批范围">
+      <div className="wbx-ap-scope__row">
+        <span className="wbx-ap-scope__label">城市</span>
+        <div className="wbx-ap-scope__chips">
+          <div className="approval-chips">
+            {cityChoices.map(c => (
+              <label key={c} className={cities.includes(c) ? 'is-selected' : ''}>
+                <input
+                  type="checkbox"
+                  disabled={busy}
+                  checked={cities.includes(c)}
+                  onChange={() => onChange(toggle(cities, c), [], '')}
+                />
+                {c}
+                <span>{rows.filter(r => r.cityName === c).length}</span>
+              </label>
+            ))}
+          </div>
         </div>
         {hasActiveFilter && (
           <button
@@ -48,16 +71,16 @@ export function ApprovalScopeFilters({rows,cities,months,site,busy,onChange}:{ro
         )}
       </div>
 
-      <div className="wbx-approval__scope-row wbx-approval__scope-row--secondary">
-        <span className="wbx-approval__scope-label">月份</span>
-        <div className="wbx-approval__scope-chips">
+      <div className="wbx-ap-scope__row wbx-ap-scope__row--secondary">
+        <span className="wbx-ap-scope__label">月份</span>
+        <div className="wbx-ap-scope__chips">
           {monthChoices.length > 0 ? (
             <div className="approval-chips">
               {monthChoices.map(m => (
                 <label key={m} className={months.includes(m) ? 'is-selected' : ''}>
                   <input
                     type="checkbox"
-                    disabled={busy || isEmptyRows}
+                    disabled={busy}
                     checked={months.includes(m)}
                     onChange={() => onChange(cities, toggle(months, m), '')}
                   />
@@ -69,21 +92,19 @@ export function ApprovalScopeFilters({rows,cities,months,site,busy,onChange}:{ro
               ))}
             </div>
           ) : (
-            <span className="wbx-approval__scope-empty">全部结算月份</span>
+            <span className="wbx-ap-scope__placeholder">全部结算月份</span>
           )}
         </div>
-        <label className="wbx-approval__station-inline">
-          <span>站点</span>
+        <label className="wbx-ap-scope__station">
+          <span className="wbx-ap-scope__label">站点</span>
           <select
-            className="wb-select"
+            className="wbx-ap-select"
             aria-label="待审批站点"
-            disabled={busy || isEmptyRows}
+            disabled={busy}
             value={site}
             onChange={e => onChange(cities, months, e.target.value)}
           >
-            <option value="">
-              {isEmptyRows ? '全部站点（待同步）' : `全部站点 (${sites.size})`}
-            </option>
+            <option value="">全部站点 ({sites.size})</option>
             {[...sites].map(([key, r]) => (
               <option value={key} key={key}>
                 {r.cityName} · {r.siteName || '未命名站点'}
@@ -92,7 +113,7 @@ export function ApprovalScopeFilters({rows,cities,months,site,busy,onChange}:{ro
           </select>
         </label>
       </div>
-    </section>
+    </div>
   );
 }
 
