@@ -64,6 +64,8 @@ def group_records(runs):
             summaries[file_key(file)] = {**file, **({'available': False, 'unavailable_reason': '资料已有后续处理，原汇总保留在处理记录中', 'outdated': True} if stale else {})}
         files.extend(summaries.values())
         items = list(effective.values())
+        warnings = list(dict.fromkeys(
+            item['warning'] for run in members for item in run.get('items', []) if item.get('warning')))
         active = [run for run in members if run['status'] in ACTIVE]
         summary_failures = [run for run in members if run.get('summary_progress', {}).get('stage') == 'failed']
         failed = [item for item in items if item['status'] not in ('success', *ACTIVE)]
@@ -80,6 +82,8 @@ def group_records(runs):
             status = members[-1]['status']
         if len(members) == 1:
             status = root['status']
+        if status == 'success' and warnings:
+            status = 'partial'
         target = active[-1]['id'] if active else failed[-1]['run_id'] if failed else summary_failures[-1]['id'] if summary_failures else root_id
         records.append({
             'kind': category(root), 'generation_target': root.get('generation_target'),
@@ -95,6 +99,7 @@ def group_records(runs):
             'attempts': [{key: run.get(key) for key in ('id', 'created_at', 'status', 'retry_of', 'recovery_of', 'archive_code')} for run in members],
             'incomplete_lineage': bool(root.get('retry_of') or root.get('recovery_of')),
             'summary_issue': bool(summary_failures),
+            'warnings': warnings,
             'lanorange_full_delivery': root.get('lanorange_full_delivery', False),
             'xiaoxiang_all_dates': root.get('xiaoxiang_all_dates', False),
             'result_layout': root.get('result_layout', 1),

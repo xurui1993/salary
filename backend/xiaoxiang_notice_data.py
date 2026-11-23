@@ -43,6 +43,7 @@ ATTENDANCE_DATASET = 'xiaoxiang_attendance_detail'
 LIST_PAGE_LIMIT = 100
 LIST_PAGE_GUARD = 50
 FILE_ROW_GUARD = 500_000
+HEADER_SCAN_ROWS = 20
 
 # 11/13 起平台将“运力方”移到城市列之后，并去掉两项出勤列的前缀；
 # 输出固定沿用旧表头，所有附件按列名归位，避免跨期文件列错位。
@@ -129,16 +130,22 @@ _DATASET_SPECS = {
         'numeric_columns': _ORDER_NUMERIC,
         'missing_note': '通知中没有【商配送】骑手订单明细附件',
         'merge_mode': 'station_latest_notice',
-        # 周通知发布于周期结束后约 1~2 天，回溯 10 天足够覆盖 7 天周期。
+        # 标题可能随时改名，附件驱动：按发布日期窗口扫描，再按附件名筛选。
+        'attachment_driven': True,
+        'attachment_label': '【商配送】骑手订单明细',
+        # 通知可能延迟推送，前后各留 10 天。
         'publish_margin': 10,
     },
     ATTENDANCE_DATASET: {
         'label': '骑手出勤明细',
         'notice_keyword': '合作商数据下发',
         # 平台不同时期使用“合作商数据下发 / 合作商数据分发 / 0923数据分发”等标题，
-        # 标题只用于缩小范围，最终仍以附件名是否含“骑手出勤明细”为准。
+        # 甚至改名为“11.19数据”“11.20-11.21 数据”；标题不再参与筛选，
+        # 统一按发布日期窗口扫描，再以附件名是否含“骑手出勤明细”为准。
         'notice_keywords': ('合作商数据', '数据分发', '数据下发'),
         'notice_keyword_label': '合作商数据 / 数据分发 / 数据下发',
+        'attachment_driven': True,
+        'attachment_label': '骑手出勤明细',
         'attachment_keywords': ('骑手出勤明细',),
         'allow_partial': True,
         'canonical_header': ATTENDANCE_CANONICAL_HEADER,
@@ -149,8 +156,8 @@ _DATASET_SPECS = {
         'rider_column': 'xxx.rider_id',
         'numeric_columns': _ATTENDANCE_NUMERIC,
         'missing_note': '通知中没有骑手出勤明细附件',
-        # 合作商数据下发存在多期合并通知（如 1016-1018），数据日期最迟约滞后 4 天。
-        'publish_margin': 5,
+        # 通知可能延迟推送，且存在多期合并通知（如 1016-1018），前后各留 10 天。
+        'publish_margin': 10,
     },
 }
 
@@ -162,15 +169,7 @@ def _publish_date(record):
     return None
 
 
-def list_keyword_notices(session, spec, start, supplier_id=xiaoxiang_lighthouse.SUPPLIER_ID,
-                         cancelled=None):
-    """遍历通知列表（接口标题为前缀匹配，故取全量后客户端按关键字筛选）。
-
-    仅保留发布日期不早于「范围开始 - 回溯余量」的通知：附件数据日期不会晚于其
-    发布日期，更早发布的通知不可能包含范围内数据。
-    """
-    keywords = spec.get('notice_keywords') or (spec['notice_keyword'],)
-    floor = start - timedelta(days=spec['publish_margin'])
+def _notice_records(session, supplier_id, cancelled=None):
     records, offset = [], 0
     for _ in range(LIST_PAGE_GUARD):
         if cancelled is not None and cancelled.is_set():
@@ -188,10 +187,42 @@ def list_keyword_notices(session, spec, start, supplier_id=xiaoxiang_lighthouse.
             break
     else:
         raise LighthouseError('通知列表分页超出保护上限，未发布文件')
-    matched = [item for item in records
+    return records
+
+
+def list_keyword_notices(session, spec, start, supplier_id=xiaoxiang_lighthouse.SUPPLIER_ID,
+                         cancelled=None):
+    """兼容旧口径：按标题关键字缩小通知范围（附件驱动模式不再使用）。"""
+    keywords = spec.get('notice_keywords') or (spec['notice_keyword'],)
+    floor = start - timedelta(days=spec['publish_margin'])
+    matched = [item for item in _notice_records(session, supplier_id, cancelled)
                if any(keyword in str(item.get('title') or '') for keyword in keywords)
                and (_publish_date(item) is None or _publish_date(item) >= floor)]
     matched.sort(key=lambda item: (item.get('publishTime') or 0, item.get('id') or 0))
+    return matched
+
+
+def list_notices_by_window(session, spec, start, end, supplier_id=xiaoxiang_lighthouse.SUPPLIER_ID,
+                           cancelled=None, log=None):
+    """附件驱动：按发布日期窗口扫描通知，完全不依赖标题。
+
+    发布日期早于数据日期、通知可能延迟推送，窗口前后各留 publish_margin 天；
+    上限不超过今天，避免把未来通知纳入。真正的数据筛选仍由附件名和附件内日期列完成。
+    """
+    margin = timedelta(days=spec['publish_margin'])
+    floor, ceiling = start - margin, end + margin
+    today = datetime.now(BEIJING).date()
+    if ceiling > today:
+        ceiling = today
+    if ceiling < floor:
+        ceiling = floor
+    matched = [item for item in _notice_records(session, supplier_id, cancelled)
+               if _publish_date(item) is None or floor <= _publish_date(item) <= ceiling]
+    matched.sort(key=lambda item: (item.get('publishTime') or 0, item.get('id') or 0))
+    if log:
+        log('[进度] 扫描 {} 至 {} 发布的 {} 期通知，按附件名匹配「{}」'.format(
+            floor.isoformat(), ceiling.isoformat(), len(matched),
+            spec.get('attachment_label') or spec['label']))
     return matched
 
 
@@ -233,17 +264,37 @@ def _download_attachment(url, target):
     return target
 
 
-def _load_table(path, spec):
-    """读取附件为 (header, rows)，附件行数超保护上限时拒绝。"""
+def _load_table(path, spec, log=None):
+    """读取附件为 (header, rows)，附件行数超保护上限时拒绝。
+
+    附件前可能新增标题/说明行，因此在前 HEADER_SCAN_ROWS 行内按
+    日期列和骑手列自动定位表头，而不是固定认为第一行就是表头。
+    """
     book = load_workbook(path, read_only=True)
     try:
         sheet = book[book.sheetnames[0]]
         sheet.reset_dimensions()
         iterator = sheet.iter_rows(values_only=True)
-        header = list(next(iterator, ()) or ())
+        prefix = []
+        for _ in range(HEADER_SCAN_ROWS):
+            try:
+                prefix.append(list(next(iterator)))
+            except StopIteration:
+                break
+        header_index = None
+        for index, row in enumerate(prefix):
+            values = [str(value).strip() if value is not None else '' for value in row]
+            if spec['date_column'] in values and spec['rider_column'] in values:
+                header_index = index
+                break
+        if header_index is None:
+            header_index = 0
+        header = prefix[header_index] if prefix else []
         if not header:
             raise LighthouseError('附件没有数据表头：{}'.format(path.name))
-        rows = []
+        if header_index and log:
+            log('[提示] 附件表头位于第 {} 行，已自动定位：{}'.format(header_index + 1, path.name))
+        rows = [list(row) for row in prefix[header_index + 1:]]
         for row in iterator:
             rows.append(list(row))
             if len(rows) > FILE_ROW_GUARD:
@@ -287,11 +338,14 @@ def collect_notice_rows(session, spec, start, end,
     出勤明细：沿用（日期, 骑手id）去重。
     """
     log = log or (lambda message, *args, **kwargs: None)
-    notices = list_keyword_notices(session, spec, start, supplier_id, cancelled)
     label = spec['label']
     station_mode = spec.get('merge_mode') == 'station_latest_notice'
-    log('[进度] 匹配到 {} 期「{}」通知'.format(
-        len(notices), spec.get('notice_keyword_label') or spec['notice_keyword']))
+    if spec.get('attachment_driven'):
+        notices = list_notices_by_window(session, spec, start, end, supplier_id, cancelled, log)
+    else:
+        notices = list_keyword_notices(session, spec, start, supplier_id, cancelled)
+        log('[进度] 匹配到 {} 期「{}」通知'.format(
+            len(notices), spec.get('notice_keyword_label') or spec['notice_keyword']))
     canonical = spec.get('canonical_header')
     header = list(canonical) if canonical else None
     date_index = rider_index = site_index = site_name_index = None
@@ -305,6 +359,7 @@ def collect_notice_rows(session, spec, start, end,
             site_index = header.index('站点id') if '站点id' in header else None
             site_name_index = header.index('站点名称') if '站点名称' in header else None
     merged = {}
+    skipped_notices = 0
     with TemporaryDirectory(prefix='xiaoxiang_notice_') as owned_dir:
         temp_root = Path(temp_dir or owned_dir)
         for notice in notices:
@@ -313,7 +368,7 @@ def collect_notice_rows(session, spec, start, end,
             detail = xiaoxiang_lighthouse.notice_detail(session, notice['id'], supplier_id)
             attachments = select_notice_attachments(detail, spec)
             if not attachments:
-                log('[跳过] {}（{}）'.format(notice.get('title'), spec['missing_note']))
+                skipped_notices += 1
                 continue
             log('[进度] {}：下载 {} 个附件'.format(notice.get('title'), len(attachments)))
             notice_rows = {}
@@ -322,7 +377,7 @@ def collect_notice_rows(session, spec, start, end,
                     raise LighthouseError('{}已取消'.format(label))
                 target = temp_root / (uuid.uuid4().hex + '.xlsx')
                 _download_attachment(attachment['fileUrl'], target)
-                rows_header, rows = _load_table(target, spec)
+                rows_header, rows = _load_table(target, spec, log)
                 if spec['date_column'] not in rows_header or spec['rider_column'] not in rows_header:
                     log('[跳过] {}（附件缺少关键列）'.format(attachment['fileName']))
                     continue
@@ -372,9 +427,11 @@ def collect_notice_rows(session, spec, start, end,
             if station_mode:
                 for key, rows in notice_rows.items():
                     merged[key] = rows
+    if skipped_notices:
+        log('[进度] 另有 {} 期通知不含匹配附件，已跳过'.format(skipped_notices))
     if not merged:
         raise LighthouseError('{} 范围内没有可合并的{}数据'.format(
-            label, spec.get('notice_keyword_label') or spec['notice_keyword']))
+            label, spec.get('attachment_label') or spec.get('notice_keyword_label') or spec['notice_keyword']))
     _check_date_coverage(merged, spec, start, end, log, allow_leading_gap=all_dates,
                          coverage=coverage)
     if station_mode:
@@ -572,7 +629,8 @@ def _actual_date_range(header, records, spec):
 
 
 def generate_notice_merge(dataset, start, end, directory, log=None, cancelled=None,
-                          supplier_id=xiaoxiang_lighthouse.SUPPLIER_ID, all_dates=False):
+                          supplier_id=xiaoxiang_lighthouse.SUPPLIER_ID, all_dates=False,
+                          coverage=None):
     """合并指定日期范围的骑手订单明细/骑手出勤明细通知附件，返回工作簿路径。"""
     spec = _DATASET_SPECS[dataset]
     label = spec['label']
@@ -587,7 +645,7 @@ def generate_notice_merge(dataset, start, end, directory, log=None, cancelled=No
         raise LighthouseError('{}已取消'.format(label))
     session = _session()
     log('[下载] 正在查询小象灯塔{}（{} 至 {}，按附件数据日期筛选）'.format(label, start, end))
-    coverage = {}
+    coverage = {} if coverage is None else coverage
     try:
         header, records = collect_notice_rows(
             session, spec, first, last, supplier_id, log, cancelled, all_dates=all_dates,

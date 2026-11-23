@@ -160,6 +160,7 @@ def _refresh(run):
     completed = sum(status in FINAL_STATUSES for status in statuses)
     run["summary"] = {"total": len(statuses), "completed": completed, "success": success,
                       "error": errors, "cancelled": statuses.count("cancelled"),
+                      "warnings": sum(1 for item in run["items"] if item.get("warning")),
                       "files": sum(not file.get("record_hidden") for file in run.get("files", []))}
     progress = round(completed * 100 / len(statuses)) if statuses else 0
     # 资料项全部结束后仍需合并多城市汇总，不能提前显示 100%。
@@ -1335,6 +1336,9 @@ class DownloadManager:
                 target["failure_phase"] = change["failure_phase"]
             target["status"] = change["status"]
             target["error"] = _safe_text(change.get("error")) if change["status"] == "error" and change.get("error") else ""
+            warning = change.get("warning")
+            if isinstance(warning, str) and warning.strip():
+                target["warning"] = warning.strip()[:1000]
             if run["status"] != "cancelling":
                 run["status"] = "waiting_login" if change["status"] == "waiting_login" else "running"
         self._mutate(owner, run_id, update)
@@ -1791,17 +1795,24 @@ class DownloadManager:
                     item.update(status="error", error=error or "本项下载未完成，请重试")
             success = any(item["status"] == "success" for item in run["items"])
             failed = any(item["status"] == "error" for item in run["items"])
+            warned = [item for item in run["items"] if item.get("warning")]
+            if warned:
+                run["warning"] = "；".join(dict.fromkeys(item["warning"] for item in warned))
             run["error"] = error or next((item["error"] for item in run["items"] if item["status"] == "error"), "")
             if cancelled.is_set():
                 run["status"] = "cancelled"
             elif failed or error:
                 run["status"] = "partial" if success else "error"
+            elif warned:
+                run["status"] = "partial"
             else:
                 run["status"] = "success"
             run.update(phase="completed" if run["status"] == "success" else "cancelled" if cancelled.is_set() else "failed",
                        phase_since=_now())
             _add_log(run, {"cancelled": "下载任务已取消，已完成的文件已保留", "success": "下载任务已完成",
                            "partial": "下载任务部分完成，请查看各项结果", "error": "下载任务失败，请查看错误提示"}[run["status"]])
+            if run["status"] == "partial" and run.get("warning"):
+                _add_log(run, "数据警告：" + run["warning"])
             if run["status"] in ("error", "partial") and run["error"]:
                 _add_log(run, "失败诊断：" + run["error"])
         self._mutate(owner, run_id, finish)

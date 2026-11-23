@@ -1,5 +1,5 @@
 """通知附件合并导出（骑手订单明细 / 骑手出勤明细）单元测试。"""
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 import json
 from pathlib import Path
@@ -40,6 +40,11 @@ def notice(nid, title, publish_ms):
 # 2026-10-31 08:00 北京时间
 OCT31_MS = 1793481600000
 NOV2_MS = 1793654400000
+BEIJING = timezone(timedelta(hours=8))
+
+
+def publish_ms(year, month, day):
+    return int(datetime(year, month, day, 8, tzinfo=BEIJING).timestamp() * 1000)
 
 ORDER_HEADER = ['合作商名称', '站点名称', '站点id', '业务日期', '骑手id', '骑手名称',
                 '合作商id', '配送方', '三方结算公司id', '城市id', '城市名称', '配送单量']
@@ -177,6 +182,19 @@ class NoticeListTests(unittest.TestCase):
                                              date(2026, 10, 26))
 
 
+class NoticeWindowTests(unittest.TestCase):
+    def test_window_scan_ignores_titles_and_applies_publish_bounds(self):
+        records = [notice(1, '11.19数据', publish_ms(2026, 11, 20)),
+                   notice(2, '11.20-11.21 数据', publish_ms(2026, 11, 22)),
+                   notice(3, '完全无关的标题', publish_ms(2026, 11, 21)),
+                   notice(4, '10.20数据', publish_ms(2026, 10, 20))]
+        session = Mock()
+        session.post = Mock(return_value=list_response(len(records), records))
+        matched = notice_data.list_notices_by_window(
+            session, _DATASET_SPECS[ATTENDANCE_DATASET], date(2026, 11, 19), date(2026, 11, 21))
+        self.assertEqual([item['id'] for item in matched], [1, 3, 2])
+
+
 class CollectTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -286,9 +304,9 @@ class CollectTests(unittest.TestCase):
                                             attend_row('20260926', 1, '甲', '13')])
         self.register_attendance('s3://c', [attend_row('20260927', 1, '甲', '13')])
         session = self.session_with([
-            list_response(3, [notice(1, '0923数据分发', NOV2_MS),
-                              notice(2, '0924~0926数据分发', NOV2_MS),
-                              notice(3, '0927数据分发', NOV2_MS)]),
+            list_response(3, [notice(1, '0923数据分发', publish_ms(2026, 9, 24)),
+                              notice(2, '0924~0926数据分发', publish_ms(2026, 9, 25)),
+                              notice(3, '0927数据分发', publish_ms(2026, 9, 28))]),
             detail_response([{'fileName': 'a_骑手出勤明细_1.xlsx', 'fileUrl': 's3://a'}]),
             detail_response([{'fileName': 'b_骑手出勤明细_2.xlsx', 'fileUrl': 's3://b'}]),
             detail_response([{'fileName': 'c_骑手出勤明细_3.xlsx', 'fileUrl': 's3://c'}]),
@@ -299,13 +317,30 @@ class CollectTests(unittest.TestCase):
         self.assertEqual([row[header.index('xxx.dt')] for row in records],
                          ['20260923', '20260924', '20260925', '20260926', '20260927'])
 
+    def test_attendance_arbitrary_notice_titles_are_collected(self):
+        self.register_attendance('s3://19', [attend_row('20261119', 1, '甲', '13')])
+        self.register_attendance('s3://2021', [attend_row('20261120', 1, '甲', '13'),
+                                              attend_row('20261121', 1, '甲', '13')])
+        session = self.session_with([
+            list_response(2, [notice(1, '11.19数据', publish_ms(2026, 11, 20)),
+                              notice(2, '11.20-11.21 数据', publish_ms(2026, 11, 22))]),
+            detail_response([{'fileName': 'a_骑手出勤明细_1_0_20261120.xlsx',
+                              'fileUrl': 's3://19'}]),
+            detail_response([{'fileName': 'b_骑手出勤明细_1_0_20261122.xlsx',
+                              'fileUrl': 's3://2021'}]),
+        ])
+        header, records = notice_data.collect_notice_rows(
+            session, self.attendance_spec, date(2026, 11, 19), date(2026, 11, 21))
+        self.assertEqual([row[header.index('xxx.dt')] for row in records],
+                         ['20261119', '20261120', '20261121'])
+
     def test_out_of_range_attachment_with_different_header_is_skipped(self):
         self.register_attendance('s3://a', [attend_row('20260923', 1, '甲', '13')])
         changed = ATTEND_HEADER[:-1]
         self.downloads['s3://b'] = (changed, [attend_row('20260930', 1, '甲', '13')[:-1]])
         session = self.session_with([
-            list_response(2, [notice(1, '0923数据分发', NOV2_MS),
-                              notice(2, '合作商数据下发-1001', NOV2_MS)]),
+            list_response(2, [notice(1, '0923数据分发', publish_ms(2026, 9, 24)),
+                              notice(2, '合作商数据下发-1001', publish_ms(2026, 9, 25))]),
             detail_response([{'fileName': 'a_骑手出勤明细_1.xlsx', 'fileUrl': 's3://a'}]),
             detail_response([{'fileName': 'b_骑手出勤明细_2.xlsx', 'fileUrl': 's3://b'}]),
         ])
@@ -344,7 +379,7 @@ class CollectTests(unittest.TestCase):
     def test_attendance_missing_dates_export_remaining_and_warn(self):
         self.register_attendance('s3://a', [attend_row('20260923', 1, '甲', '13')])
         session = self.session_with([
-            list_response(1, [notice(1, '0923数据分发', NOV2_MS)]),
+            list_response(1, [notice(1, '0923数据分发', publish_ms(2026, 9, 26))]),
             detail_response([{'fileName': 'a_骑手出勤明细_1.xlsx', 'fileUrl': 's3://a'}]),
         ])
         logs, coverage = [], {}
@@ -443,6 +478,24 @@ class CollectTests(unittest.TestCase):
         with self.assertRaises(LighthouseError):
             notice_data.collect_notice_rows(
                 session, _DATASET_SPECS[ORDER_DATASET], date(2026, 10, 26), date(2026, 11, 1))
+
+
+class HeaderDetectionTests(unittest.TestCase):
+    def test_header_found_after_title_rows(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'attendance.xlsx'
+            book = Workbook()
+            sheet = book.active
+            sheet.append(['骑手出勤明细'])
+            sheet.append(['说明：以下为11月数据'])
+            sheet.append(ATTEND_HEADER)
+            sheet.append(attend_row('20261119', 1, '甲', '13'))
+            book.save(path)
+            book.close()
+            header, rows = notice_data._load_table(path, _DATASET_SPECS[ATTENDANCE_DATASET])
+            self.assertEqual(header, ATTEND_HEADER)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0][header.index('xxx.dt')], '20261119')
 
 
 class WorkbookTests(unittest.TestCase):

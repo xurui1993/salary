@@ -1014,8 +1014,12 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
             if (not isinstance(staged, list)
                     or {_item_key(value) for value in staged} != {_item_key(value) for value in items}):
                 raise BillCollectionError("分项文件清单与本次业务范围不一致，未发布文件")
-            completed = entries(items, "success", phase="completed", staged=staged,
-                                **({"submission_state": "submitted"} if context.get("resuming") else {}))
+            warning = next((info.get("warning") for info in staged
+                            if isinstance(info, dict) and info.get("warning")), None)
+            extra = {"submission_state": "submitted"} if context.get("resuming") else {}
+            if warning:
+                extra["warning"] = warning
+            completed = entries(items, "success", phase="completed", staged=staged, **extra)
             # This durable checkpoint precedes every success/file callback.
             checkpoint_manifest(results + completed, files + staged)
             files.extend(staged)
@@ -1168,11 +1172,16 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                         from xiaoxiang_rider_archive import generate_rider_archive
                         workbook = generate_rider_archive(directory, log=progress_log, cancelled=cancelled)
                     elif description['dataset'] in (RIDER_ORDER_DETAIL_DATASET, XIAOXIANG_ATTENDANCE_DATASET):
-                        from xiaoxiang_notice_data import generate_notice_merge
+                        from xiaoxiang_notice_data import generate_notice_merge, _missing_text
+                        coverage = {}
                         workbook = generate_notice_merge(description['dataset'], description['start'],
                                                          description['end'], directory,
                                                          log=progress_log, cancelled=cancelled,
-                                                         all_dates=all_dates)
+                                                         all_dates=all_dates, coverage=coverage)
+                        missing = coverage.get('missing') or []
+                        if missing and description['dataset'] == XIAOXIANG_ATTENDANCE_DATASET:
+                            description['warning'] = '骑手出勤明细缺失 {} 天：{}；已导出其余日期'.format(
+                                len(missing), _missing_text(missing, max_length=120))
                     else:
                         workbook = generate_detail(description['dataset'], description['start'], description['end'],
                                                    directory, log=progress_log, cancelled=cancelled,

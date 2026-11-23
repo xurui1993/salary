@@ -53,6 +53,13 @@ class GroupingTests(unittest.TestCase):
     def test_independent_same_scope_runs_remain_separate(self):
         self.assertEqual(len(records.group_records([run('a'), run('b')])), 2)
 
+    def test_item_warning_is_not_presented_as_complete(self):
+        original = run('a')
+        original['items'][0]['warning'] = '骑手出勤明细缺失 1 天：2026-10-02；已导出其余日期'
+        record = records.group_records([original])[0]
+        self.assertEqual(record['status'], 'partial')
+        self.assertIn('缺失 1 天', record['warnings'][0])
+
     def test_summary_failure_is_not_presented_as_complete(self):
         original = run('a'); original['status'] = 'partial'; original['summary_progress'] = {'stage': 'failed'}
         record = records.group_records([original])[0]
@@ -109,6 +116,28 @@ class StorageTests(unittest.TestCase):
                 return value
             time.sleep(.01)
         self.fail('synthetic download timed out')
+
+    def test_item_warning_marks_run_partial(self):
+        def executor(config, directory, emit, cancelled, update_item):
+            file = make_file(directory, config, dataset='delivery_fee', name='warning.csv')
+            update_item({**file, 'status': 'success',
+                         'warning': '骑手出勤明细缺失 1 天：2026-10-02；已导出其余日期'})
+            return [file]
+        manager = jobs.DownloadManager(self.root / 'db-warning/tasks.sqlite3',
+                                       self.root / 'outputs-warning', executor, flat_delivery=False)
+        self.addCleanup(manager.shutdown)
+        config = {'cities': ['泉州'], 'datasets': ['delivery_fee'], 'start': '2026-10-01',
+                  'end': '2026-10-05', 'months': ['2026-10']}
+        value = manager.create('tester', config)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            value = manager.get_run('tester', value['id'])
+            if value['status'] in jobs.FINAL_STATUSES:
+                break
+            time.sleep(.01)
+        self.assertEqual(value['status'], 'partial')
+        self.assertIn('缺失 1 天', value.get('warning', ''))
+        self.assertTrue(value['items'][0].get('warning'))
 
     def test_bundle_combines_current_files_from_parent_and_retry_and_isolates_owners(self):
         parent = self.create(kinds=('delivery_fee', 'penalty'))
