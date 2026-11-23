@@ -49,12 +49,6 @@ import {
   type TaskCenterSortKey,
   type TaskDatePreset,
 } from '../lib/taskCenterDisplay';
-import {
-  buildDemoTaskCenterRecords,
-  queryDemoTaskCenter,
-  type DemoTaskCenterRecord,
-} from '../lib/showcaseDemoData';
-
 interface File {
   id: string;
   run_id?: string;
@@ -66,50 +60,6 @@ interface File {
 }
 
 type Task = TaskDetailItem;
-
-function toTaskCenterRow(item: DemoTaskCenterRecord): Task {
-  const startMs = Date.parse(item.started_at || item.created_at);
-  const endMs = item.finished_at ? Date.parse(item.finished_at) : NaN;
-  const elapsed =
-    Number.isFinite(startMs) && Number.isFinite(endMs) && endMs >= startMs
-      ? Math.max(1, Math.round((endMs - startMs) / 1000))
-      : undefined;
-  const mapFiles = (list?: DemoTaskCenterRecord['files']): File[] =>
-    (list || []).map(f => ({
-      id: f.id,
-      run_id: item.id,
-      name: f.name,
-      city: f.city || item.cities[0] || '全量',
-      bytes: f.bytes,
-      available: true,
-    }));
-  const mappedFiles = mapFiles(item.files);
-  return {
-    id: item.id,
-    kind: item.kind,
-    title: item.title,
-    price_id: item.price_id,
-    cities: item.cities,
-    datasets: item.datasets,
-    start: item.start,
-    end: item.end,
-    status: item.status,
-    created_at: item.created_at,
-    updated_at: item.finished_at || item.started_at || item.created_at,
-    elapsed_seconds: elapsed,
-    error: item.error,
-    demo: true,
-    files: mappedFiles,
-    source_files: item.source_files ? mapFiles(item.source_files) : undefined,
-    available_files: mappedFiles.length,
-    failed_items: item.failed_items,
-    completed_items: item.completed_items,
-    total_items: item.total_items,
-    member_ids: [item.id],
-    attempts: [{ id: item.id, status: item.status }],
-    action_run_id: '',
-  };
-}
 
 const API = '/api/workbench/task-center';
 const ACTIVE = new Set(['queued', 'running', 'waiting_login', 'waiting_manual', 'cancelling', 'preparing', 'stopping']);
@@ -203,10 +153,6 @@ export function DownloadRecords({
     can_open: boolean;
     record_id?: string;
   } | null>(null);
-  const [demoEnabled, setDemoEnabled] = useState(true);
-  const [demoRecords, setDemoRecords] = useState<DemoTaskCenterRecord[]>(() => buildDemoTaskCenterRecords());
-  const [demoArchivedIds, setDemoArchivedIds] = useState<string[]>([]);
-
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [syncMs, setSyncMs] = useState(() => Date.now());
 
@@ -316,32 +262,11 @@ export function DownloadRecords({
     };
   }, [page, query, status, system, kind, from, to, archived, recordModule, version, refreshVersion]);
 
-  const hasLiveData = records.length > 0 || (counts.all || 0) > 0 || (counts.archived || 0) > 0;
-  const usingDemo = !hasLiveData && demoEnabled;
-  const demoResult = useMemo(() => {
-    if (!usingDemo) return null;
-    return queryDemoTaskCenter(demoRecords, {
-      q: query,
-      status: status || 'all',
-      system,
-      kind,
-      from,
-      to,
-      archivedIds: new Set(demoArchivedIds),
-      archivedOnly: archived,
-      page,
-      pageSize,
-    });
-  }, [usingDemo, demoRecords, query, status, system, kind, from, to, demoArchivedIds, archived, page, pageSize]);
-
-  const effectiveRecords = useMemo(() => {
-    const raw = usingDemo && demoResult ? demoResult.items.map(toTaskCenterRow) : records;
-    return sortTaskDisplayRecords(raw, sortKey);
-  }, [usingDemo, demoResult, records, sortKey]);
-  const effectiveTotal = usingDemo && demoResult ? demoResult.total : total;
-  const effectivePages = usingDemo && demoResult ? Math.max(1, Math.ceil(demoResult.total / pageSize)) : pages;
-  const effectivePage = usingDemo && demoResult ? Math.min(page, effectivePages) : page;
-  const effectiveCounts = usingDemo && demoResult ? demoResult.counts : counts;
+  const effectiveRecords = useMemo(() => sortTaskDisplayRecords(records, sortKey), [records, sortKey]);
+  const effectiveTotal = total;
+  const effectivePages = pages;
+  const effectivePage = page;
+  const effectiveCounts = counts;
 
   // 同步抽屉内展示的任务对象（确保示例停止/刷新状态实时更新）
   const activeFocused = useMemo(() => {
@@ -423,10 +348,6 @@ export function DownloadRecords({
 
   const download = (r: Task, file?: File, sources = false) =>
     act(async () => {
-      if (r.demo) {
-        pushToast(`示例文件「${file?.name || cleanTaskTitle(rawTitle(r), platform(r), kindLabel(r.kind))}」仅用于界面预览，实际任务提交后可直接下载。`, 'info');
-        return;
-      }
       let url: string;
       let filename: string;
       if (r.kind === 'approval') {
@@ -463,13 +384,6 @@ export function DownloadRecords({
 
   const stopTask = (r: Task) =>
     void act(async () => {
-      if (r.demo) {
-        setDemoRecords(prev =>
-          prev.map(item => (item.id === r.id ? { ...item, status: 'cancelled', can_cancel: false } : item)),
-        );
-        pushToast('已停止示例任务。');
-        return;
-      }
       await request(`${API}/stop`, { id: r.id });
       setVersion(v => v + 1);
       pushToast('已请求停止，确认停止前任务保留在列表。', 'info');
@@ -480,14 +394,6 @@ export function DownloadRecords({
       if (!ids.length) return;
       const targetSet = new Set(ids);
       const targets = effectiveRecords.filter(r => targetSet.has(r.id));
-      if (targets.every(r => r.demo)) {
-        setDemoRecords(prev =>
-          prev.map(item => (targetSet.has(item.id) ? { ...item, status: 'cancelled', can_cancel: false } : item)),
-        );
-        setSelected([]);
-        pushToast(`已批量停止 ${targets.length} 项进行中示例任务。`);
-        return;
-      }
       for (const item of targets) {
         await request(`${API}/stop`, { id: item.id });
       }
@@ -505,34 +411,6 @@ export function DownloadRecords({
   };
 
   const handleRetryTask = (r: Task) => {
-    if (r.demo) {
-      const nowIso = new Date().toISOString();
-      const retryId = `TC-RETRY-${String(Date.now()).slice(-4)}`;
-      const cloned: DemoTaskCenterRecord = {
-        id: retryId,
-        kind: (['download', 'generate', 'approval', 'price-export'].includes(r.kind) ? r.kind : 'download') as DemoTaskCenterRecord['kind'],
-        title: `${cleanTaskTitle(rawTitle(r), platform(r), kindLabel(r.kind))}（重试）`,
-        status: 'running',
-        created_at: nowIso,
-        started_at: nowIso,
-        cities: r.cities,
-        datasets: r.datasets,
-        start: r.start,
-        end: r.end,
-        total_items: Math.max(1, r.failed_items || r.total_items),
-        completed_items: 0,
-        failed_items: 0,
-        can_cancel: true,
-        can_retry: false,
-        has_zip: false,
-        files: [],
-      };
-      setDemoRecords(prev => [cloned, ...prev]);
-      setFocused(toTaskCenterRow(cloned));
-      setDetailTab('history');
-      pushToast(`已重新发起「${cleanTaskTitle(rawTitle(r), platform(r), kindLabel(r.kind))}」，正在执行中。`);
-      return;
-    }
     if (onRetryTask) {
       setFocused(null);
       onRetryTask(r);
@@ -543,15 +421,6 @@ export function DownloadRecords({
 
   const showDirectory = (r?: Task) =>
     act(async () => {
-      if (usingDemo && (!r || r.demo)) {
-        setDirectory({
-          path: r ? `/workspace/outputs/${r.id}` : '/workspace/outputs',
-          exists: false,
-          can_open: false,
-          record_id: r?.id,
-        });
-        return;
-      }
       const response = await request(`${API}/directory${r ? `?record_id=${encodeURIComponent(r.id)}` : ''}`);
       const info = await response.json();
       setDirectory({ ...info, record_id: r?.id });
@@ -560,15 +429,6 @@ export function DownloadRecords({
 
   const changeVisibility = (rows: Task[]) =>
     act(async () => {
-      if (rows.every(r => r.demo)) {
-        const idSet = new Set(rows.map(r => r.id));
-        setDemoArchivedIds(prev => (archived ? prev.filter(id => !idSet.has(id)) : Array.from(new Set([...prev, ...idSet]))));
-        setConfirm(null);
-        setSelected([]);
-        if (focused && idSet.has(focused.id)) setFocused(null);
-        pushToast(archived ? `已恢复 ${rows.length} 条示例任务。` : `已移出 ${rows.length} 条示例任务，可在「已移出」恢复。`);
-        return;
-      }
       await request(`${API}/visibility`, { ids: rows.map(r => r.id), restore: archived, stop_first: true });
       setConfirm(null);
       setSelected([]);
@@ -608,21 +468,6 @@ export function DownloadRecords({
           </div>
 
         <div className="wbx-tc-topbar__right">
-          {!hasLiveData && (
-            <span className="wbx-demo-group">
-              {usingDemo && <span className="wbx-demo-badge">示例数据</span>}
-              <button
-                type="button"
-                className="wbx-btn wbx-btn--sm wbx-btn--ghost"
-                onClick={() => {
-                  setDemoEnabled(prev => !prev);
-                  reset();
-                }}
-              >
-                {demoEnabled ? '隐藏示例' : '加载 30 条示例'}
-              </button>
-            </span>
-          )}
           {!archived && (
             <button
               type="button"
@@ -630,23 +475,6 @@ export function DownloadRecords({
               disabled={busy}
               onClick={() =>
                 void act(async () => {
-                  if (usingDemo) {
-                    const fullDone = queryDemoTaskCenter(demoRecords, {
-                      q: query,
-                      status: 'success',
-                      system,
-                      kind,
-                      from,
-                      to,
-                      archivedIds: new Set(demoArchivedIds),
-                      archivedOnly: false,
-                      page: 1,
-                      pageSize: 200,
-                    }).items.map(toTaskCenterRow);
-                    if (fullDone.length) setConfirm(fullDone);
-                    else pushToast('当前筛选范围内没有可整理的已完成任务。', 'info');
-                    return;
-                  }
                   const params = new URLSearchParams({
                     q: query,
                     system,
@@ -875,7 +703,7 @@ export function DownloadRecords({
         </div>
 
         {archived && <p className="tc-info">已移出的任务仍保留文件和处理记录，恢复后所有同事同步可见。</p>}
-        {pollError && !usingDemo && (
+        {pollError && (
           <p role="status" className="wb-notice">
             {pollError}现有记录保留。
           </p>
@@ -900,13 +728,6 @@ export function DownloadRecords({
               onClick={() =>
                 void act(async () => {
                   const targets = chosen.filter(r => batchSummary.downloadableIds.includes(r.id));
-                  if (targets.every(r => r.demo)) {
-                    pushToast(
-                      `示例模式已筛选 ${targets.length} 项可下载任务${batchSummary.skippedDownloadCount ? `（自动跳过 ${batchSummary.skippedDownloadCount} 项）` : ''}，实际任务可直接打包下载。`,
-                      'info',
-                    );
-                    return;
-                  }
                   const response = await request(`${API}/bundle`, { ids: batchSummary.downloadableIds });
                   saveDownloadBlob(await readDownloadResponse(response, '批量任务结果.zip'), '批量任务结果.zip');
                   pushToast(`已发起 ${targets.length} 项任务的批量文件保存。`);
@@ -1299,7 +1120,7 @@ export function DownloadRecords({
             <button
               type="button"
               className="wbx-btn wbx-btn--sm"
-              disabled={effectivePage <= 1 || (loading && !usingDemo)}
+              disabled={effectivePage <= 1 || loading}
               onClick={() => {
                 setPage(p => p - 1);
                 setSelected([]);
@@ -1313,7 +1134,7 @@ export function DownloadRecords({
             <button
               type="button"
               className="wbx-btn wbx-btn--sm"
-              disabled={effectivePage >= effectivePages || (loading && !usingDemo)}
+              disabled={effectivePage >= effectivePages || loading}
               onClick={() => {
                 setPage(p => p + 1);
                 setSelected([]);

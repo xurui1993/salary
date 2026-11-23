@@ -4,7 +4,7 @@ import {platformAuthRequest} from '../lib/platformAuthApi';
 import {stationFilterChoices} from '../lib/stationFilterChoices';
 type Fetcher=(url:string,init?:RequestInit)=>Promise<Response>;
 export type LanorangeFilterOptions={cities:string[];stations:{id:string;name:string;city:string}[];months:string[];session_version:string};
-export function LanorangePriceFilters({apiFetch,workspaceId,city,station,month,onChange,disabled=false,requiredMonth=false,lanorangeConnected,demoOptions=null}:{apiFetch:Fetcher;workspaceId:string;city:string;station:string;month:string;onChange:(value:{city:string;station:string;month:string})=>void;disabled?:boolean;requiredMonth?:boolean;lanorangeConnected?:boolean;demoOptions?:LanorangeFilterOptions|null}){
+export function LanorangePriceFilters({apiFetch,workspaceId,city,station,month,onChange,disabled=false,requiredMonth=false,lanorangeConnected}:{apiFetch:Fetcher;workspaceId:string;city:string;station:string;month:string;onChange:(value:{city:string;station:string;month:string})=>void;disabled?:boolean;requiredMonth?:boolean;lanorangeConnected?:boolean}){
   const fetchRef=useRef(apiFetch);fetchRef.current=apiFetch;
   const changeRef=useRef(onChange);changeRef.current=onChange;
   const disabledRef=useRef(disabled);disabledRef.current=disabled;
@@ -25,7 +25,7 @@ export function LanorangePriceFilters({apiFetch,workspaceId,city,station,month,o
     void platformAuthRequest<LanorangeFilterOptions>(fetcher,'/api/fengshen-downloads/lanorange-approvals/filter-options'+(reload?'?refresh=true':''),undefined,60000).then(value=>{if(!disposed)setOptions(value);}).catch(err=>{if(!disposed)setError(err instanceof Error?err.message:'筛选条件读取失败');}).finally(()=>{if(!disposed)setBusy(false);});
     return()=>{disposed=true;controller.abort();};
   },[workspaceId,reload,lanorangeConnected]);
-  const effectiveOptions=options || demoOptions;
+  const effectiveOptions=options;
   const stations=stationFilterChoices(effectiveOptions?.stations||[],city);
   const chosen=stations.filter(s=>s.name===station);
   const selectedId=chosen.length===1?chosen[0].id:station?'legacy':'';
@@ -57,7 +57,7 @@ export function LanorangePriceFilters({apiFetch,workspaceId,city,station,month,o
         {effectiveOptions?.months.map(m=><option key={m} value={m}>{m}</option>)}
       </select>
     </label>
-    {(showDisconnectedHint || (error && !demoOptions)) && (
+    {(showDisconnectedHint || error) && (
       <div className={`wbx-ap-notice col-span-full ${showDisconnectedHint ? 'is-auth' : 'is-danger'}`} role="alert">
         <div className="wbx-ap-notice__body">
           <KeyRound size={15} className="wbx-ap-notice__icon" aria-hidden="true" />

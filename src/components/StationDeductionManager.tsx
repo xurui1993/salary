@@ -19,7 +19,6 @@ import {
   type DeductionCategoryId,
 } from '../lib/deductionCategories';
 import { applyCityAmounts } from '../lib/payrollReviewActions';
-import { buildDemoDeductionData } from '../lib/showcaseDemoData';
 import {
   AlertCircle,
   Check,
@@ -88,11 +87,6 @@ export function StationDeductionManager({
   const [problemDirty, setProblemDirty] = useState(false);
   const configUpload = useRef<HTMLInputElement>(null);
   const initializedExpandRef = useRef<string>('');
-  const [demoEnabled, setDemoEnabled] = useState(true);
-  const [hasLiveData, setHasLiveData] = useState(false);
-  const [demoDirectoryCities, setDemoDirectoryCities] = useState<Array<{ id: string; name: string; station_count?: number }>>([]);
-  const isDemoMode = !hasLiveData && demoEnabled;
-
   const directory = useStationDirectory(currentPlatform, apiFetch);
 
   useEffect(() => {
@@ -102,61 +96,28 @@ export function StationDeductionManager({
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || '扣款读取失败');
         if (controller.signal.aborted) return;
-        const liveHasRows = (data.entries?.length || 0) > 0 || (data.cities?.length || 0) > 0;
-        setHasLiveData(liveHasRows);
-        if (liveHasRows) {
-          setDemoDirectoryCities([]);
-          setProfile((prev: any) => (dirty && prev ? prev : data));
-          setEntries((prev: any[]) => {
-            if (!dirty) return data.entries;
-            const map = new Map(prev.map(item => [item.key, item]));
-            return data.entries.map((item: any) => map.get(item.key) || item);
-          });
-          setCities((prev: any[]) => (dirty ? prev : data.cities || []));
-          setError('');
-        } else if (demoEnabled) {
-          if (!dirty) {
-            const demo = buildDemoDeductionData(currentPlatform);
-            setProfile(demo.profile);
-            setEntries(demo.entries);
-            setCities(demo.cities);
-            setDemoDirectoryCities(demo.directoryCities);
-          }
-          setError('');
-        } else {
-          setProfile(data);
-          setEntries([]);
-          setCities([]);
-          setDemoDirectoryCities([]);
-          setError('');
-        }
+        setProfile((prev: any) => (dirty && prev ? prev : data));
+        setEntries((prev: any[]) => {
+          if (!dirty) return data.entries || [];
+          const map = new Map(prev.map(item => [item.key, item]));
+          return (data.entries || []).map((item: any) => map.get(item.key) || item);
+        });
+        setCities((prev: any[]) => (dirty ? prev : data.cities || []));
+        setError('');
       })
       .catch(err => {
         if (controller.signal.aborted) return;
-        setHasLiveData(false);
-        if (demoEnabled) {
-          if (!dirty) {
-            const demo = buildDemoDeductionData(currentPlatform);
-            setProfile(demo.profile);
-            setEntries(demo.entries);
-            setCities(demo.cities);
-            setDemoDirectoryCities(demo.directoryCities);
-          }
-          setError('');
-        } else {
-          setProfile(null);
-          setEntries([]);
-          setCities([]);
-          setDemoDirectoryCities([]);
-          setError(readErrorMessage(err, '扣款配置读取失败，请检查后台连接后重试'));
-        }
+        setProfile(null);
+        setEntries([]);
+        setCities([]);
+        setError(readErrorMessage(err, '扣款配置读取失败，请检查后台连接后重试'));
       });
     return () => controller.abort();
-  }, [currentPlatform, directory.data?.stations.length, directory.data?.fetched_at, directory.data?.status, reloadKey, dirty, demoEnabled]);
+  }, [currentPlatform, directory.data?.stations.length, directory.data?.fetched_at, directory.data?.status, reloadKey, dirty]);
 
   const effectiveDirectoryCities = useMemo(
-    () => (isDemoMode ? demoDirectoryCities : directory.data?.cities || []),
-    [isDemoMode, demoDirectoryCities, directory.data?.cities],
+    () => directory.data?.cities || [],
+    [directory.data?.cities],
   );
 
   const activeColumns: string[] = useMemo(
@@ -278,21 +239,6 @@ export function StationDeductionManager({
     setSaving(true);
     setError('');
     try {
-      if (isDemoMode) {
-        setCities(prev => prev.map(c => (c.edited ? { ...c, edited: false, configured: true } : c)));
-        setEntries(prev => prev.map(e => (e.edited ? { ...e, edited: false, configured: true } : e)));
-        setDirty(false);
-        setProblemDirty(false);
-        setPendingProblemRows(null);
-        setProblemPreview(null);
-        setUndoEntries(null);
-        setNotice(
-          currentPlatform === 'xiaoxiang'
-            ? '示例小象超市扣款配置已本地保存（共 30 站），连接灯塔后将自动切换为真实数据。'
-            : '示例站点扣款与问题单关键词配置已本地保存（共 30 站），连接风神后将自动切换为真实数据。',
-        );
-        return;
-      }
       const editedEntries = entries.filter(item => item.edited);
       const editedCities = cities.filter(item => item.edited);
       const hasProblemUpdates =
@@ -529,14 +475,12 @@ export function StationDeductionManager({
     else onClose?.();
   };
 
-  const errorMessage = isDemoMode
-    ? ''
-    : String(
-        error ||
-          (directory.error ? readErrorMessage(directory.error, '扣款配置读取失败，请检查后台连接后重试') : '') ||
-          directory.data?.message ||
-          '',
-      );
+  const errorMessage = String(
+    error ||
+      (directory.error ? readErrorMessage(directory.error, '扣款配置读取失败，请检查后台连接后重试') : '') ||
+      directory.data?.message ||
+      '',
+  );
 
   const visibleProblemRules = useMemo(() => {
     const visibleCityIds = activeCityGroup
@@ -604,24 +548,6 @@ export function StationDeductionManager({
         </div>
 
         <div className="wbx-ded-topbar__right">
-          {!hasLiveData && (
-            <span className="wbx-demo-group">
-              {isDemoMode && <span className="wbx-demo-badge">示例数据</span>}
-              <button
-                type="button"
-                className="wbx-btn wbx-btn--sm wbx-btn--ghost"
-                disabled={saving}
-                onClick={() => {
-                  setDirty(false);
-                  setProblemDirty(false);
-                  setActiveCityId(null);
-                  setDemoEnabled(prev => !prev);
-                }}
-              >
-                {demoEnabled ? '隐藏示例' : '加载 30 站示例'}
-              </button>
-            </span>
-          )}
           <button
             type="button"
             className="wbx-btn wbx-btn--sm"
@@ -663,6 +589,19 @@ export function StationDeductionManager({
           }}
         />
       </div>
+
+      {!entries.length && !errorMessage && (
+        <div className="wbx-deduction-alert" role="status">
+          <div className="wbx-deduction-alert__body">
+            <AlertCircle size={15} aria-hidden="true" />
+            <span>
+              {directory.data?.status === 'ready'
+                ? '暂无扣款配置。请从站点目录选择城市/站点，或导入配置 Excel 后保存。'
+                : '站点目录尚未就绪，请先连接平台并刷新目录；已保存的扣款配置不会丢失。'}
+            </span>
+          </div>
+        </div>
+      )}
 
       {pendingPlatform && (
         <div role="alert" className="wb-inline-confirm-bar">
@@ -1129,7 +1068,7 @@ export function StationDeductionManager({
             <button
               type="button"
               className="wbx-btn wbx-btn--primary wbx-btn--sm"
-              disabled={saving || (!isDemoMode && directory.data?.status !== 'ready')}
+              disabled={saving || directory.data?.status !== 'ready'}
               onClick={() => void handleSave()}
             >
               {saving ? '保存中…' : '保存后续默认扣款'}

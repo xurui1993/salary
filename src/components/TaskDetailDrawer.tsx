@@ -46,8 +46,7 @@ export type TaskDetailTab = 'files' | 'sources' | 'history';
 export interface TaskDetailItem extends TaskDisplayRecord {
   batch_id?: string;
   output?: string;
-  demo?: boolean;
-  member_ids: string[];
+    member_ids: string[];
   attempts: { id: string; status: string }[];
   action_run_id: string;
 }

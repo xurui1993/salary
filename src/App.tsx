@@ -4,7 +4,7 @@ import { uploadSource } from "./lib/uploadSource";
 import {pendingQueueSubmission,prepareQueueSubmission,sendQueueSubmission} from './lib/payrollQueueSubmit';
 import {planPayrollUpload} from './lib/payrollUploadPlan';
 import { THEMES } from "./constants";
-import { LogEntry, AppConfig, TaskHistoryRecord } from "./types";
+import { LogEntry, AppConfig } from "./types";
 import { FengshenLoginModal, FengshenAuthStatus } from "./components/FengshenLoginModal";
 import { CorePage, TaskItem } from "./components/CorePage";
 import {
@@ -141,21 +141,10 @@ export default function App() {
     localStorage.setItem('app_theme', 'light');
   }, []);
 
-  const [workspaceId, setWorkspaceId] = useState(() => {
-    const linkedWorkspace = new URLSearchParams(window.location.search).get('workspace');
-    if (linkedWorkspace && /^[\p{L}\p{N}_-]{1,128}$/u.test(linkedWorkspace)) {
-      localStorage.setItem('app_workspace_id', linkedWorkspace);
-      return linkedWorkspace;
-    }
-    let wid = localStorage.getItem("app_workspace_id");
-    if (!wid) {
-      wid =
-        "u_" +
-        Math.random().toString(36).substring(2, 9) +
-        Date.now().toString(36);
-      localStorage.setItem("app_workspace_id", wid);
-    }
-    return wid;
+  const [workspaceId] = useState(() => {
+    const shared = 'download_shared';
+    try { localStorage.setItem('app_workspace_id', shared); } catch {}
+    return shared;
   });
 
   const fetchWithAuth = (url: string, options: RequestInit = {}) => {
@@ -478,20 +467,6 @@ export default function App() {
     showToast(city ? `已切换至兼职薪资核算，目标城市：${city}` : '已切换至兼职薪资核算', 'info');
   };
 
-  const [taskHistory, setTaskHistory] = useState<TaskHistoryRecord[]>(() => {
-    const saved = localStorage.getItem("taskHistory");
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  useEffect(() => {
-    localStorage.setItem("taskHistory", JSON.stringify(taskHistory));
-  }, [taskHistory]);
-
-  const [taskStatsMap, setTaskStatsMap] = useState<Record<string, any>>(() => {
-    const saved = localStorage.getItem("taskStatsMap");
-    return saved ? JSON.parse(saved) : {};
-  });
-  
   const [rawTaskQueue, setRawTaskQueue] = useState<TaskItem[]>([]);
   const taskQueue = rawTaskQueue.filter(t => {
     if (t.isSalaryBind) return false;
@@ -529,10 +504,6 @@ export default function App() {
     }
   };
   const [uploadStatus, setUploadStatus] = useState<any | null>(null);
-
-  useEffect(() => {
-    localStorage.setItem("taskStatsMap", JSON.stringify(taskStatsMap));
-  }, [taskStatsMap]);
 
   const seenProgressTexts = useRef<Set<string>>(new Set());
   const seenLogs = useRef<Set<string>>(new Set());
@@ -1103,22 +1074,8 @@ export default function App() {
                   );
                 }
 
-                const taskName = shangyiDownload ? '商翼员工下载' : riderDownload ? '骑手资料下载' : '兼职薪资核算';
-                const newRecord: TaskHistoryRecord = {
-                  id:
-                    Date.now().toString() +
-                    Math.random().toString(36).substr(2, 9),
-                  name: taskName,
-                  timestamp: new Date().toLocaleString(),
-                  status: data.status === "success" ? "SUCCESS" : "FAILED",
-                };
-                setTaskHistory((prev) => [newRecord, ...prev]);
-
                 if (data.status === "success") {
                   setProgress(100, targetAction);
-                  if (data.stats) {
-                    setTaskStatsMap(prev => ({ ...prev, [targetAction]: data.stats }));
-                  }
                   appendLog(`>>> 🎉 任务完成！`, "SUCCESS", targetAction);
                   showDesktopNotification("任务执行完毕", sourceDownload ? '原始资料已下载并校验，未执行核算' : "该次核算已圆满完成！");
                   if (data.out_file) {
