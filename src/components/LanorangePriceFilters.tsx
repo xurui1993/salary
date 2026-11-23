@@ -1,7 +1,9 @@
-import React,{useEffect,useRef,useState} from 'react';
+import React,{useEffect,useMemo,useRef,useState} from 'react';
 import {KeyRound, RefreshCw} from 'lucide-react';
 import {platformAuthRequest} from '../lib/platformAuthApi';
 import {stationFilterChoices} from '../lib/stationFilterChoices';
+import {shouldUseDemoData,useDemoDataVisibility,usePlatformAuthSnapshot} from '../lib/demoMode';
+import {buildDemoPriceExportData} from '../lib/showcaseDemoData';
 type Fetcher=(url:string,init?:RequestInit)=>Promise<Response>;
 export type LanorangeFilterOptions={cities:string[];stations:{id:string;name:string;city:string}[];months:string[];session_version:string};
 export function LanorangePriceFilters({apiFetch,workspaceId,city,station,month,onChange,disabled=false,requiredMonth=false,lanorangeConnected}:{apiFetch:Fetcher;workspaceId:string;city:string;station:string;month:string;onChange:(value:{city:string;station:string;month:string})=>void;disabled?:boolean;requiredMonth?:boolean;lanorangeConnected?:boolean}){
@@ -9,12 +11,15 @@ export function LanorangePriceFilters({apiFetch,workspaceId,city,station,month,o
   const changeRef=useRef(onChange);changeRef.current=onChange;
   const disabledRef=useRef(disabled);disabledRef.current=disabled;
   const [options,setOptions]=useState<LanorangeFilterOptions|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[reload,setReload]=useState(0);
+  const auth=usePlatformAuthSnapshot();
+  const {demoHidden}=useDemoDataVisibility();
+  const isLoggedIn=Boolean(lanorangeConnected || auth.isLoggedIn('lanorange'));
   useEffect(()=>{
     const changed=(event:Event)=>{if((event as CustomEvent).detail?.source==='lanorange'){setOptions(null);if(!disabledRef.current)changeRef.current({city:'',station:'',month:''});setReload(v=>v+1);}};
     window.addEventListener('workbench:platform-session-changed',changed);return()=>window.removeEventListener('workbench:platform-session-changed',changed);
   },[]);
   useEffect(()=>{
-    if(lanorangeConnected===false && reload===0){
+    if(!isLoggedIn && reload===0){
       setOptions(null);
       setBusy(false);
       setError('');
@@ -24,14 +29,16 @@ export function LanorangePriceFilters({apiFetch,workspaceId,city,station,month,o
     const fetcher=(url:string,init?:RequestInit)=>fetchRef.current(url,{...init,signal:init?.signal?AbortSignal.any([controller.signal,init.signal]):controller.signal});
     void platformAuthRequest<LanorangeFilterOptions>(fetcher,'/api/fengshen-downloads/lanorange-approvals/filter-options'+(reload?'?refresh=true':''),undefined,60000).then(value=>{if(!disposed)setOptions(value);}).catch(err=>{if(!disposed)setError(err instanceof Error?err.message:'筛选条件读取失败');}).finally(()=>{if(!disposed)setBusy(false);});
     return()=>{disposed=true;controller.abort();};
-  },[workspaceId,reload,lanorangeConnected]);
-  const effectiveOptions=options;
+  },[workspaceId,reload,isLoggedIn]);
+  const demoActive=shouldUseDemoData({isLoggedIn,hasLiveData:Boolean(options),demoHidden});
+  const demoOptions=useMemo<LanorangeFilterOptions|null>(()=>demoActive?buildDemoPriceExportData().options:null,[demoActive]);
+  const effectiveOptions=demoActive?demoOptions:options;
   const stations=stationFilterChoices(effectiveOptions?.stations||[],city);
   const chosen=stations.filter(s=>s.name===station);
   const selectedId=chosen.length===1?chosen[0].id:station?'legacy':'';
   const waiting=disabled || busy || !effectiveOptions;
   const isLoginErr=error.includes('登录');
-  const showDisconnectedHint=!effectiveOptions && !busy && (lanorangeConnected===false || isLoginErr);
+  const showDisconnectedHint=!demoActive && !effectiveOptions && !busy && (!isLoggedIn || isLoginErr);
   return <>
     <label className="wbx-ap-field">
       <span className="wbx-ap-field__label">城市</span>

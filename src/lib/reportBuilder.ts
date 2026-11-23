@@ -524,3 +524,132 @@ export function buildUnifiedSubmissionPayloads<
   return payloads;
 }
 
+export const BINDING_PLATFORM_OPTIONS = [
+  { value: '本来人力' as const, label: '本来人力', title: '指定为本来人力平台' },
+  { value: '商翼' as const, label: '天津商翼', title: '指定为天津商翼（商翼）' },
+] as const;
+
+export interface BindingPlatformPartition<T extends { name: string }> {
+  benlai: T[];
+  shangyi: T[];
+}
+
+/**
+ * 二分归类城市绑定平台：左侧为「本来人力」，未在左侧展示的城市全部归入右侧「天津商翼」。
+ */
+export function partitionCitiesByBindingPlatform<T extends { name: string }>(
+  cities: T[],
+  bindingPlatforms?: Record<string, string>,
+): BindingPlatformPartition<T> {
+  const map = bindingPlatforms || {};
+  const benlai: T[] = [];
+  const shangyi: T[] = [];
+
+  for (const city of cities) {
+    if (map[city.name] === '本来人力') {
+      benlai.push(city);
+    } else {
+      shangyi.push(city);
+    }
+  }
+
+  return { benlai, shangyi };
+}
+
+export interface BindingPlatformGroups<T extends { name: string }> {
+  benlai: T[];
+  shangyi: T[];
+  auto: T[];
+}
+
+export function groupCitiesByBindingPlatform<T extends { name: string }>(
+  cities: T[],
+  bindingPlatforms?: Record<string, string>,
+): BindingPlatformGroups<T> {
+  const map = bindingPlatforms || {};
+  const benlai: T[] = [];
+  const shangyi: T[] = [];
+  const auto: T[] = [];
+
+  for (const city of cities) {
+    const val = map[city.name];
+    if (val === '本来人力') {
+      benlai.push(city);
+    } else if (val === '商翼') {
+      shangyi.push(city);
+    } else {
+      auto.push(city);
+    }
+  }
+
+  return { benlai, shangyi, auto };
+}
+
+export function applyCityBindingPlatform(
+  current: Record<string, string> | undefined,
+  cityName: string,
+  platform: string,
+): Record<string, string> {
+  const next = { ...(current || {}) };
+  if (platform === '本来人力' || platform === '商翼') {
+    next[cityName] = platform;
+  } else {
+    delete next[cityName];
+  }
+  return next;
+}
+
+export function applyBatchBindingPlatform(
+  current: Record<string, string> | undefined,
+  cityNames: string[],
+  platform: string,
+): Record<string, string> {
+  const next = { ...(current || {}) };
+  for (const cityName of cityNames) {
+    if (platform === '本来人力' || platform === '商翼') {
+      next[cityName] = platform;
+    } else {
+      delete next[cityName];
+    }
+  }
+  return next;
+}
+
+export function summarizeBindingPlatforms(
+  current: Record<string, string> | undefined,
+  orderedCityNames: string[],
+): {
+  configuredCount: number;
+  entries: Array<{ city: string; platform: string }>;
+  previewText: string;
+} {
+  const map = current || {};
+  const known = new Set(orderedCityNames);
+  const entries: Array<{ city: string; platform: string }> = [];
+
+  for (const city of orderedCityNames) {
+    const value = map[city];
+    if (value === '本来人力' || value === '商翼') {
+      entries.push({ city, platform: value });
+    }
+  }
+  for (const [city, value] of Object.entries(map)) {
+    if (!known.has(city) && (value === '本来人力' || value === '商翼')) {
+      entries.push({ city, platform: value });
+    }
+  }
+
+  const head = entries.slice(0, 3).map(e => `${e.city}→${e.platform}`);
+  const previewText =
+    entries.length === 0
+      ? ''
+      : entries.length > 3
+        ? `${head.join('、')} 等 ${entries.length} 城`
+        : head.join('、');
+
+  return {
+    configuredCount: entries.length,
+    entries,
+    previewText,
+  };
+}

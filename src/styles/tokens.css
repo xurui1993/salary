@@ -4,35 +4,41 @@
  * 约束：本文件只放 CSS 自定义属性，不写任何选择器规则，且禁止出现 important 强制标记。
  */
 :root {
-  /* 60-30-10 表面与背景：克制暖冷平衡灰白画布 + 纯白工作面 + 细腻悬浮层次 */
-  --wbx-bg: #f7f8fa;
-  --wbx-bg-subtle: #fafbfc;
-  --wbx-surface: #ffffff;
-  --wbx-surface-muted: #f3f5f8;
-  --wbx-surface-hover: #f1f4f9;
-  --wbx-surface-active: #eef6fc;
+  /* 60-30-10 表面与背景：B站式柔和冷灰画布 (#F6F7F8) + 轻液体玻璃壳层 + 高纯净白数据卡片 */
+  --wbx-bg: #F6F7F8;
+  --wbx-bg-subtle: #F6F7F8;
+  --wbx-surface: rgba(255, 255, 255, 0.94);
+  --wbx-surface-solid: #FFFFFF;
+  --wbx-surface-glass: rgba(255, 255, 255, 0.78);
+  --wbx-surface-glass-strong: rgba(255, 255, 255, 0.90);
+  --wbx-surface-muted: #F1F2F5;
+  --wbx-surface-hover: #F4F6F8;
+  --wbx-surface-active: rgba(0, 174, 236, 0.08);
 
-  /* 文本色阶（深海石墨 4 级对比体系） */
-  --wbx-text: #0f172a;
-  --wbx-text-secondary: #334155;
-  --wbx-text-muted: #64748b;
-  --wbx-text-subtle: #94a3b8;
+  /* B站同款舒适中文色阶（墨黑柔灰 4 级低视觉疲劳体系） */
+  --wbx-text: #18191C;
+  --wbx-text-secondary: #61666D;
+  --wbx-text-muted: #757A82;
+  --wbx-text-subtle: #9499A0;
 
-  /* 边框与分割线（1px 发丝级精密线条） */
-  --wbx-border: #e5e8ee;
-  --wbx-border-strong: #d4dae3;
-  --wbx-border-focus: #026aa2;
+  /* 弱化硬框线与轻玻璃折射高光边 */
+  --wbx-border: rgba(24, 25, 28, 0.06);
+  --wbx-border-strong: rgba(24, 25, 28, 0.11);
+  --wbx-border-glass: rgba(255, 255, 255, 0.86);
+  --wbx-border-focus: #009CE0;
 
-  /* 10% 品牌主色：精密宝石蓝（高对比、沉稳金融级） */
-  --wbx-primary: #026aa2;
-  --wbx-primary-hover: #035382;
-  --wbx-primary-soft: #f0f8ff;
-  --wbx-primary-border: #bae0f7;
+  /* 10% 品牌主色：清爽天青蓝（贴近 B站 #00AEEC 清爽通透感，兼顾浅色画布 WCAG AA 对比度） */
+  --wbx-primary: #009CE0;
+  --wbx-primary-bright: #00AEEC;
+  --wbx-primary-hover: #0086C4;
+  --wbx-primary-soft: rgba(0, 174, 236, 0.085);
+  --wbx-primary-border: rgba(0, 174, 236, 0.25);
+  --wb-accent: #009CE0;
 
   /* 四大平台专属语义色 */
-  --wbx-plat-fengshen: #026aa2;
-  --wbx-plat-fengshen-soft: #f0f8ff;
-  --wbx-plat-fengshen-border: #bae0f7;
+  --wbx-plat-fengshen: #009CE0;
+  --wbx-plat-fengshen-soft: rgba(0, 174, 236, 0.085);
+  --wbx-plat-fengshen-border: rgba(0, 174, 236, 0.24);
 
   --wbx-plat-lanorange: #d97706;
   --wbx-plat-lanorange-soft: #fffbeb;
@@ -59,22 +65,23 @@
   --wbx-danger-soft: #fef2f2;
   --wbx-danger-border: #fecaca;
 
-  --wbx-progress: #026aa2;
-  --wbx-progress-soft: #f0f8ff;
-  --wbx-progress-border: #bae0f7;
+  --wbx-progress: #009CE0;
+  --wbx-progress-soft: rgba(0, 174, 236, 0.085);
+  --wbx-progress-border: rgba(0, 174, 236, 0.24);
 
-  --wbx-neutral: #475569;
-  --wbx-neutral-soft: #f3f5f8;
-  --wbx-neutral-border: #d4dae3;
+  --wbx-neutral: #61666D;
+  --wbx-neutral-soft: #F1F2F5;
+  --wbx-neutral-border: rgba(24, 25, 28, 0.10);
 
-  /* 字体族与字号阶梯（Manrope + Noto Sans SC + JetBrains Mono，字重克制清晰） */
-  --wbx-font: "Manrope", "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  /* B站同款舒适中英混排字体栈与舒展字号阶梯 */
+  --wbx-font: "Plus Jakarta Sans", "HarmonyOS Sans SC", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  --wbx-font-sans: var(--wbx-font);
   --wbx-font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-  --wbx-fs-page: 16.5px;
-  --wbx-fs-section: 14.5px;
-  --wbx-fs-card: 13.5px;
-  --wbx-fs-body: 13px;
-  --wbx-fs-caption: 12px;
+  --wbx-fs-page: 17px;
+  --wbx-fs-section: 15px;
+  --wbx-fs-card: 14px;
+  --wbx-fs-body: 13.5px;
+  --wbx-fs-caption: 12.5px;
   --wbx-fs-num: 19px;
 
   --wbx-fw-page: 600;
@@ -83,7 +90,7 @@
   --wbx-fw-body: 400;
   --wbx-fw-caption: 500;
   --wbx-fw-num: 600;
-  --wbx-lh: 1.5;
+  --wbx-lh: 1.58;
 
   /* 8pt 间距阶梯 */
   --wbx-s1: 4px;
@@ -94,46 +101,49 @@
   --wbx-s6: 24px;
   --wbx-s8: 32px;
 
-  /* 圆角与微克制阴影 */
-  --wbx-r-xs: 6px;
-  --wbx-r-sm: 8px;
-  --wbx-r-md: 10px;
-  --wbx-r-lg: 12px;
+  /* 同心圆角与轻液体玻璃光学阴影 */
+  --wbx-r-xs: 7px;
+  --wbx-r-sm: 9px;
+  --wbx-r-md: 12px;
+  --wbx-r-lg: 16px;
   --wbx-r-pill: 999px;
 
-  --wbx-shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.035);
-  --wbx-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --wbx-shadow-md: 0 8px 20px -6px rgba(15, 23, 42, 0.07), 0 2px 6px -2px rgba(15, 23, 42, 0.03);
-  --wbx-shadow-pop: 0 20px 40px -12px rgba(15, 23, 42, 0.14), 0 6px 16px -6px rgba(15, 23, 42, 0.06);
-  --wbx-focus: 0 0 0 3px rgba(2, 106, 162, 0.18);
+  --wbx-blur-glass: blur(20px) saturate(165%);
+  --wbx-blur-card: blur(14px) saturate(140%);
+
+  --wbx-shadow-xs: 0 2px 6px -1px rgba(24, 25, 28, 0.03), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --wbx-shadow-sm: 0 6px 22px -6px rgba(24, 25, 28, 0.045), 0 1px 3px rgba(24, 25, 28, 0.025), inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  --wbx-shadow-md: 0 12px 30px -8px rgba(24, 25, 28, 0.07), 0 2px 6px -2px rgba(24, 25, 28, 0.03), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  --wbx-shadow-pop: 0 22px 48px -12px rgba(24, 25, 28, 0.14), 0 6px 16px -6px rgba(24, 25, 28, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.96);
+  --wbx-focus: 0 0 0 3px rgba(0, 174, 236, 0.2);
 
   /* 交互动效时长 */
-  --wbx-dur-fast: 140ms;
-  --wbx-dur: 190ms;
+  --wbx-dur-fast: 150ms;
+  --wbx-dur: 200ms;
   --wbx-dur-spin: 900ms;
   --wbx-ease: cubic-bezier(0.22, 1, 0.36, 1);
 
-  /* 应用壳尺寸令牌（清爽固定 236px 单栏导航 + 56px 顶栏） */
-  --wbx-sidebar-w: 236px;
-  --wbx-sidebar-w-collapsed: 236px;
+  /* 应用壳尺寸令牌（清爽固定 238px 单栏导航 + 56px 顶栏） */
+  --wbx-sidebar-w: 238px;
+  --wbx-sidebar-w-collapsed: 238px;
   --wbx-header-h: 56px;
-  --wbx-rail-w: 316px;
-  --wbx-drawer-w: 460px;
-  --wbx-drawer-w-lg: 620px;
+  --wbx-rail-w: 320px;
+  --wbx-drawer-w: 468px;
+  --wbx-drawer-w-lg: 628px;
   --wbx-main-max: 1640px;
 
   /* 深空石墨命令轨专属令牌 */
-  --wbx-rail-bg: #0f172a;
+  --wbx-rail-bg: #18191C;
   --wbx-rail-hover: rgba(255, 255, 255, 0.08);
-  --wbx-rail-active-bg: rgba(56, 189, 248, 0.16);
-  --wbx-rail-border: rgba(148, 163, 184, 0.16);
-  --wbx-rail-text: #94a3b8;
-  --wbx-rail-text-hover: #e2e8f0;
+  --wbx-rail-active-bg: rgba(0, 174, 236, 0.16);
+  --wbx-rail-border: rgba(148, 153, 160, 0.16);
+  --wbx-rail-text: #9499A0;
+  --wbx-rail-text-hover: #E3E5E7;
   --wbx-rail-text-active: #ffffff;
-  --wbx-rail-accent: #38bdf8;
+  --wbx-rail-accent: #00AEEC;
 
   /* 兼容别名 */
   --wbx-bg-muted: var(--wbx-surface-muted);
-  --wbx-bg-elevated: var(--wbx-surface);
+  --wbx-bg-elevated: var(--wbx-surface-solid);
   --wbx-r-card: var(--wbx-r-lg);
 }

@@ -57,6 +57,12 @@ import {
 } from './lib/shellNav';
 import { APP_TITLE } from './lib/appMeta';
 import { BP, currentViewportWidth } from './lib/breakpoints';
+import {
+  hasAnyAuthenticatedPlatform,
+  syncGlobalPlatformAuth,
+  useDemoDataVisibility,
+} from './lib/demoMode';
+import { buildDemoEngineLogs } from './lib/showcaseDemoData';
 
 const showDesktopNotification = (title: string, body: string) => {
   if (!("Notification" in window)) {
@@ -138,7 +144,7 @@ export default function App() {
     document.title = APP_TITLE;
     document.documentElement.setAttribute('data-theme', 'light');
     document.documentElement.classList.remove('dark');
-    localStorage.setItem('app_theme', 'light');
+    try { localStorage.setItem('app_theme', 'light'); } catch {}
   }, []);
 
   const [workspaceId] = useState(() => {
@@ -267,7 +273,7 @@ export default function App() {
   const [taskFormLocked, setTaskFormLocked] = useState(false);
   const [activeDownloadCount, setActiveDownloadCount] = useState(0);
   const [payrollResumeVersion, setPayrollResumeVersion] = useState(0);
-  useEffect(() => { localStorage.setItem('workbench_task_kind', taskKind); setActiveMenu(taskKind === 'payroll' ? 'core' : 'fengshen_downloads'); }, [taskKind]);
+  useEffect(() => { try { localStorage.setItem('workbench_task_kind', taskKind); } catch {} setActiveMenu(taskKind === 'payroll' ? 'core' : 'fengshen_downloads'); }, [taskKind]);
   const navigateWorkspace = (view: 'create' | 'history' | 'approval' | 'price-export') => {
     const resolvedView = view === 'price-export' ? 'approval' : view;
     setWorkspaceView(resolvedView);
@@ -350,11 +356,13 @@ export default function App() {
   useEffect(() => {
     setPayrollPreparation(null);
     const linkedBatch = new URLSearchParams(window.location.search).get('batch');
-    const id = linkedBatch && /^[a-f0-9]{32}$/.test(linkedBatch) ? linkedBatch : localStorage.getItem(`payroll_preparation_${workspaceId}`);
+    let savedPrepId: string | null = null;
+    try { savedPrepId = localStorage.getItem(`payroll_preparation_${workspaceId}`); } catch {}
+    const id = linkedBatch && /^[a-f0-9]{32}$/.test(linkedBatch) ? linkedBatch : savedPrepId;
     if (!id) return;
     let active = true;
     fetchWithAuth(`/api/parttime/preparations/${id}`).then(r => r.ok ? r.json() : null)
-      .then(value => { if (active && value) { setPayrollPreparation(value); localStorage.setItem(`payroll_preparation_${workspaceId}`, value.id); } }).catch(() => {});
+      .then(value => { if (active && value) { setPayrollPreparation(value); try { localStorage.setItem(`payroll_preparation_${workspaceId}`, value.id); } catch {} } }).catch(() => {});
     return () => { active = false; };
   }, [workspaceId]);
 
@@ -364,7 +372,7 @@ export default function App() {
   const [lastRiderSourcesOutput, setLastRiderSourcesOutput] = useState<string | null>(null);
   const [lastShangyiOutput, setLastShangyiOutput] = useState<string | null>(null);
   const [lastOutputFolder, setLastOutputFolder] = useState<string | null>(() => {
-    return localStorage.getItem("lastOutputFolder") || null;
+    try { return localStorage.getItem("lastOutputFolder") || null; } catch { return null; }
   });
   const [lastRunResult, setLastRunResult] = useState<RunResult | null>(null);
   useEffect(() => {
@@ -378,7 +386,7 @@ export default function App() {
         if (response.ok && !stopped) {
           const value = await response.json();
           setPayrollPreparation(value);
-          if (value.result?.output) { setLastOutputFolder(value.result.output); localStorage.setItem('lastOutputFolder', value.result.output); }
+          if (value.result?.output) { setLastOutputFolder(value.result.output); try { localStorage.setItem('lastOutputFolder', value.result.output); } catch {} }
           if (!['preparing', 'calculating', 'stopping'].includes(value.status)) return;
         }
       } catch { /* Preserve the last known state while the network reconnects. */ }
@@ -412,10 +420,21 @@ export default function App() {
   useEffect(() => { setFengshenLoginRequest(0); }, [workspaceId]);
   const [fengshenAuthStatus, setFengshenAuthStatus] = useState<FengshenAuthStatus | null>(null);
   const [fengshenAuthEvent, setFengshenAuthEvent] = useState<FengshenAuthStatus | null>(null);
+  const { demoHidden } = useDemoDataVisibility();
+
+  useEffect(() => {
+    syncGlobalPlatformAuth(platformStatuses, fengshenAuthStatus);
+  }, [platformStatuses, fengshenAuthStatus]);
+
+  const anyPlatformLoggedIn = hasAnyAuthenticatedPlatform(platformStatuses, fengshenAuthStatus);
 
   const [logsMap, setLogsMap] = useState<Record<string, LogEntry[]>>({});
 
-  const logs = logsMap['core'] || [{ text: theme.log_init, level: "INFO" }];
+  const logs =
+    logsMap['core'] ||
+    (!anyPlatformLoggedIn && !isRunning && !demoHidden
+      ? buildDemoEngineLogs()
+      : [{ text: theme.log_init, level: "INFO" }]);
 
   const setLogs = (updater: any, target: string = activeMenu) => {
     if (target === 'download_rider_sources' || target === 'download_shangyi_employees') target = 'core';
@@ -534,7 +553,8 @@ export default function App() {
       enableInterceptor: false,
       enableCrossStationMerge: false,
     };
-    const saved = localStorage.getItem("appConfig");
+    let saved: string | null = null;
+    try { saved = localStorage.getItem("appConfig"); } catch {}
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -646,7 +666,7 @@ export default function App() {
 
   useEffect(() => {
     if (!isLoadedRef.current) return;
-    localStorage.setItem("appConfig", JSON.stringify(appConfig));
+    try { localStorage.setItem("appConfig", JSON.stringify(appConfig)); } catch {}
     fetchWithAuth("/api/config", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -788,12 +808,14 @@ export default function App() {
       for (const group of groups) {
         const uploaded = await uploadExtractedFilesAndGetPath(group.files);
         if (!uploaded) continue;
+        let safeSession: Storage | undefined;
+        try { safeSession = sessionStorage; } catch {}
         const attempt = prepareQueueSubmission(workspaceId, {
           source_path: uploaded.path,
           mode: group.mode,
           config: { ...appConfig },
-        }, sessionStorage);
-        const submitted = await sendQueueSubmission(workspaceId, attempt, fetchWithAuth, sessionStorage);
+        }, safeSession);
+        const submitted = await sendQueueSubmission(workspaceId, attempt, fetchWithAuth, safeSession);
         totalTasks += submitted.tasks.length;
         window.dispatchEvent(new CustomEvent('payroll-queue:changed', { detail: { tasks: submitted.tasks } }));
       }
@@ -812,10 +834,12 @@ export default function App() {
 
   const recoveredQueueSubmission=useRef('');
   useEffect(()=>{
-    const attempt=pendingQueueSubmission(workspaceId,sessionStorage);
+    let safeSession: Storage | undefined;
+    try { safeSession = sessionStorage; } catch {}
+    const attempt=pendingQueueSubmission(workspaceId,safeSession);
     if(!attempt||recoveredQueueSubmission.current===attempt.request_id)return;
     recoveredQueueSubmission.current=attempt.request_id;
-    void sendQueueSubmission(workspaceId,attempt,fetchWithAuth,sessionStorage).then(()=>{
+    void sendQueueSubmission(workspaceId,attempt,fetchWithAuth,safeSession).then(()=>{
       window.dispatchEvent(new CustomEvent('payroll-queue:changed'));
       showToast('原提交已确认，核算队列已恢复。','info');
     }).catch(error=>showToast(error instanceof Error?error.message:'任务提交结果尚未确认','warn'));
@@ -994,7 +1018,7 @@ export default function App() {
               if (data.type === 'payroll_stage') { setProgressText(data.text || '正在处理核算资料', targetAction); continue; }
               if (data.type === 'payroll_preparation') {
                 setPayrollPreparation(data.preparation);
-                localStorage.setItem(`payroll_preparation_${workspaceId}`, data.preparation.id);
+                try { localStorage.setItem(`payroll_preparation_${workspaceId}`, data.preparation.id); } catch {}
                 continue;
               }
               if (data.type === "fengshen_auth") {
@@ -1081,7 +1105,7 @@ export default function App() {
                   if (data.out_file) {
                     if (targetAction === "core") {
                       setLastOutputFolder(data.out_file);
-                      localStorage.setItem("lastOutputFolder", data.out_file);
+                      try { localStorage.setItem("lastOutputFolder", data.out_file); } catch {}
                     } else if (riderDownload) {
                       setLastRiderSourcesOutput(data.out_file);
                     } else if (shangyiDownload) {
@@ -1532,7 +1556,18 @@ export default function App() {
       />
 
       <UploadProgressOverlay status={uploadStatus} appTheme={appTheme} />
-      <FengshenLoginModal workspaceId={workspaceId} downloadAccountId="shared" requestVersion={fengshenLoginRequest} eventStatus={fengshenAuthEvent} onStatus={setFengshenAuthStatus} />
+      <FengshenLoginModal
+        workspaceId={workspaceId}
+        downloadAccountId="shared"
+        autoOpenEnabled={
+          workspaceView === 'history' ||
+          (workspaceView === 'create' && taskKind === 'download' && downloadPlatform === 'fengshen') ||
+          isRunning
+        }
+        requestVersion={fengshenLoginRequest}
+        eventStatus={fengshenAuthEvent}
+        onStatus={setFengshenAuthStatus}
+      />
 
       
       {toastMsg && (

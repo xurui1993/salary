@@ -9,6 +9,12 @@ import {
   X,
 } from 'lucide-react';
 import { platformAuthRequest } from '../lib/platformAuthApi';
+import {
+  shouldUseDemoData,
+  useDemoDataVisibility,
+  usePlatformAuthSnapshot,
+} from '../lib/demoMode';
+import { buildDemoLanorangeApprovals } from '../lib/showcaseDemoData';
 
 export interface ApprovalPendingTaskItem {
   id: string;
@@ -80,8 +86,20 @@ export function HeaderApprovalNotifier({
   const [loggedIn, setLoggedIn] = useState(false);
   const [actorLabel, setActorLabel] = useState('');
   const [rows, setRows] = useState<ApprovalPendingTaskItem[]>([]);
+  const [demoRows, setDemoRows] = useState<ApprovalPendingTaskItem[]>(() =>
+    buildDemoLanorangeApprovals() as unknown as ApprovalPendingTaskItem[],
+  );
   const [unreadIds, setUnreadIds] = useState<string[]>([]);
   const [lastCheckedAt, setLastCheckedAt] = useState<string>('');
+
+  const auth = usePlatformAuthSnapshot();
+  const { demoHidden } = useDemoDataVisibility();
+  const isLanorangeLoggedIn = loggedIn || auth.isLoggedIn('lanorange');
+  const demoActive = shouldUseDemoData({
+    isLoggedIn: isLanorangeLoggedIn,
+    hasLiveData: rows.length > 0,
+    demoHidden,
+  });
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const fetchRef = useRef(apiFetch);
@@ -118,7 +136,6 @@ export function HeaderApprovalNotifier({
           second: '2-digit',
         }),
       );
-      onPendingCountChangeRef.current?.(nextRows.length);
 
       const currentIds = new Set(nextRows.map(item => String(item.id)));
       const previousSeen = seenIdsRef.current;
@@ -183,7 +200,6 @@ export function HeaderApprovalNotifier({
           setLoggedIn(false);
           setActorLabel('');
           setRows([]);
-          onPendingCountChangeRef.current?.(0);
           return;
         }
 
@@ -221,18 +237,31 @@ export function HeaderApprovalNotifier({
     return () => clearInterval(timer);
   }, [pollPendingApprovals]);
 
+  // 真实蓝橙登录后立即拉取实时待办
+  const prevLanorangeRef = useRef(auth.isLoggedIn('lanorange'));
+  useEffect(() => {
+    const nowAuthed = auth.isLoggedIn('lanorange');
+    if (nowAuthed && !prevLanorangeRef.current) {
+      void pollPendingApprovals(false);
+    }
+    prevLanorangeRef.current = nowAuthed;
+  }, [auth, pollPendingApprovals]);
+
   // Stay in sync when LanorangeApprovals page fetches or updates pending rows
   useEffect(() => {
     const onUpdated = (event: Event) => {
       const detail = (event as CustomEvent).detail as
-        | { rows?: ApprovalPendingTaskItem[]; actor_label?: string; loggedOut?: boolean }
+        | { rows?: ApprovalPendingTaskItem[]; actor_label?: string; loggedOut?: boolean; demo?: boolean }
         | undefined;
       if (!detail) return;
+      if (detail.demo && Array.isArray(detail.rows)) {
+        setDemoRows(detail.rows);
+        return;
+      }
       if (detail.loggedOut) {
         snapshotEpochRef.current += 1;
         setLoggedIn(false);
         setRows([]);
-        onPendingCountChangeRef.current?.(0);
         return;
       }
       if (Array.isArray(detail.rows)) {
@@ -265,10 +294,16 @@ export function HeaderApprovalNotifier({
     };
   }, [open]);
 
-  const pendingCount = rows.length;
-  const eligibleCount = rows.filter(item => !item.reason).length;
-  const unreadCount = loggedIn ? unreadIds.length : 0;
+  const displayRows = demoActive ? demoRows : rows;
+  const pendingCount = displayRows.length;
+  const eligibleCount = displayRows.filter(item => !item.reason).length;
+  const unreadCount = isLanorangeLoggedIn ? unreadIds.length : 0;
   const hasUnread = unreadCount > 0;
+
+  // 统一将顶部待办与侧边栏审批徽标与当前展示列表保持一致（演示态展示示例数，真实登录后只展示后台数）
+  useEffect(() => {
+    onPendingCountChangeRef.current?.(pendingCount);
+  }, [pendingCount]);
 
   const handleToggleOpen = () => {
     setOpen(prev => {
@@ -287,14 +322,16 @@ export function HeaderApprovalNotifier({
     <div className="wbx-popover-wrap" ref={wrapRef}>
       <button
         type="button"
-        className={`wbx-header-tool-btn wbx-approval-bell-btn${open || isApprovalViewActive ? ' is-open' : ''}${pendingCount > 0 ? ' has-pending' : ''}${hasUnread ? ' has-unread' : ''}`}
+        className={`wbx-header-tool-btn wbx-approval-bell-btn${open ? ' is-open' : ''}${isApprovalViewActive ? ' is-viewing' : ''}${pendingCount > 0 ? ' has-pending' : ''}${hasUnread ? ' has-unread' : ''}`}
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-label={`价格审批待办通知（待审批 ${pendingCount} 条${hasUnread ? `，新增 ${unreadCount} 条` : ''}）`}
         title={
-          loggedIn
+          isLanorangeLoggedIn
             ? `价格审批：当前待审批 ${pendingCount} 条（可同意 ${eligibleCount} 条）`
-            : '价格审批通知（未登录蓝橙账号）'
+            : demoActive
+              ? `价格审批示例待办 ${pendingCount} 条（登录蓝橙后自动切换真实数据）`
+              : '价格审批通知（未登录蓝橙账号）'
         }
         onClick={handleToggleOpen}
       >
@@ -340,13 +377,16 @@ export function HeaderApprovalNotifier({
                 >
                   待审 {pendingCount}
                 </span>
-                </div>
+                {demoActive && <span className="wbx-demo-badge">示例</span>}
+              </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                {loggedIn
+                {isLanorangeLoggedIn
                   ? `${actorLabel ? `账号：${actorLabel} · ` : ''}可同意 ${eligibleCount} 条${
                       lastCheckedAt ? ` · 更新于 ${lastCheckedAt}` : ''
                     }`
-                  : '连接蓝橙账号后自动实时巡检并推送新增待审提醒'}
+                  : demoActive
+                    ? `演示数据 · 可同意 ${eligibleCount} 条 · 登录蓝橙后自动切换实时待办`
+                    : '连接蓝橙账号后自动实时巡检并推送新增待审提醒'}
               </p>
             </div>
 
@@ -373,7 +413,7 @@ export function HeaderApprovalNotifier({
           </div>
 
           <div className="wbx-approval-popover__body">
-            {!loggedIn ? (
+            {!isLanorangeLoggedIn && !demoActive ? (
               <div className="wbx-approval-popover__empty">
                 <span className="wbx-approval-popover__empty-icon">
                   <KeyRound size={18} />
@@ -407,7 +447,7 @@ export function HeaderApprovalNotifier({
             ) : (
               <>
                 <ul className="wbx-approval-popover__list" aria-label="待审批价格提审单列表">
-                  {rows.slice(0, 5).map(task => {
+                  {displayRows.slice(0, 5).map(task => {
                     const code = task.businessCode || task.id;
                     const periodText = task.period_start
                       ? `${task.period_start.slice(5, 10)} ~ ${task.period_end?.slice(5, 10) || '—'}`
@@ -456,6 +496,19 @@ export function HeaderApprovalNotifier({
           </div>
 
           <div className="wbx-approval-popover__foot flex items-center gap-2">
+            {demoActive && (
+              <button
+                type="button"
+                className="wbx-btn wbx-btn--sm shrink-0"
+                onClick={() => {
+                  setOpen(false);
+                  onOpenLanorangeAuth();
+                }}
+              >
+                <KeyRound size={12.5} aria-hidden="true" />
+                <span>登录蓝橙</span>
+              </button>
+            )}
             <button
               type="button"
               className="wbx-btn wbx-btn--primary wbx-btn--sm w-full justify-center"

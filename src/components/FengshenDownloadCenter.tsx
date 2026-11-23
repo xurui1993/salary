@@ -4,7 +4,7 @@ import { recoverySummary } from '../lib/downloadCenterLogic';
 import { readDownloadResponse, saveDownloadBlob, downloadOutput, downloadErrorMessage } from '../lib/outputDownload';
 import { isBaize, isBenlai, isPayoutPlatform, isXiaoxiang, isRiderArchive, isGlobalDataset, datasetGroup,isMerchant,isMerchantSnapshot,toggleDownloadDataset } from '../lib/downloadCenterLogic';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle2, CloudDownload, Download, KeyRound, Loader2, Plus, RefreshCw, Square, X, XCircle, Pencil, Trash2, AlertTriangle, UsersRound, Building2, History, ArrowUpRight, Compass, Layers, Radar } from 'lucide-react';
+import { AlertCircle, Calendar, CheckCircle2, CloudDownload, Download, FileSpreadsheet, KeyRound, Loader2, Plus, RefreshCw, Square, X, XCircle, Pencil, Trash2, AlertTriangle, UsersRound, Building2, History, ArrowUpRight, Compass, Layers, Radar } from 'lucide-react';
 import { DownloadAccountPanel } from './DownloadAccountPanel';
 import type { FengshenAuthStatus } from './FengshenLoginModal';
 import { itemKey, newRequestId, phaseLabel, recoverable, retainAttempt, selectionKey, isLanorange } from '../lib/downloadCenterLogic';
@@ -55,6 +55,12 @@ import {
   type BuiltinScenarioPreset,
   type FengshenDatasetCategoryId,
 } from '../lib/workbench';
+import {
+  shouldUseDemoData,
+  useDemoDataVisibility,
+  usePlatformAuthSnapshot,
+} from '../lib/demoMode';
+import { buildDemoBindingPlatforms, buildDemoTaskCenterRecords } from '../lib/showcaseDemoData';
 
 interface DownloadOptions {
   generators?: ReportDefinition[];
@@ -285,7 +291,20 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const [optionVersion, setOptionVersion] = useState(0);
   const [cities, setCities] = useState<string[]>([]);
   const [bindingPlatforms, setBindingPlatforms] = useState<Record<string, BindingPlatform>>({});
+  const [demoBindingPlatforms, setDemoBindingPlatforms] = useState<Record<string, BindingPlatform>>(
+    () => buildDemoBindingPlatforms(),
+  );
   const [bindingPlatformsBusy, setBindingPlatformsBusy] = useState(false);
+  const authSnapshot = usePlatformAuthSnapshot();
+  const { demoHidden } = useDemoDataVisibility();
+  const bindingPlatformsDemoActive = shouldUseDemoData({
+    isLoggedIn: authSnapshot.anyLoggedIn,
+    hasLiveData: Object.keys(bindingPlatforms).length > 0,
+    demoHidden,
+  });
+  const effectiveBindingPlatforms = bindingPlatformsDemoActive
+    ? demoBindingPlatforms
+    : bindingPlatforms;
   const [datasets, setDatasets] = useState<string[]>(() =>
     platform === 'payout'
       ? ['baize_employees', 'benlai_employees']
@@ -559,10 +578,14 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       })
       .catch(() => {});
     return () => { active = false; };
-  }, [getJson]);
+  }, [getJson, authSnapshot.anyLoggedIn]);
 
   const updateBindingPlatforms = useCallback(async (next: Record<string, string>) => {
     const clean = cleanBindingPlatforms(next);
+    if (bindingPlatformsDemoActive) {
+      setDemoBindingPlatforms(clean);
+      return;
+    }
     setBindingPlatforms(clean);
     setBindingPlatformsBusy(true);
     try {
@@ -577,7 +600,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     } finally {
       setBindingPlatformsBusy(false);
     }
-  }, [getJson]);
+  }, [bindingPlatformsDemoActive, getJson]);
 
   const stationDirectory=useStationDirectory(platform==='xiaoxiang'?'xiaoxiang':'fengshen',apiRef.current,platform!=='payout');
 
@@ -1389,7 +1412,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
         {
           excludeSeparation,
           selectedMonths: reportActiveMonths.length > 0 ? reportActiveMonths : undefined,
-          bindingPlatforms,
+          bindingPlatforms: effectiveBindingPlatforms,
         },
       )
     : [];
@@ -1698,7 +1721,12 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
    */
   const railHint: {text: string; tone: 'warn'; title?: string; run?: () => void} | null = (() => {
     if (!submitReady && datasets.length === 0) {
-      return null;
+      return {
+        text: '请先在左侧勾选至少 1 项待采集资料',
+        tone: 'warn',
+        title: '点击定位至 Step 01 选择资料',
+        run: () => scrollToStep('datasets'),
+      };
     }
     if (!canSubmit && !uncertainCreate && !creating && fengshenMissingCities) {
       return {
@@ -1731,7 +1759,29 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     : `资料项已结束，正在生成多城市汇总${summaryMonth ? `（${summaryMonth}）` : ''}${summaryDetail?.total ? `：${summaryDetail.current || 0}/${summaryDetail.total} 个城市` : ''}${summaryDetail?.city ? ` · 正在合并 ${summaryDetail.city}` : ''}。`;
   const summary = selectedRun?.summary && typeof selectedRun.summary === 'object' ? selectedRun.summary : null;
 
-  const runningCount = runs.filter(run => !TERMINAL_STATUSES.has(run.status.toLowerCase())).length;
+  const [demoTaskActiveCount, setDemoTaskActiveCount] = useState<number>(() =>
+    buildDemoTaskCenterRecords().filter(r =>
+      ['queued', 'running', 'cancelling', 'preparing', 'stopping'].includes(r.status),
+    ).length,
+  );
+  useEffect(() => {
+    const onDemoActiveCount = (event: Event) => {
+      const next = Number((event as CustomEvent)?.detail);
+      if (Number.isFinite(next) && next >= 0) {
+        setDemoTaskActiveCount(next);
+      }
+    };
+    window.addEventListener('workbench:demo-active-count', onDemoActiveCount);
+    return () => window.removeEventListener('workbench:demo-active-count', onDemoActiveCount);
+  }, []);
+
+  const liveRunningCount = runs.filter(run => !TERMINAL_STATUSES.has(run.status.toLowerCase())).length;
+  const demoActiveForHeader = shouldUseDemoData({
+    isLoggedIn: authSnapshot.anyLoggedIn,
+    hasLiveData: runs.length > 0,
+    demoHidden,
+  });
+  const runningCount = demoActiveForHeader ? demoTaskActiveCount : liveRunningCount;
   useEffect(() => { onActiveCountChange?.(runningCount); }, [runningCount, onActiveCountChange]);
   const failedItems = selectedRun?.items?.filter(item => ['error', 'failed', 'interrupted'].includes(item.status)) || [];
   const choiceStyle = (selected: boolean) => `flex min-w-0 cursor-pointer items-center gap-2.5 rounded-lg border px-3.5 py-2.5 text-sm transition-all select-none ${selected ? 'border-sky-600 bg-sky-50 text-sky-900 font-medium shadow-2xs' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50/80'}`;
@@ -1836,7 +1886,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                   onRecollect={checked => setDuplicateApproval(checked ? singleReportKey : '')}
                   refreshing={optionsLoading}
                   onRefreshCities={() => setOptionVersion(version => version + 1)}
-                  bindingPlatforms={bindingPlatforms}
+                  bindingPlatforms={effectiveBindingPlatforms}
                   onBindingPlatformsChange={next => void updateBindingPlatforms(next)}
                   bindingPlatformsSaving={bindingPlatformsBusy}
                 />
@@ -1844,14 +1894,6 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
             )}
             {view === 'create' && !isGenerateMode && <>
             <section className={`${panel} wb-task-form wb-download-workbench`} aria-label="新建下载配置">
-              {!embedded && <div className="wb-form-heading">
-                <div className="wb-stage-heading-left">
-                  <div className="wb-stage-title-row">
-                    <h2>{stageMeta.title}</h2>
-                  </div>
-                  <p className="wb-muted">{stageMeta.subtitle}</p>
-                </div>
-              </div>}
           {optionsError && !options ? <div role="alert" className="flex flex-wrap items-center gap-3 p-5 text-sm text-rose-700"><AlertCircle size={17} />{optionsError}<button className={smallButton} onClick={() => optionsError.includes('请刷新工作台') || optionsError.includes('账号页面已更新') ? location.reload() : setOptionVersion(version => version + 1)}>重新加载</button></div>
             : !options ? <p role="status" className="flex items-center gap-2 p-6 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" />正在加载下载选项…</p>
             : <>
@@ -2004,7 +2046,6 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                         const selected = datasets.includes(source.datasetId);
                         const authRaw = payoutAuthStatuses[source.authKey] || {};
                         const authBadge = getPlatformCardBadge(authRaw);
-                        const SourceIcon = source.Icon;
                         return (
                           <div
                             key={source.datasetId}
@@ -2028,9 +2069,6 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                               <div className="wb-payout-card-title-wrap">
                                 <span className={`wb-payout-check ${selected ? 'is-checked' : ''}`} aria-hidden="true">
                                   {selected ? '✓' : ''}
-                                </span>
-                                <span className="wb-payout-card-icon" aria-hidden="true">
-                                  <SourceIcon size={16} />
                                 </span>
                                 <div className="min-w-0">
                                   <h3 className="wb-payout-card-title">{source.title}</h3>
@@ -2072,6 +2110,10 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                           </div>
                         );
                       })}
+                    </div>
+                    <div className="wb-payout-scope-note" role="note">
+                      <span className="wb-payout-scope-note__badge">全量实时快照</span>
+                      <span>发薪数据源自动按全站全城实时直采并独立归档，无需额外配置处理城市或业务账期。</span>
                     </div>
                   </fieldset>
                 ) : (
@@ -2266,28 +2308,8 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                               )}
                             </div>
                           )}
-                          <div
-                            className={
-                              group === 'baize' || group === 'benlai'
-                                ? 'wb-baize-single-grid gap-2.5'
-                                : `wbx-dc-grid${group === 'lanorange' || group === 'xiaoxiang' ? ' is-two-col' : ''}`
-                            }
-                          >
-                            {displayedDatasets.length === 0 && onlySelectedShown && (
-                              <div className="col-span-full flex items-center justify-between gap-3 rounded-lg border border-sky-200 bg-sky-50/70 px-3.5 py-2.5 text-xs text-slate-700">
-                                <span>当前分类下没有已勾选的资料。</span>
-                                <button
-                                  type="button"
-                                  className="wbx-btn wbx-btn--secondary wbx-btn--sm"
-                                  onClick={() => setOnlySelectedShown(false)}
-                                >
-                                  <X size={12} />
-                                  <span>关闭「只看已选」恢复全览</span>
-                                </button>
-                              </div>
-                            )}
-
-                            {displayedDatasets.map(dataset => {
+                          {(() => {
+                            const renderDatasetCard = (dataset: { id: string; label: string }) => {
                               const selected = datasets.includes(dataset.id);
                               const cardMeta = getDatasetCardMeta(dataset.id, dataset.label);
                               const showExceptionTag = Boolean(cardMeta.scopeTag);
@@ -2312,7 +2334,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                 <label
                                   key={dataset.id}
                                   title={`${cardMeta.title}：${descText}`}
-                                  className={`wbx-dc-card${selected ? ' is-selected' : ''}${formLocked ? ' is-disabled' : ''}`}
+                                  className={`wbx-dc-card is-tone-${cardMeta.tone}${selected ? ' is-selected' : ''}${formLocked ? ' is-disabled' : ''}`}
                                 >
                                   <input
                                     type="checkbox"
@@ -2334,16 +2356,71 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                   </div>
                                 </label>
                               );
-                            })}
-                          </div>
+                            };
+
+                            if (group === 'xiaoxiang') {
+                              const datedItems = displayedDatasets.filter(item => !isRiderArchive(item.id));
+                              const snapshotItems = displayedDatasets.filter(item => isRiderArchive(item.id));
+                              if (datedItems.length > 0 && snapshotItems.length > 0) {
+                                return (
+                                  <div className="wbx-dc-subgroups">
+                                    <div className="wbx-dc-subgroup">
+                                      <div className="wbx-dc-subgroup__head">
+                                        <span>按日期区间采集</span>
+                                        <small className="tabular-nums">{datedItems.length} 项 · 按下方所选日期区间合并</small>
+                                      </div>
+                                      <div className="wbx-dc-grid is-two-col">
+                                        {datedItems.map(renderDatasetCard)}
+                                      </div>
+                                    </div>
+                                    <div className="wbx-dc-subgroup">
+                                      <div className="wbx-dc-subgroup__head">
+                                        <span>全城实时快照</span>
+                                        <small className="tabular-nums">{snapshotItems.length} 项 · 自动读取当前最新全站档案（不限日期）</small>
+                                      </div>
+                                      <div className="wbx-dc-grid is-single-wide">
+                                        {snapshotItems.map(renderDatasetCard)}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              }
+                            }
+
+                            return (
+                              <div
+                                className={
+                                  group === 'baize' || group === 'benlai'
+                                    ? 'wb-baize-single-grid gap-2.5'
+                                    : `wbx-dc-grid${group === 'lanorange' || group === 'xiaoxiang' ? ' is-two-col' : ''}`
+                                }
+                              >
+                                {displayedDatasets.length === 0 && onlySelectedShown && (
+                                  <div className="col-span-full flex items-center justify-between gap-3 rounded-lg border border-sky-200 bg-sky-50/70 px-3.5 py-2.5 text-xs text-slate-700">
+                                    <span>当前分类下没有已勾选的资料。</span>
+                                    <button
+                                      type="button"
+                                      className="wbx-btn wbx-btn--secondary wbx-btn--sm"
+                                      onClick={() => setOnlySelectedShown(false)}
+                                    >
+                                      <X size={12} />
+                                      <span>关闭「只看已选」恢复全览</span>
+                                    </button>
+                                  </div>
+                                )}
+
+                                {displayedDatasets.map(renderDatasetCard)}
+                              </div>
+                            );
+                          })()}
                         </div>
                       );
                     })}
                   </fieldset>
                 )}
 
-                {/* STEP 02: 动态范围与账期配置 */}
-                {!dynamicScopeReq.needsCity && !dynamicScopeReq.needsDate ? (
+                {/* STEP 02: 动态范围与账期配置（发薪平台全量实时快照，无需多余 Step 02 空卡） */}
+                {platform === 'payout' ? null : !dynamicScopeReq.needsCity && !dynamicScopeReq.needsDate ? (
                   <section className="wbx-card wbx-step" aria-label="动态范围与账期配置">
                     <div className="wb-step-card-header">
                       <div className="wb-step-badge">
@@ -2614,7 +2691,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                       if (!platform) setSystemFilter('fengshen');
                                     }}
                                   >
-                                    一键全城市快照
+                                    全城快照
                                   </button>
                                 )}
                               </>
@@ -3311,6 +3388,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                 onOpenPrice={onOpenPrice}
         onOpenAttempt={id => {
           setRequestError('');
+          if (id.startsWith('TC-') || id.startsWith('demo-')) return;
           attemptOpenController.current?.abort();
           const controller = new AbortController(); attemptOpenController.current = controller;
           void getJson(`${API_ROOT}/runs/${encodeURIComponent(id)}`, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) })

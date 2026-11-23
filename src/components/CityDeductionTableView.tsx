@@ -371,7 +371,7 @@ export function CityDeductionTableView({
               {showProblemRules && (
                 <th className="wbx-ded-sheet__th-kw">关键词</th>
               )}
-              <th className="wbx-ded-sheet__th-ops">行操作</th>
+              <th className={`wbx-ded-sheet__th-ops${!showProblemRules ? ' is-sticky-edge' : ''}`}>行操作</th>
             </tr>
           </thead>
 
@@ -413,7 +413,7 @@ export function CityDeductionTableView({
                       </button>
                     </td>
                   )}
-                  <td className="wbx-ded-sheet__td-ops">
+                  <td className={`wbx-ded-sheet__td-ops${!showProblemRules ? ' is-sticky-edge' : ''}`}>
                     <div className="wbx-ded-sheet__ops">
                       <button
                         type="button"
@@ -424,7 +424,19 @@ export function CityDeductionTableView({
                       >
                         <span>填零</span>
                       </button>
-                      <span className="wbx-ded-sheet__op-spacer" aria-hidden="true" />
+                      <button
+                        type="button"
+                        className="wbx-ded-sheet__op-btn is-sync"
+                        disabled={disabled || !cityReadyToApply}
+                        title={
+                          cityReadyToApply
+                            ? '将城市默认金额下发到本市全部沿用或待配站点'
+                            : '请先将首行城市默认填写完整'
+                        }
+                        onClick={() => onApplyCityToStations(cityEntry)}
+                      >
+                        <span>下发本城</span>
+                      </button>
                       <label
                         className={`wbx-ded-sheet__zero-toggle${cityEntry.zero_confirmed ? ' is-checked' : ''}${charged ? ' is-disabled' : ''}`}
                         title={charged ? '已填写非零金额，无需确认零扣款' : '勾选确认本市默认零扣款'}
@@ -509,7 +521,7 @@ export function CityDeductionTableView({
                         </button>
                       </td>
                     )}
-                    <td className="wbx-ded-sheet__td-ops">
+                    <td className={`wbx-ded-sheet__td-ops${!showProblemRules ? ' is-sticky-edge' : ''}`}>
                       <div className="wbx-ded-sheet__ops">
                         <button
                           type="button"

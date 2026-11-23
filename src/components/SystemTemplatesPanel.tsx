@@ -341,10 +341,6 @@ export function SystemTemplatesPanel({
         <header className="wbx-tpl-head">
           <div className="wbx-tpl-head__left">
             <h2 className="wbx-tpl-head__title">标准核算模板</h2>
-            <span className="wbx-tpl-head__count tabular-nums">{counts.all}</span>
-            <span className="wbx-tpl-head__summary tabular-nums">
-              淘宝闪购 {counts.shangou} 份 · 美团小象 {counts.xiaoxiang} 份
-            </span>
           </div>
 
           <div className="wbx-tpl-head__actions">
@@ -566,111 +562,175 @@ export function SystemTemplatesPanel({
               )}
             </div>
           </div>
-        ) : (
-          <div className="wbx-tpl-grid" role="list" aria-label="系统标准模板卡片列表">
-            {visibleRows.map(({ record, row }) => {
-              const isDownloaded = Boolean(recentlyDownloaded[row.filename]);
-              const isXiaoxiang = row.businessTag === '美团小象';
-              const colCountText =
-                record.header_count && record.header_count > 0
-                  ? `${record.header_count} 列标准`
-                  : isXiaoxiang
-                    ? '22 列标准'
-                    : '10 列标准';
-              return (
-                <article
-                  key={row.filename}
-                  role="listitem"
-                  className={`wbx-tpl-card${isXiaoxiang ? ' is-xiaoxiang' : ''}${!row.available ? ' is-disabled' : ''}`}
-                >
-                  <div className="wbx-tpl-card__head">
-                    <span
-                      className={`wbx-tpl-card__icon${isXiaoxiang ? ' is-xiaoxiang' : ''}`}
-                      aria-hidden="true"
-                    >
-                      <FileSpreadsheet size={17} />
-                    </span>
-                    <div className="wbx-tpl-card__title-block">
-                      <div className="wbx-tpl-card__title-row">
-                        <h3 className="wbx-tpl-card__city" title={row.cityName}>
-                          {row.cityName}
-                        </h3>
-                        {row.sourceBadge && (
-                          <span className="wbx-tpl-source-tag">{row.sourceBadge}</span>
-                        )}
-                      </div>
-                      <p className="wbx-tpl-card__biz">
-                        <span className={isXiaoxiang ? 'is-xiaoxiang' : 'is-shangou'}>
-                          {row.businessTag}
-                        </span>
-                        <span className="wbx-tpl-card__sep" aria-hidden="true">·</span>
-                        <span>{row.regionTag}</span>
-                      </p>
+        ) : (() => {
+          const shangouRows = visibleRows.filter(item => item.row.businessTag !== '美团小象');
+          const xiaoxiangRows = visibleRows.filter(item => item.row.businessTag === '美团小象');
+          const shouldGroupByBiz =
+            category === 'all' && shangouRows.length > 0 && xiaoxiangRows.length > 0;
+
+          const renderCard = (
+            { record, row }: (typeof visibleRows)[number],
+            options?: { grouped?: boolean; single?: boolean },
+          ) => {
+            const isDownloaded = Boolean(recentlyDownloaded[row.filename]);
+            const isXiaoxiang = row.businessTag === '美团小象';
+            const isGrouped = Boolean(options?.grouped);
+            const isSingle = Boolean(options?.single);
+            const colCountText =
+              record.header_count && record.header_count > 0
+                ? `${record.header_count} 列标准`
+                : isXiaoxiang
+                  ? '22 列标准'
+                  : '10 列标准';
+            return (
+              <article
+                key={row.filename}
+                role="listitem"
+                className={`wbx-tpl-card${isXiaoxiang ? ' is-xiaoxiang' : ''}${isSingle ? ' is-single' : ''}${!row.available ? ' is-disabled' : ''}`}
+              >
+                <div className="wbx-tpl-card__head">
+                  <div className="wbx-tpl-card__title-block">
+                    <div className="wbx-tpl-card__title-row">
+                      <h3 className="wbx-tpl-card__city" title={row.cityName}>
+                        {row.cityName}
+                      </h3>
+                      {row.sourceBadge && (
+                        <span className="wbx-tpl-source-tag">{row.sourceBadge}</span>
+                      )}
                     </div>
+                    <p className="wbx-tpl-card__biz">
+                      {!isGrouped && (
+                        <>
+                          <span className={isXiaoxiang ? 'is-xiaoxiang' : 'is-shangou'}>
+                            {row.businessTag}
+                          </span>
+                          <span className="wbx-tpl-card__sep" aria-hidden="true">·</span>
+                        </>
+                      )}
+                      <span>{row.regionTag}</span>
+                    </p>
+                  </div>
+                  {!isGrouped && (
                     <span className="wbx-tpl-card__cols tabular-nums">{colCountText}</span>
+                  )}
+                </div>
+
+                <div className="wbx-tpl-card__spec">
+                  <span className="wbx-tpl-card__file tabular-nums" title={row.filename}>
+                    {row.filename}
+                  </span>
+                  <span className="wbx-tpl-card__size tabular-nums">
+                    {row.fileSizeText}
+                  </span>
+                </div>
+
+                <div className="wbx-tpl-card__foot">
+                  <div className="wbx-tpl-card__edit-group">
+                    <button
+                      type="button"
+                      className="wbx-tpl-card-op"
+                      aria-label={`修改 ${row.cityName}`}
+                      onClick={() => openEditModal(record)}
+                    >
+                      <Pencil size={12} aria-hidden="true" />
+                      <span>修改</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="wbx-tpl-card-op is-danger"
+                      aria-label={`删除 ${row.cityName}`}
+                      onClick={() =>
+                        setConfirmTarget({
+                          type: 'delete',
+                          record,
+                          cityName: row.cityName,
+                        })
+                      }
+                    >
+                      <Trash2 size={12} aria-hidden="true" />
+                      <span>删除</span>
+                    </button>
                   </div>
 
-                  <div className="wbx-tpl-card__spec">
-                    <span className="wbx-tpl-card__file tabular-nums" title={row.filename}>
-                      {row.filename}
-                    </span>
-                    <span className="wbx-tpl-card__size tabular-nums">
-                      {row.fileSizeText}
-                    </span>
-                  </div>
+                  {row.available ? (
+                    <a
+                      className={`wbx-tpl-dl-btn${isDownloaded ? ' is-downloaded' : ''}`}
+                      aria-label={`下载 ${row.filename}`}
+                      href={`/api/download/template?file=${encodeURIComponent(row.filename)}`}
+                      download
+                      onClick={() => markDownloaded(row.filename)}
+                    >
+                      {isDownloaded ? (
+                        <Check size={12.5} aria-hidden="true" />
+                      ) : (
+                        <Download size={12.5} aria-hidden="true" />
+                      )}
+                      <span>{isDownloaded ? '已下载' : '下载'}</span>
+                    </a>
+                  ) : (
+                    <span className="wbx-tpl-action-disabled">不可下载</span>
+                  )}
+                </div>
+              </article>
+            );
+          };
 
-                  <div className="wbx-tpl-card__foot">
-                    <div className="wbx-tpl-card__edit-group">
-                      <button
-                        type="button"
-                        className="wbx-tpl-card-op"
-                        aria-label={`修改 ${row.cityName}`}
-                        onClick={() => openEditModal(record)}
-                      >
-                        <Pencil size={12} aria-hidden="true" />
-                        <span>修改</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="wbx-tpl-card-op is-danger"
-                        aria-label={`删除 ${row.cityName}`}
-                        onClick={() =>
-                          setConfirmTarget({
-                            type: 'delete',
-                            record,
-                            cityName: row.cityName,
-                          })
-                        }
-                      >
-                        <Trash2 size={12} aria-hidden="true" />
-                        <span>删除</span>
-                      </button>
+          if (shouldGroupByBiz) {
+            const isXiaoxiangSingle = xiaoxiangRows.length === 1;
+            const isShangouSingle = shangouRows.length === 1;
+            return (
+              <div className="wbx-tpl-groups" aria-label="按业务线分组的标准模板列表">
+                <section className="wbx-tpl-group" aria-label="淘宝闪购城市模板">
+                  <header className="wbx-tpl-group__head">
+                    <div className="wbx-tpl-group__title-row">
+                      <h3 className="wbx-tpl-group__title">淘宝闪购 · 城市模板</h3>
+                      <span className="wbx-tpl-group__count tabular-nums">{shangouRows.length} 份</span>
                     </div>
-
-                    {row.available ? (
-                      <a
-                        className={`wbx-tpl-dl-btn${isDownloaded ? ' is-downloaded' : ''}`}
-                        aria-label={`下载 ${row.filename}`}
-                        href={`/api/download/template?file=${encodeURIComponent(row.filename)}`}
-                        download
-                        onClick={() => markDownloaded(row.filename)}
-                      >
-                        {isDownloaded ? (
-                          <Check size={12.5} aria-hidden="true" />
-                        ) : (
-                          <Download size={12.5} aria-hidden="true" />
-                        )}
-                        <span>{isDownloaded ? '已下载' : '下载'}</span>
-                      </a>
-                    ) : (
-                      <span className="wbx-tpl-action-disabled">不可下载</span>
+                    <span className="wbx-tpl-group__hint">按城市维护标准 10 列申请名单表头</span>
+                  </header>
+                  <div
+                    className={`wbx-tpl-grid wbx-tpl-grid--grouped${isShangouSingle ? ' wbx-tpl-grid--single' : ''}`}
+                    role="list"
+                  >
+                    {shangouRows.map(item =>
+                      renderCard(item, { grouped: true, single: isShangouSingle }),
                     )}
                   </div>
-                </article>
-              );
-            })}
-          </div>
-        )}
+                </section>
+
+                <section className="wbx-tpl-group" aria-label="美团小象通用模板">
+                  <header className="wbx-tpl-group__head">
+                    <div className="wbx-tpl-group__title-row">
+                      <h3 className="wbx-tpl-group__title is-xiaoxiang">美团小象 · 通用模板</h3>
+                      <span className="wbx-tpl-group__count tabular-nums">{xiaoxiangRows.length} 份</span>
+                    </div>
+                    <span className="wbx-tpl-group__hint">全城通用 22 列灯塔兼职薪资核算标准</span>
+                  </header>
+                  <div
+                    className={`wbx-tpl-grid wbx-tpl-grid--grouped${isXiaoxiangSingle ? ' wbx-tpl-grid--single' : ''}`}
+                    role="list"
+                  >
+                    {xiaoxiangRows.map(item =>
+                      renderCard(item, { grouped: true, single: isXiaoxiangSingle }),
+                    )}
+                  </div>
+                </section>
+              </div>
+            );
+          }
+
+          return (
+            <div
+              className={`wbx-tpl-grid${visibleRows.length === 1 ? ' wbx-tpl-grid--single' : ''}`}
+              role="list"
+              aria-label="系统标准模板卡片列表"
+            >
+              {visibleRows.map(item =>
+                renderCard(item, { single: visibleRows.length === 1 }),
+              )}
+            </div>
+          );
+        })()}
 
         {/* 5. 底部汇总状态栏 */}
         <div className="wbx-tpl-table-foot">

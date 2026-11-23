@@ -441,7 +441,16 @@ export function SystemConnections({
                     ['starting', 'waiting_login'].includes(st.state || '');
                   const badge = getPlatformCardBadge(st, pendingActions[key]);
                   const accountLine = [st.account_label, st.organization].filter(Boolean).join(' · ');
-                  const subtitle = accountLine || getCapabilitySummary(key, st);
+                  const baizeAccountHint =
+                    key === 'baize' && baizeAccount?.account_type
+                      ? `${baizeAccount.account_type === 'shanggou' ? '闪购业务账户' : '小象业务账户'}${
+                          baizeAccount.region_text ? `（${baizeAccount.region_text}）` : ''
+                        }`
+                      : '';
+                  const baseSubtitle = accountLine || getCapabilitySummary(key, st);
+                  const subtitle = baizeAccountHint
+                    ? `${baizeAccountHint} · ${baseSubtitle}`
+                    : baseSubtitle;
                   const errorMsg = errors[key] || (st.offline ? '连接状态暂不可用，请稍候再试。' : '');
 
                   return (
@@ -453,18 +462,6 @@ export function SystemConnections({
                       <div className="wbx-plat-row__main">
                         <div className="wbx-plat-row__top">
                           <span className="wbx-plat-row__name">{label}</span>
-                          {key === 'baize' && baizeAccount?.account_type && (
-                            <span
-                              className={`wbx-plat-row__subtag is-${baizeAccount.account_type}`}
-                              title={
-                                baizeAccount.account_type === 'shanggou'
-                                  ? `当前闪购账户${baizeAccount.region_text ? ` · ${baizeAccount.region_text}` : ''}`
-                                  : `当前小象账户${baizeAccount.region_text ? ` · ${baizeAccount.region_text}` : ''}`
-                              }
-                            >
-                              {baizeAccount.account_type === 'shanggou' ? '闪购' : '小象'}
-                            </span>
-                          )}
                           <span className={`wbx-plat-row__status is-${badge.tone}`}>
                             <span className={`wbx-plat-row__dot is-${badge.tone}`} aria-hidden="true" />
                             <span>{badge.label}</span>

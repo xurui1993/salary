@@ -48,11 +48,10 @@ export function HeaderBreadcrumb({
         ? 'lanorange'
         : undefined;
   const activeChannel =
-    activePlatform && platformStatuses
+    activePlatform && activePlatform !== 'payout' && platformStatuses
       ? getPlatformChannelStatus(activePlatform, platformStatuses)
       : null;
 
-  const hasActiveWork = isRunning || activeDownloadCount > 0;
   const pct = Math.max(0, Math.min(100, Math.round(progress)));
 
   return (
@@ -78,7 +77,7 @@ export function HeaderBreadcrumb({
         </button>
       )}
 
-      {hasActiveWork && (
+      {isRunning && (
         <button
           type="button"
           className="wbx-topbar-live-pill"
@@ -87,9 +86,7 @@ export function HeaderBreadcrumb({
         >
           <Activity size={12} className="wbx-topbar-live-pill__icon" aria-hidden="true" />
           <span className="wbx-topbar-live-pill__text">
-            {isRunning
-              ? `${progressText || '执行中'}${pct > 0 ? ` ${pct}%` : ''}`
-              : `${activeDownloadCount} 项采集中`}
+            {`${progressText || '执行中'}${pct > 0 ? ` ${pct}%` : ''}`}
           </span>
         </button>
       )}

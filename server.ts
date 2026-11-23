@@ -83,6 +83,25 @@ function ensureConfigExists() {
 
 async function startServer() {
   const app = express();
+  let isAppReady = false;
+  let markAppReady!: () => void;
+  let failAppReady!: (reason?: unknown) => void;
+  const appReadyPromise = new Promise<void>((resolve, reject) => {
+    markAppReady = resolve;
+    failAppReady = reject;
+  });
+  // Hold incoming requests until all Express routes and Vite/static middleware are mounted
+  // so port-open probes right after server.listen() never receive a premature 404 or blank page.
+  app.use((_req, res, next) => {
+    if (isAppReady) return next();
+    appReadyPromise
+      .then(() => next())
+      .catch(() => {
+        if (!res.headersSent) {
+          res.status(503).send("Server is starting up, please retry.");
+        }
+      });
+  });
   app.use(cors());
   const localTestMode = process.env.LOCAL_TEST_MODE === "1";
   const PORT = Number(process.env.APP_PORT || (process.env.PORT === "8080" ? 3000 : process.env.PORT) || 3000);
@@ -190,7 +209,8 @@ async function startServer() {
     console.log("Local test mode: dependency installation, port cleanup and data cleanup are disabled.");
     startBackend();
   } else {
-    await setupAndStartBackend();
+    // Do not block Vite/frontend middleware initialization while checking Python packages.
+    void setupAndStartBackend();
   }
 
   const getWorkspaceId = (req: any) => {
@@ -1326,22 +1346,29 @@ async function startServer() {
   app.use(createFengshenAuthProxy(proxyOptions, proxySecret));
   app.use(createProxyMiddleware({ pathFilter: "/api", ...proxyOptions }));
 
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: {
-        middlewareMode: true,
-        allowedHosts: true,
-        ...(localTestMode ? { host: listenHost, hmr: { host: listenHost } } : {}),
-      },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.use((req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+  try {
+    if (process.env.NODE_ENV !== "production") {
+      const vite = await createViteServer({
+        server: {
+          middlewareMode: true,
+          allowedHosts: true,
+          ...(localTestMode ? { host: listenHost, hmr: { host: listenHost } } : {}),
+        },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distPath = path.join(process.cwd(), "dist");
+      app.use(express.static(distPath));
+      app.use((req, res) => {
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+    }
+    isAppReady = true;
+    markAppReady();
+  } catch (startupError) {
+    failAppReady(startupError);
+    throw startupError;
   }
 
   // Business inputs, configuration and output evidence have no age-based expiry.

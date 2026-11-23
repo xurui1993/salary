@@ -193,13 +193,6 @@ export function DualRailSidebar({
           {item.badgeText}
         </span>
       )}
-      {item.channel && item.channel.tone !== 'idle' && (
-        <span
-          className={`wbx-channel-dot is-${item.channel.tone}`}
-          title={`${item.label} · ${item.channel.statusText}`}
-          aria-label={item.channel.statusText}
-        />
-      )}
     </button>
   );
 

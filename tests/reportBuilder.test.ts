@@ -4,20 +4,26 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ReportBuilder } from '../src/components/ReportBuilder';
 import {
+  applyBatchBindingPlatform,
+  applyCityBindingPlatform,
   buildGenerateBatchPayloads,
   buildRecentReportMonths,
   buildReportMonthChunks,
   buildUnifiedSubmissionPayloads,
   deriveSelectedMonthsFromRange,
+  groupCitiesByBindingPlatform,
   mergeAvailableReports,
   monthBounds,
+  partitionCitiesByBindingPlatform,
   reportRange,
   selectReportMonthRange,
+  summarizeBindingPlatforms,
   summarizeSelectedReportsScope,
   toggleReportMonthSelection,
   toggleReportSelection,
   type ReportDefinition,
 } from '../src/lib/reportBuilder';
+import { buildDemoBindingPlatforms } from '../src/lib/showcaseDemoData';
 import { isGenerator, registerGeneratorIds } from '../src/lib/taskCatalog';
 
 const monthly: ReportDefinition = {
@@ -161,7 +167,7 @@ test('monthly report renders multi-select dropdown, flat inline cities, Fengshen
   assert.match(html, /全选近3月/);
   assert.doesNotMatch(html, /连续跨月|rb-mode-switch|rb-station-grid|仅取分离站点/);
   assert.match(html, /绑定平台配置（可选）/);
-  assert.match(html, /aria-label="上海 绑定平台"/);
+  assert.match(html, /aria-label="从天津商翼删除上海"/);
   assert.doesNotMatch(html, /rb-city-trigger|rb-city-picker/);
   assert.match(html, /上海/);
   assert.match(html, /2026年10月/);
@@ -476,3 +482,99 @@ function props(report: ReportDefinition) {
     onRefreshCities: noop,
   };
 }
+
+test('binding platform helpers handle single updates, batch updates, auto clearing, and ordered summaries', () => {
+  let state = applyCityBindingPlatform({}, '上海', '商翼');
+  assert.deepEqual(state, { 上海: '商翼' });
+
+  state = applyBatchBindingPlatform(state, ['广州', '深圳'], '本来人力');
+  assert.deepEqual(state, { 上海: '商翼', 广州: '本来人力', 深圳: '本来人力' });
+
+  state = applyCityBindingPlatform(state, '广州', '');
+  assert.deepEqual(state, { 上海: '商翼', 深圳: '本来人力' });
+
+  const summary = summarizeBindingPlatforms(state, ['北京', '上海', '广州', '深圳']);
+  assert.equal(summary.configuredCount, 2);
+  assert.deepEqual(summary.entries, [
+    { city: '上海', platform: '商翼' },
+    { city: '深圳', platform: '本来人力' },
+  ]);
+  assert.equal(summary.previewText, '上海→商翼、深圳→本来人力');
+
+  const grouped = groupCitiesByBindingPlatform(
+    [
+      { id: '1', name: '北京' },
+      { id: '2', name: '上海' },
+      { id: '3', name: '广州' },
+      { id: '4', name: '深圳' },
+    ],
+    state,
+  );
+  assert.deepEqual(
+    grouped.benlai.map(c => c.name),
+    ['深圳'],
+  );
+  assert.deepEqual(
+    grouped.shangyi.map(c => c.name),
+    ['上海'],
+  );
+  assert.deepEqual(
+    grouped.auto.map(c => c.name),
+    ['北京', '广州'],
+  );
+
+  const partitioned = partitionCitiesByBindingPlatform(
+    [
+      { id: '1', name: '北京' },
+      { id: '2', name: '上海' },
+      { id: '3', name: '广州' },
+      { id: '4', name: '深圳' },
+    ],
+    state,
+  );
+  // Cities not in 本来人力 are shown on the right (天津商翼)
+  assert.deepEqual(
+    partitioned.benlai.map(c => c.name),
+    ['深圳'],
+  );
+  assert.deepEqual(
+    partitioned.shangyi.map(c => c.name),
+    ['北京', '上海', '广州'],
+  );
+
+  const demoMap = buildDemoBindingPlatforms(['上海', '北京', '宁波']);
+  assert.deepEqual(demoMap, { 上海: '本来人力', 宁波: '本来人力', 北京: '商翼' });
+
+  const cleared = applyBatchBindingPlatform(state, ['上海', '深圳'], '');
+  assert.deepEqual(cleared, {});
+
+  const html = renderToStaticMarkup(
+    React.createElement(ReportBuilder, {
+      ...props(monthly),
+      cities: [
+        { id: '1', name: '上海' },
+        { id: '2', name: '广州' },
+        { id: '3', name: '宁波' },
+      ],
+      selectedCities: ['广州'],
+      bindingPlatforms: { 广州: '本来人力' },
+    }),
+  );
+  // Always expanded, no auto-detection section, no city dropdown buttons, left non-displayed cities shown on right
+  assert.doesNotMatch(html, /class="rb-bind-body" hidden/);
+  assert.doesNotMatch(html, /自动判定/);
+  assert.doesNotMatch(html, /恢复全部自动/);
+  assert.doesNotMatch(html, /aria-label="广州 绑定平台"/);
+  assert.match(html, /本来人力 1 城/);
+  assert.match(html, /天津商翼 2 城/);
+  assert.match(html, /aria-label="本来人力绑定城市"/);
+  assert.match(html, /aria-label="天津商翼绑定城市"/);
+  assert.match(html, /aria-label="新增城市到本来人力"/);
+  assert.match(html, /aria-label="新增城市到天津商翼"/);
+  assert.match(html, /aria-label="从本来人力删除广州"/);
+  assert.match(html, /aria-label="从天津商翼删除上海"/);
+  assert.match(html, /aria-label="从天津商翼删除宁波"/);
+  assert.match(html, /已勾 1 城设为/);
+  assert.match(html, /is-platform-shangyi/);
+  assert.match(html, /is-platform-benlai/);
+});

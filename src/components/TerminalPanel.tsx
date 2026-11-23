@@ -131,8 +131,12 @@ export function TerminalPanel({
             {isRunning ? <Loader2 size={14} className="wbx-spin" /> : <Terminal size={14} />}
           </span>
           {!embeddedInDrawer && <strong className="wbx-log-panel__title">{title}</strong>}
-          <span className="wbx-log-panel__status-text">
-            {isRunning ? `实时输出中 · ${clampedProgress}%` : progressText || '就绪'}
+          <span className="wbx-log-panel__status-text tabular-nums">
+            {isRunning
+              ? `实时输出中 · ${clampedProgress}%`
+              : filtered.length === normalized.length
+                ? `共 ${normalized.length} 条日志`
+                : `筛选 ${filtered.length} / ${normalized.length} 条`}
           </span>
         </div>
 
@@ -311,9 +315,8 @@ export function TerminalPanel({
             </>
           ) : (
             <div className="wbx-log-panel__foot-idle tabular-nums">
-              <span className="wbx-log-panel__idle-dot" aria-hidden="true" />
-              <span>引擎就绪 · 等待任务指令</span>
-              <span className="wbx-log-panel__foot-count">共 {normalized.length} 条记录</span>
+              <span>引擎空闲 · 发起采集或核算后实时追踪节点</span>
+              <span className="wbx-log-panel__foot-count">快捷键 L 开关</span>
             </div>
           )}
         </div>

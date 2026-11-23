@@ -597,41 +597,42 @@ export function TaskDetailDrawer({
 
           {tab === 'history' && (
             <div className="tc-drawer__section">
-              {task.action_run_id ? (
-                <div className="tc-drawer__exec">
-                  {task.attempts.length > 1 && (
-                    <div className="tc-attempts">
-                      {task.attempts.map((attempt, index) => (
-                        <button
-                          key={attempt.id}
-                          type="button"
-                          className="wbx-btn wbx-btn--sm"
-                          aria-pressed={selectedRunId === attempt.id}
-                          onClick={() => onOpenAttempt(attempt.id)}
-                        >
-                          {index ? `第 ${index + 1} 次执行` : '首次执行'} · {taskGuidance({ status: attempt.status }).label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {task.member_ids.includes(selectedRunId) ? (
-                    execution
-                  ) : (
-                    <button type="button" className="wb-link" onClick={() => onReloadExecution(task)}>
-                      加载实时处理记录
+              {task.action_run_id && task.attempts.length > 1 && (
+                <div className="tc-attempts">
+                  {task.attempts.map((attempt, index) => (
+                    <button
+                      key={attempt.id}
+                      type="button"
+                      className="wbx-btn wbx-btn--sm"
+                      aria-pressed={selectedRunId === attempt.id}
+                      onClick={() => onOpenAttempt(attempt.id)}
+                    >
+                      {index ? `第 ${index + 1} 次执行` : '首次执行'} · {taskGuidance({ status: attempt.status }).label}
                     </button>
-                  )}
+                  ))}
                 </div>
+              )}
+
+              {task.action_run_id && task.member_ids.includes(selectedRunId) ? (
+                <div className="tc-drawer__exec">{execution}</div>
               ) : (
                 <>
                   <div className="tc-drawer__section-head">
-                    <span className="tc-drawer__section-title">执行时间线</span>
+                    <span className="tc-drawer__section-title">执行时间线与节点追踪</span>
+                    {task.action_run_id && !task.id.startsWith('TC-') && !task.id.startsWith('demo-') && (
+                      <button type="button" className="wb-link" onClick={() => onReloadExecution(task)}>
+                        加载实时处理记录
+                      </button>
+                    )}
                   </div>
                   <ol className="tc-timeline">
                     {timelineSteps.map((step, index) => (
                       <li key={index} className={`tc-timeline__item${step.tone ? ` is-${step.tone}` : ''}`}>
-                        <time className="tabular-nums">{step.time}</time>
-                        <p>{step.text}</p>
+                        <span className="tc-timeline__node" aria-hidden="true" />
+                        <div className="tc-timeline__content">
+                          <time className="tabular-nums">{step.time}</time>
+                          <p>{step.text}</p>
+                        </div>
                       </li>
                     ))}
                   </ol>

@@ -532,7 +532,7 @@ export function PayrollBatchDetailDrawer({
               )}
             </dd>
           </div>
-          <div>
+          <div className="pq-drawer__fact-wide">
             <dt>申请模板</dt>
             <dd className="pq-drawer__template" title={task.template_name}>
               <FileSpreadsheet size={13} aria-hidden="true" />
@@ -685,6 +685,73 @@ export function PayrollBatchDetailDrawer({
             </div>
           )}
         </div>
+        {/* 7. 底部固定快捷操作栏 */}
+        <footer className="pq-drawer__footer" aria-label="批次快捷操作">
+          <div className="pq-drawer__footer-left">
+            <button type="button" className="wbx-btn wbx-btn--sm wbx-btn--ghost" onClick={onClose}>
+              关闭抽屉
+            </button>
+            <button
+              type="button"
+              className="wbx-btn wbx-btn--sm"
+              onClick={() => {
+                onClose();
+                onOpenDeductions();
+              }}
+            >
+              <SlidersHorizontal size={13} aria-hidden="true" />
+              <span>扣款配置</span>
+            </button>
+          </div>
+          <div className="pq-drawer__footer-right">
+            {task.status === 'waiting_confirmation' && onConfirmDeductions && (
+              <button
+                type="button"
+                className="wbx-btn wbx-btn--primary wbx-btn--sm"
+                disabled={busy}
+                onClick={() => onConfirmDeductions(task)}
+              >
+                <Check size={13} aria-hidden="true" />
+                <span>确认口径并继续</span>
+              </button>
+            )}
+            {done && task.batch_id && (
+              <button
+                type="button"
+                className="wbx-btn wbx-btn--primary wbx-btn--sm"
+                disabled={busy}
+                onClick={() => onDownload(task)}
+              >
+                <Download size={13} aria-hidden="true" />
+                <span>下载成品包</span>
+              </button>
+            )}
+            {retryable && (
+              <button
+                type="button"
+                className="wbx-btn wbx-btn--primary wbx-btn--sm"
+                disabled={busy}
+                onClick={() => onRetry?.(task)}
+              >
+                <RotateCw size={12.5} aria-hidden="true" />
+                <span>重新核算</span>
+              </button>
+            )}
+            {running && (
+              <button
+                type="button"
+                className="wbx-btn wbx-btn--danger wbx-btn--sm"
+                disabled={busy || task.status === 'stopping'}
+                onClick={() => onStop(task)}
+              >
+                <Square size={11.5} aria-hidden="true" />
+                <span>
+                  {task.status === 'stopping' ? '停止中' : task.status === 'queued' ? '取消排队' : '停止任务'}
+                </span>
+              </button>
+            )}
+          </div>
+        </footer>
       </div>
     </WorkbenchDrawer>
   );

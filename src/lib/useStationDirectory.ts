@@ -1,5 +1,127 @@
 // @ts-nocheck
+import { useEffect, useMemo, useState } from 'react';
+import { getWorkspaceId } from '../utils';
 import { sortCitiesWithLanorangeFirst } from './workbench';
-var __defProp=Object.defineProperty;var __name=(target,value)=>__defProp(target,"name",{value,configurable:true});import{useEffect,useState}from"react";import{getWorkspaceId}from"../utils";const defaultFetch=__name((url,init)=>{const headers=new Headers(init?.headers);headers.set("x-workspace-id",encodeURIComponent(getWorkspaceId()));return fetch(url,{...init,headers})},"defaultFetch");function useStationDirectory(platform: any,fetcher: any=defaultFetch,enabled=true): {data: StationDirectory | null; error: string; refresh: () => void}{const[data,setData]=useState<any>(null),[error,setError]=useState(""),[reload,setReload]=useState(0);useEffect(()=>{if(!enabled)return;let disposed=false,timer;let generation=0;const controller=new AbortController;async function read(refresh=false){const request=++generation;try{const response=await fetcher(`/api/workbench/station-directory?platform=${platform}${refresh?"&refresh=1":""}`,{signal:AbortSignal.any([controller.signal,AbortSignal.timeout(15e3)])});const value=await response.json();if(!response.ok)throw Error(typeof value.detail==="string"?value.detail:"\u76EE\u5F55\u6682\u4E0D\u53EF\u7528");if(!disposed&&request===generation){const nextValue=platform==="xiaoxiang"&&Array.isArray(value?.cities)?{...value,cities:sortCitiesWithLanorangeFirst(value.cities)}:value;setData(nextValue);setError("")}}catch(problem){if(!disposed&&request===generation)setError(problem instanceof Error?problem.message:"\u7AD9\u70B9\u76EE\u5F55\u6682\u4E0D\u53EF\u7528")}if(!disposed&&request===generation)timer=setTimeout(()=>void read(),2e3)}__name(read,"read");const changed=__name(event=>{const source=event.detail?.source;if(source&&source!==platform)return;clearTimeout(timer);setData(null);void read(true)},"changed");window.addEventListener("workbench:platform-session-changed",changed);setData(null);void read(reload>0);return()=>{disposed=true;controller.abort();clearTimeout(timer);window.removeEventListener("workbench:platform-session-changed",changed)}},[platform,reload,enabled]);return{data,error,refresh:__name(()=>setReload(value=>value+1),"refresh")}}__name(useStationDirectory,"useStationDirectory");function stationCountText(directory: any,city: any){const matching=directory?.cities.filter((value: any)=>value.id===city||value.name===city)||[];if(matching.length!==1||matching[0].station_count===null)return"\u5F85\u540C\u6B65";return`${matching[0].station_count}\u7AD9`}__name(stationCountText,"stationCountText");export interface StationDirectory { cities: Array<{ id: string; name: string; status?: string; [key: string]: any }>; [key: string]: any }
+import { shouldUseDemoData, useDemoDataVisibility, usePlatformAuthSnapshot } from './demoMode';
+import { buildDemoStationDirectory } from './showcaseDemoData';
+
+const defaultFetch = (url: string, init?: RequestInit) => {
+  const headers = new Headers(init?.headers);
+  headers.set('x-workspace-id', encodeURIComponent(getWorkspaceId()));
+  return fetch(url, { ...init, headers });
+};
+
+export interface StationDirectory {
+  cities: Array<{ id: string; name: string; status?: string; station_count?: number | null; [key: string]: any }>;
+  stations?: Array<any>;
+  status?: string;
+  fetched_at?: string;
+  message?: string;
+  demo?: boolean;
+  [key: string]: any;
+}
+
 export type DirectoryStation = any;
-export{stationCountText,useStationDirectory};
+
+export function useStationDirectory(
+  platform: any,
+  fetcher: any = defaultFetch,
+  enabled = true,
+): { data: StationDirectory | null; error: string; refresh: () => void; isDemo?: boolean } {
+  const [data, setData] = useState<StationDirectory | null>(null);
+  const [error, setError] = useState('');
+  const [reload, setReload] = useState(0);
+  const auth = usePlatformAuthSnapshot();
+  const { demoHidden } = useDemoDataVisibility();
+
+  useEffect(() => {
+    if (!enabled) return;
+    let disposed = false;
+    let timer: any;
+    let generation = 0;
+    const controller = new AbortController();
+
+    async function read(refresh = false) {
+      const request = ++generation;
+      try {
+        const response = await fetcher(
+          `/api/workbench/station-directory?platform=${platform}${refresh ? '&refresh=1' : ''}`,
+          { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) },
+        );
+        const value = await response.json();
+        if (!response.ok) throw Error(typeof value.detail === 'string' ? value.detail : '目录暂不可用');
+        if (!disposed && request === generation) {
+          const nextValue =
+            platform === 'xiaoxiang' && Array.isArray(value?.cities)
+              ? { ...value, cities: sortCitiesWithLanorangeFirst(value.cities) }
+              : value;
+          setData(nextValue);
+          setError('');
+        }
+      } catch (problem) {
+        if (!disposed && request === generation) {
+          setError(problem instanceof Error ? problem.message : '站点目录暂不可用');
+        }
+      }
+      if (!disposed && request === generation) {
+        timer = setTimeout(() => void read(), 2000);
+      }
+    }
+
+    const changed = (event: any) => {
+      const source = event.detail?.source;
+      if (source && source !== platform) return;
+      clearTimeout(timer);
+      setData(null);
+      void read(true);
+    };
+
+    window.addEventListener('workbench:platform-session-changed', changed);
+    setData(null);
+    void read(reload > 0);
+
+    return () => {
+      disposed = true;
+      controller.abort();
+      clearTimeout(timer);
+      window.removeEventListener('workbench:platform-session-changed', changed);
+    };
+  }, [platform, reload, enabled]);
+
+  const normalizedPlatform: 'fengshen' | 'xiaoxiang' = platform === 'xiaoxiang' ? 'xiaoxiang' : 'fengshen';
+  const isLoggedIn = auth.isLoggedIn(normalizedPlatform);
+  const hasLiveDirectory = Boolean(
+    data &&
+      data.status === 'ready' &&
+      Array.isArray(data.cities) &&
+      data.cities.some(c => typeof c.station_count === 'number'),
+  );
+  const useDemo =
+    typeof window !== 'undefined' &&
+    enabled &&
+    shouldUseDemoData({
+      isLoggedIn,
+      hasLiveData: hasLiveDirectory,
+      demoHidden,
+    });
+
+  const demoData = useMemo(
+    () => (useDemo ? buildDemoStationDirectory(normalizedPlatform) : null),
+    [useDemo, normalizedPlatform],
+  );
+
+  return {
+    data: useDemo ? demoData : data,
+    error: useDemo ? '' : error,
+    refresh: () => setReload(value => value + 1),
+    isDemo: useDemo,
+  };
+}
+
+export function stationCountText(directory: any, city: any) {
+  const matching = directory?.cities?.filter((value: any) => value.id === city || value.name === city) || [];
+  if (matching.length !== 1 || matching[0].station_count === null || matching[0].station_count === undefined) {
+    return '待同步';
+  }
+  return `${matching[0].station_count}站`;
+}

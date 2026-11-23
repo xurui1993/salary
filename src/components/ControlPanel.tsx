@@ -147,7 +147,7 @@ export function ControlPanel({ onUploadFiles, onOpenTemplates, isRunning = false
           <div className="wbx-payroll__upload-text">
             <h3>拖入模板文件或资料文件夹</h3>
             <p>
-              .xlsx 模板自动核算 · 含模板及补充资料的文件夹手动核算 · 小象与风神自动识别，执行中可继续叠加上传
+              支持 .xlsx 模板及补充资料 · 自动识别小象与风神
             </p>
           </div>
         </div>

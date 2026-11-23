@@ -180,11 +180,13 @@
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding: 14px 18px;
-  border-radius: 10px;
-  background: var(--wbx-surface);
-  border: 1px solid var(--wbx-border);
-  box-shadow: var(--wbx-shadow-xs);
+  padding: 18px 22px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.93);
+  backdrop-filter: var(--wbx-blur-card);
+  -webkit-backdrop-filter: var(--wbx-blur-card);
+  border: 1px solid rgba(24, 25, 28, 0.055);
+  box-shadow: var(--wbx-shadow-sm);
   min-width: 0;
 }
 
@@ -402,10 +404,10 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 260px));
   gap: 12px 16px;
-  padding: 12px 14px;
-  border-radius: 9px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #F6F7F8;
+  border: 0;
 }
 
 /* 表单底部提交操作行 */
@@ -1638,3 +1640,182 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ─── 价格审批（LanorangeApprovals）4 格空间液体玻璃态势舱与明细抽屉精修 ────────── */
+.wbx-ap-kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 2px 0 4px;
+}
+
+@media (max-width: 960px) {
+  .wbx-ap-kpi-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.wbx-ap-kpi-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 13px 16px;
+  border-radius: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.94);
+  background:
+    radial-gradient(180px 90px at 100% 0%, rgba(0, 174, 236, 0.06) 0%, rgba(0, 174, 236, 0) 75%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.88) 0%, rgba(246, 250, 255, 0.78) 100%);
+  box-shadow:
+    0 6px 18px -8px rgba(14, 116, 144, 0.08),
+    0 1px 3px rgba(15, 23, 42, 0.025),
+    inset 0 1px 0 #ffffff;
+}
+
+.wbx-ap-kpi-card.is-highlight {
+  border-color: rgba(0, 174, 236, 0.28);
+  background:
+    radial-gradient(220px 100px at 0% 0%, rgba(0, 174, 236, 0.14) 0%, rgba(0, 174, 236, 0) 78%),
+    linear-gradient(135deg, rgba(240, 250, 255, 0.95) 0%, rgba(255, 255, 255, 0.9) 100%);
+  box-shadow:
+    0 8px 22px -8px rgba(0, 156, 224, 0.16),
+    inset 0 1px 0 #ffffff;
+}
+
+.wbx-ap-kpi-card.is-success {
+  border-color: rgba(16, 185, 129, 0.25);
+  background:
+    radial-gradient(200px 90px at 100% 0%, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0) 78%),
+    linear-gradient(135deg, rgba(242, 253, 249, 0.94) 0%, rgba(255, 255, 255, 0.9) 100%);
+}
+
+.wbx-ap-kpi-card.is-warn {
+  border-color: rgba(245, 158, 11, 0.28);
+  background:
+    radial-gradient(200px 90px at 100% 0%, rgba(245, 158, 11, 0.11) 0%, rgba(245, 158, 11, 0) 78%),
+    linear-gradient(135deg, rgba(255, 252, 242, 0.94) 0%, rgba(255, 255, 255, 0.9) 100%);
+}
+
+.wbx-ap-kpi-card__label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #61666d;
+  letter-spacing: 0.01em;
+}
+
+.wbx-ap-kpi-card__main {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  line-height: 1.15;
+}
+
+.wbx-ap-kpi-card__main strong {
+  font-size: 21px;
+  font-weight: 700;
+  color: #18191c;
+  letter-spacing: -0.02em;
+}
+
+.wbx-ap-kpi-card.is-highlight .wbx-ap-kpi-card__main strong {
+  color: #008ac5;
+}
+
+.wbx-ap-kpi-card.is-success .wbx-ap-kpi-card__main strong {
+  color: #059669;
+}
+
+.wbx-ap-kpi-card.is-warn .wbx-ap-kpi-card__main strong {
+  color: #d97706;
+}
+
+.wbx-ap-kpi-card__main small {
+  font-size: 12px;
+  font-weight: 600;
+  color: #61666d;
+}
+
+.wbx-ap-kpi-card__sub {
+  font-size: 11.5px;
+  color: #9499a0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 审批列表容器与节点微光胶囊 */
+.wbx-ap-card {
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.94);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.84) 100%);
+  box-shadow:
+    0 12px 32px -10px rgba(14, 116, 144, 0.075),
+    0 2px 6px rgba(15, 23, 42, 0.03),
+    inset 0 1px 0 #ffffff;
+}
+
+.wbx-approvals__node-stack {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.wbx-approvals__node-tag {
+  height: 23px;
+  padding: 0 9px;
+  border-radius: 6px;
+  border: 1px solid rgba(24, 25, 28, 0.09);
+  background: rgba(24, 25, 28, 0.045);
+  color: #4e5969;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.wbx-approvals__node-tag.is-blocked {
+  border-color: rgba(245, 158, 11, 0.25);
+  background: rgba(245, 158, 11, 0.09);
+  color: #92400e;
+}
+
+.wbx-approvals__status-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 21px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.wbx-approvals__status-pill.is-blocked {
+  border: 1px solid rgba(225, 29, 72, 0.22);
+  background: rgba(255, 241, 242, 0.92);
+  color: #be123c;
+}
+
+/* 价格明细抽屉：4 格磨砂玻璃信息胶囊 + 合计单价天青蓝高亮 */
+.wbx-ap-detail__facts {
+  gap: 8px;
+  padding: 11px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.94);
+  background: rgba(243, 247, 252, 0.72);
+  box-shadow: inset 0 1px 0 #ffffff;
+}
+
+.wbx-ap-detail__facts > div {
+  padding: 8px 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(24, 25, 28, 0.045);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.02);
+}
+
+.wbx-ap-detail__table td.is-num.is-total {
+  color: #0082bd;
+  font-weight: 700;
+}
+

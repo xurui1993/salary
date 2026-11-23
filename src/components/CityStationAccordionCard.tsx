@@ -48,7 +48,7 @@ export function CityStationAccordionCard({
   );
   const totalKeywordRules = cityProblemRules.length + stationProblemTotal;
 
-  const preview = extractCityCardPreview(cityEntry, visibleColumns, 3);
+  const preview = extractCityCardPreview(cityEntry, visibleColumns, 2);
   const fullSummaryTitle = cityEntry
     ? summarizeStationRow(cityEntry, visibleColumns)
     : '暂无城市默认';
@@ -56,13 +56,13 @@ export function CityStationAccordionCard({
   const statusMeta = hasEdits
     ? { text: '有待保存', tone: 'is-edited' }
     : allDone
-      ? { text: '已全部配置', tone: 'is-ready' }
+      ? { text: '已配齐', tone: 'is-ready' }
       : total === 0
-        ? { text: '目录同步中', tone: 'is-muted' }
+        ? { text: '同步中', tone: 'is-muted' }
         : { text: `待配 ${summary.pendingStations} 站`, tone: 'is-pending' };
 
   const overrideLabel =
-    summary.overrideStations > 0 ? `${summary.overrideStations} 站例外` : '全站统一';
+    summary.overrideStations > 0 ? `${summary.overrideStations} 例外` : '统一';
 
   const handleOpen = () => {
     if (onOpenCity) onOpenCity(summary.cityId);
@@ -79,89 +79,63 @@ export function CityStationAccordionCard({
         className="wbx-city-vcard__trigger"
         onClick={handleOpen}
       >
-        {/* 1. 顶部：城市名称 + 站点概况 + 完成状态 */}
+        {/* 1. 顶部行：城市名 + 站点概况 + 轻量状态标签 */}
         <div className="wbx-city-vcard__head">
-          <div className="wbx-city-vcard__title-block">
+          <div className="wbx-city-vcard__head-left">
             <h3 className="wbx-city-vcard__name">{summary.cityName}</h3>
-            <p className="wbx-city-vcard__subtitle tabular-nums">
+            <span className="wbx-city-vcard__subtitle tabular-nums">
               <span>{total} 个站点</span>
               <span className="wbx-city-vcard__sep" aria-hidden="true">·</span>
               <span className={summary.overrideStations > 0 ? 'is-accent' : ''}>
                 {overrideLabel}
               </span>
-            </p>
+            </span>
           </div>
           <span className={`wbx-city-vcard__status ${statusMeta.tone}`}>
             {statusMeta.text}
           </span>
         </div>
 
-        {/* 2. 中部：去盒化结构化默认扣款口径预览 */}
-        <div className="wbx-city-vcard__body" title={fullSummaryTitle}>
+        {/* 2. 紧凑单行默认口径摘要（2 项核心指标 + 总项数，永不截断数字） */}
+        <div className="wbx-city-vcard__compact-body" title={fullSummaryTitle}>
           {preview.state === 'configured' ? (
-            <>
-              <div className="wbx-city-vcard__section-head tabular-nums">
-                <span>默认口径</span>
-                <span className="wbx-city-vcard__section-meta">
-                  {preview.extraCount > 0
-                    ? `共 ${preview.configuredCount} 项`
-                    : `${preview.configuredCount} 项已设`}
-                </span>
-              </div>
-              <div
-                className="wbx-city-vcard__metrics"
-                style={{
-                  gridTemplateColumns: `repeat(${preview.metrics.length}, minmax(0, 1fr))`,
-                }}
-              >
+            <div className="wbx-city-vcard__inline-metrics tabular-nums">
+              <span className="wbx-city-vcard__inline-group">
                 {preview.metrics.map(item => (
-                  <div
-                    key={item.column}
-                    className="wbx-city-vcard__metric"
-                    title={item.unit ? `${item.column}：${item.valueText} ${item.unit}` : `${item.column}：${item.valueText}`}
-                  >
-                    <span className="wbx-city-vcard__metric-label">{item.shortLabel}</span>
-                    <strong className="wbx-city-vcard__metric-value tabular-nums">
-                      {item.unit.startsWith('元') && (
-                        <span className="wbx-city-vcard__metric-unit" aria-hidden="true">¥</span>
-                      )}
+                  <span key={item.column} className="wbx-city-vcard__inline-item">
+                    <span className="wbx-city-vcard__inline-label">{item.shortLabel}</span>
+                    <strong>
+                      {item.unit.startsWith('元') ? '¥' : ''}
                       {item.valueText}
                     </strong>
-                  </div>
+                  </span>
                 ))}
-              </div>
-            </>
+              </span>
+              {preview.configuredCount > preview.metrics.length && (
+                <span className="wbx-city-vcard__inline-count">
+                  共 {preview.configuredCount} 项
+                </span>
+              )}
+            </div>
           ) : preview.state === 'zero' ? (
-            <div className="wbx-city-vcard__state is-zero">
-              <span className="wbx-city-vcard__state-title">
-                <CheckCircle2 size={13.5} aria-hidden="true" />
-                <span>{preview.zeroConfirmed ? '全项零扣款' : '全 0 待确认'}</span>
-              </span>
-              <span className="wbx-city-vcard__state-sub tabular-nums">
-                {preview.zeroConfirmed
-                  ? `已确认 ${preview.totalCount} 项均不扣款`
-                  : `共 ${preview.totalCount} 项金额为 0，进入可一键确认`}
-              </span>
-            </div>
+            <span className="wbx-city-vcard__inline-state is-zero">
+              <CheckCircle2 size={13} aria-hidden="true" />
+              <span>{preview.zeroConfirmed ? '全项零扣款' : '全 0 待确认'}</span>
+            </span>
           ) : (
-            <div className="wbx-city-vcard__state is-pending">
-              <span className="wbx-city-vcard__state-title">
-                <AlertCircle size={13.5} aria-hidden="true" />
-                <span>默认口径待配置</span>
-              </span>
-              <span className="wbx-city-vcard__state-sub tabular-nums">
-                待填写 {preview.blankCount || preview.totalCount} 项城市默认规则
-              </span>
-            </div>
+            <span className="wbx-city-vcard__inline-state is-pending">
+              <AlertCircle size={13} aria-hidden="true" />
+              <span>待设默认（{preview.blankCount || preview.totalCount} 项）</span>
+            </span>
           )}
         </div>
 
-        {/* 3. 底部：关键词规则摘要 + 查看扣款入口 */}
+        {/* 3. 轻量化底行：关键词计数 + 进入箭头 */}
         <div className="wbx-city-vcard__foot">
           <span className="wbx-city-vcard__foot-meta tabular-nums">
             {totalKeywordRules > 0 ? (
               <>
-                <Tag size={11.5} className="wbx-city-vcard__foot-icon" aria-hidden="true" />
+                <Tag size={11} className="wbx-city-vcard__foot-icon" aria-hidden="true" />
                 <span>关键词 {totalKeywordRules} 条</span>
               </>
             ) : (
@@ -169,14 +143,14 @@ export function CityStationAccordionCard({
                 {summary.cityDefaultEdited
                   ? '默认已调整'
                   : summary.cityDefaultConfigured
-                    ? '默认已设'
+                    ? `共 ${preview.configuredCount} 项默认`
                     : '待设默认'}
               </span>
             )}
           </span>
           <span className="wbx-city-vcard__cta">
             <span>查看扣款</span>
-            <ArrowRight size={13.5} className="wbx-city-vcard__arrow" aria-hidden="true" />
+            <ArrowRight size={12.5} className="wbx-city-vcard__arrow" aria-hidden="true" />
           </span>
         </div>
       </button>

@@ -2126,12 +2126,7 @@
   }
 }
 
-/* 风神短信登录输入框：聚焦时保持普通边框，不显示浏览器高亮 */
-.wb-fengshen-input:focus,
-.wb-fengshen-input:focus-visible {
-  border-color: #cbd5e1;
-  outline: none;
-  box-shadow: none;
-}
+/* .wb-fengshen-input styles migrated to src/styles/components.css */
+
 
 

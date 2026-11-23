@@ -3,6 +3,9 @@ import {LanorangePriceFilters} from './LanorangePriceFilters';
 import {WorkbenchDatePicker} from './WorkbenchDatePicker';
 import {platformAuthRequest,PlatformAuthError} from '../lib/platformAuthApi';
 import {RefreshCw, ArrowRightLeft, CalendarRange, Download, FileSpreadsheet, KeyRound, ChevronRight} from 'lucide-react';
+import {shouldUseDemoData,useDemoDataVisibility,usePlatformAuthSnapshot} from '../lib/demoMode';
+import {buildDemoPriceExportData} from '../lib/showcaseDemoData';
+import {DemoDataChip} from './DemoDataChip';
 
 type Query={month:string;city:string;station:string;date_from:string;date_to:string};
 type Export={id:string;request_id:string;status:string;created:number;message:string;completed:number;total:number;rows:number;query:Query;receipts:{city:string;station:string;period:string;version:string;status:string;row_count:number;result:string;message:string}[]};
@@ -31,7 +34,15 @@ function exportStatusTone(status: string): string {
 export function LanorangePriceExports({apiFetch,workspaceId,lanorangeConnected,onActiveCount,onSwitchView,focusId}:{apiFetch:(url:string,init?:RequestInit)=>Promise<Response>;workspaceId:string;lanorangeConnected?:boolean;onActiveCount:(count:number)=>void;onSwitchView?:(view:'approval'|'price-export')=>void;focusId?:string}){
   const [query,setQuery]=useState<Query>(()=>({month:'2026-10',city:'',station:'',date_from:'',date_to:''}));
   const [history,setHistory]=useState<Export[]>([]),[job,setJob]=useState<Export|null>(null),[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[attempt,setAttempt]=useState<Attempt|null>(null);
-    const fetchRef=useRef(apiFetch),alive=useRef(true),inflight=useRef(false);fetchRef.current=apiFetch;
+  const [demoHistory,setDemoHistory]=useState<Export[]>(()=>buildDemoPriceExportData().exports as unknown as Export[]);
+  const [demoJob,setDemoJob]=useState<Export|null>(null);
+  const auth=usePlatformAuthSnapshot();
+  const {demoHidden,toggleDemoHidden}=useDemoDataVisibility();
+  const isLoggedIn=Boolean(lanorangeConnected || auth.isLoggedIn('lanorange'));
+  const demoActive=shouldUseDemoData({isLoggedIn,hasLiveData:history.length>0,demoHidden});
+  const displayHistory=demoActive?demoHistory:history;
+  const displayJob=demoActive?(demoJob || demoHistory[0] || null):job;
+  const fetchRef=useRef(apiFetch),alive=useRef(true),inflight=useRef(false);fetchRef.current=apiFetch;
   const key='lanorange-price-export-attempt:'+workspaceId;
   const request=<T,>(route:string,body?:object)=>platformAuthRequest<T>(fetchRef.current,BASE+route,body,30000);
   useEffect(()=>{
@@ -44,18 +55,27 @@ export function LanorangePriceExports({apiFetch,workspaceId,lanorangeConnected,o
   async function refresh(){try{const result=await request<{exports:Export[]}>('/exports');if(!alive.current)return;setHistory(result.exports);setJob(old=>result.exports.find(j=>j.id===old?.id)||old||result.exports[0]||null);onActiveCount(result.exports.filter(j=>ACTIVE.has(j.status)).length);}catch(err){if(alive.current)setError(err instanceof Error?err.message:'读取导出记录失败');}}
   useEffect(()=>{alive.current=true;try{const old=JSON.parse(sessionStorage.getItem(key)||'null');if(old?.request_id&&old?.query){setAttempt(old);setQuery(old.query);}}catch{}void refresh();const timer=setInterval(()=>void refresh(),4000);return()=>{alive.current=false;clearInterval(timer);};},[workspaceId]);
 
-  
+  const prevLoggedInRef=useRef(isLoggedIn);
+  useEffect(()=>{
+    if(isLoggedIn && !prevLoggedInRef.current){
+      setNotice('');
+      setError('');
+      void refresh();
+    }
+    prevLoggedInRef.current=isLoggedIn;
+  },[isLoggedIn]);
+
   async function perform(kind:string,fn:()=>Promise<void>){if(inflight.current)return;inflight.current=true;setBusy(kind);setError('');setNotice('');try{await fn();}catch(err){if(alive.current)setError(err instanceof Error?err.message:'操作未完成');}finally{inflight.current=false;if(alive.current)setBusy('');}}
-  async function start(event:React.FormEvent){event.preventDefault();await perform('start',async()=>{
+  async function start(event:React.FormEvent){event.preventDefault();if(demoActive){const created:Export={id:`DEMO-PE-${Date.now().toString().slice(-6)}`,request_id:`demo-${Date.now()}`,status:'completed',created:Math.floor(Date.now()/1000),message:`示例模式：已模拟导出 ${query.month}${query.city?` · ${query.city}`:' 全部城市'} 待审每日价格`,completed:4,total:4,rows:468,query:{...query},receipts:(demoHistory[0]?.receipts||[]).slice(0,4)};setDemoHistory(prev=>[created,...prev]);setDemoJob(created);setNotice('示例模式：已生成本地模拟导出回执，真实登录蓝橙后将拉取正式价格表。');return;}await perform('start',async()=>{
     const current=attempt || {request_id:crypto.randomUUID(),query:{...query}};save(current);
     try{const value=await request<Export>('/exports',current);save(null);setJob(value);void refresh();}
     catch(err){if(err instanceof PlatformAuthError && err.uncertain)throw Error('本次导出提交尚未确认，请先查找本次导出；系统不会自动重发。');save(null);throw err;}
   });}
   async function find(){await perform('find',async()=>{const result=await request<{exports:Export[]}>('/exports');const found=result.exports.find(j=>j.request_id===attempt?.request_id);if(!found)throw Error('尚未找到本次提交，可使用原标识再次发起导出；不会创建重复任务。');setHistory(result.exports);setJob(found);save(null);});}
-  async function download(){if(!job)return;await perform('download',async()=>{
-    const response=await fetchRef.current(BASE+`/exports/${job.id}/result.xlsx`);if(!response.ok){const value=await response.json();throw Error(value.detail||'文件未就绪或校验失败');}const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=url;link.download=`${job.query.month}_蓝橙待审每日价格${job.status==='partial'?'_部分':''}.xlsx`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  async function download(){if(!displayJob)return;if(demoActive){const csv=['城市,站点,周期,版本,状态,行数,结果,说明',...(displayJob.receipts||[]).map(r=>`${r.city},${r.station},${r.period},${r.version},${r.status},${r.row_count},${r.result},${r.message}`)].join('\r\n');const url=URL.createObjectURL(new Blob([`\uFEFF${csv}`],{type:'text/csv;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download=`${displayJob.query.month}_蓝橙待审每日价格_示例.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);setNotice('示例模式：已导出当前回执汇总表。');return;}await perform('download',async()=>{
+    const response=await fetchRef.current(BASE+`/exports/${displayJob.id}/result.xlsx`);if(!response.ok){const value=await response.json();throw Error(value.detail||'文件未就绪或校验失败');}const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=url;link.download=`${displayJob.query.month}_蓝橙待审每日价格${displayJob.status==='partial'?'_部分':''}.xlsx`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   });}
-  const activeCount=history.filter(j=>ACTIVE.has(j.status)).length;
+  const activeCount=displayHistory.filter(j=>ACTIVE.has(j.status)).length;
   const active=activeCount>0;
   const hasDateRange = Boolean(query.date_from || query.date_to);
 
@@ -73,15 +93,20 @@ export function LanorangePriceExports({apiFetch,workspaceId,lanorangeConnected,o
         </span>
         <span className="wbx-ap-metric">
           <span className="wbx-ap-metric__label">最近导出</span>
-          <strong className="wbx-ap-metric__val">{job?.rows ?? 0} 行</strong>
+          <strong className="wbx-ap-metric__val">{displayJob?.rows ?? 0} 行</strong>
         </span>
         <span className="wbx-ap-metric">
           <span className="wbx-ap-metric__label">历史记录</span>
-          <strong className="wbx-ap-metric__val">{history.length} 条</strong>
+          <strong className="wbx-ap-metric__val">{displayHistory.length} 条</strong>
         </span>
       </div>
 
       <div className="wbx-ap-topbar__right">
+        <DemoDataChip
+          demoActive={demoActive}
+          canShowDemo={!isLoggedIn && history.length === 0 && demoHidden}
+          onToggle={toggleDemoHidden}
+        />
         <button
           type="button"
           className="wbx-btn wbx-btn--sm"
@@ -173,7 +198,7 @@ export function LanorangePriceExports({apiFetch,workspaceId,lanorangeConnected,o
         </div>
       )}
 
-      {error && (
+      {!demoActive && error && (
         <div className={`wbx-ap-notice mt-3 ${error.includes('登录') ? 'is-auth' : 'is-danger'}`} role="alert">
           <div className="wbx-ap-notice__body">
             <KeyRound size={15} className="wbx-ap-notice__icon" aria-hidden="true" />
@@ -200,30 +225,32 @@ export function LanorangePriceExports({apiFetch,workspaceId,lanorangeConnected,o
         <div className="wbx-approval__queue-title">
           <h3>
             导出结果与站点采集回执
-            <span>{history.length}</span>
+            <span>{displayHistory.length}</span>
           </h3>
           <p className="tabular-nums">
-            {job
-              ? `当前查看 ${job.query.month} · 共 ${job.total} 个站点周期`
+            {displayJob
+              ? `当前查看 ${displayJob.query.month} · 共 ${displayJob.total} 个站点周期`
               : '选择结算月份并点击「开始导出 Excel」后，此处实时展示各站点采集进度与版本回执'}
           </p>
         </div>
-        {history.length > 0 && (
+        {displayHistory.length > 0 && (
           <div className="wbx-approval__actions">
             <label className="wbx-approval__batch-picker">
               <span>切换记录</span>
               <select
                 className="wbx-ap-select wbx-ap-select--history"
                 aria-label="选择历史导出记录"
-                value={job?.id || ''}
+                value={displayJob?.id || ''}
                 onChange={e => {
-                  setJob(history.find(j => j.id === e.target.value) || null);
+                  const next = displayHistory.find(j => j.id === e.target.value) || null;
+                  if (demoActive) setDemoJob(next);
+                  else setJob(next);
                 }}
               >
-                {job && !history.some(j => j.id === job.id) && (
-                  <option value={job.id}>{job.query.month} · 当前任务</option>
+                {displayJob && !displayHistory.some(j => j.id === displayJob.id) && (
+                  <option value={displayJob.id}>{displayJob.query.month} · 当前任务</option>
                 )}
-                {history.map(j => (
+                {displayHistory.map(j => (
                   <option key={j.id} value={j.id}>
                     {j.query.month} · {formatCompactStamp(j.created)} · {labels[j.status] || j.status}
                   </option>
@@ -234,7 +261,7 @@ export function LanorangePriceExports({apiFetch,workspaceId,lanorangeConnected,o
         )}
       </div>
 
-      {!job ? (
+      {!displayJob ? (
         <div className="wbx-ap-empty wbx-ap-empty--compact">
           <div className="wbx-ap-steps" aria-label="导出流程说明">
             <div className="wbx-ap-step">
@@ -266,22 +293,22 @@ export function LanorangePriceExports({apiFetch,workspaceId,lanorangeConnected,o
         <div className="wbx-export-result-body">
           <div className="wbx-export-receipt-strip">
             <div className="wbx-export-receipt-strip__left">
-              <span className={`wbx-pill ${exportStatusTone(job.status)}`}>
+              <span className={`wbx-pill ${exportStatusTone(displayJob.status)}`}>
                 <span className="wbx-pill__dot" aria-hidden="true" />
-                {labels[job.status] || job.status}
+                {labels[displayJob.status] || displayJob.status}
               </span>
-              <span className="wbx-export-receipt-strip__msg">{job.message}</span>
+              <span className="wbx-export-receipt-strip__msg">{displayJob.message}</span>
               <span className="wbx-export-receipt-strip__meta tabular-nums">
-                {job.completed}/{job.total} 站点周期 · {job.rows} 行
+                {displayJob.completed}/{displayJob.total} 站点周期 · {displayJob.rows} 行
               </span>
             </div>
             <div className="wbx-export-receipt-strip__actions">
-              {ACTIVE.has(job.status)&&(
-                <button type="button" className="wbx-btn wbx-btn--sm wbx-btn--danger" disabled={!!busy || job.status==='stopping'} onClick={()=>void perform('stop',async()=>{setJob(await request<Export>(`/exports/${job.id}/stop`,{}));})}>
+              {ACTIVE.has(displayJob.status)&&(
+                <button type="button" className="wbx-btn wbx-btn--sm wbx-btn--danger" disabled={!!busy || displayJob.status==='stopping'} onClick={()=>void perform('stop',async()=>{setJob(await request<Export>(`/exports/${displayJob.id}/stop`,{}));})}>
                   停止后续采集
                 </button>
               )}
-              {['completed','partial'].includes(job.status)&&(
+              {['completed','partial'].includes(displayJob.status)&&(
                 <button type="button" className="wbx-btn wbx-btn--secondary wbx-btn--sm" disabled={!!busy} onClick={()=>void download()}>
                   <Download size={13.5} aria-hidden="true" />
                   <span>下载 Excel</span>
@@ -289,14 +316,14 @@ export function LanorangePriceExports({apiFetch,workspaceId,lanorangeConnected,o
               )}
             </div>
           </div>
-          {job.status==='partial' && <p className="wb-error mt-2">部分站点未导出，请按下方失败原因单独筛选处理；当前文件含已成功读取的数据和完整采集记录。</p>}
-          <details className="wb-receipts mt-2.5" key={job.id} open={true}>
-            <summary>采集明细与版本（{job.receipts.length} 条）</summary>
+          {displayJob.status==='partial' && <p className="wb-error mt-2">部分站点未导出，请按下方失败原因单独筛选处理；当前文件含已成功读取的数据和完整采集记录。</p>}
+          <details className="wb-receipts mt-2.5" key={displayJob.id} open={true}>
+            <summary>采集明细与版本（{displayJob.receipts.length} 条）</summary>
             <div className="wb-approval-table">
               <table>
                 <thead><tr><th>城市 / 站点</th><th>结算周期</th><th>最新版本</th><th>状态</th><th>行数</th><th>结果 / 原因</th></tr></thead>
                 <tbody>
-                  {job.receipts.map((r,index)=>(
+                  {displayJob.receipts.map((r,index)=>(
                     <tr key={index}>
                       <td>{r.city}<small>{r.station}</small></td>
                       <td className="tabular-nums">{r.period}</td>

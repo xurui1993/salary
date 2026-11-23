@@ -21,6 +21,7 @@ import {
 } from '../lib/reportBuilder';
 import { useStationDirectory } from '../lib/useStationDirectory';
 import { CityStationCount } from './CityStationCount';
+import { BindingPlatformConfig } from './BindingPlatformConfig';
 
 interface CityItem {
   id: string;
@@ -255,38 +256,18 @@ export function ReportBuilder(props: ReportBuilderProps) {
     <section className={`rb-workbench${singleMode ? ' is-single-module' : ''}`} aria-label="专项报表生成">
       <div className="rb-main">
         {singleMode && singleReport ? (
-          <section className="wbx-card wbx-step rb-module-overview" aria-labelledby="report-type-label">
-            <div className="rb-module-overview__head">
-              <div className="rb-module-overview__title-wrap">
-                <span className="rb-module-overview__icon" aria-hidden="true">
-                  <FileSpreadsheet size={16} />
-                </span>
-                <div className="min-w-0">
-                  <div className="rb-module-overview__title-row">
-                    <h2 id="report-type-label" className="rb-module-overview__title">
-                      {singleReport.label}
-                    </h2>
-                    <span className="wb-step-count-pill">{reportScopeLabel(singleReport.scope)}</span>
-                  </div>
-                  {singleReport.description && (
-                    <p className="rb-module-overview__desc">{singleReport.description}</p>
-                  )}
-                </div>
-              </div>
-              {scopeSummary.systems.length > 0 && (
-                <div className="rb-systems">
-                  <Layers size={13} aria-hidden="true" />
-                  <span>关联系统：{scopeSummary.systems.join(' / ')}</span>
-                </div>
-              )}
-            </div>
-
-            {!scopeSummary.allGlobal && scopeSummary.sources.length > 0 && (
-              <details
-                className="rb-explanation"
-                key={singleReport.id}
-              >
-                <summary>报表说明与来源（{scopeSummary.sources.length}）</summary>
+          !scopeSummary.allGlobal && scopeSummary.sources.length > 0 ? (
+            <section className="wbx-card rb-compact-note" aria-label={`${singleReport.label}说明与来源`}>
+              <details className="rb-explanation" key={singleReport.id}>
+                <summary>
+                  <span className="rb-compact-note__summary">
+                    <strong>报表说明与来源（{scopeSummary.sources.length}）</strong>
+                    {singleReport.description && (
+                      <span className="rb-compact-note__desc">{singleReport.description}</span>
+                    )}
+                  </span>
+                  <ChevronDown size={15} className="rb-compact-note__chevron" aria-hidden="true" />
+                </summary>
                 <ul>
                   {scopeSummary.sources.map(source => (
                     <li key={source}>{source.replaceAll('白泽', '商翼')}</li>
@@ -294,8 +275,8 @@ export function ReportBuilder(props: ReportBuilderProps) {
                 </ul>
                 <p>资料不足时暂停生成，已取得的资料保留。</p>
               </details>
-            )}
-          </section>
+            </section>
+          ) : null
         ) : (
         /* Step 01: Left Report Type Multi-Select Dropdown */
         <section className="wb-step-card rb-step-card" aria-labelledby="report-type-label">
@@ -507,6 +488,7 @@ export function ReportBuilder(props: ReportBuilderProps) {
         {/* 处理城市与站点范围（全部取消下拉框，平铺展示） */}
         {selectedReports.length > 0 && (
           scopeSummary.allGlobal ? (
+            <>
             <section className={`${singleMode ? 'wbx-card wbx-step' : 'wb-step-card'} rb-step-card`} aria-label="全局报表固定范围">
               <div className="wb-step-card-header">
                 <div className="wb-step-badge">
@@ -544,6 +526,34 @@ export function ReportBuilder(props: ReportBuilderProps) {
                 </div>
               )}
             </section>
+
+            <section className={`${singleMode ? 'wbx-card wbx-step' : 'wb-step-card'} rb-step-card`} aria-label="输出内容与归档说明">
+              <div className="wb-step-card-header">
+                <div className="wb-step-badge">
+                  <span className="wb-step-number">{monthStepNumber}</span>
+                  <span className="wb-step-title">输出内容与归档说明</span>
+                  <span className="wb-step-count-pill">标准 Excel 工作簿</span>
+                </div>
+              </div>
+              <div className="rb-delivery-grid">
+                <div className="rb-delivery-item">
+                  <span className="rb-delivery-item__label">工作簿结构</span>
+                  <strong>异常汇总 + 5 类明细底表</strong>
+                  <small>自动按正常离职、离职报备、批量离职、请假及总档案分 Sheet 整理，方便财务复核</small>
+                </div>
+                <div className="rb-delivery-item">
+                  <span className="rb-delivery-item__label">去重与聚合口径</span>
+                  <strong>按证件号归并最新状态</strong>
+                  <small>同一骑手存在多条审批记录时保留最新生效时间，并自动标注所属城市与站点</small>
+                </div>
+                <div className="rb-delivery-item">
+                  <span className="rb-delivery-item__label">归档与文件领取</span>
+                  <strong>任务中心一键下载</strong>
+                  <small>生成完毕后自动写入本机归档目录，可在任务中心直接领取成品 .xlsx 或原始来源包</small>
+                </div>
+              </div>
+            </section>
+            </>
           ) : (
             <section className={`${singleMode ? 'wbx-card wbx-step' : 'wb-step-card'} rb-step-card`} aria-labelledby="report-city-label">
               <div className="wb-step-card-header">
@@ -655,48 +665,14 @@ export function ReportBuilder(props: ReportBuilderProps) {
               )}
 
               {showBindingPlatforms && (
-                <details className="mt-4 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
-                  <summary className="cursor-pointer text-sm font-semibold text-slate-700">
-                    绑定平台配置（可选）
-                    {props.bindingPlatformsSaving && (
-                      <span className="ml-2 text-xs font-normal text-slate-400">保存中…</span>
-                    )}
-                    {!props.bindingPlatformsSaving && Object.keys(props.bindingPlatforms || {}).length > 0 && (
-                      <span className="ml-2 text-xs font-normal text-slate-500">
-                        已配置 {Object.keys(props.bindingPlatforms || {}).length} 城
-                      </span>
-                    )}
-                  </summary>
-                  <p className="mt-2 text-xs leading-relaxed text-slate-500">
-                    未配置城市按本来人力签约城市自动判定；用户配置优先，与自动判定不一致时按配置执行，并在任务日志中提示。
-                  </p>
-                  <div className="mt-3 grid max-h-56 grid-cols-1 gap-2 overflow-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
-                    {cities.map(city => (
-                      <label
-                        key={city.id}
-                        className="flex items-center justify-between gap-2 rounded-md bg-white px-2.5 py-1.5 text-xs text-slate-600 ring-1 ring-slate-200"
-                      >
-                        <span className="truncate" title={city.name}>{city.name}</span>
-                        <select
-                          className="wb-select min-w-[128px] text-xs"
-                          aria-label={`${city.name} 绑定平台`}
-                          value={props.bindingPlatforms?.[city.name] || ''}
-                          disabled={locked || props.bindingPlatformsSaving || !props.onBindingPlatformsChange}
-                          onChange={event => {
-                            const next = { ...(props.bindingPlatforms || {}) };
-                            if (event.target.value) next[city.name] = event.target.value;
-                            else delete next[city.name];
-                            props.onBindingPlatformsChange?.(next);
-                          }}
-                        >
-                          <option value="">自动</option>
-                          <option value="本来人力">本来人力</option>
-                          <option value="商翼">天津商翼（商翼）</option>
-                        </select>
-                      </label>
-                    ))}
-                  </div>
-                </details>
+                <BindingPlatformConfig
+                  cities={cities}
+                  selectedCities={selectedCities}
+                  bindingPlatforms={props.bindingPlatforms}
+                  onChange={props.onBindingPlatformsChange}
+                  saving={props.bindingPlatformsSaving}
+                  disabled={locked}
+                />
               )}
 
               {!scopeSummary.needsDate && scopeSummary.needsSeparation && (
