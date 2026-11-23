@@ -50,6 +50,26 @@ const globalReportDef: ReportDefinition = {
   station_rule: 'none',
 };
 
+test('binding platform overrides only attach to binding reports and selected cities', () => {
+  const payloads = buildGenerateBatchPayloads(
+    [monthly, followup, globalReportDef],
+    ['上海', '广州'],
+    '2026-11-01',
+    '2026-11-30',
+    '2026-11-23',
+    {
+      excludeSeparation: true,
+      bindingPlatforms: { 上海: '商翼', 北京: '本来人力' },
+    },
+  );
+  const binding = payloads.find(payload => payload.generation_target === 'payment_binding');
+  const follow = payloads.find(payload => payload.generation_target === 'abnormal_followup');
+  const global = payloads.find(payload => payload.generation_target === 'abnormal_riders');
+  assert.deepEqual(binding?.binding_platforms, { 上海: '商翼' });
+  assert.deepEqual(follow?.binding_platforms, { 上海: '商翼' });
+  assert.equal(global?.binding_platforms, undefined);
+});
+
 test('report periods preserve whole months, leap years and cross-year bounds', () => {
   assert.deepEqual(reportRange(monthly, '2024-02-12', '2024-02-20', '2026-10-31'), {
     start: '2024-02-01',
@@ -140,7 +160,8 @@ test('monthly report renders multi-select dropdown, flat inline cities, Fengshen
   assert.match(html, /（不勾选则下载全部站点）/);
   assert.match(html, /全选近3月/);
   assert.doesNotMatch(html, /连续跨月|rb-mode-switch|rb-station-grid|仅取分离站点/);
-  assert.doesNotMatch(html, /<select/);
+  assert.match(html, /绑定平台配置（可选）/);
+  assert.match(html, /aria-label="上海 绑定平台"/);
   assert.doesNotMatch(html, /rb-city-trigger|rb-city-picker/);
   assert.match(html, /上海/);
   assert.match(html, /2026年10月/);

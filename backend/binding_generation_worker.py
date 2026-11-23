@@ -51,7 +51,8 @@ def generate_binding_process(spec):
             paths, Path(spec['employees']), Path(spec['proxies']), plan, Path(spec['directory']),
             log, _NotCancelled(), benlai=benlai,
             full_binding_dir=Path(spec['full_binding_dir']) if spec.get('full_binding_dir') else None,
-            write_full_binding=bool(spec.get('write_full_binding')))
+            write_full_binding=bool(spec.get('write_full_binding')),
+            binding_platforms=spec.get('binding_platforms') or {})
         return {'file': str(file), 'stats': stats, 'logs': logs, 'filter_seconds': filter_seconds}
     except Exception as exc:
         return {'error': str(exc) or type(exc).__name__, 'error_type': type(exc).__name__,

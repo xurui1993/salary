@@ -61,6 +61,9 @@ export interface ReportBuilderProps {
   refreshing: boolean;
   onRefreshCities: () => void;
   singleReportMode?: boolean;
+  bindingPlatforms?: Record<string, string>;
+  onBindingPlatformsChange?: (next: Record<string, string>) => void;
+  bindingPlatformsSaving?: boolean;
 }
 
 function reportScopeLabel(scope: ReportDefinition['scope']): string {
@@ -86,6 +89,9 @@ export function ReportBuilder(props: ReportBuilderProps) {
   ).sort();
 
   const selectedReports = reports.filter(report => activeSelectedIds.includes(report.id));
+  const showBindingPlatforms = selectedReports.some(
+    report => report.id === 'payment_binding' || report.id === 'abnormal_followup',
+  );
   const scopeSummary = summarizeSelectedReportsScope(
     selectedReports,
     props.start,
@@ -646,6 +652,51 @@ export function ReportBuilder(props: ReportBuilderProps) {
 
               {!selectable.length && (
                 <p className="wb-notice mt-3">暂无可用城市，请刷新城市或检查平台连接。</p>
+              )}
+
+              {showBindingPlatforms && (
+                <details className="mt-4 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                  <summary className="cursor-pointer text-sm font-semibold text-slate-700">
+                    绑定平台配置（可选）
+                    {props.bindingPlatformsSaving && (
+                      <span className="ml-2 text-xs font-normal text-slate-400">保存中…</span>
+                    )}
+                    {!props.bindingPlatformsSaving && Object.keys(props.bindingPlatforms || {}).length > 0 && (
+                      <span className="ml-2 text-xs font-normal text-slate-500">
+                        已配置 {Object.keys(props.bindingPlatforms || {}).length} 城
+                      </span>
+                    )}
+                  </summary>
+                  <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                    未配置城市按本来人力签约城市自动判定；用户配置优先，与自动判定不一致时按配置执行，并在任务日志中提示。
+                  </p>
+                  <div className="mt-3 grid max-h-56 grid-cols-1 gap-2 overflow-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
+                    {cities.map(city => (
+                      <label
+                        key={city.id}
+                        className="flex items-center justify-between gap-2 rounded-md bg-white px-2.5 py-1.5 text-xs text-slate-600 ring-1 ring-slate-200"
+                      >
+                        <span className="truncate" title={city.name}>{city.name}</span>
+                        <select
+                          className="wb-select min-w-[128px] text-xs"
+                          aria-label={`${city.name} 绑定平台`}
+                          value={props.bindingPlatforms?.[city.name] || ''}
+                          disabled={locked || props.bindingPlatformsSaving || !props.onBindingPlatformsChange}
+                          onChange={event => {
+                            const next = { ...(props.bindingPlatforms || {}) };
+                            if (event.target.value) next[city.name] = event.target.value;
+                            else delete next[city.name];
+                            props.onBindingPlatformsChange?.(next);
+                          }}
+                        >
+                          <option value="">自动</option>
+                          <option value="本来人力">本来人力</option>
+                          <option value="商翼">天津商翼（商翼）</option>
+                        </select>
+                      </label>
+                    ))}
+                  </div>
+                </details>
               )}
 
               {!scopeSummary.needsDate && scopeSummary.needsSeparation && (

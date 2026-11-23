@@ -18,6 +18,7 @@ import {
   deriveSelectedMonthsFromRange,
   mergeAvailableReports,
   type ReportDefinition,
+  type BindingPlatform,
 } from '../lib/reportBuilder';
 import { isGenerator, inferTaskKind, registerGeneratorIds } from '../lib/taskCatalog';
 import { systemShortLabel } from '../lib/platformCatalog';
@@ -175,6 +176,15 @@ const API_ROOT = '/api/fengshen-downloads';
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const LANORANGE_CITIES = ['保定','北京','潮州','大连','东莞','广州','惠州','宁波','泉州','三亚','汕头','上海','韶关','深圳','台州','天津'];
 
+function cleanBindingPlatforms(value: unknown): Record<string, BindingPlatform> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const result: Record<string, BindingPlatform> = {};
+  for (const [city, platform] of Object.entries(value)) {
+    if (platform === '本来人力' || platform === '商翼') result[city] = platform;
+  }
+  return result;
+}
+
 // 预设配置现已全面切换为用户自定义，支持增删改与持久化存储
 
 const DATASET_LABELS: Record<string, string> = {
@@ -274,6 +284,8 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const [optionsLoading, setOptionsLoading] = useState(false);
   const [optionVersion, setOptionVersion] = useState(0);
   const [cities, setCities] = useState<string[]>([]);
+  const [bindingPlatforms, setBindingPlatforms] = useState<Record<string, BindingPlatform>>({});
+  const [bindingPlatformsBusy, setBindingPlatformsBusy] = useState(false);
   const [datasets, setDatasets] = useState<string[]>(() =>
     platform === 'payout'
       ? ['baize_employees', 'benlai_employees']
@@ -538,6 +550,35 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     }
     return data;
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    void getJson('/api/workbench/binding-platforms')
+      .then(data => {
+        if (active) setBindingPlatforms(cleanBindingPlatforms(data?.platforms));
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [getJson]);
+
+  const updateBindingPlatforms = useCallback(async (next: Record<string, string>) => {
+    const clean = cleanBindingPlatforms(next);
+    setBindingPlatforms(clean);
+    setBindingPlatformsBusy(true);
+    try {
+      const data = await getJson('/api/workbench/binding-platforms', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platforms: clean }),
+      });
+      setBindingPlatforms(cleanBindingPlatforms(data?.platforms));
+    } catch (error) {
+      setRequestError(error instanceof Error ? error.message : '绑定平台配置保存失败');
+    } finally {
+      setBindingPlatformsBusy(false);
+    }
+  }, [getJson]);
+
   const stationDirectory=useStationDirectory(platform==='xiaoxiang'?'xiaoxiang':'fengshen',apiRef.current,platform!=='payout');
 
   useEffect(() => {
@@ -1348,6 +1389,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
         {
           excludeSeparation,
           selectedMonths: reportActiveMonths.length > 0 ? reportActiveMonths : undefined,
+          bindingPlatforms,
         },
       )
     : [];
@@ -1794,6 +1836,9 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                   onRecollect={checked => setDuplicateApproval(checked ? singleReportKey : '')}
                   refreshing={optionsLoading}
                   onRefreshCities={() => setOptionVersion(version => version + 1)}
+                  bindingPlatforms={bindingPlatforms}
+                  onBindingPlatformsChange={next => void updateBindingPlatforms(next)}
+                  bindingPlatformsSaving={bindingPlatformsBusy}
                 />
               )
             )}

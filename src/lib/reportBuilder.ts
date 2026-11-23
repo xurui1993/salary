@@ -276,6 +276,8 @@ export function summarizeSelectedReportsScope(
   };
 }
 
+export type BindingPlatform = '本来人力' | '商翼';
+
 export interface GenerateRunPayload {
   task_kind: 'generate';
   generation_target: string;
@@ -286,12 +288,14 @@ export interface GenerateRunPayload {
   lanorange_full_delivery?: boolean;
   include_separation?: boolean;
   exclude_separation?: boolean;
+  binding_platforms?: Record<string, BindingPlatform>;
 }
 
 export interface GenerateBatchOptions {
   includeSeparation?: boolean;
   excludeSeparation?: boolean;
   selectedMonths?: string[];
+  bindingPlatforms?: Record<string, BindingPlatform>;
 }
 
 export function buildGenerateBatchPayloads(
@@ -323,6 +327,15 @@ export function buildGenerateBatchPayloads(
             ? { include_separation: true }
             : {}
         : {};
+    const platformOverrides =
+      report.id === 'payment_binding' || report.id === 'abnormal_followup'
+        ? Object.fromEntries(
+            Object.entries(options.bindingPlatforms || {}).filter(([city]) => cities.includes(city)),
+          )
+        : {};
+    const platformField: Partial<GenerateRunPayload> = Object.keys(platformOverrides).length
+      ? { binding_platforms: platformOverrides }
+      : {};
 
     if (isAll) {
       payloads.push({
@@ -333,6 +346,7 @@ export function buildGenerateBatchPayloads(
         start: today,
         end: today,
         ...(isLanorangeTarget ? { lanorange_full_delivery: true } : {}),
+        ...platformField,
       });
       continue;
     }
@@ -348,6 +362,7 @@ export function buildGenerateBatchPayloads(
           end: chunk.end,
           ...(isLanorangeTarget ? { lanorange_full_delivery: true } : {}),
           ...separationField,
+          ...platformField,
         });
       }
       continue;
@@ -363,6 +378,7 @@ export function buildGenerateBatchPayloads(
       end: computed?.end || end,
       ...(isLanorangeTarget ? { lanorange_full_delivery: true } : {}),
       ...separationField,
+      ...platformField,
     });
   }
   return payloads;

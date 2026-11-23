@@ -15,7 +15,7 @@ from binding_download import month_periods, approved_proxies, eligible_details, 
 from binding_download import binding_history
 from binding_sources_http import export_once
 from fengshen_bill import BillCollectionError
-from download_service import validate_request, _requested_items
+from download_service import validate_request, _requested_items, ValidationError
 from download_jobs import _initial_items
 import test_salary_bind_sources as source_fixtures
 import test_download_service as download_fixtures
@@ -107,6 +107,36 @@ class BindingRuleTests(unittest.TestCase):
                          [('2026-09', '2026-09-20', '2026-09-30'), ('2026-10', '2026-10-01', '2026-10-10')])
         self.assertEqual([(i['city'], i['start'], i['end']) for i in _requested_items(config)],
                          [(i['city'], i['start'], i['end']) for i in _initial_items(config)])
+
+    def test_binding_platform_override_is_normalized_and_city_scoped(self):
+        config = validate_request({'cities': ['泉州'], 'datasets': ['payment_binding'],
+                                   'start': '2026-09-01', 'end': '2026-09-02',
+                                   'binding_platforms': {'泉州': '天津商翼'}})
+        self.assertEqual(config['binding_platforms'], {'泉州': '商翼'})
+        for platforms in ({'泉州': '未知平台'}, {'上海': '商翼'}):
+            with self.assertRaises(ValidationError):
+                validate_request({'cities': ['泉州'], 'datasets': ['payment_binding'],
+                                  'start': '2026-09-01', 'end': '2026-09-02',
+                                  'binding_platforms': platforms})
+
+    def test_binding_platform_override_wins_over_auto_detection(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            root = Path(directory)
+            fixture = source_fixtures.BindingSourceTests(); fixture.root = root
+            fixture.scope = {'month': '2026-07', 'start': '2026-07-01', 'end': '2026-07-29'}
+            results, employees = fixture.fixture()
+            raw = root / 'override'; raw.mkdir()
+            proxies = root / 'proxy.csv'
+            with proxies.open('w', encoding='utf-8-sig', newline='') as stream:
+                csv.DictWriter(stream, fieldnames=list(proxy())).writeheader()
+            paths = {kind: results[0][0] / info['path'] for kind, info in results[0][1]['datasets'].items()}
+            plan = SimpleNamespace(city='泉州', agency_id='31029436', **fixture.scope)
+            logs = []
+            _, stats = generate_binding(paths, employees[0] / 'merchantFreelancer.xlsx', proxies,
+                                        plan, raw, lambda message, *args, **kwargs: logs.append(str(message)),
+                                        threading.Event(), binding_platforms={'泉州': '本来人力'})
+            self.assertEqual(stats['cities']['泉州']['bind_platform'], '本来人力')
+            self.assertTrue(any('泉州' in message and '本来人力' in message for message in logs))
 
     def test_proxy_filters_city_month_approval_enabled_and_duplicate(self):
         rows = [proxy(), proxy(), proxy(流程状态='审批中'), proxy(流程状态='待审核'),

@@ -1671,7 +1671,8 @@ async def run_salary_bind_gen(source_path, target_path=None, base_path=None, ded
                     "shangyi_bind_count": c_sy,
                     "benlai_bind_count": int(((city_df["发薪绑定平台"] == "本来人力")
                                               & (city_df["发薪平台绑定"] == "已绑定")).sum()),
-                    "bind_platform": "本来人力" if _platform_city_key(temp_city) in benlai_cities else "商翼",
+                    "bind_platform": ((verified_scope or {}).get('binding_platforms') or {}).get(temp_city)
+                                      or ("本来人力" if _platform_city_key(temp_city) in benlai_cities else "商翼"),
                     "fengshen_bind_rate": f"{(c_fs / c_total * 100):.2f}%" if c_total > 0 else "0.00%",
                     "shangyi_bind_rate": f"{(c_sy / c_total * 100):.2f}%" if c_total > 0 else "0.00%",
                     "fully_bound_count": c_fully,

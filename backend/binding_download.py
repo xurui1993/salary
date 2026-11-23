@@ -88,7 +88,7 @@ def eligible_details(frame, plan):
 
 @profiled('payment_binding', 4, 'raw')
 def generate_binding(paths, employees, proxies, plan, raw, log, cancelled, benlai=None,
-                     full_binding_dir=None, write_full_binding=False):
+                     full_binding_dir=None, write_full_binding=False, binding_platforms=None):
     from salary_bind_processor import _read_file_fast, run_salary_bind_gen
     raw = Path(raw)
     inputs, outputs = raw / 'inputs', raw / 'generated'
@@ -119,6 +119,7 @@ def generate_binding(paths, employees, proxies, plan, raw, log, cancelled, benla
     scope = {'month': plan.month, 'start': plan.start, 'end': plan.end, 'benlai_cities': list(benlai_cities),
              'full_binding_dir': str(full_binding_dir) if full_binding_dir else '',
              'write_full_binding': bool(write_full_binding),
+             'binding_platforms': dict(binding_platforms or {}),
              'team_cities': {re.sub(r'[\s\u200b\u200c\u200d\u2060\ufeff]+', '', str(team)).replace('（', '(').replace('）', ')'):
                              plan.city for team in details['团队名称'].unique()}}
     final = {}
@@ -145,9 +146,15 @@ def generate_binding(paths, employees, proxies, plan, raw, log, cancelled, benla
         stats = {'overall': {key: value for key, value in zero.items() if key != 'stations'},
                  'cities': {plan.city: dict(zero)}}
     city_stats = stats['cities'][plan.city]
-    if city_stats.get('bind_platform') not in ('商翼', '本来人力'):
-        benlai_keys = {re.sub(r'\s+', '', str(value)).removesuffix('市') for value in benlai_cities}
-        city_stats['bind_platform'] = '本来人力' if re.sub(r'\s+', '', plan.city).removesuffix('市') in benlai_keys else '商翼'
+    benlai_keys = {re.sub(r'\s+', '', str(value)).removesuffix('市') for value in benlai_cities}
+    auto_platform = '本来人力' if re.sub(r'\s+', '', plan.city).removesuffix('市') in benlai_keys else '商翼'
+    override = (binding_platforms or {}).get(plan.city)
+    if override in ('商翼', '本来人力'):
+        city_stats['bind_platform'] = override
+        if override != auto_platform:
+            log(f'[提示] {plan.city} 绑定平台按用户配置使用 {override}（自动判定为 {auto_platform}）')
+    elif city_stats.get('bind_platform') not in ('商翼', '本来人力'):
+        city_stats['bind_platform'] = auto_platform
     for field in ('fengshen_bind_count', 'shangyi_bind_count'):
         stats['cities'][plan.city][field] = stats['overall'][field]
     stats.update(month=f'{plan.month[:4]}年{plan.month[5:]}月',

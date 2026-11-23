@@ -1099,10 +1099,15 @@ class DownloadManager:
             if config.get('lanorange_full_delivery'): requested_config['lanorange_full_delivery'] = True
             if config.get('xiaoxiang_all_dates'): requested_config['xiaoxiang_all_dates'] = True
             if config.get('merchant_by_city'): requested_config['merchant_by_city'] = True
-            for option in ('include_separation', 'exclude_separation', 'payroll_agencies', 'task_kind', 'generation_target', 'parent_batch_id', 'parent_workspace', 'order_export_concurrency'):
+            for option in ('include_separation', 'exclude_separation', 'payroll_agencies', 'task_kind', 'generation_target', 'parent_batch_id', 'parent_workspace', 'order_export_concurrency', 'binding_platforms'):
                 if option in config: requested_config[option] = config[option]
             requested_config.update(cities=selected_cities, datasets=selected_datasets,
                                     retry_of=run_id, retry_items=sorted(items, key=_key))
+            if requested_config.get('binding_platforms'):
+                selected = set(selected_cities)
+                requested_config['binding_platforms'] = {
+                    city: platform for city, platform in requested_config['binding_platforms'].items()
+                    if city in selected}
             if config.get("refresh_history"):
                 requested_config["refresh_history"] = True
             fingerprint = _fingerprint(requested_config)

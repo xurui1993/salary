@@ -180,6 +180,13 @@ def validate_request(payload, today=None):
         except ValueError as exc:
             raise ValidationError(str(exc)) from None
     selected_cities, selected = payload.get("cities"), payload.get("datasets")
+    binding_platforms = None
+    if 'binding_platforms' in payload:
+        from binding_platforms import normalized
+        try:
+            binding_platforms = normalized(payload['binding_platforms'])
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from None
     if payload.get("waybill_all_city_send") is True and not (
             isinstance(selected, list) and "delivery_waybill" in selected):
         raise ValidationError("仅运单数据支持全城送筛选")
@@ -308,6 +315,8 @@ def validate_request(payload, today=None):
             raise ValidationError(str(exc).replace("核算已停止", "下载未启动")) from None
     if any(key in payload and type(payload[key]) is not bool for key in ('include_separation', 'exclude_separation')):
         raise ValidationError("取分离站点选项必须为布尔值")
+    if binding_platforms and set(binding_platforms) - set(selected_cities):
+        raise ValidationError('绑定平台配置包含未选城市')
     return {**task_intent, "cities": list(dict.fromkeys(selected_cities)),
             **({'merchant_by_city': True} if set(selected) & MERCHANT_DATASETS else {}),
             **({'lanorange_full_delivery': True} if set(selected) & LANORANGE_DATASETS.keys() else {}),
@@ -319,7 +328,8 @@ def validate_request(payload, today=None):
             **({"refresh_history": True} if payload.get("refresh_history") else {}),
             **({"order_export_concurrency": payload["order_export_concurrency"]}
                if "order_export_concurrency" in payload else {}),
-            **({"waybill_all_city_send": True} if payload.get("waybill_all_city_send") else {})}
+            **({"waybill_all_city_send": True} if payload.get("waybill_all_city_send") else {}),
+            **({'binding_platforms': binding_platforms} if binding_platforms else {})}
 
 
 def _checkpoint(cancelled):
@@ -1413,12 +1423,13 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                         checkpoint_manifest()
                         return files
             def local_binding(source_paths, employees, proxies, plan, directory, logger, event, cache, exchange, benlai=None,
-                              full_binding_dir=None, write_full_binding=False):
+                              full_binding_dir=None, write_full_binding=False, binding_platforms=None):
                 from binding_download import generate_binding
                 with generation_context(cache, exchange):
                     return generate_binding(source_paths, employees, proxies, plan, directory, logger, event,
                                             benlai=benlai, full_binding_dir=full_binding_dir,
-                                            write_full_binding=write_full_binding)
+                                            write_full_binding=write_full_binding,
+                                            binding_platforms=binding_platforms)
 
             def finalize_binding_jobs(city=None, month=None, ready_only=False):
                 jobs = [job for job in binding_jobs if city is None or (job['description']['city'] == city and job['description']['start'][:7] == month)]
@@ -1452,6 +1463,14 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                         info['delivery_group'] = '天津商翼' if platform == '商翼' else '本来人力'
                         return [info]
                     run_step([job['description']], finalize)
+            binding_platforms = {}
+            if any(value['dataset'] in ('payment_binding', 'abnormal_followup') for value in requested):
+                binding_platforms = config.get('binding_platforms') or {}
+                if not binding_platforms:
+                    from binding_platforms import load as load_binding_platforms
+                    binding_platforms = load_binding_platforms()
+                binding_platforms = {city: platform for city, platform in binding_platforms.items()
+                                     if city in config['cities']}
             for city in config["cities"]:
                 _checkpoint(cancelled)
                 city_selected = {value["dataset"] for value in requested if value["city"] == city}
@@ -1593,10 +1612,17 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                             benlai_keys = {re.sub(r'\s+', '', str(value)).removesuffix('市')
                                            for value in ((benlai or (None, []))[1] or [])}
                             city_key = re.sub(r'\s+', '', str(city)).removesuffix('市')
-                            city_platform = '本来人力' if city_key in benlai_keys else '商翼'
+                            auto_platform = '本来人力' if city_key in benlai_keys else '商翼'
+                            city_platform = binding_platforms.get(city) or auto_platform
+                            if city in binding_platforms and city_platform != auto_platform:
+                                progress_log(f'[提示] {city} 绑定平台按用户配置使用 {city_platform}'
+                                             f'（自动判定为 {auto_platform}）')
+                            def configured_platform(value):
+                                key = re.sub(r'\s+', '', str(value)).removesuffix('市')
+                                return binding_platforms.get(value) or (
+                                    '本来人力' if key in benlai_keys else '商翼')
                             first_city = next((value for value in config['cities']
-                                               if ('本来人力' if re.sub(r'\s+', '', str(value)).removesuffix('市') in benlai_keys
-                                                   else '商翼') == city_platform), city)
+                                               if configured_platform(value) == city_platform), city)
                             first_month = min((value['start'][:7] for value in requested
                                                if value['dataset'] == 'payment_binding'), default=month)
                             write_full_binding = city == first_city and month == first_month
@@ -1616,7 +1642,8 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                                                      f"{proof['rows_before']} → {proof['rows_after']} 行")
                                 generate = partial(local_binding, source_paths, employees, proxies, binding_plan,
                                                    directory, progress_log, cancelled, shared_cache(), exchange, benlai,
-                                                   full_binding_dir, write_full_binding)
+                                                   full_binding_dir, write_full_binding,
+                                                   binding_platforms=binding_platforms)
                                 logs, future, process_job = None, None, False
                             else:
                                 from binding_generation_worker import generate_binding_process
@@ -1632,6 +1659,7 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                                     'benlai': [str(benlai[0]), list(benlai[1])] if benlai else None,
                                     'full_binding_dir': str(full_binding_dir),
                                     'write_full_binding': write_full_binding,
+                                    'binding_platforms': binding_platforms,
                                 }
                                 future = binding_pool.submit(generate_binding_process, spec)
                                 def generate(future=future):

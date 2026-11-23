@@ -86,6 +86,28 @@ def deduction_snapshot(state, root=None):
             'captured_at': datetime.now().isoformat()}
 
 
+@router.get('/binding-platforms')
+async def get_binding_platforms(request: Request):
+    from download_accounts import require_account
+    from binding_platforms import load
+    require_account(request)
+    return {'platforms': load()}
+
+
+@router.put('/binding-platforms')
+async def put_binding_platforms(request: Request):
+    from download_accounts import require_admin
+    from binding_platforms import save
+    require_admin(request)
+    payload = await request.json()
+    if not isinstance(payload, dict) or set(payload) != {'platforms'}:
+        raise HTTPException(400, '绑定平台配置格式无效')
+    try:
+        return {'platforms': save(payload['platforms'])}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
 @router.get('/deductions')
 def get_defaults():
     try:
