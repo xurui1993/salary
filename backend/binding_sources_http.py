@@ -165,24 +165,34 @@ class BindingSources:
                 raise BillCollectionError('白泽区域目录未确认，未提交导出')
             matches = [row for row in groups
                        if isinstance(row, dict) and str(row.get('groupName') or '').strip() == region]
-            if len(matches) != 1:
-                raise BillCollectionError('白泽区域名称“' + region + '”未唯一匹配，未提交导出')
-            group_id = str(matches[0].get('id') or '').strip()
-            if not group_id.isdigit():
-                raise BillCollectionError('白泽小象超市区域编号无效，未提交导出')
-            params = {'merId': str(merchant), 'groupId': group_id, 'pageNum': 1, 'pageSize': 10}
+            params = {'merId': str(merchant), 'pageNum': 1, 'pageSize': 10}
+            scope, group_id = 'all', None
+            if len(matches) == 1:
+                group_id = str(matches[0].get('id') or '').strip()
+                if not group_id.isdigit():
+                    raise BillCollectionError('白泽小象超市区域编号无效，未提交导出')
+                params = {**params, 'groupId': group_id}
+                scope = region
+                label = f'区域“{region}”员工资料，其他筛选为空'
+            elif matches:
+                self.log(f'[提示] 白泽有 {len(matches)} 个“{region}”区域，无法唯一确定范围，按全量员工导出')
+                label = '最新全量员工资料'
+            else:
+                self.log(f'[提示] 当前白泽账号无“{region}”区域，按全量员工导出')
+                label = '最新全量员工资料'
             file = self.root / 'baize' / 'merchantFreelancer_白泽全量.xlsx'
             if retained_employee_export(file, params):
                 self.log('[恢复] 白泽已保留原表与回执哈希一致，继续使用，不重复导出')
             else:
                 query(session, 'baize', 'web/merchantFreelancer/checkSecrecy')
-                self.log(f'[下载] 正在通过白泽 HTTP 接口导出区域“{region}”员工资料，其他筛选为空')
+                self.log(f'[下载] 正在通过白泽 HTTP 接口导出{label}')
                 file = export_once(session, 'baize', 'web/merchantFreelancer/export', params,
                                    file, self.cancelled)
             proof = validate_employees(file)
-            atomic_json(file.parent / 'manifest.json', {**proof, 'status': 'success', 'scope': region,
-                                                       'region': region, 'group_id': group_id,
-                                                       'transport': 'http'})
+            manifest = {**proof, 'status': 'success', 'scope': scope, 'transport': 'http'}
+            if group_id:
+                manifest.update(region=region, group_id=group_id)
+            atomic_json(file.parent / 'manifest.json', manifest)
             self.results['baize'] = file
             return file
 

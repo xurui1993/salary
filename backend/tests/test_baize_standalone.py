@@ -183,6 +183,55 @@ class BaizeRegionExportTests(unittest.TestCase):
             self.assertEqual(export_calls[0]['groupId'], '2030')
             self.assertNotIn('groupName', export_calls[0])
             self.assertEqual(file, root / 'baize' / 'merchantFreelancer_白泽全量.xlsx')
+            manifest = json.loads((root / 'baize' / 'manifest.json').read_text(encoding='utf-8'))
+            self.assertEqual(manifest['scope'], '小象超市')
+            self.assertEqual(manifest['group_id'], '2030')
+
+    def employees_in_account(self, groups):
+        import contextlib
+        import binding_sources_http as module
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        root = Path(folder.name) / 'raw'
+        (root / 'baize').mkdir(parents=True)
+        session = Mock()
+        calls, logs = [], []
+        def fake_query(_session, _source, path, params=None):
+            calls.append((path, params))
+            if path == 'web/merchantGroup/queryList':
+                return {'data': groups}
+            return {}
+        def fake_export(_session, _source, path, params, output, _cancelled):
+            calls.append((path, params))
+            return Path(output)
+        with patch.object(module, 'authenticated', return_value=contextlib.nullcontext(session)), \
+             patch.object(module, 'identity', return_value={'user': {'userRelateId': '2008'}}), \
+             patch.object(module, 'query', side_effect=fake_query), \
+             patch.object(module, 'retained_employee_export', return_value=False), \
+             patch.object(module, 'export_once', side_effect=fake_export), \
+             patch.object(module, 'validate_employees', return_value={'rows': 1, 'path': 'x'}):
+            BindingSources(root, logs.append, threading.Event()).employees()
+        export = next(params for path, params in calls if path == 'web/merchantFreelancer/export')
+        manifest = json.loads((root / 'baize' / 'manifest.json').read_text(encoding='utf-8'))
+        return export, manifest, logs
+
+    def test_employees_without_xiaoxiang_region_exports_all(self):
+        export, manifest, logs = self.employees_in_account([
+            {'id': '1', 'groupName': '上海UB'}, {'id': '2', 'groupName': '广州UB'}])
+        self.assertNotIn('groupId', export)
+        self.assertEqual(export['merId'], '2008')
+        self.assertEqual(manifest['scope'], 'all')
+        self.assertNotIn('group_id', manifest)
+        self.assertTrue(any('无“小象超市”区域' in message for message in logs))
+
+    def test_employees_with_duplicate_xiaoxiang_regions_exports_all(self):
+        export, manifest, logs = self.employees_in_account([
+            {'id': '1', 'groupName': '小象超市'}, {'id': '2', 'groupName': '小象超市'},
+            {'id': '3', 'groupName': '运营'}])
+        self.assertNotIn('groupId', export)
+        self.assertEqual(manifest['scope'], 'all')
+        self.assertNotIn('group_id', manifest)
+        self.assertTrue(any('2 个“小象超市”区域' in message for message in logs))
 
 
 class RetainedEmployeeExportTests(unittest.TestCase):
