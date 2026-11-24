@@ -2458,13 +2458,13 @@
   position: sticky;
   right: 0;
   z-index: 5;
-  text-align: center;
+  text-align: right;
   width: 160px;
   min-width: 160px;
   max-width: 160px;
   box-sizing: border-box;
   padding-left: 8px;
-  padding-right: 8px;
+  padding-right: 12px;
   background: #F6F7F8;
 }
 
@@ -2478,7 +2478,7 @@
   max-width: 160px;
   box-sizing: border-box;
   padding-left: 8px;
-  padding-right: 8px;
+  padding-right: 12px;
   white-space: nowrap;
   background: #ffffff;
   box-shadow: -6px 0 10px -8px rgba(24, 25, 28, 0.06);
@@ -2527,7 +2527,7 @@
 
 .wbx-payroll__table tbody tr.pq-row td.pq-col-ops {
   padding-left: 8px;
-  padding-right: 8px;
+  padding-right: 12px;
 }
 
 .wbx-payroll__table tbody tr.pq-row:last-child td {
@@ -5077,8 +5077,9 @@
 
 .wbx-ded-sheet-wrap {
   width: 100%;
+  max-height: 540px;
   overflow-x: auto;
-  overflow-y: visible;
+  overflow-y: auto;
   background: #ffffff;
 }
 
@@ -5899,74 +5900,145 @@
   color: #008ac5;
 }
 
-/* ─── 扣款配置城市卡片精简版（去单字头像与粗进度条，保留轻液体玻璃紧凑两行结构） ─── */
+/* ─── 扣款配置城市卡片精修版（紧凑呼吸感、去分散四角排版、统一纵向视觉流） ─── */
 .wbx-city-vcard-grid {
-  gap: 10px;
+  gap: 14px;
 }
 
 .wbx-city-vcard {
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.94);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(247, 251, 255, 0.84) 100%);
+  border: 1px solid rgba(15, 23, 42, 0.07);
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
   box-shadow:
-    0 6px 16px -8px rgba(14, 116, 144, 0.07),
-    0 1px 3px rgba(15, 23, 42, 0.025),
-    inset 0 1px 0 #ffffff;
-  transition: border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+    0 2px 8px -2px rgba(15, 23, 42, 0.03),
+    0 1px 2px rgba(15, 23, 42, 0.018);
+  transition: border-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
+              transform 160ms cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 160ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .wbx-city-vcard:hover {
-  border-color: rgba(0, 174, 236, 0.4);
-  transform: translateY(-1px);
+  border-color: rgba(0, 156, 224, 0.34);
+  background: #ffffff;
+  transform: translateY(-1.5px);
   box-shadow:
-    0 10px 22px -10px rgba(0, 156, 224, 0.16),
-    inset 0 1px 0 #ffffff;
+    0 12px 26px -10px rgba(0, 156, 224, 0.14),
+    0 3px 8px -2px rgba(15, 23, 42, 0.04);
 }
 
 .wbx-city-vcard__trigger {
-  padding: 11px 12px 10px;
-  gap: 8px;
+  min-height: 0;
+  padding: 15px 16px 13px;
+  gap: 0;
+  justify-content: flex-start;
 }
 
 .wbx-city-vcard__head {
-  align-items: center;
-  gap: 6px;
-}
-
-.wbx-city-vcard__head-left {
   display: flex;
-  align-items: baseline;
-  gap: 5px;
+  align-items: center;
+  gap: 11px;
+  padding-bottom: 12px;
   min-width: 0;
-  flex-wrap: wrap;
 }
 
-.wbx-city-vcard__name {
-  font-size: 14.5px;
-  font-weight: 700;
+.wbx-city-vcard__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 156, 224, 0.14);
+  background: linear-gradient(145deg, rgba(0, 174, 236, 0.10) 0%, rgba(56, 189, 248, 0.04) 100%);
+  color: #0284c7;
+  flex-shrink: 0;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+.wbx-city-vcard:hover .wbx-city-vcard__icon {
+  background: rgba(0, 174, 236, 0.14);
+  border-color: rgba(0, 156, 224, 0.26);
+  color: #0077b6;
+}
+
+.wbx-city-vcard__icon.is-ready {
+  border-color: rgba(16, 185, 129, 0.16);
+  background: linear-gradient(145deg, rgba(16, 185, 129, 0.10) 0%, rgba(16, 185, 129, 0.03) 100%);
+  color: #059669;
+}
+
+.wbx-city-vcard:hover .wbx-city-vcard__icon.is-ready {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.28);
+  color: #047857;
+}
+
+.wbx-city-vcard__title-block {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.wbx-city-vcard__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.wbx-city-vcard__city {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
   color: #18191c;
+  letter-spacing: -0.015em;
   line-height: 1.25;
   white-space: nowrap;
   flex-shrink: 0;
 }
 
+.wbx-city-vcard__status {
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.wbx-city-vcard__status.is-ready {
+  background: rgba(16, 185, 129, 0.09);
+  color: #059669;
+}
+
+.wbx-city-vcard__status.is-pending {
+  background: rgba(245, 158, 11, 0.1);
+  color: #d97706;
+}
+
 .wbx-city-vcard__subtitle {
   margin: 0;
-  font-size: 11.5px;
-  color: #61666d;
+  font-size: 12px;
+  color: #64748b;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 5px;
   white-space: nowrap;
+  line-height: 1.3;
 }
 
 .wbx-city-vcard__compact-body {
-  padding: 6px 10px;
-  border-radius: 9px;
-  border: 1px solid rgba(24, 25, 28, 0.04);
-  background: rgba(243, 247, 252, 0.72);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88);
-  min-height: 30px;
+  padding: 9px 0;
+  border-radius: 0;
+  border: 0;
+  border-top: 1px solid rgba(15, 23, 42, 0.05);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.05);
+  background: transparent;
+  box-shadow: none;
+  min-height: 36px;
   display: flex;
   align-items: center;
 }
@@ -5974,8 +6046,6 @@
 .wbx-city-vcard__inline-metrics {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
   width: 100%;
   min-width: 0;
 }
@@ -5987,33 +6057,36 @@
   min-width: 0;
 }
 
+.wbx-city-vcard__metric-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  flex-shrink: 0;
+}
+
 .wbx-city-vcard__inline-item {
   display: inline-flex;
   align-items: baseline;
-  gap: 3px;
-  font-size: 11.5px;
-  color: #61666d;
+  gap: 4px;
+  font-size: 12px;
+  color: #64748b;
   white-space: nowrap;
 }
 
 .wbx-city-vcard__inline-item strong {
-  font-size: 12px;
+  font-family: var(--wbx-font-mono);
+  font-size: 12.5px;
   font-weight: 600;
-  color: #18191c;
-}
-
-.wbx-city-vcard__inline-count {
-  font-size: 11px;
-  color: #9499a0;
-  white-space: nowrap;
-  flex-shrink: 0;
+  color: #334155;
+  letter-spacing: -0.01em;
 }
 
 .wbx-city-vcard__inline-state {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
 }
 
@@ -6022,12 +6095,44 @@
 }
 
 .wbx-city-vcard__inline-state.is-zero {
-  color: #047857;
+  color: #059669;
 }
 
 .wbx-city-vcard__foot {
-  padding-top: 2px;
+  padding-top: 10px;
   border-top: 0;
+}
+
+.wbx-city-vcard__foot-meta {
+  font-size: 12px;
+  color: #94a3b8;
+  gap: 4px;
+}
+
+.wbx-city-vcard__foot-meta .is-muted {
+  color: #94a3b8;
+}
+
+.wbx-city-vcard__cta {
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  gap: 3px;
+  transition: color 150ms ease;
+}
+
+.wbx-city-vcard:hover .wbx-city-vcard__cta {
+  color: #0284c7;
+  font-weight: 600;
+}
+
+.wbx-city-vcard__cta.is-setup {
+  color: #d97706;
+  font-weight: 600;
+}
+
+.wbx-city-vcard:hover .wbx-city-vcard__cta.is-setup {
+  color: #b45309;
 }
 
 

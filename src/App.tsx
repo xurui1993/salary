@@ -303,6 +303,7 @@ export default function App() {
   const seenTaskAlertKeysRef = useRef<Set<string>>(new Set());
   const [payrollResumeVersion, setPayrollResumeVersion] = useState(0);
   const [pageAnimFlip, setPageAnimFlip] = useState(false);
+  const mainScrollRef = useRef<HTMLElement | null>(null);
   const lastRouteSigRef = useRef('');
   const currentRouteSig = `${workspaceView}|${taskKind}|${downloadPlatform}|${activeReportId}|${payrollSubView}`;
   useEffect(() => {
@@ -313,6 +314,9 @@ export default function App() {
     if (lastRouteSigRef.current !== currentRouteSig) {
       lastRouteSigRef.current = currentRouteSig;
       setPageAnimFlip(v => !v);
+      if (mainScrollRef.current) {
+        mainScrollRef.current.scrollTop = 0;
+      }
     }
   }, [currentRouteSig]);
 
@@ -1449,7 +1453,7 @@ export default function App() {
               </header>
             );
           })()}
-          <main className="wb-main wbx-main">
+          <main ref={mainScrollRef} className="wb-main wbx-main">
             <div className={`wbx-page ${pageAnimFlip ? 'wbx-page-enter-a' : 'wbx-page-enter-b'}`}>
             {missingCityTeams.length > 0 && (
               <section className="mb-4 rounded-xl border border-amber-300 bg-amber-50/95 p-4 shadow-xs" role="alert" aria-label="未匹配城市团队警告">

@@ -4008,19 +4008,19 @@
 .wbx-tpl-groups {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 14px 18px;
+  gap: 18px;
+  padding: 16px 20px 18px;
 }
 
 .wbx-tpl-group {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 11px;
 }
 
 .wbx-tpl-group + .wbx-tpl-group {
-  padding-top: 14px;
-  border-top: 1px solid #eef2f6;
+  padding-top: 16px;
+  border-top: 1px solid rgba(24, 25, 28, 0.055);
 }
 
 .wbx-tpl-group__head {
@@ -4033,44 +4033,38 @@
 
 .wbx-tpl-group__title-row {
   display: inline-flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
 }
 
 .wbx-tpl-group__title {
   margin: 0;
-  font-size: 13px;
-  font-weight: 700;
-  color: #0f172a;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #18191c;
   letter-spacing: -0.01em;
 }
 
 .wbx-tpl-group__title.is-xiaoxiang {
-  color: #065f46;
+  color: #047857;
 }
 
 .wbx-tpl-group__count {
-  display: inline-flex;
-  align-items: center;
-  height: 19px;
-  padding: 0 6px;
-  border-radius: 5px;
-  background: #f1f5f9;
-  font-size: 11px;
-  font-weight: 600;
-  color: #475569;
+  font-size: 12px;
+  font-weight: 500;
+  color: #757a82;
 }
 
 .wbx-tpl-group__hint {
   font-size: 12px;
-  color: #64748b;
+  color: #757a82;
 }
 
 .wbx-tpl-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 11px;
-  padding: 14px 18px;
+  gap: 14px;
+  padding: 16px 20px 18px;
 }
 
 @media (max-width: 1180px) {
@@ -4104,19 +4098,19 @@
   flex-direction: row;
   align-items: center;
   gap: 20px;
-  padding: 14px 18px;
+  padding: 15px 20px;
 }
 
 .wbx-tpl-card.is-single .wbx-tpl-card__head {
   padding-bottom: 0;
-  min-width: 190px;
+  min-width: 210px;
   flex-shrink: 0;
 }
 
 .wbx-tpl-card.is-single .wbx-tpl-card__spec {
   flex: 1;
   border-top: 0;
-  padding: 0 18px;
+  padding: 0 20px;
   border-left: 1px solid rgba(24, 25, 28, 0.06);
   border-right: 1px solid rgba(24, 25, 28, 0.06);
 }
@@ -4136,20 +4130,20 @@
   }
 
   .wbx-tpl-card.is-single .wbx-tpl-card__head {
-    padding-bottom: 11px;
+    padding-bottom: 12px;
     min-width: 0;
   }
 
   .wbx-tpl-card.is-single .wbx-tpl-card__spec {
     border-left: 0;
     border-right: 0;
-    border-top: 1px solid rgba(24, 25, 28, 0.045);
-    padding: 9px 0 10px;
+    border-top: 1px solid rgba(24, 25, 28, 0.05);
+    padding: 9px 0;
   }
 
   .wbx-tpl-card.is-single .wbx-tpl-card__foot {
-    border-top: 1px solid rgba(24, 25, 28, 0.045);
-    padding-top: 9px;
+    border-top: 1px solid rgba(24, 25, 28, 0.05);
+    padding-top: 10px;
   }
 }
 
@@ -4177,29 +4171,38 @@
 }
 
 .wbx-tpl-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   gap: 0;
   padding: 15px 16px 13px;
-  border-radius: 12px;
-  border: 1px solid rgba(24, 25, 28, 0.06);
-  background: #ffffff;
-  box-shadow: 0 2px 6px -1px rgba(24, 25, 28, 0.025);
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.07);
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+  box-shadow:
+    0 2px 8px -2px rgba(15, 23, 42, 0.03),
+    0 1px 2px rgba(15, 23, 42, 0.018);
   transition: border-color 160ms cubic-bezier(0.16, 1, 0.3, 1),
               box-shadow 160ms cubic-bezier(0.16, 1, 0.3, 1),
-              transform 160ms cubic-bezier(0.16, 1, 0.3, 1);
+              transform 160ms cubic-bezier(0.16, 1, 0.3, 1),
+              background-color 160ms ease;
 }
 
 .wbx-tpl-card:hover {
-  border-color: rgba(0, 174, 236, 0.38);
-  box-shadow: 0 10px 24px -10px rgba(0, 156, 224, 0.16), 0 2px 6px rgba(24, 25, 28, 0.04);
-  transform: translateY(-2px);
+  border-color: rgba(0, 156, 224, 0.34);
+  background: #ffffff;
+  box-shadow:
+    0 12px 26px -10px rgba(0, 156, 224, 0.14),
+    0 3px 8px -2px rgba(15, 23, 42, 0.04);
+  transform: translateY(-1.5px);
 }
 
 .wbx-tpl-card.is-xiaoxiang:hover {
-  border-color: #6ee7b7;
-  box-shadow: 0 10px 22px -12px rgba(5, 150, 105, 0.18), 0 2px 6px rgba(24, 25, 28, 0.04);
+  border-color: rgba(16, 185, 129, 0.38);
+  box-shadow:
+    0 12px 24px -10px rgba(5, 150, 105, 0.15),
+    0 3px 8px -2px rgba(15, 23, 42, 0.04);
 }
 
 .wbx-tpl-card.is-disabled {
@@ -4210,7 +4213,7 @@
   display: flex;
   align-items: center;
   gap: 11px;
-  padding-bottom: 11px;
+  padding-bottom: 12px;
   min-width: 0;
 }
 
@@ -4218,31 +4221,31 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
-  border: 1px solid rgba(0, 174, 236, 0.2);
-  background: rgba(0, 174, 236, 0.08);
-  color: var(--wbx-primary);
+  border: 1px solid rgba(0, 156, 224, 0.14);
+  background: linear-gradient(145deg, rgba(0, 174, 236, 0.10) 0%, rgba(56, 189, 248, 0.04) 100%);
+  color: #0284c7;
   flex-shrink: 0;
-  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease;
 }
 
 .wbx-tpl-card:hover .wbx-tpl-card__icon {
-  background: rgba(0, 174, 236, 0.14);
-  border-color: rgba(0, 174, 236, 0.3);
-  color: var(--wbx-primary-hover);
+  background: rgba(0, 174, 236, 0.13);
+  border-color: rgba(0, 156, 224, 0.25);
+  color: #0077b6;
 }
 
 .wbx-tpl-card__icon.is-xiaoxiang {
-  border-color: #d1fae5;
-  background: #ecfdf5;
+  border-color: rgba(16, 185, 129, 0.2);
+  background: linear-gradient(145deg, rgba(16, 185, 129, 0.11) 0%, rgba(16, 185, 129, 0.04) 100%);
   color: #059669;
 }
 
 .wbx-tpl-card.is-xiaoxiang:hover .wbx-tpl-card__icon.is-xiaoxiang {
-  background: #d1fae5;
-  border-color: #a7f3d0;
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.3);
   color: #047857;
 }
 
@@ -4265,7 +4268,7 @@
   margin: 0;
   font-size: 15px;
   font-weight: 600;
-  color: var(--wbx-text);
+  color: #18191c;
   letter-spacing: -0.015em;
   line-height: 1.25;
   white-space: nowrap;
@@ -4274,16 +4277,9 @@
 }
 
 .wbx-tpl-source-tag {
-  display: inline-flex;
-  align-items: center;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 4px;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  color: #b45309;
   font-size: 11.5px;
   font-weight: 600;
+  color: #d97706;
   flex-shrink: 0;
 }
 
@@ -4292,8 +4288,8 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 12.5px;
-  color: var(--wbx-text-secondary);
+  font-size: 12px;
+  color: #64748b;
   line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
@@ -4301,55 +4297,58 @@
 }
 
 .wbx-tpl-card__biz .is-shangou {
-  color: var(--wbx-primary);
+  color: #0284c7;
   font-weight: 500;
 }
 
 .wbx-tpl-card__biz .is-xiaoxiang {
-  color: #047857;
+  color: #059669;
   font-weight: 500;
 }
 
 .wbx-tpl-card__sep {
-  color: #C9CCD0;
+  color: #cbd5e1;
 }
 
 .wbx-tpl-card__cols {
   font-size: 11.5px;
-  font-weight: 500;
-  color: var(--wbx-text-subtle);
+  font-weight: 400;
+  color: #94a3b8;
   white-space: nowrap;
   flex-shrink: 0;
-  align-self: flex-start;
-  padding-top: 2px;
 }
 
 .wbx-tpl-card__spec {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 9px 0 10px;
-  border-top: 1px solid rgba(24, 25, 28, 0.045);
+  padding: 9px 0;
+  border-top: 1px solid rgba(15, 23, 42, 0.05);
   min-width: 0;
 }
 
 .wbx-tpl-card__file {
   font-family: var(--wbx-font-mono);
   font-size: 12px;
-  font-weight: 500;
-  color: var(--wbx-text-secondary);
+  font-weight: 400;
+  color: #64748b;
   line-height: 1.35;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+  transition: color 140ms ease;
+}
+
+.wbx-tpl-card:hover .wbx-tpl-card__file {
+  color: #334155;
 }
 
 .wbx-tpl-card__size {
   font-family: var(--wbx-font-mono);
   font-size: 11.5px;
-  color: var(--wbx-text-subtle);
+  color: #94a3b8;
   line-height: 1.35;
   white-space: nowrap;
   flex-shrink: 0;
@@ -4360,16 +4359,16 @@
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding-top: 9px;
-  border-top: 1px solid rgba(24, 25, 28, 0.045);
+  padding-top: 10px;
+  border-top: 1px solid rgba(15, 23, 42, 0.05);
 }
 
 .wbx-tpl-card__edit-group {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  margin-left: -7px;
-  opacity: 0.86;
+  gap: 2px;
+  margin-left: -6px;
+  opacity: 0.72;
   transition: opacity 150ms ease;
 }
 
@@ -4387,7 +4386,7 @@
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #61666d;
+  color: #64748b;
   font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
@@ -4397,7 +4396,7 @@
 
 .wbx-tpl-card-op:hover {
   background: rgba(0, 174, 236, 0.08);
-  color: #00aeec;
+  color: #0284c7;
 }
 
 .wbx-tpl-card-op.is-danger:hover {
@@ -4410,33 +4409,47 @@
   align-items: center;
   justify-content: center;
   gap: 5px;
-  height: 27px;
-  min-width: 70px;
-  padding: 0 11px;
-  border-radius: 7px;
-  border: 1px solid rgba(24, 25, 28, 0.09);
-  background: #ffffff;
-  color: var(--wbx-text-secondary);
+  height: 28px;
+  min-width: 72px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 23, 42, 0.09);
+  background: #f8fafc;
+  color: #334155;
   font-size: 12px;
   font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
 }
 
-.wbx-tpl-card:hover .wbx-tpl-dl-btn,
-.wbx-tpl-dl-btn:hover {
-  background: rgba(0, 174, 236, 0.09);
-  border-color: rgba(0, 174, 236, 0.35);
-  color: var(--wbx-primary);
+.wbx-tpl-card:hover .wbx-tpl-dl-btn {
+  background: rgba(0, 174, 236, 0.075);
+  border-color: rgba(0, 156, 224, 0.28);
+  color: #0284c7;
   font-weight: 600;
+}
+
+.wbx-tpl-dl-btn:hover {
+  background: #009ce0;
+  border-color: #009ce0;
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 4px 10px -2px rgba(0, 156, 224, 0.32);
 }
 
 .wbx-tpl-card.is-xiaoxiang:hover .wbx-tpl-dl-btn {
   background: #ecfdf5;
   border-color: #6ee7b7;
   color: #047857;
+}
+
+.wbx-tpl-card.is-xiaoxiang .wbx-tpl-dl-btn:hover {
+  background: #059669;
+  border-color: #059669;
+  color: #ffffff;
+  box-shadow: 0 4px 10px -2px rgba(5, 150, 105, 0.28);
 }
 
 .wbx-tpl-dl-btn.is-downloaded {
@@ -5188,77 +5201,12 @@
 
 .wbx-tpl-deck-card {
   border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.94);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.91) 0%, rgba(255, 255, 255, 0.82) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.96);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97) 0%, rgba(252, 253, 255, 0.95) 100%);
   box-shadow:
-    0 12px 32px -10px rgba(14, 116, 144, 0.075),
-    0 2px 6px rgba(15, 23, 42, 0.03),
+    0 12px 32px -10px rgba(14, 116, 144, 0.07),
+    0 2px 6px rgba(15, 23, 42, 0.025),
     inset 0 1px 0 #ffffff;
-}
-
-.wbx-tpl-card {
-  gap: 8px;
-  padding: 14px 14px 12px;
-  border-radius: 15px;
-  border: 1px solid rgba(255, 255, 255, 0.94);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 252, 255, 0.87) 100%);
-  box-shadow:
-    0 6px 18px -8px rgba(14, 116, 144, 0.07),
-    0 0 0 1px rgba(24, 25, 28, 0.045),
-    inset 0 1px 0 #ffffff;
-}
-
-.wbx-tpl-card__head {
-  gap: 9px;
-  padding-bottom: 2px;
-}
-
-.wbx-tpl-card__icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: linear-gradient(145deg, rgba(0, 174, 236, 0.14) 0%, rgba(0, 156, 224, 0.06) 100%);
-  border: 1px solid rgba(0, 174, 236, 0.24);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
-}
-
-.wbx-tpl-card__biz {
-  gap: 3px;
-  font-size: 11.5px;
-  letter-spacing: -0.01em;
-}
-
-.wbx-tpl-card__cols {
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 5px;
-  border: 1px solid rgba(24, 25, 28, 0.06);
-  background: rgba(243, 247, 252, 0.8);
-  font-size: 10.5px;
-  font-weight: 600;
-  color: #61666d;
-}
-
-.wbx-tpl-card__spec {
-  padding: 7px 10px;
-  border-radius: 9px;
-  border: 1px solid rgba(24, 25, 28, 0.045);
-  background: rgba(243, 247, 252, 0.72);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88);
-}
-
-.wbx-tpl-card__foot {
-  padding-top: 4px;
-  border-top: 0;
-}
-
-.wbx-tpl-dl-btn {
-  border-color: rgba(0, 174, 236, 0.25);
-  background: rgba(0, 174, 236, 0.07);
-  color: #0082bd;
-  font-weight: 600;
 }
 
 /* 引擎运行日志终端（TerminalPanel）空间磨砂胶囊行精修 */

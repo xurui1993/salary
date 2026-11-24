@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertCircle, ArrowRight, CheckCircle2, Tag } from 'lucide-react';
+import { AlertCircle, ArrowRight, CheckCircle2, SlidersHorizontal, Tag } from 'lucide-react';
 import type { DeductionEntry } from './DeductionAmounts';
 import {
   extractCityCardPreview,
@@ -62,7 +62,7 @@ export function CityStationAccordionCard({
         : { text: `待配 ${summary.pendingStations} 站`, tone: 'is-pending' };
 
   const overrideLabel =
-    summary.overrideStations > 0 ? `${summary.overrideStations} 例外` : '统一';
+    summary.overrideStations > 0 ? `${summary.overrideStations} 站例外` : '全城统一';
 
   const handleOpen = () => {
     if (onOpenCity) onOpenCity(summary.cityId);
@@ -79,43 +79,49 @@ export function CityStationAccordionCard({
         className="wbx-city-vcard__trigger"
         onClick={handleOpen}
       >
-        {/* 1. 顶部行：城市名 + 站点概况 + 轻量状态标签 */}
+        {/* 1. 顶部区：左侧轻量图标锚点 + 城市与站点概况 + 右上角状态标签 */}
         <div className="wbx-city-vcard__head">
-          <div className="wbx-city-vcard__head-left">
-            <h3 className="wbx-city-vcard__name">{summary.cityName}</h3>
-            <span className="wbx-city-vcard__subtitle tabular-nums">
+          <span
+            className={`wbx-city-vcard__icon ${statusMeta.tone}`}
+            aria-hidden="true"
+          >
+            <SlidersHorizontal size={15.5} strokeWidth={1.85} />
+          </span>
+          <div className="wbx-city-vcard__title-block">
+            <div className="wbx-city-vcard__title-row">
+              <h3 className="wbx-city-vcard__city">{summary.cityName}</h3>
+              <span className={`wbx-city-vcard__status ${statusMeta.tone}`}>
+                {statusMeta.text}
+              </span>
+            </div>
+            <p className="wbx-city-vcard__subtitle tabular-nums">
               <span>{total} 个站点</span>
               <span className="wbx-city-vcard__sep" aria-hidden="true">·</span>
-              <span className={summary.overrideStations > 0 ? 'is-accent' : ''}>
-                {overrideLabel}
-              </span>
-            </span>
+              <span>{overrideLabel}</span>
+            </p>
           </div>
-          <span className={`wbx-city-vcard__status ${statusMeta.tone}`}>
-            {statusMeta.text}
-          </span>
         </div>
 
-        {/* 2. 紧凑单行默认口径摘要（2 项核心指标 + 总项数，永不截断数字） */}
+        {/* 2. 中部核心指标行：简洁单行基准扣款摘要 */}
         <div className="wbx-city-vcard__compact-body" title={fullSummaryTitle}>
           {preview.state === 'configured' ? (
             <div className="wbx-city-vcard__inline-metrics tabular-nums">
               <span className="wbx-city-vcard__inline-group">
-                {preview.metrics.map(item => (
-                  <span key={item.column} className="wbx-city-vcard__inline-item">
-                    <span className="wbx-city-vcard__inline-label">{item.shortLabel}</span>
-                    <strong>
-                      {item.unit.startsWith('元') ? '¥' : ''}
-                      {item.valueText}
-                    </strong>
-                  </span>
+                {preview.metrics.map((item, idx) => (
+                  <React.Fragment key={item.column}>
+                    {idx > 0 && (
+                      <span className="wbx-city-vcard__metric-dot" aria-hidden="true" />
+                    )}
+                    <span className="wbx-city-vcard__inline-item">
+                      <span className="wbx-city-vcard__inline-label">{item.shortLabel}</span>
+                      <strong>
+                        {item.unit.startsWith('元') ? '¥' : ''}
+                        {item.valueText}
+                      </strong>
+                    </span>
+                  </React.Fragment>
                 ))}
               </span>
-              {preview.configuredCount > preview.metrics.length && (
-                <span className="wbx-city-vcard__inline-count">
-                  共 {preview.configuredCount} 项
-                </span>
-              )}
             </div>
           ) : preview.state === 'zero' ? (
             <span className="wbx-city-vcard__inline-state is-zero">
@@ -125,26 +131,22 @@ export function CityStationAccordionCard({
           ) : (
             <span className="wbx-city-vcard__inline-state is-pending">
               <AlertCircle size={13} aria-hidden="true" />
-              <span>待设默认（{preview.blankCount || preview.totalCount} 项）</span>
+              <span>待设置城市默认</span>
             </span>
           )}
         </div>
 
-        {/* 3. 轻量化底行：关键词计数 + 进入箭头 */}
+        {/* 3. 底栏：左侧低调关键词计数 + 右侧操作入口 */}
         <div className="wbx-city-vcard__foot">
           <span className="wbx-city-vcard__foot-meta tabular-nums">
             {totalKeywordRules > 0 ? (
               <>
-                <Tag size={11} className="wbx-city-vcard__foot-icon" aria-hidden="true" />
+                <Tag size={11.5} className="wbx-city-vcard__foot-icon" aria-hidden="true" />
                 <span>关键词 {totalKeywordRules} 条</span>
               </>
             ) : (
-              <span className={summary.cityDefaultConfigured ? 'is-ok' : 'is-warn'}>
-                {summary.cityDefaultEdited
-                  ? '默认已调整'
-                  : summary.cityDefaultConfigured
-                    ? '暂无关键词规则'
-                    : '点击配置城市默认'}
+              <span className="is-muted">
+                {summary.cityDefaultEdited ? '默认已调整' : '无关键词规则'}
               </span>
             )}
           </span>
@@ -157,3 +159,4 @@ export function CityStationAccordionCard({
     </article>
   );
 }
+

@@ -9,8 +9,11 @@
   display: grid;
   grid-template-columns: var(--wbx-sidebar-w) minmax(0, 1fr);
   gap: 14px;
-  padding: 12px 16px 16px 12px;
+  padding: 12px 16px 12px 12px;
+  height: 100dvh;
   min-height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
   box-sizing: border-box;
   background: transparent;
   color: var(--wbx-text);
@@ -443,21 +446,22 @@
 }
 
 /* ==========================================================================
-   右侧工作区 = 轻液体玻璃 56px 悬浮顶栏 + 舒展留白主舞台
+   右侧工作区 = 轻液体玻璃 58px 常驻顶栏 + 独立内部滚动主舞台（严禁内容穿透顶栏）
    ========================================================================== */
 .wbx-workspace {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   min-width: 0;
-  min-height: calc(100dvh - 28px);
+  height: calc(100dvh - 24px);
+  max-height: calc(100dvh - 24px);
 }
 
 .wbx-header,
 .wb-header.wbx-header {
-  position: sticky;
-  top: 12px;
+  position: relative;
   z-index: 25;
+  flex-shrink: 0;
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
@@ -467,7 +471,7 @@
   min-height: 58px;
   padding: 0 22px;
   border-radius: 18px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97) 0%, rgba(250, 252, 255, 0.94) 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #fafcff 100%);
   border: 1px solid rgba(255, 255, 255, 0.96);
   box-shadow:
     0 10px 28px -8px rgba(14, 116, 144, 0.07),
@@ -655,15 +659,20 @@
   text-overflow: ellipsis;
 }
 
-/* 主舞台容器（与悬浮顶栏左对齐，四周舒展留白） */
+/* 主舞台容器（独立滚动视口：内容在顶栏下方干净裁剪，绝不穿透顶栏） */
 .wbx-main {
   flex: 1;
+  min-height: 0;
   width: 100%;
   max-width: var(--wbx-main-max);
   margin: 0 auto;
   padding: 4px 4px 28px;
   box-sizing: border-box;
   min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  scroll-behavior: smooth;
 }
 
 /* 抽屉与遮罩（L3 景深毛玻璃层） */
@@ -855,7 +864,11 @@
 @media (max-width: 640px) {
   .wbx-shell,
   .wb-shell.wbx-shell {
-    padding: 8px 10px 14px;
+    padding: 8px 10px 8px;
+  }
+  .wbx-workspace {
+    height: calc(100dvh - 16px);
+    max-height: calc(100dvh - 16px);
   }
   .wbx-header,
   .wb-header.wbx-header {

@@ -589,6 +589,12 @@ export function SystemTemplatesPanel({
                 className={`wbx-tpl-card${isXiaoxiang ? ' is-xiaoxiang' : ''}${isSingle ? ' is-single' : ''}${!row.available ? ' is-disabled' : ''}`}
               >
                 <div className="wbx-tpl-card__head">
+                  <span
+                    className={`wbx-tpl-card__icon${isXiaoxiang ? ' is-xiaoxiang' : ''}`}
+                    aria-hidden="true"
+                  >
+                    <FileSpreadsheet size={16.5} strokeWidth={1.85} />
+                  </span>
                   <div className="wbx-tpl-card__title-block">
                     <div className="wbx-tpl-card__title-row">
                       <h3 className="wbx-tpl-card__city" title={row.cityName}>
@@ -608,11 +614,10 @@ export function SystemTemplatesPanel({
                         </>
                       )}
                       <span>{row.regionTag}</span>
+                      <span className="wbx-tpl-card__sep" aria-hidden="true">·</span>
+                      <span className="wbx-tpl-card__cols tabular-nums">{colCountText}</span>
                     </p>
                   </div>
-                  {!isGrouped && (
-                    <span className="wbx-tpl-card__cols tabular-nums">{colCountText}</span>
-                  )}
                 </div>
 
                 <div className="wbx-tpl-card__spec">

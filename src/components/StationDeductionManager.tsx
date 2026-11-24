@@ -135,6 +135,13 @@ export function StationDeductionManager({
   }, [isPlatformLoggedIn]);
 
   useEffect(() => {
+    const mainEl = document.querySelector<HTMLElement>('.wbx-main');
+    if (mainEl) {
+      mainEl.scrollTop = 0;
+    }
+  }, [activeCityId]);
+
+  useEffect(() => {
     const controller = new AbortController();
     apiFetch(`/api/workbench/deduction-profiles/${currentPlatform}`, { signal: controller.signal })
       .then(async res => {

@@ -933,7 +933,7 @@
   display: flex;
   flex-direction: column;
   position: sticky;
-  top: 18px;
+  top: 4px;
 }
 
 @media (max-width: 1100px) {
