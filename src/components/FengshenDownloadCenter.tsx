@@ -12,6 +12,8 @@ import type { CreateSelection, DownloadUser, ItemSelection, Recovery, RequestAtt
 import { WorkbenchDrawer } from './WorkbenchDrawer';
 import { DownloadRecords } from './DownloadRecords';
 import { ReportBuilder } from './ReportBuilder';
+import type { TaskReturnTarget } from '../lib/taskWorkflow';
+import { buildTaskListFingerprint, computeAdaptivePollDelay } from '../lib/perfUtils';
 import {
   buildGenerateBatchPayloads,
   buildUnifiedSubmissionPayloads,
@@ -71,6 +73,7 @@ interface DownloadOptions {
   datasets: { id: string; label: string; group?: string; scope?: string }[];
   timezone: string;
   order_window_days: number;
+  problem_window_days?: number;
   archive_root?: string;
   archive_naming_version?: string | number;
 }
@@ -177,6 +180,16 @@ interface Props {
   onAccountChange?: (accountId?: string) => void;
   onActiveCountChange?: (count: number) => void;
   fengshenAuthStatus?: FengshenAuthStatus | null;
+  autoJumpTaskCenter?: boolean;
+  onAutoJumpTaskCenterChange?: (next: boolean) => void;
+  focusTaskId?: string;
+  onFocusTaskHandled?: () => void;
+  highlightTaskId?: string;
+  onHighlightHandled?: () => void;
+  returnTarget?: TaskReturnTarget | null;
+  onReturnSource?: () => void;
+  onTaskSubmitted?: (info: { id: string; name: string; autoJump: boolean }) => void;
+  isVisible?: boolean;
 }
 
 const API_ROOT = '/api/fengshen-downloads';
@@ -279,11 +292,26 @@ function saveBlobToDevice(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
+const LiveElapsedLabel = React.memo(function LiveElapsedLabel({ since }: { since?: string }) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!since) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [since]);
+  if (!since) return null;
+  const seconds = Math.max(0, Math.floor((now - new Date(since).getTime()) / 1000));
+  if (!Number.isFinite(seconds)) return null;
+  const text = seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
+  return <> · {text}</>;
+});
+
 export function FengshenDownloadCenter(props: Props) {
   return <DownloadAccountPanel apiFetch={props.apiFetch} onAccountChange={props.onAccountChange}>{(user, authenticatedFetch) => <AuthorizedDownloadCenter key={user.id} {...props} apiFetch={authenticatedFetch} user={user} />}</DownloadAccountPanel>;
 }
 
-function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, onNavigatePayroll, onActiveCountChange, fengshenAuthStatus, user, embedded, navigation, taskKind = 'download', platform, recordModule, activeReportId, hideNavigation, onSelectPlatform, onSelectReport, onTaskKindChange, onViewChange, onFormLock, onNavigateGenerate, onOpenPrice, prefill }: Props & { user: DownloadUser }) {
+function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, onNavigatePayroll, onActiveCountChange, fengshenAuthStatus, user, embedded, navigation, taskKind = 'download', platform, recordModule, activeReportId, hideNavigation, onSelectPlatform, onSelectReport, onTaskKindChange, onViewChange, onFormLock, onNavigateGenerate, onOpenPrice, prefill, autoJumpTaskCenter = true, onAutoJumpTaskCenterChange, focusTaskId, onFocusTaskHandled, highlightTaskId, onHighlightHandled, returnTarget, onReturnSource, onTaskSubmitted, isVisible = true }: Props & { user: DownloadUser }) {
   const apiRef = useRef(apiFetch);
   apiRef.current = apiFetch;
   const [options, setOptions] = useState<DownloadOptions | null>(null);
@@ -486,6 +514,21 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const [systemFilter, setSystemFilter] = useState<'all' | 'fengshen' | 'lanorange' | 'baize' | 'benlai' | 'xiaoxiang'>('all');
   const [historyFocusId,setHistoryFocusId]=useState('');
   const [submittedTaskInfo, setSubmittedTaskInfo] = useState<{ id: string; name: string } | null>(null);
+  useEffect(() => {
+    if (focusTaskId) {
+      setHistoryFocusId(focusTaskId);
+      onFocusTaskHandled?.();
+    }
+  }, [focusTaskId, onFocusTaskHandled]);
+
+  const notifyTaskCreated = (id: string, name: string) => {
+    window.dispatchEvent(new CustomEvent('workbench:task-submitted', { detail: { id, name } }));
+    if (onTaskSubmitted) {
+      onTaskSubmitted({ id, name, autoJump: autoJumpTaskCenter });
+    } else if (autoJumpTaskCenter) {
+      setView('history');
+    }
+  };
 
   const lastTaskKey = `download-last-task:${user.id}:${workspaceId}`;
   const [selectedId, setSelectedId] = useState(() => { try { return localStorage.getItem(lastTaskKey) || ''; } catch { return ''; } });
@@ -561,10 +604,23 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const [requestError, setRequestError] = useState('');
   const [pollError, setPollError] = useState('');
   const [loadingHistory, setLoadingHistory] = useState(true);
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const refreshRef = useRef<() => Promise<void>>(async () => {});
   const prevRunStatuses = useRef<Map<string, string>>(new Map());
+  const platformRef = useRef(platform);
+  platformRef.current = platform;
+  const optionsLoadedRef = useRef(false);
+  const isVisibleRef = useRef(isVisible);
+  isVisibleRef.current = isVisible;
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const [historyMounted, setHistoryMounted] = useState(view === 'history');
+  useEffect(() => {
+    if (view === 'history' && !historyMounted) {
+      setHistoryMounted(true);
+    }
+  }, [view, historyMounted]);
+  const runsFingerprintRef = useRef('');
+  const selectedRunFingerprintRef = useRef('');
 
   useEffect(() => () => {
     attemptOpenController.current?.abort();
@@ -656,16 +712,20 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   useEffect(() => {
     const controller = new AbortController();
     setOptionsError('');
-    setOptionsLoading(true);
+    if (!optionsLoadedRef.current || optionVersion > 0) {
+      setOptionsLoading(true);
+    }
     // First paint uses cached options; explicit refresh synchronizes the platform.
+    // Options are workspace-wide, so switching platform tabs must NOT trigger a redundant refetch.
     void getJson(`${API_ROOT}/options?${optionVersion ? 'refresh=1' : 'cached=1'}`, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20000)]) })
       .then(data => {
         if (controller.signal.aborted) return;
         if (!Array.isArray(data.cities) || !Array.isArray(data.datasets)) throw new Error('下载选项暂不可用，请重试');
         registerGeneratorIds((data.generators || []).map((report: ReportDefinition) => report.id));
+        optionsLoadedRef.current = true;
         setOptions(data);
         window.dispatchEvent(new CustomEvent('workbench:city-directory',{detail:data}));
-        if (platform !== 'xiaoxiang') {
+        if (platformRef.current !== 'xiaoxiang') {
           setCities(previous => previous.filter(city => data.cities.some((item: { name: string; disabled?: boolean }) => item.name === city && !item.disabled)));
         }
         setDatasets(previous => previous.filter(dataset => data.datasets.some((item: { id: string }) => item.id === dataset)));
@@ -673,7 +733,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       .catch(error => { if (!controller.signal.aborted) setOptionsError(error instanceof Error ? error.message : '无法加载下载选项'); })
       .finally(() => { if (!controller.signal.aborted) setOptionsLoading(false); });
     return () => controller.abort();
-  }, [getJson, workspaceId, optionVersion, platform]);
+  }, [getJson, workspaceId, optionVersion]);
 
   // 任务从运行中翻转为终态时发一次系统通知（需浏览器通知权限）
   const notifyFinishedRuns = (nextRuns: DownloadRun[]) => {
@@ -698,6 +758,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     let timer: ReturnType<typeof setTimeout> | undefined;
     let busy = false;
     let polling = false;
+    let lastHasActive = false;
     const snapshot = async () => {
       if (busy || controller.signal.aborted || document.visibilityState !== 'visible') return;
       busy = true;
@@ -706,19 +767,44 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
         const data = await getJson(`${API_ROOT}/runs`, { signal });
         if (controller.signal.aborted) return;
         const nextRuns: DownloadRun[] = Array.isArray(data.runs) ? data.runs : [];
-        setRuns(nextRuns);
-        notifyFinishedRuns(nextRuns);
+        lastHasActive = nextRuns.some(run => !TERMINAL_STATUSES.has((run.status || '').toLowerCase()));
+        const nextFp = buildTaskListFingerprint(
+          nextRuns.map(run => ({
+            id: run.id,
+            status: run.status,
+            phase: run.phase,
+            updated_at: run.last_activity_at || run.phase_since || run.created_at,
+            error: run.error,
+            available_files: run.files?.length ?? 0,
+            completed_items: Math.round(Number(run.progress) || 0),
+          })),
+        );
+        if (nextFp !== runsFingerprintRef.current) {
+          runsFingerprintRef.current = nextFp;
+          setRuns(nextRuns);
+          notifyFinishedRuns(nextRuns);
+        }
         let id = selectedIdRef.current;
         if ((!id || !nextRuns.some(run => run.id === id)) && nextRuns.length) {
           id = nextRuns[0].id;
           selectedIdRef.current = id;
           setSelectedId(id);
         }
-        if (id) {
+        // Only fetch full run detail when Task Center view is actually visible on screen.
+        if (id && isVisibleRef.current && viewRef.current === 'history') {
           const detail = await getJson(`${API_ROOT}/runs/${encodeURIComponent(id)}`, { signal });
-          if (!controller.signal.aborted && selectedIdRef.current === id) setSelectedRun(detail.run || null);
+          if (!controller.signal.aborted && selectedIdRef.current === id) {
+            const detailRun: DownloadRun | null = detail.run || null;
+            const detailFp = detailRun
+              ? `${detailRun.id}|${detailRun.status}|${detailRun.phase}|${detailRun.progress}|${detailRun.last_activity_at || detailRun.phase_since || ''}|${detailRun.error || ''}|${detailRun.items?.length || 0}|${detailRun.files?.length || 0}`
+              : 'null';
+            if (detailFp !== selectedRunFingerprintRef.current) {
+              selectedRunFingerprintRef.current = detailFp;
+              setSelectedRun(detailRun);
+            }
+          }
         }
-        if (!controller.signal.aborted) setPollError('');
+        if (!controller.signal.aborted) setPollError(prev => (prev ? '' : prev));
       } catch (error) {
         if (!controller.signal.aborted) setPollError(error instanceof Error ? error.message : '暂时无法更新下载记录');
       } finally {
@@ -733,7 +819,20 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       try { await snapshot(); }
       finally {
         polling = false;
-        if (!controller.signal.aborted && document.visibilityState === 'visible') timer = setTimeout(tick, 2000);
+        if (!controller.signal.aborted) {
+          const delay = computeAdaptivePollDelay({
+            hasActiveTasks: lastHasActive,
+            isDocumentVisible: document.visibilityState === 'visible',
+            isViewActive: isVisibleRef.current && viewRef.current === 'history',
+            activeMs: 3500,
+            backgroundActiveMs: 8000,
+            idleMs: 12000,
+            backgroundIdleMs: 20000,
+          });
+          if (delay !== null) {
+            timer = setTimeout(tick, delay);
+          }
+        }
       }
     };
     const onVisibility = () => {
@@ -749,6 +848,12 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       refreshRef.current = async () => {};
     };
   }, [getJson, workspaceId]);
+
+  useEffect(() => {
+    if (isVisible && view === 'history') {
+      void refreshRef.current();
+    }
+  }, [isVisible, view]);
 
   const datasetLabel = (id: string) => {
     const raw = options?.datasets.find(dataset => dataset.id === id)?.label || DATASET_LABELS[id] || id;
@@ -967,6 +1072,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
         : coveredMonths(start, end))
     : [];
   const orderWindowDays = options?.order_window_days || 60;
+  const problemWindowDays = options?.problem_window_days || 90;
   const earliestOrderDate = new Date(`${shanghaiToday()}T00:00:00Z`);
   earliestOrderDate.setUTCDate(earliestOrderDate.getUTCDate() - orderWindowDays + 1);
   const earliestOrder = earliestOrderDate.toISOString().slice(0, 10);
@@ -1329,10 +1435,9 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
         selectedIdRef.current = lastRun.id;
         setSelectedId(lastRun.id);
         setSelectedRun(lastRun);
-        setSubmittedTaskInfo({
-          id: lastRun.id,
-          name: `${createdRuns.flatMap(r => r.datasets).map(datasetLabel).join('、')}（共 ${createdRuns.length} 批）`,
-        });
+        const taskName = `${createdRuns.flatMap(r => r.datasets).map(datasetLabel).join('、')}（共 ${createdRuns.length} 批）`;
+        setSubmittedTaskInfo({ id: lastRun.id, name: taskName });
+        notifyTaskCreated(lastRun.id, taskName);
         void refreshRef.current();
       } catch (error) {
         setRequestError(error instanceof Error ? error.message : '部分发薪平台提交失败，请刷新记录查看后再重试');
@@ -1364,10 +1469,9 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
         selectedIdRef.current = lastRun.id;
         setSelectedId(lastRun.id);
         setSelectedRun(lastRun);
-        setSubmittedTaskInfo({
-          id: lastRun.id,
-          name: `${[...new Set(createdRuns.flatMap(r => r.datasets))].map(datasetLabel).join('、')}（共 ${createdRuns.length} 批）`,
-        });
+        const taskName = `${[...new Set(createdRuns.flatMap(r => r.datasets))].map(datasetLabel).join('、')}（共 ${createdRuns.length} 批）`;
+        setSubmittedTaskInfo({ id: lastRun.id, name: taskName });
+        notifyTaskCreated(lastRun.id, taskName);
         void refreshRef.current();
       } catch (error) {
         setRequestError(error instanceof Error ? error.message : '部分任务提交失败，请刷新记录查看后再重试');
@@ -1396,11 +1500,9 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       selectedIdRef.current = run.id;
       setSelectedId(run.id);
       setSelectedRun(run);
-      setSubmittedTaskInfo({
-        id: run.id,
-        name: run.datasets.map(datasetLabel).join('、'),
-      });
-      if (taskKind === 'generate') selectRun(run);
+      const taskName = run.datasets.map(datasetLabel).join('、');
+      setSubmittedTaskInfo({ id: run.id, name: taskName });
+      notifyTaskCreated(run.id, taskName);
       void refreshRef.current();
     } catch (error) {
       const rejected = error instanceof DownloadRequestError && [400, 401, 403, 404, 409, 415, 422].includes(error.status);
@@ -1481,11 +1583,12 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
         const lastRun = createdRuns[createdRuns.length - 1];
         setDuplicateApproval('');
         setRuns(previous => [...createdRuns.slice().reverse(), ...previous.filter(item => !createdRuns.some(c => c.id === item.id))]);
-        setSubmittedTaskInfo({
-          id: lastRun.id,
-          name: `${activeReport.label}（共 ${createdRuns.length} 批）`,
-        });
-        selectRun(lastRun);
+        const taskName = `${activeReport.label}（共 ${createdRuns.length} 批）`;
+        selectedIdRef.current = lastRun.id;
+        setSelectedId(lastRun.id);
+        setSelectedRun(lastRun);
+        setSubmittedTaskInfo({ id: lastRun.id, name: taskName });
+        notifyTaskCreated(lastRun.id, taskName);
         void refreshRef.current();
       } catch (error) {
         setRequestError(error instanceof Error ? error.message : '业务报表提交失败，请刷新记录查看后再重试');
@@ -1516,8 +1619,11 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       setUncertainCreate(false);
       setDuplicateApproval('');
       setRuns(previous => [run, ...previous.filter(item => item.id !== run.id)]);
+      selectedIdRef.current = run.id;
+      setSelectedId(run.id);
+      setSelectedRun(run);
       setSubmittedTaskInfo({ id: run.id, name: activeReport.label });
-      selectRun(run);
+      notifyTaskCreated(run.id, activeReport.label);
       void refreshRef.current();
     } catch (error) {
       const rejected = error instanceof DownloadRequestError && [400, 401, 403, 404, 409, 415, 422].includes(error.status);
@@ -1788,7 +1894,6 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     return null;
   })();
 
-  const elapsed = (since?: string) => { const seconds = Math.max(0, Math.floor((now - new Date(since || "").getTime()) / 1000)); return Number.isFinite(seconds) ? seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒` : ""; };
   const progress = Math.max(0, Math.min(100, Number(selectedRun?.progress) || 0));
   const summaryDetail = selectedRun?.summary_progress;
   const summarizing = selectedRun?.phase === 'summarizing';
@@ -1920,7 +2025,30 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                     setRefreshHistory(value);
                     setDuplicateApproval('');
                   }}
-                  orderWindowDays={orderWindowDays}
+                  orderWindowDays={activeReport?.id === 'problem' ? problemWindowDays : orderWindowDays}
+                  platformStatuses={(() => {
+                    const sysSet = new Set(activeReport?.systems || []);
+                    const mapping: Array<{ label: string; id: 'fengshen' | 'lanorange' | 'baize' | 'benlai' }> = [
+                      { label: '风神', id: 'fengshen' },
+                      { label: '蓝橙', id: 'lanorange' },
+                      { label: '商翼', id: 'baize' },
+                      { label: '本来人力', id: 'benlai' },
+                    ];
+                    return mapping
+                      .filter(item => sysSet.has(item.label))
+                      .map(item => ({
+                        id: item.id,
+                        name: item.label,
+                        connected: authSnapshot.isLoggedIn(item.id),
+                        onConnect: () => {
+                          if (item.id === 'fengshen' && onOpenFengshenLogin) {
+                            onOpenFengshenLogin(user.id);
+                          } else {
+                            window.dispatchEvent(new CustomEvent('workbench:connections', { detail: item.id }));
+                          }
+                        },
+                      }));
+                  })()}
                   locked={formLocked}
                   creating={creating}
                   disabled={!uncertainCreate && !reportCanSubmit}
@@ -1935,6 +2063,8 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                   bindingPlatforms={effectiveBindingPlatforms}
                   onBindingPlatformsChange={next => void updateBindingPlatforms(next)}
                   bindingPlatformsSaving={bindingPlatformsBusy}
+                  autoJumpTaskCenter={autoJumpTaskCenter}
+                  onAutoJumpTaskCenterChange={onAutoJumpTaskCenterChange}
                 />
               )
             )}
@@ -3309,6 +3439,20 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                     : '开始下载'}
                       </span>
                     </button>
+                    {onAutoJumpTaskCenterChange && (
+                      <label
+                        className="wbx-autojump-toggle"
+                        title="开启后提交成功将自动定位到任务中心；取消勾选可留在当前页连续提交多批任务"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={autoJumpTaskCenter}
+                          disabled={creating || uncertainCreate}
+                          onChange={e => onAutoJumpTaskCenterChange(e.target.checked)}
+                        />
+                        <span>提交后进入任务中心</span>
+                      </label>
+                    )}
                     {railHint && (
                       <p className={`wbx-hint ${railHint.tone === 'warn' ? 'wbx-hint--warn' : ''}`}>
                         {railHint.run ? (
@@ -3389,10 +3533,16 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
         );
       })()}
 
-      {view === 'history' && (() => {
+      {historyMounted && (() => {
         const stageMeta = getStageHeaderMeta(taskKind === 'generate' ? 'generate' : 'download', platform, 'history');
+        const historyHidden = view !== 'history';
         return (
-          <div className={recordModule ? `${panel} wb-task-form wb-stage-history-card` : undefined}>
+          <div
+            hidden={historyHidden}
+            aria-hidden={historyHidden || undefined}
+            style={historyHidden ? { display: 'none' } : undefined}
+            className={recordModule ? `${panel} wb-task-form wb-stage-history-card` : undefined}
+          >
             {recordModule && (
               <div className="wb-form-heading wb-stage-history-heading">
                 <div className="wb-stage-heading-left">
@@ -3407,8 +3557,22 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
               </div>
             )}
             <div className={recordModule ? 'wb-stage-history-body' : undefined}>
-              <DownloadRecords initialRunId={historyFocusId} onInitialFocusHandled={()=>setHistoryFocusId('')} key={recordModule||'all'} recordModule={recordModule} apiFetch={apiFetch} workspaceId={workspaceId} selectedRunId={selectedId}
-                datasetLabel={datasetLabel} refreshVersion={navigation?.version} unified
+              <DownloadRecords
+                visible={isVisible && view === 'history'}
+                initialRunId={historyFocusId}
+                onInitialFocusHandled={() => setHistoryFocusId('')}
+                highlightTaskId={highlightTaskId}
+                onHighlightHandled={onHighlightHandled}
+                returnTarget={returnTarget}
+                onReturnSource={onReturnSource}
+                key={recordModule || 'all'}
+                recordModule={recordModule}
+                apiFetch={apiFetch}
+                workspaceId={workspaceId}
+                selectedRunId={selectedId}
+                datasetLabel={datasetLabel}
+                refreshVersion={navigation?.version}
+                unified
                 onNavigateGenerate={onNavigateGenerate}
                 onNavigatePayroll={onNavigatePayroll}
                 onOpenFengshenLogin={onOpenFengshenLogin ? () => onOpenFengshenLogin(user.id) : undefined}
@@ -3464,7 +3628,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                 {activeRun && <button type="button" className={smallButton} disabled={cancelling || ['cancelling', 'canceling'].includes(selectedRun.status)} onClick={() => void cancelDownload()}>{cancelling ? <Loader2 size={13} className="animate-spin" /> : <Square size={13} />}停止任务</button>}
               </div>
               <div role="status" className="space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"><span>{activeRun ? phaseLabel(selectedRun.phase) : statusInfo(selectedRun.status).label}{selectedRun.queue_position ? ` · 排队第 ${selectedRun.queue_position} 位` : ''}{activeRun && selectedRun.phase_since ? ` · ${elapsed(selectedRun.phase_since)}` : ''}</span><span>{Math.round(progress)}%</span></div>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"><span>{activeRun ? phaseLabel(selectedRun.phase) : statusInfo(selectedRun.status).label}{selectedRun.queue_position ? ` · 排队第 ${selectedRun.queue_position} 位` : ''}{activeRun && selectedRun.phase_since ? <LiveElapsedLabel since={selectedRun.phase_since} /> : null}</span><span>{Math.round(progress)}%</span></div>
                 {selectedRun.status === 'queued' && <p className="wb-muted">{selectedRun.queue_wait_reason === 'local_capacity' ? '正在等待本机处理名额；最多同时保留两个在途任务。' : '正在等待前一项平台采集结束；采集完成后的纯蓝橙整理可释放队列。'}</p>}
                 <div role="progressbar" aria-label="下载进度" aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100} className="h-1.5 overflow-hidden rounded-full bg-slate-200"><div style={{ width: `${progress}%` }} className="h-full bg-sky-700" /></div>
                 {summaryHint && <p role="status" className={`text-xs ${summaryDetail?.stage === 'failed' ? 'text-rose-700' : 'text-sky-700'}`}>{summaryHint}</p>}
@@ -3558,7 +3722,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
               </details>}
               {selectedRun.performance && <details className="wb-performance"><summary>底层运行诊断（耗时与内存）</summary>
                 <div className="wb-row wb-muted"><span>总耗时（含认证、汇总） {Number(selectedRun.performance.total_seconds ?? selectedRun.performance.elapsed_seconds ?? 0).toFixed(1)} 秒</span><span>排队 {Number(selectedRun.performance.queued_seconds || 0).toFixed(1)} 秒</span><span>汇总 {Number(selectedRun.performance.summary_seconds || 0).toFixed(1)} 秒</span><span>进程内存峰值采样 {(Number(selectedRun.performance.sampled_process_peak_rss_bytes || 0) / 1048576).toFixed(0)} MB</span></div>
-                <p className="wb-muted">下表为主流程所处阶段的时间；后台城市生成可能同时进行。“生成业务表”阶段不是所有城市的计算总耗时，阶段与子任务不能相加。</p>
+                <p className="wb-muted">下表为主流程所处阶段的时间；后台城市生成可能同时进行。“生成业务报表”阶段不是所有城市的计算总耗时，阶段与子任务不能相加。</p>
                 <button type="button" className="wb-button" onClick={() => saveDownloadBlob(new Blob([JSON.stringify({format_version:1,exported_at:new Date().toISOString(),task:{id:selectedRun.id,cities:selectedRun.cities,start:selectedRun.start,end:selectedRun.end,datasets:selectedRun.datasets,status:selectedRun.status},performance:selectedRun.performance},null,2)],{type:'application/json'}),`性能诊断_${selectedRun.id.slice(0,8)}.json`)}>保存本任务性能诊断（不含人员明细）</button>
                 {selectedRun.performance.stages?.source_row_filter && <p className="wb-muted">取分离过滤实际调用累计 {Number(selectedRun.performance.stages.source_row_filter.seconds).toFixed(2)} 秒（包含在上方总耗时内）</p>}
                 {selectedRun.performance.stages?.archive_projection && <p className="wb-muted">骑手档案格式化与排序 {Number(selectedRun.performance.stages.archive_projection.seconds).toFixed(2)} 秒（包含在归档阶段内）</p>}

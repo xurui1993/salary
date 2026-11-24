@@ -1,4 +1,4 @@
-import { payrollSettlementType, type PayrollQueueTask } from './payrollQueue';
+import { extractPayrollReviewAlert, payrollSettlementType, type PayrollQueueTask } from './payrollQueue';
 
 export type PayrollQueueFilterTab = 'all' | 'active' | 'waiting' | 'completed' | 'issue';
 
@@ -33,6 +33,7 @@ export interface PayrollQueueAdvancedFilter {
   city?: string;
   mode?: string;
   missingApprovalOnly?: boolean;
+  alertOnly?: boolean;
 }
 
 export function filterPayrollQueueAdvanced(
@@ -46,6 +47,7 @@ export function filterPayrollQueueAdvanced(
     if (city && (task.plan?.city || '') !== city) return false;
     if (mode && task.mode !== mode && payrollSettlementType(task) !== mode) return false;
     if (filter.missingApprovalOnly && (task.approval_code || '').trim() !== '') return false;
+    if (filter.alertOnly && !extractPayrollReviewAlert(task)) return false;
     return true;
   });
 }

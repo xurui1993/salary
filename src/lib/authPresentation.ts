@@ -1,2 +1,33 @@
-// @ts-nocheck
-var __defProp=Object.defineProperty;var __name=(target,value)=>__defProp(target,"name",{value,configurable:true});function loginStatus(value){if(value.offline)return"\u72B6\u6001\u6682\u4E0D\u53EF\u7528";if(value.cancelling)return"\u9000\u51FA\u4E2D";if(["releasing","timeout","terminated","unconfirmed"].includes(value.release_state||""))return"\u767B\u5F55\u4E2D";if(value.state==="ready")return"\u5DF2\u767B\u5F55";if(["starting","checking","refreshing","sending","verifying"].includes(value.state||""))return"\u767B\u5F55\u4E2D";if(["waiting_login","sms_sent","manual_required"].includes(value.state||"")||value.state==="login_required"&&value.busy)return"\u5F85\u9A8C\u8BC1";if(value.state==="saved")return"\u5F85\u9A8C\u8BC1";if(value.state==="partial")return"\u90E8\u5206\u53EF\u7528";if(value.state==="unknown")return"\u72B6\u6001\u5F85\u786E\u8BA4";return"\u672A\u767B\u5F55"}__name(loginStatus,"loginStatus");function platformLoginLabel(source,value){return"\u767B\u5F55"}__name(platformLoginLabel,"platformLoginLabel");export{loginStatus,platformLoginLabel};
+export interface AuthPresentationValue {
+  offline?: boolean;
+  cancelling?: boolean;
+  release_state?: string;
+  state?: string;
+  busy?: boolean;
+}
+
+export function loginStatus(value: AuthPresentationValue): string {
+  if (value.offline) return '状态暂不可用';
+  if (value.cancelling) return '退出中';
+  if (['releasing', 'timeout', 'terminated', 'unconfirmed'].includes(value.release_state || '')) {
+    return '登录中';
+  }
+  if (value.state === 'ready') return '已登录';
+  if (['starting', 'checking', 'refreshing', 'sending', 'verifying'].includes(value.state || '')) {
+    return '登录中';
+  }
+  if (
+    ['waiting_login', 'sms_sent', 'manual_required'].includes(value.state || '') ||
+    (value.state === 'login_required' && value.busy)
+  ) {
+    return '待验证';
+  }
+  if (value.state === 'saved') return '待验证';
+  if (value.state === 'partial') return '部分可用';
+  if (value.state === 'unknown') return '状态待确认';
+  return '未登录';
+}
+
+export function platformLoginLabel(_source?: string, _value?: AuthPresentationValue): string {
+  return '登录';
+}

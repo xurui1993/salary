@@ -163,6 +163,46 @@ class SharedListTests(unittest.TestCase):
         lanorange, _ = center.select_records(rows, set(), {'module': 'lanorange'})
         self.assertEqual([r['id'] for r in lanorange], ['lan_1'])
 
+    def test_delete_tasks_rejects_active_and_dispatches_to_managers(self):
+        from unittest.mock import Mock
+        # Active tasks must return 409
+        with self.assertRaises(HTTPException) as err:
+            center.delete_tasks({'ids': ['b'], 'delete_files': True}, request('POST'))
+        self.assertEqual(err.exception.status_code, 409)
+
+        # Cross-origin write rejected
+        with self.assertRaises(HTTPException) as err:
+            center.delete_tasks({'ids': ['a'], 'delete_files': True}, request('POST', origin='http://evil.invalid'))
+        self.assertEqual(err.exception.status_code, 403)
+
+        # Hide first, then permanently delete download + approval + price-export records
+        self.rows.extend([
+            {**record('ap_1'), 'kind': 'approval', 'price_id': 'AP001'},
+            {**record('pe_1'), 'kind': 'price-export', 'price_id': 'PE001'},
+        ])
+        center.visibility({'ids': ['a']}, request('POST'))
+        self.assertIn('a', center.hidden_ids())
+
+        dl_manager = Mock()
+        ap_manager = Mock()
+        pe_manager = Mock()
+        store = Mock()
+        with patch('download_jobs.get_manager', return_value=dl_manager), \
+             patch('lanorange_approvals.get_manager', return_value=ap_manager), \
+             patch('lanorange_price_export.manager', return_value=pe_manager), \
+             patch('lanorange_approvals.scope', return_value='shared_scope'), \
+             patch('lanorange_price_export.owner', return_value='shared_scope'), \
+             patch('delivery_store.project_store', return_value=store), \
+             patch.object(center, 'require_account', return_value={'owner': 'user1', 'role': 'user'}):
+            result = center.delete_tasks({'ids': ['a', 'ap_1', 'pe_1'], 'delete_files': False}, request('POST'))
+
+        self.assertEqual(result['deleted'], 3)
+        self.assertIs(result['delete_files'], False)
+        dl_manager.purge_runs.assert_called_once_with('user1', ['a'], delete_files=False)
+        ap_manager.delete_batch.assert_called_once_with('shared_scope', 'AP001')
+        pe_manager.delete_export.assert_called_once_with('shared_scope', 'PE001', delete_files=False)
+        self.assertNotIn('a', center.hidden_ids())
+
 
 class PayrollDirectoryTests(unittest.TestCase):
     def setUp(self):

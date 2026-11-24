@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,
+  Archive,
   ArchiveRestore,
   Calculator,
   ChevronLeft,
@@ -29,6 +30,7 @@ import { taskGuidance, taskHandoffs } from '../lib/taskGuidance';
 import { taskTone, toneClass } from '../lib/statusSemantics';
 import {
   buildTaskTimelineSteps,
+  canPermanentlyDeleteTask,
   cleanTaskTitle,
   formatCitiesCompact,
   formatCompactTimestamp,
@@ -73,6 +75,7 @@ interface TaskDetailDrawerProps {
   onShowDirectory: (task: TaskDetailItem) => void;
   onStopTask: (task: TaskDetailItem) => void;
   onArchiveOrRestore: (task: TaskDetailItem) => void;
+  onPermanentDelete?: (task: TaskDetailItem) => void;
   onRetryTask?: (task: TaskDetailItem) => void;
   onOpenAuth?: (system: TaskAuthSystem, task: TaskDetailItem) => void;
   onNavigatePayroll?: () => void;
@@ -116,6 +119,7 @@ export function TaskDetailDrawer({
   onShowDirectory,
   onStopTask,
   onArchiveOrRestore,
+  onPermanentDelete,
   onRetryTask,
   onOpenAuth,
   onNavigatePayroll,
@@ -181,10 +185,11 @@ export function TaskDetailDrawer({
   const progressMeta = computeTaskProgressMeta(task);
   const elapsedSec = computeTaskElapsedSeconds(task, nowMs, syncMs);
   const elapsedText = formatTaskDuration(elapsedSec);
-  const citiesMeta = formatCitiesCompact(task.cities);
-  const periodMeta = formatPeriodCompact(task.start, task.end, task.datasets);
+  const citiesMeta = formatCitiesCompact(task.cities, task.datasets);
+  const periodMeta = formatPeriodCompact(task.start, task.end, task.datasets, task.kind);
   const createdMeta = formatCompactTimestamp(task.created_at, nowMs);
   const pTone = platformTone(pName);
+  const canDelete = canPermanentlyDeleteTask(task);
 
   const canDownloadSources = ['download', 'generate', 'payroll_source'].includes(task.kind) && isEnded;
   const sourceFiles = task.source_files || [];
@@ -452,9 +457,20 @@ export function TaskDetailDrawer({
             disabled={busy}
             onClick={() => onArchiveOrRestore(task)}
           >
-            {archived ? <ArchiveRestore size={13} aria-hidden="true" /> : <Trash2 size={13} aria-hidden="true" />}
+            {archived ? <ArchiveRestore size={13} aria-hidden="true" /> : <Archive size={13} aria-hidden="true" />}
             <span>{archived ? '恢复到列表' : isActive ? '停止并移出' : '移出列表'}</span>
           </button>
+          {onPermanentDelete && canDelete && (
+            <button
+              type="button"
+              className="wbx-btn wbx-btn--sm wbx-btn--danger"
+              disabled={busy}
+              onClick={() => onPermanentDelete(task)}
+            >
+              <Trash2 size={13} aria-hidden="true" />
+              <span>彻底删除</span>
+            </button>
+          )}
         </div>
 
         {/* 6. 扁平化分段页签 */}

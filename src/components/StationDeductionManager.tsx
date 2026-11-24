@@ -12,12 +12,14 @@ import {
   buildProblemRuleExportRows,
   buildUnifiedConfigWorkbookData,
   classifyImportedWorkbookSheets,
+  CONFIG_RULE_COLUMNS,
   CONFIG_RULE_COLUMNS_WITH_THRESHOLDS,
   groupDeductionsByCity,
   summarizeCitiesProgress,
   visibleColumnsForCategory,
   type DeductionCategoryId,
 } from '../lib/deductionCategories';
+import { formatPayrollDateTime } from '../lib/payrollQueue';
 import { applyCityAmounts } from '../lib/payrollReviewActions';
 import {
   AlertCircle,
@@ -205,6 +207,13 @@ export function StationDeductionManager({
     () => (displayProfile?.columns?.length ? displayProfile.columns : [...CONFIG_RULE_COLUMNS_WITH_THRESHOLDS]),
     [displayProfile?.columns],
   );
+
+  const visibleItemCount = useMemo(
+    () => activeColumns.filter(col => !col.endsWith('_maxDays')).length,
+    [activeColumns],
+  );
+  const fengshenItemCount = currentPlatform === 'fengshen' ? visibleItemCount : CONFIG_RULE_COLUMNS.length;
+  const xiaoxiangItemCount = currentPlatform === 'xiaoxiang' ? visibleItemCount : 3;
 
   const categorySpecs = useMemo(
     () => buildDeductionCategories(activeColumns),
@@ -635,11 +644,9 @@ export function StationDeductionManager({
               onClick={() => requestPlatform('fengshen')}
             >
               <span>风神 / 闪购</span>
-              {currentPlatform === 'fengshen' && (
-                <span className="wbx-ded-tab__count tabular-nums" title="当前业务线可配置扣款科目数">
-                  {activeColumns.length} 项
-                </span>
-              )}
+              <span className="wbx-ded-tab__count tabular-nums" title="风神 / 闪购核心扣款科目数（不含天数阈值字段）">
+                {fengshenItemCount} 项
+              </span>
             </button>
             <button
               type="button"
@@ -649,11 +656,9 @@ export function StationDeductionManager({
               onClick={() => requestPlatform('xiaoxiang')}
             >
               <span>小象超市</span>
-              {currentPlatform === 'xiaoxiang' && (
-                <span className="wbx-ded-tab__count tabular-nums" title="当前业务线可配置扣款科目数">
-                  {activeColumns.length} 项
-                </span>
-              )}
+              <span className="wbx-ded-tab__count tabular-nums" title="小象超市核心扣款科目数">
+                {xiaoxiangItemCount} 项
+              </span>
             </button>
           </div>
 
@@ -916,6 +921,21 @@ export function StationDeductionManager({
                 >
                   仅看待完善城市
                 </button>
+
+                {displayProfile && currentPlatform !== 'xiaoxiang' && totalProblemRules > 0 && (
+                  <button
+                    type="button"
+                    className="wbx-ded-filter-chip"
+                    onClick={() => {
+                      document
+                        .getElementById('ded-keyword-section')
+                        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }}
+                  >
+                    <Tag size={12} aria-hidden="true" />
+                    <span className="tabular-nums">关键词扣款 ({totalProblemRules})</span>
+                  </button>
+                )}
               </div>
 
               <div className="wbx-ded-filterbar__right">
@@ -936,7 +956,7 @@ export function StationDeductionManager({
                 )}
                 {directory.data?.fetched_at && (
                   <span className="wbx-ded-updated tabular-nums">
-                    更新于 {new Date(directory.data.fetched_at).toLocaleString('zh-CN')}
+                    更新于 {formatPayrollDateTime(directory.data.fetched_at)}
                   </span>
                 )}
                 <button
@@ -965,7 +985,7 @@ export function StationDeductionManager({
                   <p className="wbx-ded-empty__desc">
                     {currentPlatform === 'xiaoxiang'
                       ? '小象超市扣款包含保险费、循环物资使用费、附加险 3 项。完成授权同步后即可按城市默认与站点例外配置，也可先下载标准模板离线整理。'
-                      : '已就绪 3 大扣款类目、共 15 个配置字段。完成平台登录同步后将展开全部城市卡片，点击即可进入表格填写。'}
+                      : '已就绪 3 大扣款类目、共 13 项核心扣款科目（含 2 项天数阈值）。完成平台登录同步后将展开全部城市卡片，点击即可进入表格填写。'}
                   </p>
                   <div className="wbx-ded-empty__actions">
                     <button
@@ -1017,7 +1037,7 @@ export function StationDeductionManager({
 
       {/* 3. 主容器二：问题单关键词扣款明细面板（小象超市仅 3 项扣款，不展示） */}
       {displayProfile && currentPlatform !== 'xiaoxiang' && (
-        <section className="wbx-problem-panel" aria-label="问题单关键词扣款明细">
+        <section id="ded-keyword-section" className="wbx-problem-panel" aria-label="问题单关键词扣款明细">
           <header className="wbx-problem-panel__head">
             <div className="wbx-problem-panel__title">
               <Tag size={14.5} aria-hidden="true" />

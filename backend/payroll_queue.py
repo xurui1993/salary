@@ -216,13 +216,13 @@ class PayrollQueue:
                     task=json.loads(row['body']);task.update(status='preparing',current_action='正在准备本任务资料',_started_clock=time.time(),_finished_clock=None);self._write(db,task)
             if task:
                 try:asyncio.run(self._run(task))
-                except QueueStopped:self._update(task['id'],{'status':'cancelled','current_action':'已停止，资料和结果保留','_finished_clock':time.time()})
+                except QueueStopped:self._update(task['id'],{'status':'cancelled','current_action':'已停止，资料和结果保留','finished_at':now(),'_finished_clock':time.time()})
                 except Exception as error:
                     if self._stopped(task['id']):
-                        self._update(task['id'],{'status':'cancelled','current_action':'已停止，资料和结果保留','_finished_clock':time.time()});continue
+                        self._update(task['id'],{'status':'cancelled','current_action':'已停止，资料和结果保留','finished_at':now(),'_finished_clock':time.time()});continue
                     from payroll_source_notes import source_reason
                     reason=str(error) if isinstance(error,SourceError) else source_reason(error)
-                    self._update(task['id'],{'status':'error','current_action':reason,'_finished_clock':time.time()}, {'text':reason,'level':'ERROR'})
+                    self._update(task['id'],{'status':'error','current_action':reason,'finished_at':now(),'_finished_clock':time.time()}, {'text':reason,'level':'ERROR'})
                 continue
             self.wake.wait(.5);self.wake.clear()
 
@@ -267,7 +267,7 @@ class PayrollQueue:
                 mapped='completed' if status=='success' else 'cancelled' if status=='cancelled' else 'error'
                 self._update(task['id'],{'status':mapped,'preparation':last,'progress':100 if mapped=='completed' else 0,
                                         'current_action':'核算完成，可下载结果' if mapped=='completed' else '任务已停止，资料保留' if mapped=='cancelled' else '任务已结束，请查看日志',
-                                        '_finished_clock':time.time()})
+                                        'finished_at':now(),'_finished_clock':time.time()})
             if self._stopped(task['id']) and not (kind=='finish' and data.get('status')=='success'):
                 if task.get('batch_id'):
                     from payroll_control import stop
@@ -276,7 +276,7 @@ class PayrollQueue:
         with self.connection() as db:
             latest=json.loads(db.execute('SELECT body FROM tasks WHERE id=?',(task['id'],)).fetchone()['body'])
         if self._stopped(task['id']) and latest['status']!='completed':raise QueueStopped()
-        if latest['status'] in ACTIVE:self._update(task['id'],{'status':'error','current_action':'执行未正常结束，请查看日志','_finished_clock':time.time()})
+        if latest['status'] in ACTIVE:self._update(task['id'],{'status':'error','current_action':'执行未正常结束，请查看日志','finished_at':now(),'_finished_clock':time.time()})
 
     def stop(self,wid,owner,key):
         with self.lock,self.connection() as db:
@@ -303,6 +303,50 @@ class PayrollQueue:
                 if not restore and task['status']=='queued':task.update(status='cancelled',stop_requested=True,current_action='已移出，资料保留')
                 task['hidden']=not restore;self._write(db,task)
         return [self.get(wid,owner,key) for key in ids]
+
+    def delete(self,wid,owner,ids,delete_files=True):
+        """Permanently delete non-running payroll tasks and optionally remove confined task/batch folders."""
+        ids=selected_ids(ids)
+        delete_files=bool(delete_files)
+        tasks=[]
+        with self.lock,self.connection() as db:
+            tasks=[self._find(db,wid,owner,key) for key in ids]
+            if any(t['status'] in ACTIVE or t['status']=='queued' for t in tasks):
+                raise SourceError('请先停止或取消执行中/排队中的任务再彻底删除')
+            id_set=set(ids)
+            for key in ids:
+                db.execute('DELETE FROM tasks WHERE id=? AND wid=? AND owner=?',(key,wid,owner))
+            rows=db.execute('SELECT request_id,ids FROM submissions WHERE wid=? AND owner=?',(wid,owner)).fetchall()
+            for row in rows:
+                remaining=[item for item in json.loads(row['ids']) if item not in id_set]
+                if not remaining:
+                    db.execute('DELETE FROM submissions WHERE wid=? AND owner=? AND request_id=?',(wid,owner,row['request_id']))
+                elif len(remaining)!=len(json.loads(row['ids'])):
+                    db.execute('UPDATE submissions SET ids=? WHERE wid=? AND owner=? AND request_id=?',(json.dumps(remaining),wid,owner,row['request_id']))
+        if delete_files:
+            from payroll_inputs import directory as batch_directory, delivery_store
+            store=delivery_store()
+            upload_base=(self.root/'uploads'/wid).resolve()
+            workspace_base=(self.root/'backend/.local_downloads/workspaces/payroll'/wid).resolve()
+            legacy_out_base=(self.root/'outputs/payroll_batches'/wid).resolve()
+            for task in tasks:
+                staged=(upload_base/('upload_queue_'+task['id'])).resolve()
+                if staged!=upload_base and staged.is_relative_to(upload_base) and staged.is_dir() and not staged.is_symlink():
+                    shutil.rmtree(staged,ignore_errors=True)
+                batch_id=task.get('batch_id')
+                if isinstance(batch_id,str) and re.fullmatch(r'[a-f0-9]{32}',batch_id):
+                    store.purge('payroll:'+wid+':'+batch_id,delete_files=True)
+                    try:
+                        bdir=batch_directory(wid,batch_id,self.root).resolve()
+                        if bdir!=upload_base and bdir.is_relative_to(upload_base) and bdir.is_dir() and not bdir.is_symlink():
+                            shutil.rmtree(bdir,ignore_errors=True)
+                    except SourceError:
+                        pass
+                    for base in (workspace_base,legacy_out_base):
+                        candidate=(base/batch_id).resolve()
+                        if candidate!=base and candidate.is_relative_to(base) and candidate.is_dir() and not candidate.is_symlink():
+                            shutil.rmtree(candidate,ignore_errors=True)
+        return {'deleted':len(tasks),'ids':ids}
 
     def set_approval(self,wid,owner,key,value):
         if not isinstance(value,str):raise SourceError('核算审批编号必须为文本')
@@ -424,6 +468,17 @@ async def add_tasks(request:Request):
 async def hide_tasks(request:Request):
     wid,owner=identity(request);data=await payload(request)
     return {'tasks':call(get_queue().visibility,wid,owner,data.get('ids'),data.get('restore') is True,data.get('stop_first') is True)}
+
+
+@router.post('/delete')
+async def delete_tasks(request:Request):
+    from download_accounts import validate_write_request
+    validate_write_request(request)
+    wid,owner=identity(request);data=await payload(request)
+    delete_files=data.get('delete_files',True)
+    if type(delete_files) is not bool:
+        raise HTTPException(400,'delete_files 参数必须为布尔值')
+    return await asyncio.to_thread(call,get_queue().delete,wid,owner,data.get('ids'),delete_files)
 
 
 @router.post('/bundle')

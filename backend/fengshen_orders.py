@@ -461,18 +461,22 @@ class OrderPageCollector(BillPageCollector):
 
 
 ORDER_BATCH_SPAN = 7
+ORDER_WINDOW_DAYS = 60
+PROBLEM_WINDOW_DAYS = 90
 
 
-def date_batches(start, end, today=None, span=5):
+def date_batches(start, end, today=None, span=5, max_days=ORDER_WINDOW_DAYS):
     if not isinstance(span, int) or isinstance(span, bool) or not 1 <= span <= ORDER_BATCH_SPAN:
         raise BillCollectionError(f"运单分批跨度必须为 1 至 {ORDER_BATCH_SPAN} 个自然日")
+    if not isinstance(max_days, int) or isinstance(max_days, bool) or max_days < 1:
+        raise BillCollectionError("日期窗口天数无效")
     today = today or dt.datetime.now(SHANGHAI).date()
     first, last = dt.date.fromisoformat(start), dt.date.fromisoformat(end)
     if first > last:
         raise BillCollectionError("运单开始日期不能晚于结束日期")
-    earliest = today - dt.timedelta(days=59)
+    earliest = today - dt.timedelta(days=max_days - 1)
     if first < earliest or last > today:
-        raise BillCollectionError(f"运单仅支持近 60 个自然日：{earliest.isoformat()} 至 {today.isoformat()}；申请周期超出范围，核算已停止")
+        raise BillCollectionError(f"运单仅支持近 {max_days} 个自然日：{earliest.isoformat()} 至 {today.isoformat()}；申请周期超出范围，核算已停止")
     batches = []
     while first <= last:
         batch_end = min(first + dt.timedelta(days=span - 1), last)

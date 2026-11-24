@@ -17,15 +17,16 @@ import {
   SlidersHorizontal,
   Square,
   Terminal,
+  Trash2,
   X,
 } from 'lucide-react';
 import { WorkbenchDrawer } from './WorkbenchDrawer';
 import { PayrollReviewSummary } from './PayrollReviewSummary';
 import { businessLogEntries } from '../lib/payrollBusinessLogs';
 import {
-  extractPayrollAmount,
+  canPermanentlyDeletePayrollTask,
   extractPayrollReviewAlert,
-  formatPayrollAmount,
+  formatPayrollDateTime,
   payrollCycleLabel,
   payrollElapsed,
   payrollModeName,
@@ -33,6 +34,7 @@ import {
   payrollQueueRunning,
   payrollQueueStatus,
   payrollTypeTone,
+  resolvePayrollGeneratedAt,
   type PayrollQueueTask,
 } from '../lib/payrollQueue';
 import { toneClass } from '../lib/statusSemantics';
@@ -57,6 +59,7 @@ interface PayrollBatchDetailDrawerProps {
   onOpenFengshenLogin: () => void;
   onOpenDeductions: () => void;
   onNavigateTaskCenter?: () => void;
+  onPermanentDelete?: (task: PayrollQueueTask) => void;
 }
 
 function formatLogClock(value?: string) {
@@ -92,6 +95,7 @@ export function PayrollBatchDetailDrawer({
   onOpenFengshenLogin,
   onOpenDeductions,
   onNavigateTaskCenter,
+  onPermanentDelete,
 }: PayrollBatchDetailDrawerProps) {
   const [activeTab, setActiveTab] = useState<PayrollDetailTab>('activity');
   const [showTechnical, setShowTechnical] = useState(false);
@@ -146,7 +150,8 @@ export function PayrollBatchDetailDrawer({
   const isPaused = task.status === 'waiting_confirmation' || task.status === 'waiting_materials';
   const done = task.status === 'completed';
   const retryable = ['error', 'cancelled', 'interrupted'].includes(task.status) && !!onRetry;
-  const amount = extractPayrollAmount(task);
+  const generatedAt = resolvePayrollGeneratedAt(task);
+  const canDelete = canPermanentlyDeletePayrollTask(task);
   const reviewAlert = extractPayrollReviewAlert(task);
   const periodRange = payrollPeriodRange(task.plan);
   const cycleLabel = payrollCycleLabel(task.plan);
@@ -520,16 +525,9 @@ export function PayrollBatchDetailDrawer({
             <dd className="tabular-nums">{task.plan?.applicants != null ? `${task.plan.applicants} 人` : '—'}</dd>
           </div>
           <div>
-            <dt>核算金额</dt>
-            <dd className="pq-drawer__amount tabular-nums">
-              {amount !== null ? (
-                <>
-                  <span className="pq-currency-sign">¥</span>
-                  {formatPayrollAmount(amount)}
-                </>
-              ) : (
-                <span className="pq-empty-val">待核算</span>
-              )}
+            <dt>生成时间</dt>
+            <dd className="tabular-nums">
+              {generatedAt ? formatPayrollDateTime(generatedAt) : <span className="pq-empty-val">—</span>}
             </dd>
           </div>
           <div className="pq-drawer__fact-wide">
@@ -702,6 +700,17 @@ export function PayrollBatchDetailDrawer({
               <SlidersHorizontal size={13} aria-hidden="true" />
               <span>扣款配置</span>
             </button>
+            {onPermanentDelete && canDelete && (
+              <button
+                type="button"
+                className="wbx-btn wbx-btn--sm wbx-btn--danger"
+                disabled={busy}
+                onClick={() => onPermanentDelete(task)}
+              >
+                <Trash2 size={13} aria-hidden="true" />
+                <span>彻底删除</span>
+              </button>
+            )}
           </div>
           <div className="pq-drawer__footer-right">
             {task.status === 'waiting_confirmation' && onConfirmDeductions && (

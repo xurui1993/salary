@@ -30,14 +30,13 @@
   display: flex;
   flex-direction: column;
   border-radius: 20px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.84) 0%, rgba(255, 255, 255, 0.72) 100%);
-  backdrop-filter: blur(26px) saturate(185%);
-  -webkit-backdrop-filter: blur(26px) saturate(185%);
-  border: 1px solid rgba(255, 255, 255, 0.92);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97) 0%, rgba(250, 252, 255, 0.94) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.96);
   box-shadow:
-    0 14px 36px -10px rgba(14, 116, 144, 0.085),
-    0 4px 12px rgba(15, 23, 42, 0.035),
+    0 14px 36px -10px rgba(14, 116, 144, 0.08),
+    0 4px 12px rgba(15, 23, 42, 0.03),
     inset 0 1px 0 #ffffff;
+  contain: layout style;
   z-index: 35;
   overflow: hidden;
   user-select: none;
@@ -190,20 +189,20 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px 12px 14px;
+  padding: 12px 12px 10px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 12px;
 }
 
 .wbx-snav-group {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .wbx-snav-group + .wbx-snav-group {
-  padding-top: 14px;
+  padding-top: 10px;
   border-top: 1px solid rgba(24, 25, 28, 0.045);
 }
 
@@ -212,7 +211,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 0 10px 4px;
+  padding: 0 10px 2px;
 }
 
 .wbx-snav-group__title {
@@ -231,7 +230,7 @@
 .wbx-snav-group__list {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
 /* 单行清爽菜单项（B站同款墨黑柔灰 + 天青蓝轻玻璃胶囊激活态） */
@@ -241,7 +240,7 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  height: 37px;
+  height: 34px;
   padding: 0 11px;
   border: 1px solid transparent;
   border-radius: 10px;
@@ -419,27 +418,27 @@
 }
 
 /* 矮屏（<=780px 高度，如 1280×720）紧凑侧栏节奏：全部 9 项导航与资源面板一屏完整展示、零滚动 */
-@media (max-height: 780px) {
+@media (max-height: 820px) {
   .wbx-flat-sidebar__nav {
-    padding: 10px 12px 8px;
-    gap: 10px;
+    padding: 8px 10px 6px;
+    gap: 8px;
   }
 
   .wbx-snav-group + .wbx-snav-group {
-    padding-top: 8px;
+    padding-top: 7px;
   }
 
   .wbx-snav-group__head {
-    padding: 0 8px 2px;
+    padding: 0 8px 1px;
   }
 
   .wbx-snav-item {
-    height: 33px;
+    height: 31px;
     font-size: 13px;
   }
 
   .wbx-flat-sidebar__footer {
-    padding: 7px 10px;
+    padding: 7px 10px 8px;
   }
 }
 
@@ -468,14 +467,13 @@
   min-height: 58px;
   padding: 0 22px;
   border-radius: 18px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.85) 0%, rgba(255, 255, 255, 0.74) 100%);
-  backdrop-filter: blur(24px) saturate(185%);
-  -webkit-backdrop-filter: blur(24px) saturate(185%);
-  border: 1px solid rgba(255, 255, 255, 0.92);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97) 0%, rgba(250, 252, 255, 0.94) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.96);
   box-shadow:
-    0 10px 28px -8px rgba(14, 116, 144, 0.075),
-    0 2px 6px rgba(15, 23, 42, 0.03),
+    0 10px 28px -8px rgba(14, 116, 144, 0.07),
+    0 2px 6px rgba(15, 23, 42, 0.025),
     inset 0 1px 0 #ffffff;
+  contain: layout style;
 }
 
 /* 顶栏底缘 2px 全局动态进度细带 */
@@ -687,10 +685,10 @@
   right: 0;
   bottom: 0;
   width: min(var(--wbx-drawer-w), 94vw);
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  border-left: 1px solid rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(10px) saturate(135%);
+  -webkit-backdrop-filter: blur(10px) saturate(135%);
+  border-left: 1px solid rgba(255, 255, 255, 0.92);
   box-shadow: var(--wbx-shadow-pop);
   z-index: 61;
   display: flex;
@@ -709,7 +707,7 @@
   gap: var(--wbx-s3);
   padding: 16px 20px;
   border-bottom: 1px solid rgba(24, 25, 28, 0.06);
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.88);
 }
 
 .wbx-drawer__body {
@@ -720,10 +718,10 @@
 }
 
 .workbench-app .wb-drawer {
-  border-left: 1px solid rgba(255, 255, 255, 0.88);
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-left: 1px solid rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(10px) saturate(135%);
+  -webkit-backdrop-filter: blur(10px) saturate(135%);
   box-shadow: var(--wbx-shadow-pop);
 }
 

@@ -23,35 +23,12 @@ body {
   overflow-x: hidden;
   background-color: #EAF0F7;
   background-image:
-    radial-gradient(1080px 580px at 8% -4%, rgba(0, 174, 236, 0.165), transparent 64%),
-    radial-gradient(960px 540px at 92% 2%, rgba(56, 189, 248, 0.135), transparent 62%),
-    radial-gradient(900px 520px at 78% 96%, rgba(14, 165, 233, 0.105), transparent 68%),
-    radial-gradient(760px 460px at 18% 92%, rgba(99, 102, 241, 0.065), transparent 66%),
+    radial-gradient(1080px 580px at 8% 0%, rgba(0, 174, 236, 0.16), transparent 64%),
+    radial-gradient(960px 540px at 92% 4%, rgba(56, 189, 248, 0.13), transparent 62%),
+    radial-gradient(900px 520px at 78% 96%, rgba(14, 165, 233, 0.10), transparent 68%),
+    radial-gradient(760px 460px at 18% 92%, rgba(99, 102, 241, 0.06), transparent 66%),
     linear-gradient(155deg, #E7F0F9 0%, #F1F5FA 48%, #E9F2FA 100%);
-  background-attachment: fixed;
-}
-body::before,
-body::after {
-  content: "";
-  position: fixed;
-  pointer-events: none;
-  z-index: 0;
-  border-radius: 999px;
-  filter: blur(64px);
-}
-body::before {
-  top: -110px;
-  left: 160px;
-  width: 480px;
-  height: 280px;
-  background: radial-gradient(circle, rgba(0, 174, 236, 0.14) 0%, rgba(56, 189, 248, 0.04) 70%, transparent 100%);
-}
-body::after {
-  bottom: -120px;
-  right: 80px;
-  width: 520px;
-  height: 320px;
-  background: radial-gradient(circle, rgba(14, 165, 233, 0.11) 0%, rgba(99, 102, 241, 0.04) 70%, transparent 100%);
+  background-repeat: no-repeat;
 }
 #root { min-height: 100dvh; isolation: isolate; position: relative; z-index: 1; }
 
@@ -82,12 +59,28 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
  */
 @keyframes wbx-spin { to { transform: rotate(1turn); } }
 @keyframes wbx-shimmer { 0% { opacity: 0.55; } 50% { opacity: 1; } 100% { opacity: 0.55; } }
-.wbx-spin { animation: wbx-spin var(--wbx-dur-spin) linear infinite; }
+@keyframes wbx-page-enter-a {
+  from { opacity: 0.72; transform: translate3d(0, 5px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+@keyframes wbx-page-enter-b {
+  from { opacity: 0.72; transform: translate3d(0, 5px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+.wbx-spin { animation: wbx-spin var(--wbx-dur-spin) linear infinite; will-change: transform; }
+.wbx-page-enter-a {
+  animation: wbx-page-enter-a 160ms var(--wbx-ease) both;
+}
+.wbx-page-enter-b {
+  animation: wbx-page-enter-b 160ms var(--wbx-ease) both;
+}
 
 /* 无障碍兜底：不写强制标记，靠双类特异性压过上面的单类声明 */
 @media (prefers-reduced-motion: reduce) {
   .wbx-spin.wbx-spin { animation-duration: 0.01ms; animation-iteration-count: 1; }
   .wbx-skeleton.wbx-skeleton { animation: none; }
+  .wbx-page-enter-a.wbx-page-enter-a,
+  .wbx-page-enter-b.wbx-page-enter-b { animation: none; }
   html { scroll-behavior: auto; }
 }
 

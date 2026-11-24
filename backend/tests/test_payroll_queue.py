@@ -270,3 +270,49 @@ class QueueTests(TestCase):
             self.assertEqual(state['items']['delivery_fee']['status'],'ready')
             self.assertIn(state['status'],('ready','error','calculated'))
             q.shutdown()
+
+    def test_permanent_delete_removes_record_and_optionally_cleans_local_files(self):
+        self.template('one-template.xlsx');self.template('two-template.xlsx')
+        q=self.queue();tasks=self.enqueue(q)
+        first,second=tasks[0],tasks[1]
+        # Queued/active tasks cannot be permanently deleted
+        with self.assertRaises(SourceError):q.delete('shared','download_shared',[first['id']],delete_files=True)
+        # Scope isolation
+        q._update(first['id'],{'status':'completed','batch_id':'b'*32,'finished_at':'2026-11-24T11:33:01+08:00'})
+        q._update(second['id'],{'status':'cancelled','batch_id':'c'*32})
+        with self.assertRaises(SourceError):q.delete('other','download_shared',[first['id']],delete_files=True)
+        with self.assertRaises(SourceError):q.delete('shared','other_owner',[first['id']],delete_files=True)
+
+        # Create local staged and output artifacts for both tasks
+        out1=self.root/'outputs/payroll_batches/shared'/('b'*32);out1.mkdir(parents=True)
+        (out1/'result.xlsx').write_bytes(b'data1')
+        stage1=self.root/'uploads/shared'/f"upload_queue_{first['id']}";stage1.mkdir(parents=True)
+        (stage1/'template.xlsx').write_bytes(b'tpl1')
+
+        out2=self.root/'outputs/payroll_batches/shared'/('c'*32);out2.mkdir(parents=True)
+        (out2/'result.xlsx').write_bytes(b'data2')
+
+        with patch('payroll_inputs.delivery_store') as ds_fn:
+            res1=q.delete('shared','download_shared',[first['id']],delete_files=True)
+            self.assertEqual(res1['deleted'],1)
+            self.assertFalse(out1.exists())
+            self.assertFalse(stage1.exists())
+            ds_fn.return_value.purge.assert_called_once_with('payroll:shared:'+'b'*32,delete_files=True)
+
+            res2=q.delete('shared','download_shared',[second['id']],delete_files=False)
+            self.assertEqual(res2['deleted'],1)
+            self.assertTrue(out2.exists())
+
+        self.assertEqual(q.list('shared','download_shared'),[])
+        self.assertEqual(q.list('shared','download_shared',hidden=True),[])
+
+    def test_completed_worker_run_records_finished_at_timestamp(self):
+        self.template('finished-template.xlsx')
+        async def runner(config,request,*,context):
+            yield 'data: '+json.dumps({'type':'finish','status':'success'})+'\n\n'
+        q=self.queue(runner,True)
+        self.enqueue(q)
+        rows=self.wait(q,lambda items:all(r['status']=='completed' for r in items))
+        self.assertTrue(rows[0].get('finished_at'))
+        q.autostart=False;q.closing.set();q.wake.set();q.thread.join(2)
+

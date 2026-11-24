@@ -671,6 +671,15 @@ export function buildDemoPayrollTasks(): PayrollQueueTask[] {
           }
         : undefined;
 
+    const finishedAt =
+      item.status === 'completed'
+        ? item.id === 'demo-pq-12'
+          ? '2026-11-24T11:33:01+08:00'
+          : Number.isFinite(Date.parse(item.created_at))
+            ? new Date(Date.parse(item.created_at) + Math.max(15, item.elapsed_seconds || 90) * 1000).toISOString()
+            : item.created_at
+        : undefined;
+
     return {
       id: item.id,
       batch_id: item.batch_id || '',
@@ -694,6 +703,7 @@ export function buildDemoPayrollTasks(): PayrollQueueTask[] {
       current_action: item.current_action,
       elapsed_seconds: item.elapsed_seconds,
       created_at: item.created_at,
+      finished_at: finishedAt,
       legacy: item.legacy || false,
       logs: (item.logs || []).map(l => ({
         time: l.time,
@@ -894,13 +904,13 @@ export function buildDemoTaskCenterRecords(): DemoTaskCenterRecord[] {
     {
       id: 'TC-20261121-006',
       kind: 'generate',
-      title: '业务报表 · 异常跟进（大连/保定）',
+      title: '业务报表 · 异常跟进（天津/北京）',
       status: 'cancelling',
       created_at: minsAgo(14),
       started_at: minsAgo(13),
       start: '2026-10-01',
       end: '2026-10-31',
-      cities: ['大连', '保定'],
+      cities: ['天津', '北京'],
       datasets: ['abnormal_followup'],
       total_items: 2,
       completed_items: 1,
@@ -915,8 +925,8 @@ export function buildDemoTaskCenterRecords(): DemoTaskCenterRecord[] {
     // 7–13: 待处理异常态（partial / error / interrupted / empty）
     {
       id: 'TC-20261121-007',
-      kind: 'download',
-      title: '风神 · 华东 4 城 10月问题单与欺诈单',
+      kind: 'generate',
+      title: '业务报表 · 问题单（华东 4 城）',
       status: 'partial',
       created_at: minsAgo(48),
       started_at: minsAgo(47),
@@ -924,19 +934,19 @@ export function buildDemoTaskCenterRecords(): DemoTaskCenterRecord[] {
       start: '2026-10-01',
       end: '2026-10-31',
       cities: ['上海', '宁波', '台州', '泉州'],
-      datasets: ['problem', 'fraud'],
-      total_items: 8,
-      completed_items: 6,
-      failed_items: 2,
+      datasets: ['problem'],
+      total_items: 4,
+      completed_items: 3,
+      failed_items: 1,
       files: [
         makeFile('tc07', 1, '上海_202610_问题单汇总.xlsx', 1_120_500, '上海', 'problem'),
         makeFile('tc07', 2, '宁波_202610_问题单汇总.xlsx', 780_200, '宁波', 'problem'),
-        makeFile('tc07', 3, '台州_202610_欺诈单.xlsx', 312_000, '台州', 'fraud'),
+        makeFile('tc07', 3, '台州_202610_问题单汇总.xlsx', 312_000, '台州', 'problem'),
       ],
       has_zip: true,
       can_retry: true,
       can_cancel: false,
-      error: '泉州问题单、上海欺诈单拉取超时，其余 6 项已成功保存，可一键重试失败项。',
+      error: '泉州问题单拉取超时，其余 3 城已成功保存，可一键重试失败项。',
       demo: true,
     },
     {
@@ -1698,6 +1708,34 @@ const DEMO_DEDUCTION_BLUEPRINTS: DemoCityBlueprint[] = [
       { id: 'BD-9501', name: '莲池万博站', scenario: 'zero' },
       { id: 'BD-9502', name: '竞秀朝阳站', scenario: 'pending' },
       { id: 'BD-9503', name: '高开电谷站', scenario: 'legacy' },
+    ],
+  },
+  {
+    cityId: '460200',
+    cityName: '三亚',
+    cityConfigured: true,
+    cityRow: { 投诉: 40, 差评: 15, 违规虚假: 70, 物流责: 20, 不准时单: 2, 超时: 1.5, T10: 3, 工具费: 85, 代领费率: 0.05, 安全基金: 4, 安全基金_maxDays: 25, 使用费: 3, 使用费_maxDays: 25, 非蜂卡: 1.5, 月费: 45 },
+    xiaoxiangRow: { 保险费: 6.5, 循环物资使用费: 3, 附加险: 36 },
+    cityProblemRules: [
+      { problem_type: '餐损责任', reason_keyword: '冷饮融化', amount: 25 },
+    ],
+    stations: [
+      { id: 'SY-9601', name: '吉阳大东海站', scenario: 'inherited' },
+      { id: 'SY-9602', name: '天涯三亚湾站', scenario: 'inherited' },
+      { id: 'SY-9603', name: '海棠湾中心站', scenario: 'override', overrideDelta: { 投诉: 50, 工具费: 95 } },
+    ],
+  },
+  {
+    cityId: '440200',
+    cityName: '韶关',
+    cityConfigured: true,
+    cityRow: { 投诉: 35, 差评: 10, 违规虚假: 60, 物流责: 20, 不准时单: 2, 超时: 1.5, T10: 3, 工具费: 75, 代领费率: 0.04, 安全基金: 4, 安全基金_maxDays: 25, 使用费: 2.5, 使用费_maxDays: 25, 非蜂卡: 1, 月费: 35 },
+    xiaoxiangRow: { 保险费: 6, 循环物资使用费: 2.5, 附加险: 30 },
+    cityProblemRules: [],
+    stations: [
+      { id: 'SG-9701', name: '浈江风度站', scenario: 'inherited' },
+      { id: 'SG-9702', name: '武江碧桂园站', scenario: 'inherited' },
+      { id: 'SG-9703', name: '曲江马坝站', scenario: 'pending' },
     ],
   },
 ];

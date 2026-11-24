@@ -14,6 +14,7 @@ import {
   Search,
   ShieldAlert,
   Square,
+  Trash2,
   UploadCloud,
   X,
 } from 'lucide-react';
@@ -30,9 +31,9 @@ import { readDownloadResponse, saveDownloadBlob } from '../lib/outputDownload';
 import { businessLogEntries } from '../lib/payrollBusinessLogs';
 import {
   buildPayrollProgressPopoverData,
+  canPermanentlyDeletePayrollTask,
   detectDuplicateUploadNames,
-  extractPayrollAmount,
-  formatPayrollAmount,
+  formatPayrollDateTime,
   legacyPayrollTask,
   payrollCycleLabel,
   payrollElapsed,
@@ -42,6 +43,7 @@ import {
   payrollQueueStatus,
   payrollTypeTone,
   resolvePayrollElapsedText,
+  resolvePayrollGeneratedAt,
   sortPayrollTasks,
   summarizePayrollTasks,
   type PayrollQueueTask,
@@ -79,6 +81,7 @@ type Props = Pick<
   | 'onOpenSettings'
   | 'onNavigateTaskCenter'
   | 'uploadExtracted'
+  | 'active'
 > & { isRunning: boolean };
 
 const API = '/api/parttime/queue';
@@ -200,6 +203,7 @@ export function PayrollQueueTable({
   onCheckAll,
   onStop,
   onRemove,
+  onPermanentDelete,
   onDownload,
   onOpenDirectory,
   onRestore,
@@ -220,6 +224,7 @@ export function PayrollQueueTable({
   onCheckAll: () => void;
   onStop: (task: PayrollQueueTask) => void;
   onRemove: (tasks: PayrollQueueTask[]) => void;
+  onPermanentDelete?: (tasks: PayrollQueueTask[]) => void;
   onDownload: (task: PayrollQueueTask) => void;
   onOpenDirectory?: (task: PayrollQueueTask) => void;
   onRestore: (tasks: PayrollQueueTask[]) => void;
@@ -249,7 +254,7 @@ export function PayrollQueueTable({
             <th className="pq-col-period">周期</th>
             <th className="pq-col-type">类型</th>
             <th className="pq-col-applicants">人数</th>
-            <th className="pq-col-amount">金额</th>
+            <th className="pq-col-generated">生成时间</th>
             <th className="pq-col-progress">核算进度</th>
             <th className="pq-col-ops">操作</th>
           </tr>
@@ -272,7 +277,9 @@ export function PayrollQueueTable({
             const cycleLabel = payrollCycleLabel(task.plan);
             const periodRange = payrollPeriodRange(task.plan);
             const typeTone = payrollTypeTone(task.mode);
-            const amount = extractPayrollAmount(task);
+            const generatedAt = resolvePayrollGeneratedAt(task);
+            const generatedTimeText = generatedAt ? formatPayrollDateTime(generatedAt) : null;
+            const canDelete = canPermanentlyDeletePayrollTask(task);
             const pct = Number.isFinite(task.progress) ? Math.max(0, Math.min(100, Math.round(task.progress))) : 0;
             const showProgressBar = running && task.status !== 'queued' && pct > 0;
             const popoverModel = buildPayrollProgressPopoverData(task, {
@@ -322,11 +329,10 @@ export function PayrollQueueTable({
                     <span className="pq-empty-val">—</span>
                   )}
                 </td>
-                <td className="pq-col-amount tabular-nums">
-                  {amount !== null ? (
-                    <span className="pq-amount-text">
-                      <span className="pq-currency-sign">¥</span>
-                      {formatPayrollAmount(amount)}
+                <td className="pq-col-generated tabular-nums">
+                  {generatedTimeText ? (
+                    <span className="pq-generated-text" title={generatedTimeText}>
+                      {generatedTimeText}
                     </span>
                   ) : (
                     <span className="pq-empty-val">—</span>
@@ -370,14 +376,31 @@ export function PayrollQueueTable({
                     onClick={event => event.stopPropagation()}
                   >
                     {hidden ? (
-                      <button
-                        type="button"
-                        className="pq-op-cta is-primary pq-op-slot-main"
-                        disabled={busy}
-                        onClick={() => onRestore([task])}
-                      >
-                        <span>恢复</span>
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          className="pq-op-cta is-primary pq-op-slot-main"
+                          disabled={busy}
+                          onClick={() => onRestore([task])}
+                        >
+                          <span>恢复</span>
+                        </button>
+                        {onPermanentDelete && (
+                          <>
+                            <span className="pq-op-sep pq-op-slot-sep" aria-hidden="true" />
+                            <button
+                              type="button"
+                              className="pq-icon-btn pq-delete-btn pq-op-slot-remove"
+                              title={canDelete ? '彻底删除' : '执行中任务请先停止后再彻底删除'}
+                              aria-label={`彻底删除 ${taskLabel(task)}`}
+                              disabled={busy || !canDelete}
+                              onClick={() => onPermanentDelete([task])}
+                            >
+                              <Trash2 size={13.5} aria-hidden="true" />
+                            </button>
+                          </>
+                        )}
+                      </>
                     ) : (
                       <>
                         {done && task.batch_id && (
@@ -546,6 +569,7 @@ export function FlashPayrollWorkbench({
   onOpenFengshenLogin,
   onOpenDeductions,
   onNavigateTaskCenter,
+  active = true,
 }: Props) {
   const [tasks, setTasks] = useState<PayrollQueueTask[]>([]);
   const [selectedId, setSelectedId] = useState('');
@@ -561,6 +585,8 @@ export function FlashPayrollWorkbench({
   const [templates, setTemplates] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [removeTargets, setRemoveTargets] = useState<PayrollQueueTask[]>([]);
+  const [deleteTargets, setDeleteTargets] = useState<PayrollQueueTask[]>([]);
+  const [deleteFiles, setDeleteFiles] = useState(true);
   const [skipLegacy, setSkipLegacy] = useState(false);
   const [intakeCollapsed, setIntakeCollapsed] = useState(false);
 
@@ -570,6 +596,7 @@ export function FlashPayrollWorkbench({
   const [cityFilter, setCityFilter] = useState('');
   const [modeFilter, setModeFilter] = useState('');
   const [missingApprovalOnly, setMissingApprovalOnly] = useState(false);
+  const [alertOnly, setAlertOnly] = useState(false);
   const [sortKey, setSortKey] = useState<PayrollSortKey>('default');
   const [queuePage, setQueuePage] = useState(1);
   const [queuePageSize, setQueuePageSize] = useState(20);
@@ -664,6 +691,11 @@ export function FlashPayrollWorkbench({
 
   useEffect(() => {
     mounted.current = true;
+    if (!active) {
+      return () => {
+        readController.current?.abort();
+      };
+    }
     void refresh();
     let timer = 0;
     const interval = () => (document.visibilityState === 'visible' ? 2500 : 10000);
@@ -683,11 +715,11 @@ export function FlashPayrollWorkbench({
       document.removeEventListener('visibilitychange', onVisibility);
       readController.current?.abort();
     };
-  }, [refresh]);
+  }, [refresh, active]);
 
   useEffect(() => {
-    void refresh();
-  }, [selectedId, refresh]);
+    if (active) void refresh();
+  }, [selectedId, refresh, active]);
 
   useEffect(() => {
     const changed = (event: Event) => {
@@ -729,6 +761,7 @@ export function FlashPayrollWorkbench({
       setSelectedId('');
       setDetailTaskId('');
       setRemoveTargets([]);
+      setDeleteTargets([]);
       setQueuePage(1);
       void refresh(true);
     }
@@ -770,9 +803,10 @@ export function FlashPayrollWorkbench({
       city: cityFilter,
       mode: modeFilter,
       missingApprovalOnly,
+      alertOnly,
     });
     return sortPayrollTasks(filtered, sortKey);
-  }, [visible, queueFilterTab, queueSearch, cityFilter, modeFilter, missingApprovalOnly, sortKey]);
+  }, [visible, queueFilterTab, queueSearch, cityFilter, modeFilter, missingApprovalOnly, alertOnly, sortKey]);
 
   const summary = useMemo(() => summarizePayrollTasks(filteredVisible), [filteredVisible]);
   const pagedQueue = useMemo(
@@ -807,6 +841,20 @@ export function FlashPayrollWorkbench({
     task => task.status === 'completed' && task.batch_id,
   );
   const stoppableChosen = chosen.filter(task => payrollQueueRunning(task) && task.status !== 'stopping');
+  const deletableChosen = chosen.filter(canPermanentlyDeletePayrollTask);
+
+  const openPermanentDelete = (targets: PayrollQueueTask[]) => {
+    const deletable = targets.filter(canPermanentlyDeletePayrollTask);
+    if (!deletable.length) {
+      pushToast('执行中或排队中的任务请先停止后再彻底删除。', 'info');
+      return;
+    }
+    if (deletable.length < targets.length) {
+      pushToast(`已自动跳过 ${targets.length - deletable.length} 项执行中批次，仅对已结束批次执行彻底删除。`, 'info');
+    }
+    setDeleteFiles(true);
+    setDeleteTargets(deletable);
+  };
 
   const act = async (work: () => Promise<void>) => {
     if (guard.current) return;
@@ -852,6 +900,7 @@ export function FlashPayrollWorkbench({
         setCityFilter('');
         setModeFilter('');
         setMissingApprovalOnly(false);
+        setAlertOnly(false);
         // 队列按提交时间倒序，新提交批次始终位于第 1 页顶部
         setQueuePage(1);
         pushToast(`已加入 ${added.length} 个核算任务，请逐行填写审批编号。`);
@@ -994,14 +1043,14 @@ export function FlashPayrollWorkbench({
     void act(async () => {
       if (demoActive) {
         const filename = `${(task.template_name || task.id).replace(/\.xlsx?$/i, '')}_示例核算回执.txt`;
-        const amount = extractPayrollAmount(task);
+        const generatedAt = resolvePayrollGeneratedAt(task);
         const content = [
           `兼职核算示例成品包预览（未登录演示模式）`,
           `审批编号：${task.approval_code || '待填写'}`,
           `城市：${task.plan?.city || '—'}`,
           `周期：${payrollPeriodRange(task.plan) || '—'}`,
           `人数：${task.plan?.applicants ?? '—'} 人`,
-          `核算总额：${amount !== null ? `¥${formatPayrollAmount(amount)}` : '—'}`,
+          `生成时间：${generatedAt ? formatPayrollDateTime(generatedAt) : '—'}`,
           `说明：真实登录后点击下载将直接拉取后台生成的正式 Excel 成品包。`,
         ].join('\n');
         saveDownloadBlob(new Blob([`\uFEFF${content}`], { type: 'text/plain;charset=utf-8' }), filename);
@@ -1051,7 +1100,7 @@ export function FlashPayrollWorkbench({
     : null;
 
   const hasActiveFilters =
-    queueFilterTab !== 'all' || !!queueSearch || !!cityFilter || !!modeFilter || missingApprovalOnly;
+    queueFilterTab !== 'all' || !!queueSearch || !!cityFilter || !!modeFilter || missingApprovalOnly || alertOnly;
 
   const queueEmptyState = loading && !visible.length ? (
     <SkeletonRows rows={5} columns={6} label="核算批次加载中" />
@@ -1079,6 +1128,7 @@ export function FlashPayrollWorkbench({
           setCityFilter('');
           setModeFilter('');
           setMissingApprovalOnly(false);
+          setAlertOnly(false);
         }}
       >
         重置队列筛选
@@ -1176,7 +1226,7 @@ export function FlashPayrollWorkbench({
               <span className="tabular-nums">{visible.length}</span>
             </h3>
             {visible.length > 0 && (
-              <div className="pq-inline-summary tabular-nums" aria-label="当前筛选批次财务汇总">
+              <div className="pq-inline-summary tabular-nums" aria-label="当前筛选批次汇总">
                 <span>
                   共 <strong>{summary.count}</strong> 批
                 </span>
@@ -1184,21 +1234,24 @@ export function FlashPayrollWorkbench({
                 <span>
                   <strong>{summary.applicants.toLocaleString('zh-CN')}</strong> 人
                 </span>
-                <span className="pq-summary-strip__dot" aria-hidden="true">·</span>
-                <span>
-                  合计 <strong>¥{formatPayrollAmount(summary.amount)}</strong>
-                </span>
-                {summary.reviewAlertCount > 0 && (
-                  <>
-                    <span className="pq-summary-strip__dot" aria-hidden="true">·</span>
-                    <span>
-                      预警 <strong>{summary.reviewAlertCount}</strong>
-                    </span>
-                  </>
+                {(summary.reviewAlertCount > 0 || alertOnly) && (
+                  <button
+                    type="button"
+                    className={`pq-summary-toggle is-warn${alertOnly ? ' is-active' : ''}`}
+                    aria-pressed={alertOnly}
+                    onClick={() => {
+                      setAlertOnly(prev => !prev);
+                      setQueuePage(1);
+                    }}
+                  >
+                    <span>预警</span>
+                    <strong className="tabular-nums">{summary.reviewAlertCount}</strong>
+                  </button>
                 )}
                 <button
                   type="button"
                   className={`pq-summary-toggle${missingApprovalOnly ? ' is-active' : ''}`}
+                  aria-pressed={missingApprovalOnly}
                   onClick={() => {
                     setMissingApprovalOnly(prev => !prev);
                     setQueuePage(1);
@@ -1217,6 +1270,7 @@ export function FlashPayrollWorkbench({
                       setCityFilter('');
                       setModeFilter('');
                       setMissingApprovalOnly(false);
+                      setAlertOnly(false);
                       setQueuePage(1);
                     }}
                   >
@@ -1237,85 +1291,53 @@ export function FlashPayrollWorkbench({
                 toggleDemoHidden();
               }}
             />
-            {chosen.length > 0 && <span className="pq-selection tabular-nums">已选 {chosen.length} 项</span>}
-            {hidden ? (
-              chosen.length > 0 && (
-                <button className="wbx-btn wbx-btn--sm wbx-btn--primary" disabled={busy} onClick={() => restore(chosen)}>
-                  恢复已选
-                </button>
-              )
-            ) : (
-              <>
-                {stoppableChosen.length > 0 && (
-                  <button
-                    type="button"
-                    className="wbx-btn wbx-btn--danger wbx-btn--sm"
-                    disabled={busy}
-                    onClick={() => batchStop(stoppableChosen)}
-                  >
-                    <Square size={11.5} aria-hidden="true" />
-                    <span>批量停止 ({stoppableChosen.length})</span>
-                  </button>
-                )}
-                {!!downloadable.length && (
-                  <button
-                    type="button"
-                    className="wbx-btn wbx-btn--primary wbx-btn--sm"
-                    disabled={busy}
-                    onClick={() =>
-                      void act(async () => {
-                        if (demoActive) {
-                          const lines = [
-                            `兼职核算批量成品包示例清单（共 ${downloadable.length} 批）`,
-                            ...downloadable.map(
-                              t => `- ${t.approval_code || '待填编号'} | ${t.plan?.city || '—'} | ${t.template_name}`,
-                            ),
-                          ].join('\n');
-                          saveDownloadBlob(
-                            new Blob([`\uFEFF${lines}`], { type: 'text/plain;charset=utf-8' }),
-                            '示例_批量薪资核算清单.txt',
-                          );
-                          pushToast(`示例模式：已生成 ${downloadable.length} 批预览清单`, 'info');
-                          return;
-                        }
-                        if (downloadable.length === 1) {
-                          const response = await request(
-                            `/api/fengshen-downloads/delivery-download?batch_id=${encodeURIComponent(downloadable[0].batch_id!)}`,
-                          );
-                          saveDownloadBlob(await readDownloadResponse(response, '薪资核算结果.zip'), '薪资核算结果.zip');
-                        } else {
-                          const queueEntries = downloadable.filter(task => !task.legacy);
-                          if (queueEntries.length !== downloadable.length) {
-                            throw Error('历史批次请在对应行单独下载；其余任务可勾选后批量下载。');
-                          }
-                          const response = await request(API + '/bundle', {
-                            ids: queueEntries.map(task => task.id),
-                          });
-                          saveDownloadBlob(
-                            await readDownloadResponse(response, '批量薪资核算结果.zip'),
-                            '批量薪资核算结果.zip',
-                          );
-                        }
-                        pushToast('已发起成品包下载');
-                      })
+            {!hidden && !chosen.length && !!downloadable.length && (
+              <button
+                type="button"
+                className="wbx-btn wbx-btn--primary wbx-btn--sm"
+                disabled={busy}
+                onClick={() =>
+                  void act(async () => {
+                    if (demoActive) {
+                      const lines = [
+                        `兼职核算批量成品包示例清单（共 ${downloadable.length} 批）`,
+                        ...downloadable.map(
+                          t => `- ${t.approval_code || '待填编号'} | ${t.plan?.city || '—'} | ${t.template_name}`,
+                        ),
+                      ].join('\n');
+                      saveDownloadBlob(
+                        new Blob([`\uFEFF${lines}`], { type: 'text/plain;charset=utf-8' }),
+                        '示例_批量薪资核算清单.txt',
+                      );
+                      pushToast(`示例模式：已生成 ${downloadable.length} 批预览清单`, 'info');
+                      return;
                     }
-                  >
-                    <Download size={13.5} />
-                    <span>{chosen.length ? '下载已选结果' : '下载已完成'}</span>
-                    <span className="pq-action-count tabular-nums">{downloadable.length}</span>
-                  </button>
-                )}
-                {chosen.length > 0 && (
-                  <button
-                    type="button"
-                    className="wbx-btn wbx-btn--sm wbx-btn--ghost"
-                    disabled={busy}
-                    onClick={() => setRemoveTargets(chosen)}
-                  >
-                    移出已选
-                  </button>
-                )}
-              </>
+                    if (downloadable.length === 1) {
+                      const response = await request(
+                        `/api/fengshen-downloads/delivery-download?batch_id=${encodeURIComponent(downloadable[0].batch_id!)}`,
+                      );
+                      saveDownloadBlob(await readDownloadResponse(response, '薪资核算结果.zip'), '薪资核算结果.zip');
+                    } else {
+                      const queueEntries = downloadable.filter(task => !task.legacy);
+                      if (queueEntries.length !== downloadable.length) {
+                        throw Error('历史批次请在对应行单独下载；其余任务可勾选后批量下载。');
+                      }
+                      const response = await request(API + '/bundle', {
+                        ids: queueEntries.map(task => task.id),
+                      });
+                      saveDownloadBlob(
+                        await readDownloadResponse(response, '批量薪资核算结果.zip'),
+                        '批量薪资核算结果.zip',
+                      );
+                    }
+                    pushToast('已发起成品包下载');
+                  })
+                }
+              >
+                <Download size={13.5} />
+                <span>下载已完成</span>
+                <span className="pq-action-count tabular-nums">{downloadable.length}</span>
+              </button>
             )}
             <button
               type="button"
@@ -1331,6 +1353,116 @@ export function FlashPayrollWorkbench({
             </button>
           </div>
         </header>
+
+        {chosen.length > 0 && (
+          <div className="pq-batchbar" role="region" aria-label="批量操作栏">
+            <strong className="tabular-nums">已选 {chosen.length} 项</strong>
+            {hidden ? (
+              <>
+                <button
+                  type="button"
+                  className="wbx-btn wbx-btn--sm wbx-btn--primary"
+                  disabled={busy}
+                  onClick={() => restore(chosen)}
+                >
+                  恢复已选
+                </button>
+                <button
+                  type="button"
+                  className="wbx-btn wbx-btn--sm wbx-btn--danger"
+                  disabled={busy || !deletableChosen.length}
+                  title={deletableChosen.length ? `彻底删除 ${deletableChosen.length} 项` : '所选任务正在执行中，请先停止'}
+                  onClick={() => openPermanentDelete(chosen)}
+                >
+                  <Trash2 size={13} aria-hidden="true" />
+                  <span>彻底删除{deletableChosen.length ? ` (${deletableChosen.length})` : ''}</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="wbx-btn wbx-btn--primary wbx-btn--sm"
+                  disabled={busy || !downloadable.length}
+                  title={downloadable.length ? `下载已选的 ${downloadable.length} 个已完成批次` : '所选批次暂无可下载的已完成结果'}
+                  onClick={() =>
+                    void act(async () => {
+                      if (!downloadable.length) return;
+                      if (demoActive) {
+                        const lines = [
+                          `兼职核算批量成品包示例清单（共 ${downloadable.length} 批）`,
+                          ...downloadable.map(
+                            t => `- ${t.approval_code || '待填编号'} | ${t.plan?.city || '—'} | ${t.template_name}`,
+                          ),
+                        ].join('\n');
+                        saveDownloadBlob(
+                          new Blob([`\uFEFF${lines}`], { type: 'text/plain;charset=utf-8' }),
+                          '示例_批量薪资核算清单.txt',
+                        );
+                        pushToast(`示例模式：已生成 ${downloadable.length} 批预览清单`, 'info');
+                        return;
+                      }
+                      if (downloadable.length === 1) {
+                        const response = await request(
+                          `/api/fengshen-downloads/delivery-download?batch_id=${encodeURIComponent(downloadable[0].batch_id!)}`,
+                        );
+                        saveDownloadBlob(await readDownloadResponse(response, '薪资核算结果.zip'), '薪资核算结果.zip');
+                      } else {
+                        const queueEntries = downloadable.filter(task => !task.legacy);
+                        if (queueEntries.length !== downloadable.length) {
+                          throw Error('历史批次请在对应行单独下载；其余任务可勾选后批量下载。');
+                        }
+                        const response = await request(API + '/bundle', {
+                          ids: queueEntries.map(task => task.id),
+                        });
+                        saveDownloadBlob(
+                          await readDownloadResponse(response, '批量薪资核算结果.zip'),
+                          '批量薪资核算结果.zip',
+                        );
+                      }
+                      pushToast('已发起成品包下载');
+                    })
+                  }
+                >
+                  <Download size={13.5} />
+                  <span>下载已选结果{downloadable.length > 0 ? ` (${downloadable.length})` : ''}</span>
+                </button>
+                {stoppableChosen.length > 0 && (
+                  <button
+                    type="button"
+                    className="wbx-btn wbx-btn--danger wbx-btn--sm"
+                    disabled={busy}
+                    onClick={() => batchStop(stoppableChosen)}
+                  >
+                    <Square size={11.5} aria-hidden="true" />
+                    <span>批量停止 ({stoppableChosen.length})</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="wbx-btn wbx-btn--sm"
+                  disabled={busy}
+                  onClick={() => setRemoveTargets(chosen)}
+                >
+                  移出已选
+                </button>
+                <button
+                  type="button"
+                  className="wbx-btn wbx-btn--sm wbx-btn--danger"
+                  disabled={busy || !deletableChosen.length}
+                  title={deletableChosen.length ? `彻底删除 ${deletableChosen.length} 项` : '所选任务正在执行中，请先停止'}
+                  onClick={() => openPermanentDelete(chosen)}
+                >
+                  <Trash2 size={13} aria-hidden="true" />
+                  <span>彻底删除{deletableChosen.length ? ` (${deletableChosen.length})` : ''}</span>
+                </button>
+              </>
+            )}
+            <button type="button" className="wb-link" onClick={() => setChecked([])}>
+              取消选择
+            </button>
+          </div>
+        )}
 
         {(() => {
           const waiting = visible.find(task => task.preparation?.execution?.waiting_verification);
@@ -1441,7 +1573,7 @@ export function FlashPayrollWorkbench({
                 onChange={e => setSortKey(e.target.value as PayrollSortKey)}
               >
                 <option value="default">按提交时间</option>
-                <option value="amount_desc">按金额降序</option>
+                <option value="generated_desc">按生成时间降序</option>
                 <option value="applicants_desc">按人数降序</option>
                 <option value="elapsed_desc">按用时降序</option>
               </select>
@@ -1473,6 +1605,7 @@ export function FlashPayrollWorkbench({
               }}
               onStop={stop}
               onRemove={setRemoveTargets}
+              onPermanentDelete={openPermanentDelete}
               onDownload={download}
               onOpenDirectory={directory}
               onRestore={restore}
@@ -1554,6 +1687,7 @@ export function FlashPayrollWorkbench({
         onOpenFengshenLogin={onOpenFengshenLogin}
         onOpenDeductions={onOpenDeductions}
         onNavigateTaskCenter={onNavigateTaskCenter}
+        onPermanentDelete={task => openPermanentDelete([task])}
       />
 
       {templates && (
@@ -1610,6 +1744,77 @@ export function FlashPayrollWorkbench({
               setChecked([]);
               pushToast(`已移出 ${removeTargets.length} 条核算批次`);
               await refresh();
+            })
+          }
+        />
+      )}
+
+      {!!deleteTargets.length && (
+        <WorkbenchConfirmModal
+          title="彻底删除核算批次"
+          description={`将永久删除 ${deleteTargets.length} 项核算批次的队列记录，此操作不可撤销，且无法从「已移出」恢复。`}
+          hint="执行中或排队中的任务需先停止后才能彻底删除。"
+          items={deleteTargets.map(t => `${t.approval_code || '待填编号'} · ${t.plan?.city || t.template_name || t.id}`)}
+          extraContent={
+            <label className="wbx-modal__check">
+              <input
+                type="checkbox"
+                checked={deleteFiles}
+                disabled={busy}
+                onChange={event => setDeleteFiles(event.target.checked)}
+              />
+              <span>同时清理该任务的本地结果目录与产出文件（取消勾选仅删除记录，保留本地文件）</span>
+            </label>
+          }
+          confirmLabel="确认彻底删除"
+          confirmTone="danger"
+          busy={busy}
+          error={error}
+          onCancel={() => setDeleteTargets([])}
+          onConfirm={() =>
+            void act(async () => {
+              const targetIds = new Set(deleteTargets.map(task => task.id));
+              if (demoActive) {
+                setDemoTasks(prev => prev.filter(task => !targetIds.has(task.id)));
+                setDemoArchivedIds(prev => {
+                  const next = new Set(prev);
+                  for (const id of targetIds) next.delete(id);
+                  return next;
+                });
+                if (detailTaskId && targetIds.has(detailTaskId)) setDetailTaskId('');
+                const count = deleteTargets.length;
+                setDeleteTargets([]);
+                setChecked(prev => prev.filter(id => !targetIds.has(id)));
+                pushToast(
+                  `示例模式：已彻底删除 ${count} 条示例批次${deleteFiles ? '（含模拟结果文件）' : '（保留本地文件）'}`,
+                );
+                return;
+              }
+              const current = deleteTargets.filter(task => !task.legacy);
+              const old = deleteTargets.filter(task => task.legacy);
+              if (current.length) {
+                await request(API + '/delete', {
+                  ids: current.map(task => task.id),
+                  delete_files: deleteFiles,
+                });
+              }
+              if (old.length) {
+                await request('/api/workbench/task-center/delete', {
+                  ids: old.map(task => 'payroll_' + task.batch_id),
+                  delete_files: deleteFiles,
+                });
+                setSkipLegacy(true);
+              }
+              if (detailTaskId && targetIds.has(detailTaskId)) setDetailTaskId('');
+              const count = deleteTargets.length;
+              setDeleteTargets([]);
+              setChecked(prev => prev.filter(id => !targetIds.has(id)));
+              pushToast(
+                deleteFiles
+                  ? `已彻底删除 ${count} 条核算批次并清理本地结果目录`
+                  : `已彻底删除 ${count} 条核算批次记录（本地文件已保留）`,
+              );
+              await refresh(true);
             })
           }
         />

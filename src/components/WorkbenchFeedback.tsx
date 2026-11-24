@@ -61,6 +61,7 @@ export function WorkbenchConfirmModal({
   description,
   hint,
   items,
+  extraContent,
   confirmLabel,
   confirmTone = 'primary',
   busy = false,
@@ -72,6 +73,7 @@ export function WorkbenchConfirmModal({
   description: string;
   hint?: string;
   items?: string[];
+  extraContent?: React.ReactNode;
   confirmLabel: string;
   confirmTone?: 'primary' | 'danger';
   busy?: boolean;
@@ -128,6 +130,7 @@ export function WorkbenchConfirmModal({
               )}
             </ul>
           )}
+          {extraContent}
           {error && (
             <p className="wb-error" role="alert">
               {error}

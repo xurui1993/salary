@@ -142,7 +142,7 @@ def get_options():
                           "group": 'baize' if key == BAIZE_DATASET else 'benlai' if key == BENLAI_DATASET else 'xiaoxiang' if key in XIAOXIANG_SELECTION else 'lanorange' if key in LANORANGE_DATASETS or key == 'abnormal_riders' else 'fengshen',
                           "scope": 'all' if key in (BAIZE_DATASET, BENLAI_DATASET) or key in XIAOXIANG_SELECTION or key in LANORANGE_DATASETS or key == 'abnormal_riders' else 'city'}
                          for key, label in DATASETS.items()],
-            "generators": generators(), "timezone": "Asia/Shanghai", "order_window_days": 60}
+            "generators": generators(), "timezone": "Asia/Shanghai", "order_window_days": 60, "problem_window_days": 90}
 
 
 def covered_months(start, end):
@@ -309,8 +309,9 @@ def validate_request(payload, today=None):
     if MONTHLY_DATASETS.intersection(selected) and (last.year, last.month) > (today.year, today.month):
         raise ValidationError("月度资料不能选择未来月份")
     if set(selected) & {"fraud", "problem", "delivery_waybill"}:
+        window_days = 60 if set(selected) & {"fraud", "delivery_waybill"} else 90
         try:
-            date_batches(first.isoformat(), last.isoformat(), today=today)
+            date_batches(first.isoformat(), last.isoformat(), today=today, max_days=window_days)
         except BillCollectionError as exc:
             raise ValidationError(str(exc).replace("核算已停止", "下载未启动")) from None
     if any(key in payload and type(payload[key]) is not bool for key in ('include_separation', 'exclude_separation')):

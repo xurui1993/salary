@@ -1,5 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertCircle,
+  AlertTriangle,
   ArrowUpRight,
   CheckCircle2,
   Clock3,
@@ -8,14 +10,24 @@ import {
   ListChecks,
   Loader2,
   RefreshCw,
-  AlertCircle,
   XCircle,
 } from 'lucide-react';
 import { readDownloadResponse, saveDownloadBlob, downloadErrorMessage } from '../lib/outputDownload';
 import { taskGuidance } from '../lib/taskGuidance';
 import { datasetGroup, type DownloadFetch } from '../lib/downloadCenterLogic';
+import {
+  shouldUseDemoData,
+  useDemoDataVisibility,
+  usePlatformAuthSnapshot,
+} from '../lib/demoMode';
+import { buildDemoTaskCenterRecords } from '../lib/showcaseDemoData';
+import {
+  computeTaskHeaderCounts,
+  type TaskNotificationRecord,
+} from '../lib/taskWorkflow';
+import { buildTaskListFingerprint, computeAdaptivePollDelay } from '../lib/perfUtils';
 
-interface HeaderTaskFile {
+export interface HeaderTaskFile {
   id: string;
   run_id: string;
   name: string;
@@ -24,7 +36,7 @@ interface HeaderTaskFile {
   available: boolean;
 }
 
-interface HeaderTaskRecord {
+export interface HeaderTaskRecord {
   id: string;
   kind: string;
   title?: string;
@@ -43,6 +55,8 @@ interface HeaderTaskRecord {
   total_items: number;
   action_run_id: string;
   summary_issue?: boolean;
+  current_action?: string;
+  error?: string;
 }
 
 const API = '/api/workbench/task-center';
@@ -65,7 +79,7 @@ const SYSTEMS: Record<string, string> = {
 };
 
 const KINDS: Record<string, string> = {
-  download: '资料采集',
+  download: '资料下载',
   generate: '业务报表',
   approval: '价格审批',
   'price-export': '每日价格',
@@ -100,10 +114,12 @@ const formatSize = (bytes: number) =>
     ? `${(bytes / 1048576).toFixed(1)} MB`
     : `${Math.max(1, Math.ceil(bytes / 1024))} KB`;
 
-const formatTime = (value: string) => {
+const formatTime = (value: string | number) => {
   if (!value) return '';
   try {
-    return new Date(value).toLocaleString('zh-CN', {
+    const ms = typeof value === 'number' ? (value < 1e12 ? value * 1000 : value) : Date.parse(value);
+    if (Number.isNaN(ms)) return '';
+    return new Date(ms).toLocaleString('zh-CN', {
       timeZone: 'Asia/Shanghai',
       month: '2-digit',
       day: '2-digit',
@@ -128,6 +144,7 @@ export function HeaderDownloadCenter({
   onOpenTaskRecord,
   onOpenPlatformAuth,
   onShowToast,
+  onRecordsPolled,
 }: {
   apiFetch: DownloadFetch;
   datasetLabel?: (id: string) => string;
@@ -140,24 +157,78 @@ export function HeaderDownloadCenter({
   onOpenTaskRecord?: (record: HeaderTaskRecord) => void;
   onOpenPlatformAuth?: (platformKey: string) => void;
   onShowToast?: (message: string, type?: 'info' | 'success' | 'error') => void;
+  onRecordsPolled?: (
+    records: TaskNotificationRecord[],
+    summary: { activeCount: number; attentionCount: number; readyCount: number; isDemo: boolean },
+  ) => void;
 }) {
   const apiRef = useRef(apiFetch);
   apiRef.current = apiFetch;
+  const onRecordsPolledRef = useRef(onRecordsPolled);
+  onRecordsPolledRef.current = onRecordsPolled;
+
+  const auth = usePlatformAuthSnapshot();
+  const { demoHidden } = useDemoDataVisibility();
 
   const [open, setOpen] = useState(false);
-  const [records, setRecords] = useState<HeaderTaskRecord[]>([]);
-  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [serverRecords, setServerRecords] = useState<HeaderTaskRecord[]>([]);
+  const [serverCounts, setServerCounts] = useState<Record<string, number>>({});
+  const [hasLiveServerData, setHasLiveServerData] = useState(false);
   const [loading, setLoading] = useState(false);
   const [downloadingId, setDownloadingId] = useState('');
+  const [openingDirId, setOpeningDirId] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [tab, setTab] = useState<'all' | 'active' | 'done'>('all');
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const demoActive = shouldUseDemoData({
+    isLoggedIn: auth.anyLoggedIn,
+    hasLiveData: hasLiveServerData,
+    demoHidden,
+  });
+
+  const demoRecords = useMemo<HeaderTaskRecord[]>(() => {
+    if (!demoActive) return [];
+    return buildDemoTaskCenterRecords().map(item => ({
+      id: item.id,
+      kind: item.kind,
+      title: item.title,
+      price_id: item.price_id,
+      cities: item.cities || [],
+      datasets: item.datasets || [],
+      start: item.start || '',
+      end: item.end || '',
+      status: item.status,
+      created_at: item.created_at || new Date().toISOString(),
+      files: (item.files || []).map(f => ({
+        id: f.id,
+        run_id: item.id,
+        name: f.name,
+        city: f.city || '',
+        bytes: f.bytes || 0,
+        available: true,
+      })),
+      available_files: (item.files || []).length,
+      failed_items: item.failed_items || 0,
+      completed_items: item.completed_items || 0,
+      total_items: item.total_items || 0,
+      action_run_id: item.id,
+      summary_issue: false,
+      error: item.error,
+    }));
+  }, [demoActive]);
+
+  const records = demoActive ? demoRecords : serverRecords;
+
   const navigateToTaskCenter = () => {
     if (onOpenTaskCenter) onOpenTaskCenter();
     else if (onNavigateHistory) onNavigateHistory();
   };
+
+  const lastFingerprintRef = useRef('');
+  const serverRecordsCountRef = useRef(0);
+  const hasActiveTasksRef = useRef(false);
 
   const loadRecentTasks = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -167,9 +238,28 @@ export function HeaderDownloadCenter({
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || '任务列表暂不可读');
-      setRecords(Array.isArray(data.records) ? data.records.slice(0, 12) : []);
-      setCounts(data.counts || {});
-      setError('');
+      const fetched: HeaderTaskRecord[] = Array.isArray(data.records) ? data.records.slice(0, 15) : [];
+      const fetchedCounts: Record<string, number> = data.counts || {};
+      const live = fetched.length > 0 || (fetchedCounts.all || 0) > 0;
+      const derived = computeTaskHeaderCounts(fetched);
+      const nextActiveCount = Math.max(derived.activeCount, fetchedCounts.active || 0);
+      hasActiveTasksRef.current = nextActiveCount > 0;
+      serverRecordsCountRef.current = fetched.length;
+
+      const nextFingerprint = buildTaskListFingerprint(fetched, fetchedCounts, live ? '1' : '0');
+      if (nextFingerprint !== lastFingerprintRef.current) {
+        lastFingerprintRef.current = nextFingerprint;
+        setHasLiveServerData(live);
+        setServerRecords(fetched);
+        setServerCounts(fetchedCounts);
+        onRecordsPolledRef.current?.(fetched, {
+          activeCount: nextActiveCount,
+          attentionCount: Math.max(derived.attentionCount, fetchedCounts.attention || 0),
+          readyCount: Math.max(derived.readyCount, fetchedCounts.success || 0),
+          isDemo: false,
+        });
+      }
+      setError(prev => (prev ? '' : prev));
     } catch (err) {
       if (!silent) setError(downloadErrorMessage(err));
     } finally {
@@ -178,16 +268,64 @@ export function HeaderDownloadCenter({
   };
 
   useEffect(() => {
+    if (!demoActive) return;
+    const summary = computeTaskHeaderCounts(demoRecords);
+    onRecordsPolledRef.current?.([], {
+      ...summary,
+      isDemo: true,
+    });
+  }, [demoActive, demoRecords]);
+
+  useEffect(() => {
     void loadRecentTasks(true);
   }, [activeCount, runningTask]);
 
+  // Adaptive visibility-aware polling so top bar, sidebar attention badge, and bottom-right notifier stay live without wasting CPU.
+  useEffect(() => {
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = () => {
+      if (disposed) return;
+      const delay = computeAdaptivePollDelay({
+        hasActiveTasks: hasActiveTasksRef.current || activeCount > 0 || Boolean(runningTask),
+        isDocumentVisible: document.visibilityState === 'visible',
+        isViewActive: open,
+        activeMs: 4000,
+        backgroundActiveMs: 6500,
+        idleMs: 12000,
+        backgroundIdleMs: 18000,
+      });
+      if (delay !== null) {
+        timer = setTimeout(async () => {
+          await loadRecentTasks(true);
+          schedule();
+        }, delay);
+      }
+    };
+    const onSubmitted = () => {
+      clearTimeout(timer);
+      void loadRecentTasks(true).finally(schedule);
+    };
+    const onVisibility = () => {
+      clearTimeout(timer);
+      if (document.visibilityState === 'visible') {
+        void loadRecentTasks(true).finally(schedule);
+      }
+    };
+    schedule();
+    window.addEventListener('workbench:task-submitted', onSubmitted);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+      window.removeEventListener('workbench:task-submitted', onSubmitted);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [open, activeCount, runningTask]);
+
   useEffect(() => {
     if (!open) return;
-    void loadRecentTasks(false);
-    const timer = setInterval(() => {
-      void loadRecentTasks(true);
-    }, 4000);
-    return () => clearInterval(timer);
+    void loadRecentTasks(serverRecordsCountRef.current > 0);
   }, [open]);
 
   useEffect(() => {
@@ -208,20 +346,71 @@ export function HeaderDownloadCenter({
     };
   }, [open]);
 
-  const recordTitle = (r: HeaderTaskRecord) =>
-    r.title ||
-    r.datasets
-      .map(datasetLabel)
-      .join('、')
-      .replaceAll('（生成表）', '');
-
   const recordPlatform = (r: HeaderTaskRecord) =>
     r.price_id
       ? '蓝橙'
       : [...new Set(r.datasets.map(id => SYSTEMS[datasetGroup(id)] || '风神'))].join(' / ');
 
+  const recordTitle = (r: HeaderTaskRecord) => {
+    const base = (
+      r.title ||
+      r.datasets.map(datasetLabel).join('、')
+    ).replaceAll('（生成表）', '');
+    return base.replace(/^(风神|蓝橙|商翼|本来人力|灯塔|小象灯塔)\s*[·・:-]\s*/, '').trim() || base;
+  };
+
+  const openResultDirectory = async (r: HeaderTaskRecord) => {
+    if (openingDirId) return;
+    if (demoActive) {
+      const msg = `示例模式：结果目录 ~/SalaryWorkbench/outputs/${r.id}`;
+      setNotice(msg);
+      onShowToast?.(msg, 'info');
+      return;
+    }
+    setOpeningDirId(r.id);
+    setError('');
+    setNotice('');
+    try {
+      const infoRes = await apiRef.current(`${API}/directory?record_id=${encodeURIComponent(r.id)}`, {
+        signal: AbortSignal.timeout(15000),
+      });
+      const info = await infoRes.json().catch(() => ({}));
+      if (!infoRes.ok) throw new Error(info.detail || '暂无法读取结果目录');
+      if (info.exists && info.can_open) {
+        const openRes = await apiRef.current(`${API}/directory/open`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ record_id: r.id }),
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!openRes.ok) {
+          const errData = await openRes.json().catch(() => ({}));
+          throw new Error(errData.detail || '打开本地目录失败');
+        }
+        setNotice('已打开本地结果目录');
+        onShowToast?.('已打开本地结果目录', 'success');
+      } else {
+        const pathTip = info.path ? `结果目录：${info.path}` : '当前为远程环境，已跳转任务详情查看文件';
+        setNotice(pathTip);
+        onShowToast?.(pathTip, 'info');
+      }
+    } catch (err) {
+      const msg = downloadErrorMessage(err);
+      setError(msg);
+      onShowToast?.(msg, 'error');
+    } finally {
+      setOpeningDirId('');
+    }
+  };
+
   const triggerDownload = async (r: HeaderTaskRecord, file?: HeaderTaskFile) => {
     if (downloadingId) return;
+    if (demoActive) {
+      const msg = `示例模式：已模拟下载「${recordTitle(r)}」成果文件`;
+      setNotice(msg);
+      onShowToast?.(msg, 'info');
+      return;
+    }
     setDownloadingId(file ? `${r.id}:${file.id}` : r.id);
     setError('');
     setNotice('');
@@ -276,33 +465,51 @@ export function HeaderDownloadCenter({
     }
   };
 
-  const liveActiveCount = Math.max(activeCount + (runningTask ? 1 : 0), counts.active || 0);
-  const readyCount = counts.success || 0;
-  const filteredRecords = records.filter(r => {
-    const isAct = ACTIVE_STATUSES.has(r.status);
-    if (tab === 'active') return isAct;
-    if (tab === 'done') return !isAct;
-    return true;
-  });
+  const summaryCounts = useMemo(() => computeTaskHeaderCounts(records), [records]);
+  const liveActiveCount = demoActive
+    ? Math.max(activeCount + (runningTask ? 1 : 0), summaryCounts.activeCount)
+    : Math.max(activeCount + (runningTask ? 1 : 0), serverCounts.active || summaryCounts.activeCount);
+  const attentionCount = demoActive
+    ? summaryCounts.attentionCount
+    : Math.max(serverCounts.attention || 0, summaryCounts.attentionCount);
+  const readyCount = demoActive
+    ? summaryCounts.readyCount
+    : Math.max(serverCounts.success || 0, summaryCounts.readyCount);
+
+  const filteredRecords = records
+    .filter(r => {
+      const isAct = ACTIVE_STATUSES.has(r.status);
+      if (tab === 'active') return isAct;
+      if (tab === 'done') return !isAct;
+      return true;
+    })
+    .slice(0, 12);
 
   return (
     <div className="wbx-popover-wrap" ref={containerRef}>
       <button
         type="button"
-        className={`wbx-header-tool-btn wbx-cluster-item wbx-popover-trigger${open ? ' is-open' : ''}${liveActiveCount > 0 ? ' is-busy' : ''}`}
-        aria-label="打开最近任务与下载中心"
+        className={`wbx-header-tool-btn wbx-cluster-item wbx-popover-trigger${open ? ' is-open' : ''}${liveActiveCount > 0 ? ' is-busy' : ''}${attentionCount > 0 && liveActiveCount === 0 ? ' is-warn' : ''}`}
+        aria-label="打开最近任务与快捷进度浮层"
         aria-expanded={open}
+        title="查看后台任务进度与快捷领取成果文件"
         onClick={() => setOpen(value => !value)}
       >
         {liveActiveCount > 0 ? (
           <Loader2 size={14} className="wbx-spin wbx-header-tool-icon is-active" aria-hidden="true" />
+        ) : attentionCount > 0 ? (
+          <AlertTriangle size={14} className="wbx-header-tool-icon is-warn" aria-hidden="true" />
         ) : (
           <ListChecks size={14} className="wbx-header-tool-icon" aria-hidden="true" />
         )}
-        <span>任务动态</span>
+        <span className="wbx-header-taskcenter-label">任务动态</span>
         {liveActiveCount > 0 ? (
           <span className="wbx-header-tool-live tabular-nums" title={`${liveActiveCount} 个任务进行中`}>
             {liveActiveCount} 运行中
+          </span>
+        ) : attentionCount > 0 ? (
+          <span className="wbx-header-tool-warn tabular-nums" title={`${attentionCount} 个任务待处理`}>
+            {attentionCount} 待处理
           </span>
         ) : readyCount > 0 ? (
           <span className="wbx-header-tool-count tabular-nums" title={`累计 ${readyCount} 个已完成任务`}>
@@ -315,9 +522,12 @@ export function HeaderDownloadCenter({
         <div className="wbx-popover wbx-popover--tasks" role="dialog" aria-label="最近任务与快捷下载">
           <div className="wbx-popover__head">
             <div className="wb-download-drawer-title">
-              <strong>最近任务与文件领取</strong>
+              <strong>最近任务与进度速览</strong>
               <span className="wb-download-drawer-sub tabular-nums">
-                进行中 {liveActiveCount} · 已完成 {readyCount}
+                进行中 {liveActiveCount}
+                {attentionCount > 0 ? ` · 待处理 ${attentionCount}` : ''}
+                {` · 已完成 ${readyCount}`}
+                {demoActive ? ' · 示例' : ''}
               </span>
             </div>
             <div className="wbx-popover__actions">
@@ -325,6 +535,7 @@ export function HeaderDownloadCenter({
                 type="button"
                 className="wb-icon"
                 title="刷新任务状态"
+                aria-label="刷新任务状态"
                 onClick={() => void loadRecentTasks(false)}
               >
                 <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
@@ -418,6 +629,10 @@ export function HeaderDownloadCenter({
                       ? 15
                       : 100;
                 const availableFiles = (r.files || []).filter(f => f.available);
+                const canOpenDir =
+                  ['success', 'partial'].includes(r.status) &&
+                  r.kind !== 'approval' &&
+                  r.kind !== 'price-export';
 
                 return (
                   <article
@@ -453,7 +668,7 @@ export function HeaderDownloadCenter({
                     </div>
 
                     <div className="wb-download-item-meta tabular-nums">
-                      <span>{KINDS[r.kind] || '资料采集'}</span>
+                      <span>{KINDS[r.kind] || '资料下载'}</span>
                       <span>·</span>
                       <span>
                         {r.cities.length > 2
@@ -485,7 +700,7 @@ export function HeaderDownloadCenter({
                               availableFiles.reduce((sum, f) => sum + (f.bytes || 0), 0),
                             )}）`
                           : isAct
-                            ? '后台正在生成结果文件…'
+                            ? r.current_action || '后台正在生成结果文件…'
                             : guidance.summary}
                       </span>
 
@@ -503,6 +718,22 @@ export function HeaderDownloadCenter({
                             <span>去验证</span>
                           </button>
                         )}
+                        {canOpenDir && (
+                          <button
+                            type="button"
+                            className="wb-download-detail-btn"
+                            disabled={openingDirId === r.id}
+                            title="打开本地结果目录"
+                            onClick={() => void openResultDirectory(r)}
+                          >
+                            {openingDirId === r.id ? (
+                              <Loader2 size={12} className="animate-spin" />
+                            ) : (
+                              <FolderOpen size={12} />
+                            )}
+                            <span>打开目录</span>
+                          </button>
+                        )}
                         {availableFiles.length > 0 && (
                           <button
                             type="button"
@@ -515,7 +746,7 @@ export function HeaderDownloadCenter({
                             ) : (
                               <Download size={12} />
                             )}
-                            <span>{availableFiles.length === 1 ? '直接下载' : '打包下载'}</span>
+                            <span>{availableFiles.length === 1 ? '下载' : '打包下载'}</span>
                           </button>
                         )}
                         <button
@@ -527,7 +758,6 @@ export function HeaderDownloadCenter({
                             else navigateToTaskCenter();
                           }}
                         >
-                          <FolderOpen size={12} />
                           <span>详情</span>
                         </button>
                       </div>

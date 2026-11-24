@@ -2,7 +2,7 @@ export const GENERATOR_IDS = ['payment_binding', 'abnormal_followup', 'abnormal_
 
 export const TASK_KIND_LABELS: Record<TaskKind, string> = {
   download: '资料下载',
-  generate: '业务表生成',
+  generate: '业务报表生成',
   payroll: '兼职薪资核算',
 };
 

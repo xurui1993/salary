@@ -4,19 +4,25 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   buildPayrollProgressPopoverData,
+  canPermanentlyDeletePayrollTask,
   extractPayrollAmount,
   formatPayrollAmount,
+  formatPayrollDateTime,
   payrollCycleLabel,
   payrollPeriodRange,
   payrollSettlementType,
   payrollTypeTone,
   resolvePayrollElapsedText,
+  resolvePayrollGeneratedAt,
 } from '../src/lib/payrollQueue';
 import { buildDemoPayrollTasks } from '../src/lib/showcaseDemoData';
+import { filterPayrollQueueAdvanced } from '../src/lib/workbenchFilters';
 import { PayrollQueueTable } from '../src/components/PayrollQueueWorkbench';
 
-test('payrollQueue pure helpers format period, cycle, type tone, elapsed duration and amount cleanly', () => {
-  assert.equal(payrollPeriodRange({ start: '2026-10-01', end: '2026-10-31' }), '10.01-10.31');
+test('payrollQueue pure helpers format period, cycle, type tone, elapsed duration, amount and generated time cleanly', () => {
+  assert.equal(payrollPeriodRange({ start: '2026-10-01', end: '2026-10-31' }), '10.01 - 10.31');
+  assert.equal(payrollPeriodRange({ start: '2026-10-05', end: '2026-10-05' }), '10.05');
+  assert.equal(payrollPeriodRange({ start: '2025-12-16', end: '2026-01-15' }), '2025.12.16 - 2026.01.15');
   assert.equal(payrollCycleLabel({ cycle: '9月整月（历史批次）' }), '9月整月');
   assert.equal(payrollCycleLabel({ month: '2026-11' }), '11月账期');
   assert.equal(payrollTypeTone('fengshen'), 'auto');
@@ -44,13 +50,30 @@ test('payrollQueue pure helpers format period, cycle, type tone, elapsed duratio
   assert.equal(extractPayrollAmount({ status: 'queued' }), null);
   assert.equal(formatPayrollAmount(612480.5), '612,480.50');
   assert.equal(formatPayrollAmount(null), '—');
+
+  assert.equal(formatPayrollDateTime('2026-11-24T11:33:01+08:00'), '2026-11-24 11:33:01');
+  assert.equal(formatPayrollDateTime('2026-11-24T00:05:09+08:00'), '2026-11-24 00:05:09');
+  assert.equal(formatPayrollDateTime('2026-11-24 11:33:01'), '2026-11-24 11:33:01');
+  assert.equal(formatPayrollDateTime(null), '—');
+  assert.equal(
+    resolvePayrollGeneratedAt({ status: 'completed', finished_at: '2026-11-24T11:33:01+08:00' }),
+    '2026-11-24T11:33:01+08:00',
+  );
+  assert.equal(resolvePayrollGeneratedAt({ status: 'calculating', created_at: '2026-11-24T11:30:00+08:00' }), null);
+
+  assert.equal(canPermanentlyDeletePayrollTask({ status: 'completed' }), true);
+  assert.equal(canPermanentlyDeletePayrollTask({ status: 'error' }), true);
+  assert.equal(canPermanentlyDeletePayrollTask({ status: 'cancelled' }), true);
+  assert.equal(canPermanentlyDeletePayrollTask({ status: 'queued' }), false);
+  assert.equal(canPermanentlyDeletePayrollTask({ status: 'calculating' }), false);
 });
 
-test('demo payroll tasks provide realistic amounts, compact period, elapsed time on all tasks, and all 5 settlement types', () => {
+test('demo payroll tasks provide realistic amounts, generated time on completed tasks, compact period, and all 5 settlement types', () => {
   const tasks = buildDemoPayrollTasks();
   const shCompleted = tasks.find(t => t.id === 'demo-pq-12');
   assert.ok(shCompleted);
   assert.equal(extractPayrollAmount(shCompleted), 612480.5);
+  assert.equal(formatPayrollDateTime(resolvePayrollGeneratedAt(shCompleted)), '2026-11-24 11:33:01');
   assert.ok(shCompleted.preparation?.result?.review_summary?.metrics?.length);
   assert.ok(shCompleted.preparation?.automatic_deductions?.sources?.length);
 
@@ -62,6 +85,10 @@ test('demo payroll tasks provide realistic amounts, compact period, elapsed time
   const queued = tasks.find(t => t.status === 'queued');
   assert.ok(queued);
   assert.equal(extractPayrollAmount(queued), null);
+  assert.equal(resolvePayrollGeneratedAt(queued), null);
+
+  const alertRows = filterPayrollQueueAdvanced(tasks, { tab: 'all', keyword: '', alertOnly: true });
+  assert.ok(alertRows.length > 0 && alertRows.length < tasks.length);
 });
 
 test('buildPayrollProgressPopoverData returns elapsed timing, progress percentage, and current processing node', () => {
@@ -81,8 +108,9 @@ test('buildPayrollProgressPopoverData returns elapsed timing, progress percentag
   assert.ok(queuedPop.currentNode.length > 0);
 });
 
-test('PayrollQueueTable renders combined status-progress bar with hover popover trigger and removes inline elapsed text', () => {
-  const tasks = buildDemoPayrollTasks().slice(0, 6);
+test('PayrollQueueTable renders 生成时间 column, status-progress bar, and archived permanent delete button', () => {
+  const allDemo = buildDemoPayrollTasks();
+  const tasks = [...allDemo.slice(0, 6), allDemo.find(t => t.id === 'demo-pq-12')!];
   const noop = () => {};
   const html = renderToStaticMarkup(
     React.createElement(PayrollQueueTable, {
@@ -94,6 +122,7 @@ test('PayrollQueueTable renders combined status-progress bar with hover popover 
       onCheckAll: noop,
       onStop: noop,
       onRemove: noop,
+      onPermanentDelete: noop,
       onDownload: noop,
       onOpenDirectory: noop,
       onRestore: noop,
@@ -101,10 +130,12 @@ test('PayrollQueueTable renders combined status-progress bar with hover popover 
     }),
   );
 
-  for (const heading of ['审批编号', '城市', '周期', '类型', '人数', '金额', '核算进度', '操作']) {
+  for (const heading of ['审批编号', '城市', '周期', '类型', '人数', '生成时间', '核算进度', '操作']) {
     assert.match(html, new RegExp(`>${heading}<`));
   }
-  assert.match(html, /10\.01-10\.31/);
+  assert.doesNotMatch(html, />金额</);
+  assert.match(html, /2026-11-24 11:33:01/);
+  assert.match(html, /10\.01 - 10\.31/);
   assert.doesNotMatch(html, /10月整月\s*·/);
   assert.doesNotMatch(html, /闪购自动/);
   assert.match(html, /月结/);
@@ -122,4 +153,26 @@ test('PayrollQueueTable renders combined status-progress bar with hover popover 
   assert.doesNotMatch(html, /pq-detail-trigger|>详情</);
   assert.doesNotMatch(html, /pq-review-alert-btn/);
   assert.doesNotMatch(html, /pq-expand-toggle|pq-row-detail/);
+
+  const archivedHtml = renderToStaticMarkup(
+    React.createElement(PayrollQueueTable, {
+      tasks: [allDemo.find(t => t.id === 'demo-pq-12')!],
+      checked: [],
+      hidden: true,
+      onSelect: noop,
+      onOpenDetail: noop,
+      onCheck: noop,
+      onCheckAll: noop,
+      onStop: noop,
+      onRemove: noop,
+      onPermanentDelete: noop,
+      onDownload: noop,
+      onOpenDirectory: noop,
+      onRestore: noop,
+      onApproval: async () => {},
+    }),
+  );
+  assert.match(archivedHtml, />恢复</);
+  assert.match(archivedHtml, /pq-delete-btn/);
+  assert.match(archivedHtml, /彻底删除/);
 });

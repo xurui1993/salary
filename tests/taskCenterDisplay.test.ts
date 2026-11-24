@@ -4,6 +4,7 @@ import {
   buildTaskProgressPopoverData,
   buildTaskTimelineSteps,
   canOpenTaskResultDirectory,
+  canPermanentlyDeleteTask,
   cleanTaskTitle,
   computeDatePresetRange,
   computeTaskDiagnosticNote,
@@ -11,6 +12,7 @@ import {
   formatCompactTimestamp,
   formatFileSize,
   formatPeriodCompact,
+  formatTaskContentDisplay,
   isTaskRetryable,
   platformTone,
   resolveTaskAuthSystem,
@@ -36,21 +38,118 @@ test('cleanTaskTitle removes redundant leading platform and kind prefixes withou
   assert.equal(cleanTaskTitle('配送费、违规扣款', '风神', '资料下载'), '配送费、违规扣款');
 });
 
-test('formatCitiesCompact, formatPeriodCompact, formatCompactTimestamp and platformTone format concise metadata', () => {
+test('formatTaskContentDisplay, formatCitiesCompact, formatPeriodCompact, formatCompactTimestamp and permanent delete eligibility work cleanly', () => {
+  const labels: Record<string, string> = {
+    delivery_fee: '配送费',
+    violation: '违规扣款',
+    rider_detail: '骑手明细',
+    fraud_order: '欺诈单',
+  };
+  const datasetLabel = (id: string) => labels[id] || id;
+
+  assert.deepEqual(
+    formatTaskContentDisplay(
+      {
+        kind: 'download',
+        title: '风神 · 上海/深圳/广州 10月配送费与违规扣款',
+        datasets: ['delivery_fee', 'violation'],
+        cities: ['上海', '深圳', '广州'],
+      },
+      { datasetLabel, platformName: '风神', kindLabel: '资料下载' },
+    ),
+    { short: '配送费、违规扣款', full: '配送费、违规扣款' },
+  );
+  assert.deepEqual(
+    formatTaskContentDisplay(
+      {
+        kind: 'download',
+        title: '风神 · 多表采集',
+        datasets: ['delivery_fee', 'violation', 'rider_detail', 'fraud_order'],
+        cities: ['上海'],
+      },
+      { datasetLabel, platformName: '风神', kindLabel: '资料下载' },
+    ),
+    { short: '配送费、违规扣款 等4项', full: '配送费、违规扣款、骑手明细、欺诈单' },
+  );
+  assert.equal(
+    formatTaskContentDisplay(
+      {
+        kind: 'approval',
+        title: '蓝橙价格审批 · 上海/深圳 10月薪资单价批量审批',
+        datasets: [],
+        cities: ['上海', '深圳'],
+      },
+      { datasetLabel, platformName: '蓝橙', kindLabel: '价格审批' },
+    ).short,
+    '薪资单价批量审批',
+  );
+  assert.deepEqual(
+    formatTaskContentDisplay(
+      {
+        kind: 'download',
+        datasets: ['rider_daily', 'detail_orders'],
+        cities: ['北京', '天津'],
+      },
+      {
+        datasetLabel: id =>
+          id === 'rider_daily' ? '日维度骑手分析（灯塔）' : '配送订单明细（灯塔）',
+        platformName: '灯塔',
+        kindLabel: '资料下载',
+      },
+    ),
+    {
+      short: '日维度骑手分析、配送订单明细',
+      full: '日维度骑手分析（灯塔）、配送订单明细（灯塔）',
+    },
+  );
+  assert.equal(
+    formatTaskContentDisplay(
+      {
+        kind: 'download',
+        datasets: ['baize_employees'],
+        cities: ['全量'],
+      },
+      {
+        datasetLabel: () => '商翼员工资料（全量）',
+        platformName: '商翼',
+        kindLabel: '资料下载',
+      },
+    ).short,
+    '员工资料',
+  );
+
   assert.deepEqual(formatCitiesCompact(['上海', '深圳', '广州']), {
-    short: '上海、深圳等3城',
+    short: '上海等3城',
     full: '上海、深圳、广州',
   });
+  assert.deepEqual(formatCitiesCompact(['宁波', '泉州']), {
+    short: '宁波、泉州',
+    full: '宁波、泉州',
+  });
+  assert.deepEqual(formatCitiesCompact(['按业务筛选范围']), {
+    short: '按筛选范围',
+    full: '按业务筛选范围',
+  });
   assert.deepEqual(formatCitiesCompact([]), { short: '全部城市', full: '全部城市' });
+  assert.deepEqual(formatCitiesCompact([], ['baize_employees']), { short: '全量', full: '全量数据' });
 
   assert.equal(formatPeriodCompact('2026-10-01', '2026-10-31', ['delivery_fee']).short, '10.01 - 10.31');
-  assert.equal(formatPeriodCompact('2026-11-21', '2026-11-21', ['baize_employees']).short, '全量范围');
+  assert.equal(formatPeriodCompact('2026-11-21', '2026-11-21', ['baize_employees']).short, '全量数据');
   assert.equal(formatPeriodCompact('2026-11-21', '2026-11-21', ['rider_archive']).short, '当前快照');
+  assert.equal(formatPeriodCompact('', '', [], 'approval').short, '单次审批');
+  assert.equal(formatPeriodCompact('', '', [], 'price-export').short, '按筛选范围');
+
+  assert.equal(canPermanentlyDeleteTask({ status: 'success' }), true);
+  assert.equal(canPermanentlyDeleteTask({ status: 'error' }), true);
+  assert.equal(canPermanentlyDeleteTask({ status: 'cancelled' }), true);
+  assert.equal(canPermanentlyDeleteTask({ status: 'running' }), false);
+  assert.equal(canPermanentlyDeleteTask({ status: 'queued' }), false);
+  assert.equal(canPermanentlyDeleteTask({ status: 'waiting_login' }), false);
 
   const now = Date.parse('2026-11-21T23:00:00+08:00');
   assert.equal(formatCompactTimestamp('2026-11-21T22:55:00+08:00', now).short, '今天 22:55');
   assert.equal(formatCompactTimestamp('2026-11-20T19:40:00+08:00', now).short, '昨天 19:40');
-  assert.equal(formatCompactTimestamp('2026-11-18T14:15:00+08:00', now).short, '11-18 14:15');
+  assert.equal(formatCompactTimestamp('2026-11-18T14:15:00+08:00', now).short, '11.18 14:15');
 
   assert.equal(platformTone('风神'), 'fengshen');
   assert.equal(platformTone('灯塔'), 'xiaoxiang');
@@ -169,6 +268,10 @@ test('computeTaskDiagnosticNote surfaces alerts only for abnormal tasks and buil
 
   const demo = buildDemoTaskCenterRecords();
   assert.equal(demo.length, 30);
+  const problemDemo = demo.find(item => item.id === 'TC-20261121-007');
+  assert.ok(problemDemo);
+  assert.equal(problemDemo.kind, 'generate');
+  assert.deepEqual(problemDemo.datasets, ['problem']);
   for (const item of demo) {
     const steps = buildTaskTimelineSteps(
       {

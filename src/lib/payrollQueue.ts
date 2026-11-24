@@ -73,9 +73,14 @@ export function payrollPeriodShort(value?: string) {
 
 export function payrollPeriodRange(plan?: PayrollQueueTask["plan"]) {
   if (!plan) return "";
-  const start = payrollPeriodShort(plan.start);
-  const end = payrollPeriodShort(plan.end);
-  if (start && end) return `${start}-${end}`;
+  const rawStart = (plan.start || "").trim();
+  const rawEnd = (plan.end || "").trim();
+  const startYear = /^(\d{4})-/.exec(rawStart)?.[1];
+  const endYear = /^(\d{4})-/.exec(rawEnd)?.[1];
+  const crossYear = Boolean(startYear && endYear && startYear !== endYear);
+  const start = crossYear ? rawStart.slice(0, 10).replace(/-/g, ".") : payrollPeriodShort(rawStart);
+  const end = crossYear ? rawEnd.slice(0, 10).replace(/-/g, ".") : payrollPeriodShort(rawEnd);
+  if (start && end) return start === end ? start : `${start} - ${end}`;
   return start || end || "";
 }
 
@@ -133,6 +138,71 @@ export function formatPayrollAmount(amount: number | null | undefined): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+/**
+ * 解析兼职核算批次的结果生成时间：仅已完成批次返回有效时间戳，未完成返回 null。
+ */
+export function resolvePayrollGeneratedAt(task?: PayrollQueueTask | null): string | null {
+  if (!task || task.status !== "completed") return null;
+  const prepResult = task.preparation?.result as Record<string, unknown> | undefined;
+  const candidates = [
+    task.finished_at,
+    task.generated_at,
+    prepResult?.finished_at,
+    prepResult?.generated_at,
+    (task.preparation as Record<string, unknown> | null | undefined)?.finished_at,
+    task.updated_at,
+    task.created_at,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      const ms = Date.parse(candidate);
+      if (Number.isFinite(ms)) return candidate.trim();
+    }
+    if (typeof candidate === "number" && Number.isFinite(candidate) && candidate > 0) {
+      const ms = candidate < 1e12 ? candidate * 1000 : candidate;
+      return new Date(ms).toISOString();
+    }
+  }
+  return null;
+}
+
+/**
+ * 格式化为标准完整生成时间：YYYY-MM-DD HH:mm:ss（北京时间，如 2026-11-24 11:33:01）。
+ */
+export function formatPayrollDateTime(value?: string | number | null): string {
+  if (value === null || value === undefined || value === "") return "—";
+  let date: Date;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value <= 0) return "—";
+    date = new Date(value < 1e12 ? value * 1000 : value);
+  } else {
+    const trimmed = value.trim();
+    if (/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$/.test(trimmed)) {
+      return trimmed;
+    }
+    date = new Date(trimmed);
+  }
+  if (!Number.isFinite(date.getTime())) return "—";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type: string) => parts.find(part => part.type === type)?.value || "";
+  const hour = get("hour") === "24" ? "00" : get("hour");
+  return `${get("year")}-${get("month")}-${get("day")} ${hour}:${get("minute")}:${get("second")}`;
+}
+
+export function canPermanentlyDeletePayrollTask(task?: PayrollQueueTask | null): boolean {
+  if (!task || !task.status) return false;
+  return !["queued", "preparing", "calculating", "stopping"].includes(task.status);
 }
 
 export function payrollElapsed(seconds: number) {
@@ -267,12 +337,20 @@ export function summarizePayrollTasks(tasks: PayrollQueueTask[]): PayrollQueueSu
   };
 }
 
-export type PayrollSortKey = "default" | "amount_desc" | "applicants_desc" | "elapsed_desc";
+export type PayrollSortKey = "default" | "generated_desc" | "amount_desc" | "applicants_desc" | "elapsed_desc";
 
 export function sortPayrollTasks(tasks: PayrollQueueTask[], sortKey: PayrollSortKey): PayrollQueueTask[] {
   if (sortKey === "default") return tasks;
   const copy = [...tasks];
-  if (sortKey === "amount_desc") {
+  if (sortKey === "generated_desc") {
+    const toMs = (task: PayrollQueueTask) => {
+      const iso = resolvePayrollGeneratedAt(task);
+      if (!iso) return -1;
+      const ms = Date.parse(iso);
+      return Number.isFinite(ms) ? ms : -1;
+    };
+    copy.sort((a, b) => toMs(b) - toMs(a));
+  } else if (sortKey === "amount_desc") {
     copy.sort((a, b) => (extractPayrollAmount(b) ?? -1) - (extractPayrollAmount(a) ?? -1));
   } else if (sortKey === "applicants_desc") {
     copy.sort((a, b) => (b.plan?.applicants ?? -1) - (a.plan?.applicants ?? -1));

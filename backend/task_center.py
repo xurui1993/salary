@@ -111,6 +111,11 @@ def collect(request):
     return _refresh_cache(key, request)
 
 
+def _invalidate_cache():
+    with LOCK:
+        _COLLECT_CACHE.clear()
+
+
 def price_summaries(manager, scope, kind):
     """List metadata only; never decode approval snapshots or price worksheets."""
     if kind == 'approval':
@@ -270,7 +275,81 @@ def visibility(payload: dict, request: Request):
                 now = dt.datetime.now(dt.timezone.utc).isoformat()
                 db.executemany('INSERT OR REPLACE INTO hidden (id,created,signature) VALUES (?, ?, ?)', [(key, now, signature(by_id[key])) for key in set(ids) if by_id[key]['status'] not in ACTIVE])
                 db.executemany('INSERT OR REPLACE INTO pending_hide (id,created,members) VALUES (?,?,?)', [(r['id'], now, json.dumps(sorted(r.get('member_ids', [])))) for r in active])
+        _invalidate_cache()
     return {'changed': len(set(ids))}
+
+
+@router.post('/delete')
+def delete_tasks(payload: dict, request: Request):
+    """Permanently delete finished task center records and optionally clean confined output files."""
+    validate_write_request(request)
+    user = require_account(request)
+    ids = payload.get('ids')
+    delete_files = payload.get('delete_files', True)
+    if (
+        not isinstance(ids, list)
+        or not 1 <= len(ids) <= 200
+        or any(not isinstance(key, str) or not key.strip() for key in ids)
+        or type(delete_files) is not bool
+    ):
+        raise HTTPException(400, '请选择 1 至 200 个有效任务')
+    unique_ids = list(dict.fromkeys(ids))
+    with LOCK:
+        _invalidate_cache()
+        records, _ = collect(request)
+        by_id = {r['id']: r for r in records}
+        missing = [key for key in unique_ids if key not in by_id]
+        if missing:
+            raise HTTPException(404, '部分任务不存在或已删除，请刷新列表后重试')
+        active = [by_id[key] for key in unique_ids if by_id[key]['status'] in ACTIVE]
+        if active:
+            raise HTTPException(409, '请先停止执行中或排队中的任务再彻底删除')
+        owner = None if user['role'] == 'admin' else user['owner']
+        for key in unique_ids:
+            record = by_id[key]
+            kind = record.get('kind')
+            if kind == 'approval':
+                from lanorange_approvals import get_manager as approvals, scope as approval_scope, ApprovalError
+                from delivery_store import project_store
+                try:
+                    approvals().delete_batch(approval_scope(request), record['price_id'])
+                except ApprovalError as error:
+                    raise HTTPException(409 if error.kind == 'busy' else 404, str(error)) from None
+                project_store().purge('approval:' + record['price_id'], delete_files=delete_files)
+            elif kind == 'price-export':
+                from lanorange_price_export import manager as exports, owner as price_owner
+                from lanorange_approvals import ApprovalError
+                from delivery_store import project_store
+                try:
+                    exports().delete_export(price_owner(request), record['price_id'], delete_files=delete_files)
+                except ApprovalError as error:
+                    raise HTTPException(409 if error.kind == 'busy' else 404, str(error)) from None
+                project_store().purge('price-export:' + record['price_id'], delete_files=delete_files)
+            elif kind == 'payroll' and key.startswith('payroll_'):
+                import shutil
+                from payroll_inputs import workspace, directory as batch_directory, delivery_store
+                wid = workspace(request)
+                batch_id = record.get('batch_id') or key[len('payroll_'):]
+                delivery_store().purge('payroll:' + wid + ':' + batch_id, delete_files=delete_files)
+                if delete_files:
+                    upload_base = (Path(ROOT) / 'uploads' / wid).resolve()
+                    folder = batch_directory(wid, batch_id).resolve()
+                    if folder != upload_base and folder.is_relative_to(upload_base) and folder.is_dir() and not folder.is_symlink():
+                        shutil.rmtree(folder, ignore_errors=True)
+            else:
+                from download_jobs import get_manager, DownloadRequestConflict
+                manager = get_manager()
+                member_ids = record.get('member_ids') or [record.get('action_run_id') or key]
+                try:
+                    manager.purge_runs(owner, member_ids, delete_files=delete_files)
+                except DownloadRequestConflict as error:
+                    raise HTTPException(409, str(error)) from None
+                manager.deliveries.purge(key, delete_files=delete_files)
+        with database() as db:
+            db.executemany('DELETE FROM hidden WHERE id=?', [(key,) for key in unique_ids])
+            db.executemany('DELETE FROM pending_hide WHERE id=?', [(key,) for key in unique_ids])
+        _invalidate_cache()
+    return {'deleted': len(unique_ids), 'ids': unique_ids, 'delete_files': delete_files}
 
 
 def stop_record(record, request):

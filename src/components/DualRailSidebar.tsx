@@ -5,6 +5,7 @@ import {
   CreditCard,
   FileSpreadsheet,
   FileWarning,
+  FolderCheck,
   FolderKanban,
   Layers,
   Radar,
@@ -36,12 +37,13 @@ export interface DualRailSidebarProps {
   isDrawerMode: boolean;
   taskFormLocked: boolean;
   platformStatuses: PlatformStatusMap;
-  systemStats: SystemResourceStatsInput | null;
+  systemStats?: SystemResourceStatsInput | null;
   activeDownloadCount: number;
   payrollBadge: { label: string; tone: 'active' | 'warn' | 'ready' | 'done' } | null;
   approvalActiveCount: number;
   approvalPendingCount?: number;
   totalActiveCount: number;
+  taskAttentionCount?: number;
   hasLogErrors?: boolean;
   logDrawerOpen?: boolean;
   pinnedTargets?: QuickTargetId[];
@@ -66,7 +68,7 @@ interface SidebarNavItem {
   badgeTone?: 'active' | 'warn' | 'ready' | 'done';
 }
 
-export function DualRailSidebar({
+export const DualRailSidebar = React.memo(function DualRailSidebar({
   workspaceView,
   taskKind,
   downloadPlatform,
@@ -81,6 +83,8 @@ export function DualRailSidebar({
   payrollBadge,
   approvalActiveCount,
   approvalPendingCount = 0,
+  totalActiveCount,
+  taskAttentionCount = 0,
   onExecuteAction,
   onCloseMobile,
 }: DualRailSidebarProps) {
@@ -177,6 +181,23 @@ export function DualRailSidebar({
     },
   ];
 
+  const deliveryItems: SidebarNavItem[] = [
+    {
+      id: 'workspace:history',
+      label: '任务中心',
+      icon: <FolderCheck size={15.5} />,
+      active: workspaceView === 'history',
+      action: { type: 'workspace', view: 'history' },
+      badgeText:
+        totalActiveCount > 0
+          ? `${totalActiveCount} 进行中`
+          : taskAttentionCount > 0
+            ? `${taskAttentionCount} 待处理`
+            : undefined,
+      badgeTone: totalActiveCount > 0 ? 'active' : 'warn',
+    },
+  ];
+
   const renderNavItem = (item: SidebarNavItem) => (
     <button
       key={item.id}
@@ -259,6 +280,15 @@ export function DualRailSidebar({
             {payrollItems.map(renderNavItem)}
           </div>
         </section>
+
+        <section className="wbx-snav-group wbx-snav-group--delivery" aria-label="任务与交付">
+          <div className="wbx-snav-group__head">
+            <span className="wbx-snav-group__title">任务与交付</span>
+          </div>
+          <div className="wbx-snav-group__list">
+            {deliveryItems.map(renderNavItem)}
+          </div>
+        </section>
       </nav>
 
       {/* 底部引擎资源状态条 */}
@@ -267,4 +297,4 @@ export function DualRailSidebar({
       </div>
     </aside>
   );
-}
+});

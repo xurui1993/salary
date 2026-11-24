@@ -24,35 +24,34 @@
   padding: 18px 22px;
   border-radius: 18px;
   background:
-    radial-gradient(480px 180px at 0% 0%, rgba(0, 174, 236, 0.14), transparent 72%),
-    radial-gradient(420px 160px at 100% 100%, rgba(56, 189, 248, 0.10), transparent 70%),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.88) 0%, rgba(255, 255, 255, 0.76) 100%);
-  backdrop-filter: blur(22px) saturate(180%);
-  -webkit-backdrop-filter: blur(22px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.94);
+    radial-gradient(480px 180px at 0% 0%, rgba(0, 174, 236, 0.13), transparent 72%),
+    radial-gradient(420px 160px at 100% 100%, rgba(56, 189, 248, 0.09), transparent 70%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.97) 0%, rgba(250, 253, 255, 0.94) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.96);
   box-shadow:
-    0 12px 30px -10px rgba(14, 116, 144, 0.085),
-    0 2px 6px rgba(15, 23, 42, 0.03),
+    0 12px 30px -10px rgba(14, 116, 144, 0.08),
+    0 2px 6px rgba(15, 23, 42, 0.025),
     inset 0 1px 0 #ffffff;
+  contain: layout style;
   overflow: hidden;
 }
 
 .wbx-stage-hero.is-lanorange {
   background:
-    radial-gradient(480px 180px at 0% 0%, rgba(59, 130, 246, 0.14), transparent 72%),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.88) 0%, rgba(255, 255, 255, 0.76) 100%);
+    radial-gradient(480px 180px at 0% 0%, rgba(59, 130, 246, 0.13), transparent 72%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.97) 0%, rgba(250, 253, 255, 0.94) 100%);
 }
 
 .wbx-stage-hero.is-payout {
   background:
-    radial-gradient(480px 180px at 0% 0%, rgba(16, 185, 129, 0.13), transparent 72%),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.88) 0%, rgba(255, 255, 255, 0.76) 100%);
+    radial-gradient(480px 180px at 0% 0%, rgba(16, 185, 129, 0.12), transparent 72%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.97) 0%, rgba(250, 253, 255, 0.94) 100%);
 }
 
 .wbx-stage-hero.is-xiaoxiang {
   background:
-    radial-gradient(480px 180px at 0% 0%, rgba(14, 165, 233, 0.14), transparent 72%),
-    linear-gradient(135deg, rgba(255, 255, 255, 0.88) 0%, rgba(255, 255, 255, 0.76) 100%);
+    radial-gradient(480px 180px at 0% 0%, rgba(14, 165, 233, 0.13), transparent 72%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.97) 0%, rgba(250, 253, 255, 0.94) 100%);
 }
 
 .wbx-stage-hero__main {
@@ -417,16 +416,15 @@
 /* 3. Step 卡片容器与清爽排版标题区（L2 透亮液体玻璃卡 + 18px 圆角 + 顶部高光棱线） */
 .wbx-step {
   margin: 0;
-  border: 1px solid rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.95);
   border-radius: 18px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.88) 0%, rgba(255, 255, 255, 0.78) 100%);
-  backdrop-filter: blur(20px) saturate(175%);
-  -webkit-backdrop-filter: blur(20px) saturate(175%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97) 0%, rgba(252, 253, 255, 0.95) 100%);
   padding: 20px 22px;
   box-shadow:
-    0 12px 32px -10px rgba(14, 116, 144, 0.075),
-    0 2px 6px rgba(15, 23, 42, 0.03),
+    0 12px 32px -10px rgba(14, 116, 144, 0.07),
+    0 2px 6px rgba(15, 23, 42, 0.025),
     inset 0 1px 0 #ffffff;
+  contain: layout style;
   min-width: 0;
   transition: border-color var(--wbx-dur-fast) var(--wbx-ease),
               box-shadow var(--wbx-dur-fast) var(--wbx-ease);
@@ -944,16 +942,15 @@
   gap: 15px;
   padding: 19px 20px;
   background:
-    radial-gradient(280px 140px at 100% 0%, rgba(0, 174, 236, 0.11), transparent 72%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.88) 0%, rgba(255, 255, 255, 0.76) 100%);
-  backdrop-filter: blur(22px) saturate(180%);
-  -webkit-backdrop-filter: blur(22px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.94);
+    radial-gradient(280px 140px at 100% 0%, rgba(0, 174, 236, 0.10), transparent 72%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.97) 0%, rgba(250, 253, 255, 0.94) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.96);
   border-radius: 18px;
   box-shadow:
-    0 12px 32px -10px rgba(14, 116, 144, 0.085),
-    0 2px 6px rgba(15, 23, 42, 0.03),
+    0 12px 32px -10px rgba(14, 116, 144, 0.08),
+    0 2px 6px rgba(15, 23, 42, 0.025),
     inset 0 1px 0 #ffffff;
+  contain: layout style;
 }
 
 .wbx-rail__head {
@@ -1277,7 +1274,8 @@
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 0;
+  min-height: 26px;
+  padding: 3px 0;
   border: 0;
   background: transparent;
   color: inherit;
@@ -1458,12 +1456,11 @@
   flex-direction: column;
   gap: 0;
   padding: 0;
-  background: rgba(255, 255, 255, 0.94);
-  backdrop-filter: var(--wbx-blur-card);
-  -webkit-backdrop-filter: var(--wbx-blur-card);
+  background: rgba(255, 255, 255, 0.97);
   border: 1px solid rgba(24, 25, 28, 0.055);
   border-radius: 16px;
   box-shadow: var(--wbx-shadow-sm);
+  contain: layout style;
   overflow: hidden;
 }
 
@@ -1610,33 +1607,40 @@
 
 .wbx-taskcenter__table thead th.tc-col-check,
 .wbx-taskcenter__table tbody td.tc-col-check {
-  width: 40px;
-  min-width: 40px;
-  padding-left: 16px;
-  padding-right: 4px;
+  width: 42px;
+  min-width: 42px;
+  padding-left: 14px;
+  padding-right: 6px;
   text-align: center;
+}
+
+.wbx-taskcenter__table .tc-col-check input[type="checkbox"] {
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0;
 }
 
 .wbx-taskcenter__table thead th.tc-col-time,
 .wbx-taskcenter__table tbody td.tc-col-time {
-  text-align: right;
+  text-align: left;
   white-space: nowrap;
-  width: 112px;
-  min-width: 112px;
-  padding-right: 22px;
+  width: 102px;
+  min-width: 102px;
+  padding-left: 13px;
+  padding-right: 13px;
 }
 
 .wbx-taskcenter__table thead th.tc-col-ops {
   position: sticky;
   right: 0;
   z-index: 5;
-  text-align: right;
-  width: 172px;
-  min-width: 172px;
-  max-width: 172px;
+  text-align: center;
+  width: 168px;
+  min-width: 168px;
+  max-width: 168px;
   box-sizing: border-box;
   padding-left: 8px;
-  padding-right: 17px;
+  padding-right: 13px;
   background: #F6F7F8;
 }
 
@@ -1645,12 +1649,12 @@
   right: 0;
   z-index: 2;
   text-align: right;
-  width: 172px;
-  min-width: 172px;
-  max-width: 172px;
+  width: 168px;
+  min-width: 168px;
+  max-width: 168px;
   box-sizing: border-box;
   padding-left: 8px;
-  padding-right: 17px;
+  padding-right: 13px;
   white-space: nowrap;
   background: #ffffff;
   box-shadow: -6px 0 10px -8px rgba(24, 25, 28, 0.05);
@@ -1674,13 +1678,19 @@
   transition: background-color 140ms ease;
 }
 
+.wbx-taskcenter__table tbody tr.tc-row td.tc-col-check {
+  padding-left: 14px;
+  padding-right: 6px;
+}
+
 .wbx-taskcenter__table tbody tr.tc-row td.tc-col-time {
-  padding-right: 22px;
+  padding-left: 13px;
+  padding-right: 13px;
 }
 
 .wbx-taskcenter__table tbody tr.tc-row td.tc-col-ops {
   padding-left: 8px;
-  padding-right: 17px;
+  padding-right: 13px;
 }
 
 .wbx-taskcenter__table tbody tr.tc-row:last-child td {
@@ -1697,11 +1707,78 @@
   background: #EFF8FE;
 }
 
-/* 列级排版与视觉层级：B站式舒适墨黑标题 + 柔灰辅文 */
+.wbx-taskcenter__table tbody tr.tc-row.is-newly-created td,
+.wbx-taskcenter__table tbody tr.tc-row.is-newly-created td.tc-col-ops {
+  animation: tcRowNewlyCreatedPulse 2.8s ease-out;
+}
+
+@keyframes tcRowNewlyCreatedPulse {
+  0% {
+    background: #dff3fe;
+  }
+  30% {
+    background: #e6f6ff;
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+/* 任务中心顶栏一键返回原模块按钮 */
+.wbx-tc-return-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px 0 8px;
+  border-radius: 8px;
+  border: 1px solid #dbeafe;
+  background: #f0f9ff;
+  color: #0369a1;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.wbx-tc-return-btn:hover {
+  background: #e0f2fe;
+  border-color: #7dd3fc;
+  color: #0284c7;
+}
+
+/* 提交后自动进入任务中心（防打断开关） */
+.wbx-autojump-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 2px 2px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  user-select: none;
+}
+
+.wbx-autojump-toggle input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #0284c7;
+  cursor: pointer;
+}
+
+.wbx-autojump-toggle:hover {
+  color: #0f172a;
+}
+
+/* 列级排版与视觉层级：清晰紧凑对齐，零截断噪音 */
 .wbx-taskcenter__table .tc-col-task {
   width: auto;
-  min-width: 220px;
-  padding-right: 18px;
+  min-width: 196px;
+  padding-right: 16px;
 }
 
 .tc-task-title {
@@ -1722,8 +1799,8 @@
 }
 
 .wbx-taskcenter__table .tc-col-source {
-  width: 152px;
-  min-width: 152px;
+  width: 166px;
+  min-width: 164px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1754,20 +1831,41 @@
   color: var(--wbx-text-subtle);
 }
 
-.wbx-taskcenter__table .tc-col-scope {
-  width: 20%;
-  min-width: 196px;
+.wbx-taskcenter__table .tc-col-city {
+  width: 102px;
+  min-width: 98px;
+  max-width: 116px;
   white-space: nowrap;
   overflow: hidden;
 }
 
-.tc-scope-inline {
+.tc-city-inline {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--wbx-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wbx-taskcenter__table .tc-col-period {
+  width: 124px;
+  min-width: 122px;
+  max-width: 136px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.tc-period-inline {
   display: block;
   width: 100%;
   max-width: 100%;
   font-family: var(--wbx-font-sans);
   font-variant-numeric: tabular-nums;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 400;
   color: var(--wbx-text-secondary);
   white-space: nowrap;
@@ -1776,9 +1874,9 @@
 }
 
 .wbx-taskcenter__table .tc-col-progress {
-  width: 158px;
-  min-width: 158px;
-  padding-right: 16px;
+  width: 150px;
+  min-width: 150px;
+  padding-right: 14px;
 }
 
 .tc-progress-top {
@@ -1799,12 +1897,18 @@
   font-weight: 500;
 }
 
-.wbx-taskcenter__table .tc-col-time {
+.wbx-taskcenter__table tbody td.tc-col-time {
   font-family: var(--wbx-font-sans);
   font-variant-numeric: tabular-nums;
   font-size: 12.5px;
   font-weight: 400;
   color: #64748b;
+}
+
+.tc-time-pair {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
 }
 
 /* 4 轨定宽操作网格：[自适应辅助图标组] [74px 柔光主按钮] [9px 分割线] [26px 移出图标] */
@@ -1818,9 +1922,11 @@
 }
 
 .tc-row-ops.is-archived {
-  display: inline-flex;
+  display: inline-grid;
+  grid-template-columns: minmax(26px, auto) 74px 9px 26px;
+  column-gap: 4px;
   align-items: center;
-  justify-content: flex-end;
+  justify-items: center;
 }
 
 .tc-op-slot-aux {
@@ -2005,6 +2111,23 @@
   background: #fff1f2;
   border-color: #fecdd3;
   color: #e11d48;
+}
+
+.tc-icon-btn.tc-delete-btn {
+  border-color: transparent;
+  background: transparent;
+  color: #e11d48;
+}
+
+.tc-icon-btn.tc-delete-btn:hover:not(:disabled) {
+  background: #ffe4e6;
+  border-color: #fda4af;
+  color: #be123c;
+}
+
+.tc-icon-btn.tc-delete-btn:disabled {
+  color: #cbd5e1;
+  cursor: not-allowed;
 }
 
 .wbx-taskcenter__skeleton {
@@ -2676,12 +2799,11 @@
 
 /* 专项报表右侧栏去嵌套：L1 轻液体玻璃卡 + 柔和发丝线分区 */
 .rb-workbench .rb-rail {
-  background: rgba(255, 255, 255, 0.84);
-  backdrop-filter: var(--wbx-blur-glass);
-  -webkit-backdrop-filter: var(--wbx-blur-glass);
-  border: 1px solid rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.94);
   border-radius: 16px;
   box-shadow: var(--wbx-shadow-sm), 0 0 0 1px rgba(24, 25, 28, 0.045);
+  contain: layout style;
   padding: 18px 20px;
   gap: 0;
 }
@@ -3370,16 +3492,15 @@
 /* 专项报表右侧核对舱（.rb-rail）同步升级为悬浮玻璃胶囊坞 */
 .rb-workbench .rb-rail {
   border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.96);
   background:
     radial-gradient(240px 140px at 100% 0%, rgba(0, 174, 236, 0.09) 0%, rgba(0, 174, 236, 0) 75%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(248, 252, 255, 0.85) 100%);
-  backdrop-filter: blur(22px) saturate(180%);
-  -webkit-backdrop-filter: blur(22px) saturate(180%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.97) 0%, rgba(248, 252, 255, 0.94) 100%);
   box-shadow:
-    0 14px 36px -10px rgba(14, 116, 144, 0.1),
-    0 2px 6px rgba(15, 23, 42, 0.03),
+    0 14px 36px -10px rgba(14, 116, 144, 0.095),
+    0 2px 6px rgba(15, 23, 42, 0.025),
     inset 0 1px 0 #ffffff;
+  contain: layout style;
 }
 
 .rb-workbench .wb-compact-scope-box {
@@ -3415,15 +3536,16 @@
 .rb-workbench .rb-rail-blocker {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 11px;
-  border-radius: 9px;
-  background: var(--wbx-warn-soft, #fffbeb);
-  border: 1px solid var(--wbx-warn-border, #fde68a);
-  color: #92400e;
+  justify-content: center;
+  gap: 5px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  background: transparent;
+  border: 0;
+  color: #b45309;
   font-size: 12px;
   font-weight: 500;
-  line-height: 1.45;
+  line-height: 1.4;
 }
 
 /* 城市与月份选择卡片（Step 02 / Step 03）冰晶触感微光优化 */

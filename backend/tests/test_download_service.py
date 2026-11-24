@@ -360,7 +360,7 @@ class DownloadServiceTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.runner = FakeRunner()
         original_batches = service.date_batches
-        self.clock = patch.object(service, "date_batches", side_effect=lambda a, b, today=None: original_batches(a, b, today or TODAY))
+        self.clock = patch.object(service, "date_batches", side_effect=lambda a, b, today=None, **kw: original_batches(a, b, today or TODAY, **kw))
         self.clock.start()
         self.addCleanup(self.clock.stop)
         filename = service.archive_filename
@@ -572,6 +572,24 @@ class DownloadServiceTests(unittest.TestCase):
         self.assertEqual(value["months"], ["2025-09", "2025-10"])
         with self.assertRaises(service.ValidationError):
             service.validate_request({**value, "datasets": ["fraud"]}, today=TODAY)
+
+    def test_standalone_problem_supports_ninety_day_window_while_fraud_stays_sixty(self):
+        self.assertEqual(service.get_options().get("problem_window_days"), 90)
+        ok = service.validate_request(
+            dict(cities=["泉州"], datasets=["problem"], start="2026-08-01", end="2026-08-15"),
+            today=TODAY,
+        )
+        self.assertEqual((ok["start"], ok["end"]), ("2026-08-01", "2026-08-15"))
+        with self.assertRaisesRegex(service.ValidationError, "近 90"):
+            service.validate_request(
+                dict(cities=["泉州"], datasets=["problem"], start="2026-07-18", end="2026-08-01"),
+                today=TODAY,
+            )
+        with self.assertRaisesRegex(service.ValidationError, "近 60"):
+            service.validate_request(
+                dict(cities=["泉州"], datasets=["fraud"], start="2026-08-01", end="2026-08-15"),
+                today=TODAY,
+            )
 
     def test_single_delivery_publishes_no_other_type(self):
         files, updates, _ = self.execute(self.config(["delivery_fee"]))

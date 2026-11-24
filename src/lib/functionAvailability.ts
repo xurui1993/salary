@@ -1,2 +1,41 @@
-// @ts-nocheck
-var __defProp=Object.defineProperty;var __name=(target,value)=>__defProp(target,"name",{value,configurable:true});function functionAvailability(source,value){if(value.offline)return"\u529F\u80FD\u72B6\u6001\u6682\u4E0D\u53EF\u8BFB\uFF0C\u8BF7\u91CD\u8BD5";if(value.busy)return"\u8BA4\u8BC1\u8FDB\u884C\u4E2D\uFF0C\u5B8C\u6210\u540E\u68C0\u6D4B\u529F\u80FD";if(!value.saved||["signed_out","login_required"].includes(value.state||""))return"\u9700\u8981\u767B\u5F55\u540E\u68C0\u67E5\u529F\u80FD\u6743\u9650";if(source==="xiaoxiang"){const stations=value.capabilities?.stations?.verified===true;const board=value.stages?.board;return`${stations?"\u7AD9\u70B9\u76EE\u5F55\u5DF2\u9A8C\u8BC1":"\u7AD9\u70B9\u76EE\u5F55\u5F85\u67E5\u8BE2\u9A8C\u8BC1"} \xB7 ${board==="ready"?"\u77E5\u4E86\u8FDE\u63A5\u5DF2\u9A8C\u8BC1\uFF0C\u6570\u636E\u6743\u9650\u4EE5\u5177\u4F53\u67E5\u8BE2\u4E3A\u51C6":board==="error"?"\u77E5\u4E86\u9700\u8981\u91CD\u65B0\u8BA4\u8BC1":"\u77E5\u4E86\u5C1A\u672A\u786E\u8BA4\uFF0C\u65E5\u5206\u6790\u6743\u9650\u5F85\u9A8C\u8BC1"}`}if(source==="fengshen"&&(value.capabilities?.cities?.verified||value.capabilities?.stations?.verified))return`${value.capabilities?.stations?.verified?"\u7AD9\u70B9\u76EE\u5F55\u5DF2\u9A8C\u8BC1":"\u57CE\u5E02\u76EE\u5F55\u5DF2\u9A8C\u8BC1"} \xB7 \u8D26\u5355\u6743\u9650\u4EE5\u5177\u4F53\u67E5\u8BE2\u4E3A\u51C6`;if(value.state==="ready")return"\u4F1A\u8BDD\u5DF2\u9A8C\u8BC1\uFF0C\u6570\u636E\u6743\u9650\u4EE5\u5177\u4F53\u67E5\u8BE2\u4E3A\u51C6";return"\u5DF2\u4FDD\u5B58\u4F1A\u8BDD\uFF0C\u529F\u80FD\u6743\u9650\u5C1A\u672A\u9A8C\u8BC1"}__name(functionAvailability,"functionAvailability");export{functionAvailability};
+export interface FunctionAvailabilityValue {
+  offline?: boolean;
+  busy?: boolean;
+  saved?: boolean;
+  state?: string;
+  capabilities?: {
+    cities?: { verified?: boolean };
+    stations?: { verified?: boolean };
+  };
+  stages?: {
+    board?: string;
+  };
+}
+
+export function functionAvailability(source: string, value: FunctionAvailabilityValue): string {
+  if (value.offline) return '功能状态暂不可读，请重试';
+  if (value.busy) return '认证进行中，完成后检测功能';
+  if (!value.saved || ['signed_out', 'login_required'].includes(value.state || '')) {
+    return '需要登录后检查功能权限';
+  }
+  if (source === 'xiaoxiang') {
+    const stations = value.capabilities?.stations?.verified === true;
+    const board = value.stages?.board;
+    const stationText = stations ? '站点目录已验证' : '站点目录待查询验证';
+    const boardText =
+      board === 'ready'
+        ? '知了连接已验证，数据权限以具体查询为准'
+        : board === 'error'
+          ? '知了需要重新认证'
+          : '知了尚未确认，日分析权限待验证';
+    return `${stationText} · ${boardText}`;
+  }
+  if (
+    source === 'fengshen' &&
+    (value.capabilities?.cities?.verified || value.capabilities?.stations?.verified)
+  ) {
+    return `${value.capabilities?.stations?.verified ? '站点目录已验证' : '城市目录已验证'} · 账单权限以具体查询为准`;
+  }
+  if (value.state === 'ready') return '会话已验证，数据权限以具体查询为准';
+  return '已保存会话，功能权限尚未验证';
+}

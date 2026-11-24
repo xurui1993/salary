@@ -108,8 +108,8 @@
   --wbx-r-lg: 16px;
   --wbx-r-pill: 999px;
 
-  --wbx-blur-glass: blur(20px) saturate(165%);
-  --wbx-blur-card: blur(14px) saturate(140%);
+  --wbx-blur-glass: blur(10px) saturate(135%);
+  --wbx-blur-card: none;
 
   --wbx-shadow-xs: 0 2px 6px -1px rgba(24, 25, 28, 0.03), inset 0 1px 0 rgba(255, 255, 255, 0.9);
   --wbx-shadow-sm: 0 6px 22px -6px rgba(24, 25, 28, 0.045), 0 1px 3px rgba(24, 25, 28, 0.025), inset 0 1px 0 rgba(255, 255, 255, 0.92);

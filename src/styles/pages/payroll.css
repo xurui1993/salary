@@ -2401,7 +2401,7 @@
   top: 0;
   z-index: 4;
   height: 40px;
-  padding: 0 12px;
+  padding: 0 9px;
   background: #F6F7F8;
   color: #61666D;
   font-size: 12.5px;
@@ -2414,49 +2414,57 @@
 
 .wbx-payroll__table thead th.pq-check,
 .wbx-payroll__table tbody td.pq-check {
-  width: 44px;
-  min-width: 44px;
-  padding-left: 14px;
+  width: 40px;
+  min-width: 40px;
+  padding-left: 12px;
   padding-right: 6px;
   text-align: center;
+}
+
+.wbx-payroll__table .pq-check input[type="checkbox"] {
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0;
 }
 
 .wbx-payroll__table thead th.pq-col-applicants,
 .wbx-payroll__table tbody td.pq-col-applicants {
   text-align: right;
   white-space: nowrap;
-  min-width: 68px;
-  width: 8%;
-  padding-right: 20px;
+  min-width: 48px;
+  width: 5%;
+  padding-right: 12px;
 }
 
-.wbx-payroll__table thead th.pq-col-amount,
-.wbx-payroll__table tbody td.pq-col-amount {
-  text-align: right;
+.wbx-payroll__table thead th.pq-col-generated,
+.wbx-payroll__table tbody td.pq-col-generated {
+  text-align: left;
   white-space: nowrap;
-  min-width: 148px;
-  width: 15%;
-  padding-right: 40px;
+  min-width: 136px;
+  width: 138px;
+  padding-left: 8px;
+  padding-right: 8px;
 }
 
 .wbx-payroll__table thead th.pq-col-progress,
 .wbx-payroll__table tbody td.pq-col-progress {
-  width: 162px;
-  min-width: 162px;
-  padding-left: 20px;
+  width: 138px;
+  min-width: 138px;
+  padding-left: 8px;
+  padding-right: 10px;
 }
 
 .wbx-payroll__table thead th.pq-col-ops {
   position: sticky;
   right: 0;
   z-index: 5;
-  text-align: right;
-  width: 172px;
-  min-width: 172px;
-  max-width: 172px;
+  text-align: center;
+  width: 160px;
+  min-width: 160px;
+  max-width: 160px;
   box-sizing: border-box;
   padding-left: 8px;
-  padding-right: 17px;
+  padding-right: 8px;
   background: #F6F7F8;
 }
 
@@ -2465,12 +2473,12 @@
   right: 0;
   z-index: 2;
   text-align: right;
-  width: 172px;
-  min-width: 172px;
-  max-width: 172px;
+  width: 160px;
+  min-width: 160px;
+  max-width: 160px;
   box-sizing: border-box;
   padding-left: 8px;
-  padding-right: 17px;
+  padding-right: 8px;
   white-space: nowrap;
   background: #ffffff;
   box-shadow: -6px 0 10px -8px rgba(24, 25, 28, 0.06);
@@ -2488,7 +2496,7 @@
 .wbx-payroll__table tbody tr.pq-row td.pq-col-ops {
   background: #ffffff;
   height: 46px;
-  padding: 0 12px;
+  padding: 0 9px;
   font-size: 13.5px;
   font-weight: 400;
   color: #18191C;
@@ -2498,21 +2506,28 @@
   transition: background-color 140ms ease;
 }
 
-.wbx-payroll__table tbody tr.pq-row td.pq-col-applicants {
-  padding-right: 20px;
+.wbx-payroll__table tbody tr.pq-row td.pq-check {
+  padding-left: 12px;
+  padding-right: 6px;
 }
 
-.wbx-payroll__table tbody tr.pq-row td.pq-col-amount {
-  padding-right: 40px;
+.wbx-payroll__table tbody tr.pq-row td.pq-col-applicants {
+  padding-right: 12px;
+}
+
+.wbx-payroll__table tbody tr.pq-row td.pq-col-generated {
+  padding-left: 8px;
+  padding-right: 8px;
 }
 
 .wbx-payroll__table tbody tr.pq-row td.pq-col-progress {
-  padding-left: 20px;
+  padding-left: 8px;
+  padding-right: 10px;
 }
 
 .wbx-payroll__table tbody tr.pq-row td.pq-col-ops {
   padding-left: 8px;
-  padding-right: 17px;
+  padding-right: 8px;
 }
 
 .wbx-payroll__table tbody tr.pq-row:last-child td {
@@ -2536,8 +2551,8 @@
 
 /* 列级排版与色彩：仅状态列保留语义色，全表统一 13px 与两级字重（400/500） */
 .wbx-payroll__table .pq-col-approval {
-  min-width: 158px;
-  width: 19%;
+  min-width: 132px;
+  width: 16%;
 }
 
 .wbx-payroll__table .pq-code-text {
@@ -2583,8 +2598,8 @@
 }
 
 .wbx-payroll__table .pq-col-city {
-  min-width: 72px;
-  width: 9%;
+  min-width: 54px;
+  width: 6.5%;
   white-space: nowrap;
 }
 
@@ -2601,8 +2616,8 @@
 }
 
 .wbx-payroll__table .pq-col-period {
-  min-width: 112px;
-  width: 13%;
+  min-width: 96px;
+  width: 11.5%;
   white-space: nowrap;
 }
 
@@ -2617,8 +2632,8 @@
 }
 
 .wbx-payroll__table .pq-col-type {
-  min-width: 82px;
-  width: 10%;
+  min-width: 64px;
+  width: 7.5%;
   white-space: nowrap;
 }
 
@@ -2645,6 +2660,15 @@
   font-size: 13px;
   font-weight: 400;
   color: #334155;
+}
+
+.pq-generated-text {
+  font-family: var(--wbx-font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 400;
+  color: #334155;
+  white-space: nowrap;
 }
 
 .pq-amount-text {
@@ -2689,16 +2713,18 @@
 .wbx-payroll__table .pq-row-actions {
   display: inline-grid;
   grid-template-columns: 26px 74px 9px 26px;
-  column-gap: 4px;
+  column-gap: 3px;
   align-items: center;
   justify-items: center;
   vertical-align: middle;
 }
 
 .wbx-payroll__table .pq-row-actions.is-archived {
-  display: inline-flex;
+  display: inline-grid;
+  grid-template-columns: 26px 74px 9px 26px;
+  column-gap: 3px;
   align-items: center;
-  justify-content: flex-end;
+  justify-items: center;
 }
 
 .pq-op-slot-aux {
@@ -2792,6 +2818,23 @@
   background: #fff1f2;
   border-color: #fecdd3;
   color: #e11d48;
+}
+
+.wbx-payroll__table .pq-delete-btn {
+  border-color: transparent;
+  background: transparent;
+  color: #e11d48;
+}
+
+.wbx-payroll__table .pq-delete-btn:hover:not(:disabled) {
+  background: #ffe4e6;
+  border-color: #fda4af;
+  color: #be123c;
+}
+
+.wbx-payroll__table .pq-delete-btn:disabled {
+  color: #cbd5e1;
+  cursor: not-allowed;
 }
 
 /* ─── 扣款规则：20城快选概览条 ───────────────────────────────────────────── */
@@ -4247,6 +4290,21 @@
   box-shadow: 0 0 0 3px rgba(2, 106, 162, 0.1);
 }
 
+@media (max-width: 1380px) {
+  .wbx-payroll__filter-controls {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+    padding: 6px 0 8px;
+    border-top: 1px solid #f1f5f9;
+  }
+
+  .wbx-payroll__filter-controls .wbx-payroll__search {
+    flex: 1 1 220px;
+    max-width: 320px;
+  }
+}
+
 @media (max-width: 1120px) {
   .wbx-payroll__filter-controls {
     flex-wrap: wrap;
@@ -4333,6 +4391,38 @@
   background: #f0f9ff;
   color: #026aa2;
   font-weight: 600;
+}
+
+.pq-summary-toggle.is-warn {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.pq-summary-toggle.is-warn:hover {
+  border-color: #f59e0b;
+  color: #92400e;
+}
+
+.pq-summary-toggle.is-warn.is-active {
+  border-color: #f59e0b;
+  background: #fef3c7;
+  color: #92400e;
+  font-weight: 600;
+}
+
+.pq-batchbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin: 0 16px 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid #bae6fd;
+  background: #f0f9ff;
+  font-size: 12.5px;
+  color: #0f172a;
 }
 
 .pq-review-alert-chip {
@@ -4773,6 +4863,14 @@
 
 .wbx-city-vcard:hover .wbx-city-vcard__cta {
   color: #035382;
+}
+
+.wbx-city-vcard__cta.is-setup {
+  color: #b45309;
+}
+
+.wbx-city-vcard:hover .wbx-city-vcard__cta.is-setup {
+  color: #92400e;
 }
 
 .wbx-city-vcard__arrow {
@@ -5671,14 +5769,13 @@
 .pq-intake,
 .pq-queue {
   border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.94);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.8) 100%);
-  backdrop-filter: blur(20px) saturate(175%);
-  -webkit-backdrop-filter: blur(20px) saturate(175%);
+  border: 1px solid rgba(255, 255, 255, 0.96);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97) 0%, rgba(252, 253, 255, 0.95) 100%);
   box-shadow:
-    0 12px 32px -10px rgba(14, 116, 144, 0.075),
-    0 2px 6px rgba(15, 23, 42, 0.03),
+    0 12px 32px -10px rgba(14, 116, 144, 0.07),
+    0 2px 6px rgba(15, 23, 42, 0.025),
     inset 0 1px 0 #ffffff;
+  contain: layout style;
 }
 
 .pq-queue .pq-table-scroll {

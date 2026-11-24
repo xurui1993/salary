@@ -143,13 +143,13 @@ export function CityStationAccordionCard({
                 {summary.cityDefaultEdited
                   ? '默认已调整'
                   : summary.cityDefaultConfigured
-                    ? `共 ${preview.configuredCount} 项默认`
-                    : '待设默认'}
+                    ? '暂无关键词规则'
+                    : '点击配置城市默认'}
               </span>
             )}
           </span>
-          <span className="wbx-city-vcard__cta">
-            <span>查看扣款</span>
+          <span className={`wbx-city-vcard__cta${!summary.cityDefaultConfigured ? ' is-setup' : ''}`}>
+            <span>{summary.cityDefaultConfigured ? '查看扣款' : '去配置'}</span>
             <ArrowRight size={12.5} className="wbx-city-vcard__arrow" aria-hidden="true" />
           </span>
         </div>

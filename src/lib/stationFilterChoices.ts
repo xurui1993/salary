@@ -1,2 +1,23 @@
-// @ts-nocheck
-var __defProp=Object.defineProperty;var __name=(target,value)=>__defProp(target,"name",{value,configurable:true});function stationFilterChoices(stations: any,city?: any): any[]{const rows=stations.filter((s: any)=>!city||s.city===city);return rows.map(s=>({...s,ambiguous:rows.filter(other=>other.name===s.name).length>1,label:`${s.name} \xB7 ${s.city} \xB7 \u7F16\u53F7 ${s.id}`}))}__name(stationFilterChoices,"stationFilterChoices");export{stationFilterChoices};
+export interface StationFilterInput {
+  id: string;
+  name: string;
+  city?: string;
+  [key: string]: unknown;
+}
+
+export type StationFilterChoice<T extends StationFilterInput = StationFilterInput> = T & {
+  ambiguous: boolean;
+  label: string;
+};
+
+export function stationFilterChoices<T extends StationFilterInput>(
+  stations: T[],
+  city?: string,
+): StationFilterChoice<T>[] {
+  const rows = stations.filter(station => !city || station.city === city);
+  return rows.map(station => ({
+    ...station,
+    ambiguous: rows.filter(other => other.name === station.name).length > 1,
+    label: `${station.name} · ${station.city} · 编号 ${station.id}`,
+  }));
+}

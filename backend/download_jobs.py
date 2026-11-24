@@ -1257,6 +1257,51 @@ class DownloadManager:
             return self.deliveries.publish(record['id'],record['created_at'],label,entries,
                                            record.get('incomplete_items',[]),sequence_collision=True)
 
+    def purge_runs(self, owner, run_ids, delete_files=True):
+        """Permanently delete finished download runs from SQLite and optionally remove confined run folders."""
+        import shutil
+        unique_ids = list(dict.fromkeys(run_ids or []))
+        if not unique_ids:
+            return 0
+        dirs_to_remove = []
+        allowed_roots = [self.output_root.resolve(), (ROOT / "outputs" / "fengshen_downloads").resolve()]
+        with self._lock, self._connection() as connection:
+            found = []
+            for run_id in unique_ids:
+                if owner is None:
+                    row = connection.execute("SELECT * FROM download_runs WHERE id = ?", (run_id,)).fetchone()
+                else:
+                    row = connection.execute("SELECT * FROM download_runs WHERE id = ? AND owner = ?", (run_id, owner)).fetchone()
+                if row is None:
+                    continue
+                run = json.loads(row["state_json"])
+                if run.get("status") in ACTIVE_STATUSES:
+                    raise DownloadRequestConflict("请先停止执行中的任务再彻底删除")
+                found.append((row["owner"], run))
+            for run_owner, run in found:
+                run_id = run["id"]
+                if delete_files:
+                    try:
+                        run_dir = self._run_dir(run)
+                        resolved = run_dir.resolve()
+                        if (
+                            not run_dir.is_symlink()
+                            and any(resolved != root and resolved.is_relative_to(root) for root in allowed_roots)
+                        ):
+                            dirs_to_remove.append(resolved)
+                    except DownloadNotFound:
+                        pass
+                connection.execute("DELETE FROM download_requests WHERE run_id = ?", (run_id,))
+                connection.execute("DELETE FROM download_recovery_heads WHERE origin_id = ? OR run_id = ?", (run_id, run_id))
+                connection.execute("DELETE FROM download_runs WHERE id = ? AND owner = ?", (run_id, run_owner))
+        for run_id in unique_ids:
+            self.deliveries.purge(run_id, delete_files=delete_files)
+        if delete_files:
+            for directory in dirs_to_remove:
+                if directory.is_dir() and not directory.is_symlink():
+                    shutil.rmtree(directory, ignore_errors=True)
+        return len(found)
+
     def _mutate(self, owner, run_id, update):
         with self._lock, self._connection() as connection:
             _, run = self._find(connection, owner, run_id)

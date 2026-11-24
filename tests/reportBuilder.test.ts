@@ -656,16 +656,20 @@ test('problem city_range report preserves exact dates, order window bounds, refr
       end: '2026-11-20',
       today: '2026-11-24',
       refreshHistory: true,
-      orderWindowDays: 60,
+      orderWindowDays: 90,
+      platformStatuses: [{ id: 'fengshen', name: '风神', connected: false, onConnect: () => {} }],
     }),
   );
   assert.match(html, /业务日期/);
   assert.match(html, /近7天/);
+  assert.match(html, /近90天/);
   assert.match(html, /本月至今/);
   assert.match(html, /2026-11-10 ~ 2026-11-20/);
   assert.match(html, /共 11 天/);
   assert.match(html, /type="checkbox" aria-label="排除取分离站点"/);
-  assert.match(html, /type="checkbox" aria-label="强制刷新24小时内历史问题单"/);
+  assert.match(html, /type="checkbox" aria-label="强制重采历史日期问题单"/);
+  assert.match(html, /去登录/);
+  assert.doesNotMatch(html, /wbx-report-item__idx/);
   assert.doesNotMatch(html, /2026年10月/);
 
   const expiredHtml = renderToStaticMarkup(
@@ -673,13 +677,13 @@ test('problem city_range report preserves exact dates, order window bounds, refr
       ...props(problemDef),
       singleReportMode: true,
       selectedCities: ['上海'],
-      start: '2026-09-01',
-      end: '2026-09-30',
+      start: '2026-08-01',
+      end: '2026-08-20',
       today: '2026-11-24',
-      orderWindowDays: 60,
+      orderWindowDays: 90,
       disabled: false,
     }),
   );
   assert.match(expiredHtml, /role="alert"/);
-  assert.match(expiredHtml, /2026-09-26 至 2026-11-24/);
+  assert.match(expiredHtml, /2026-08-27 至 2026-11-24/);
 });

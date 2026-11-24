@@ -72,6 +72,14 @@ export interface ReportBuilderProps {
   refreshHistory?: boolean;
   onRefreshHistory?: (value: boolean) => void;
   orderWindowDays?: number;
+  platformStatuses?: Array<{
+    id: string;
+    name: string;
+    connected: boolean;
+    onConnect: () => void;
+  }>;
+  autoJumpTaskCenter?: boolean;
+  onAutoJumpTaskCenterChange?: (next: boolean) => void;
 }
 
 function shiftIsoDate(ymd: string, deltaDays: number): string {
@@ -121,7 +129,7 @@ export function ReportBuilder(props: ReportBuilderProps) {
       : [];
   const isCityRangeScope = scopeSummary.effectiveScope === 'city_range';
   const isProblemReport = selectedReports.some(report => report.id === 'problem');
-  const effectiveWindowDays = props.orderWindowDays || 60;
+  const effectiveWindowDays = props.orderWindowDays || (isProblemReport ? 90 : 60);
   const orderWindowBounds = computeOrderWindowBounds(props.today, effectiveWindowDays);
   const minRangeDate = isProblemReport ? orderWindowBounds.earliest : undefined;
   const isDateInOrderWindow =
@@ -137,6 +145,9 @@ export function ReportBuilder(props: ReportBuilderProps) {
         { id: '7d', label: '近7天', start: clampRangeStart(shiftIsoDate(props.today, -6)), end: props.today },
         { id: '15d', label: '近15天', start: clampRangeStart(shiftIsoDate(props.today, -14)), end: props.today },
         { id: '30d', label: '近30天', start: clampRangeStart(shiftIsoDate(props.today, -29)), end: props.today },
+        ...(effectiveWindowDays >= 90
+          ? [{ id: '90d', label: '近90天', start: clampRangeStart(shiftIsoDate(props.today, -89)), end: props.today }]
+          : []),
         {
           id: 'mtd',
           label: '本月至今',
@@ -631,6 +642,23 @@ export function ReportBuilder(props: ReportBuilderProps) {
                       ? '清空城市'
                       : '全选城市'}
                   </button>
+                  {selectable.length > 1 && selectedCities.length > 0 && selectedCities.length < selectable.length && (
+                    <button
+                      type="button"
+                      className="wb-city-preset-btn"
+                      disabled={locked}
+                      onClick={() => {
+                        const selectedSet = new Set(selectedCities);
+                        props.onCities(
+                          selectable
+                            .map(city => city.name)
+                            .filter(name => !selectedSet.has(name)),
+                        );
+                      }}
+                    >
+                      反选
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="wb-city-preset-btn"
@@ -934,14 +962,14 @@ export function ReportBuilder(props: ReportBuilderProps) {
                   <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-700">
                     <input
                       type="checkbox"
-                      aria-label="强制刷新24小时内历史问题单"
+                      aria-label="强制重采历史日期问题单"
                       checked={Boolean(props.refreshHistory)}
                       disabled={locked}
                       onChange={event => props.onRefreshHistory?.(event.target.checked)}
                       className="accent-sky-700 h-3.5 w-3.5 rounded border-slate-300"
                     />
                     <span>
-                      强制刷新24小时内历史问题单{' '}
+                      强制重采历史日期{' '}
                       <span className="font-normal text-slate-400">
                         （已结案历史日期默认复用缓存，勾选后重新抓取）
                       </span>
@@ -984,9 +1012,11 @@ export function ReportBuilder(props: ReportBuilderProps) {
                 <ul className="wb-compact-dataset-list is-dense">
                   {selectedReports.map((report, index) => (
                     <li key={report.id} className="wb-compact-dataset-item">
-                      <span className="wb-compact-item-index tabular-nums" aria-hidden="true">
-                        {String(index + 1).padStart(2, '0')}
-                      </span>
+                      {!singleMode && (
+                        <span className="wb-compact-item-index tabular-nums" aria-hidden="true">
+                          {String(index + 1).padStart(2, '0')}
+                        </span>
+                      )}
                       <div className="wb-compact-item-body">
                         <div className="wb-compact-item-row">
                           <span className="wb-compact-item-name" title={report.label}>
@@ -1018,7 +1048,7 @@ export function ReportBuilder(props: ReportBuilderProps) {
                       ? `已选多份报表 · 自动拆分为 ${selectedReports.length} 批独立生成`
                       : scopeSummary.allGlobal
                         ? '全城全量整理 · 独立归档'
-                        : '确认范围后即可生成业务表'}
+                        : '确认范围后即可生成业务报表'}
                   </span>
                   {!blockerText && (
                     <span className="wb-compact-ready-badge is-ready">
@@ -1045,7 +1075,37 @@ export function ReportBuilder(props: ReportBuilderProps) {
             <div className="wb-compact-scope-row">
               <span className="wb-compact-scope-k">关联系统</span>
               <span className="wb-compact-scope-v">
-                {scopeSummary.systems.length ? scopeSummary.systems.join('、') : '未选择'}
+                {props.platformStatuses && props.platformStatuses.length > 0 ? (
+                  <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                    {props.platformStatuses.map(item =>
+                      item.connected ? (
+                        <span
+                          key={item.id}
+                          className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11.5px] font-medium text-emerald-700"
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+                          {item.name}
+                        </span>
+                      ) : (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={item.onConnect}
+                          className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11.5px] font-medium text-amber-800 hover:bg-amber-100 transition-colors cursor-pointer"
+                          title={`点击登录${item.name}`}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                          <span>{item.name}</span>
+                          <span className="text-[11px] text-amber-600 underline decoration-amber-400/70">去登录</span>
+                        </button>
+                      ),
+                    )}
+                  </span>
+                ) : scopeSummary.systems.length ? (
+                  scopeSummary.systems.join('、')
+                ) : (
+                  '未选择'
+                )}
               </span>
             </div>
             <div className="wb-compact-scope-row">
@@ -1160,6 +1220,21 @@ export function ReportBuilder(props: ReportBuilderProps) {
               <FileSpreadsheet size={16} />
               <span>{props.creating ? '提交中…' : effectiveSubmitLabel}</span>
             </button>
+
+            {props.onAutoJumpTaskCenterChange && (
+              <label
+                className="wbx-autojump-toggle"
+                title="开启后提交成功将自动定位到任务中心；取消勾选可留在当前页连续提交多批任务"
+              >
+                <input
+                  type="checkbox"
+                  checked={props.autoJumpTaskCenter ?? true}
+                  disabled={locked}
+                  onChange={e => props.onAutoJumpTaskCenterChange?.(e.target.checked)}
+                />
+                <span>提交后进入任务中心</span>
+              </label>
+            )}
 
             {blockerText && (
               <div className="rb-rail-blocker" role="status">

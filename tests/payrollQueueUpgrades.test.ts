@@ -71,6 +71,7 @@ test('summarizePayrollTasks, sortPayrollTasks, and detectDuplicateUploadNames wo
       template_name: '上海-预支.xlsx',
       approval_code: 'SP-001',
       elapsed_seconds: 120,
+      finished_at: '2026-11-24T11:33:01+08:00',
       plan: { city: '上海', applicants: 40, total_amount: 12000.5 },
       review_summary: { issues: ['1 名骑手缺单价'] },
     },
@@ -102,6 +103,7 @@ test('summarizePayrollTasks, sortPayrollTasks, and detectDuplicateUploadNames wo
   assert.equal(summary.issueCount, 1);
 
   assert.deepEqual(sortPayrollTasks(tasks, 'default').map(t => t.id), ['t1', 't2', 't3']);
+  assert.deepEqual(sortPayrollTasks(tasks, 'generated_desc').map(t => t.id), ['t1', 't2', 't3']);
   assert.deepEqual(sortPayrollTasks(tasks, 'amount_desc').map(t => t.id), ['t2', 't1', 't3']);
   assert.deepEqual(sortPayrollTasks(tasks, 'applicants_desc').map(t => t.id), ['t2', 't1', 't3']);
   assert.deepEqual(sortPayrollTasks(tasks, 'elapsed_desc').map(t => t.id), ['t3', 't1', 't2']);

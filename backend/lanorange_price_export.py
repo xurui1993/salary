@@ -224,6 +224,18 @@ class PriceExports:
             if published is not None:path=published
         if value['status'] not in ('completed','partial') or not path.is_file() or path.stat().st_size!=value['bytes'] or file_hash(path)!=value['sha256']:raise ApprovalError('导出文件尚未就绪或校验不通过','changed')
         return path
+    def delete_export(self,scope,key,delete_files=True):
+        import shutil
+        value=self.get(scope,key)
+        if value['status'] in ('queued','running','stopping'):raise ApprovalError('请先停止执行中的任务再彻底删除','busy')
+        with self.lock,self.db() as db:
+            db.execute('DELETE FROM exports WHERE id=? AND scope=?',(key,scope))
+        if delete_files:
+            base=self.root.resolve()
+            folder=(self.root/key).resolve()
+            if folder!=base and folder.is_relative_to(base) and folder.is_dir() and not folder.is_symlink():
+                shutil.rmtree(folder,ignore_errors=True)
+        return True
 
 
 def manager():

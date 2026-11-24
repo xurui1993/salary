@@ -75,12 +75,103 @@ export function platformTone(platformName: string): TaskPlatformTone {
   return 'neutral';
 }
 
-export function formatCitiesCompact(cities: string[]): { short: string; full: string } {
+function cleanDatasetDisplayLabel(rawLabel: string, platformName?: string): string {
+  let label = rawLabel
+    .replace(/[（(](?:生成表|灯塔|小象灯塔|全量|风神|蓝橙|商翼|本来人力)[）)]/g, '')
+    .trim();
+  const redundantHeads = [
+    ...(platformName ? [platformName.trim()] : []),
+    '本来人力',
+    '小象灯塔',
+    '风神',
+    '灯塔',
+    '蓝橙',
+    '商翼',
+  ].filter(Boolean);
+  for (const head of redundantHeads) {
+    if (label.startsWith(head) && label.length > head.length + 1) {
+      label = label.slice(head.length).replace(/^[\s·\-—:：]+/, '').trim();
+      break;
+    }
+  }
+  return label || rawLabel.trim();
+}
+
+/**
+ * 规范化任务内容展示：优先按结构化资料项精简拼接（最多显示 2 项 + 「等N项」），
+ * 去除与「覆盖范围」「业务周期」「来源/类型」重复的城市、月份与平台前缀，保持列表整齐清爽。
+ */
+export function formatTaskContentDisplay(
+  task: Pick<TaskDisplayRecord, 'kind' | 'title' | 'datasets' | 'cities'>,
+  options: {
+    datasetLabel: (id: string) => string;
+    platformName?: string;
+    kindLabel?: string;
+  },
+): { short: string; full: string } {
+  const rawTitle = (task.title || '').trim();
+  const rawLabels = Array.from(
+    new Set(
+      (task.datasets || [])
+        .map(id => options.datasetLabel(id).replaceAll('（生成表）', '').trim())
+        .filter(Boolean),
+    ),
+  );
+
+  if (rawLabels.length > 0) {
+    const cleanLabels = Array.from(
+      new Set(rawLabels.map(label => cleanDatasetDisplayLabel(label, options.platformName)).filter(Boolean)),
+    );
+    const full = rawLabels.join('、');
+    if (cleanLabels.length === 1) return { short: cleanLabels[0], full };
+    if (cleanLabels.length === 2) return { short: `${cleanLabels[0]}、${cleanLabels[1]}`, full };
+    return { short: `${cleanLabels[0]}、${cleanLabels[1]} 等${cleanLabels.length}项`, full };
+  }
+
+  let normalized = cleanTaskTitle(rawTitle, options.platformName, options.kindLabel);
+  if (normalized === '未命名任务') {
+    if (task.kind === 'approval') return { short: '价格批量审批', full: '价格批量审批' };
+    if (task.kind === 'price-export') return { short: '待审每日价格导出', full: '待审每日价格导出' };
+    return { short: normalized, full: normalized };
+  }
+
+  // 去除前导城市列表（如「上海/深圳/广州 」「华东 4 城 」）与前导月份（如「10月」「2026年10月」）
+  const cityNames = (task.cities || []).map(c => c.trim()).filter(c => c && c !== '全量' && c !== '按业务筛选范围');
+  if (cityNames.length) {
+    const escaped = cityNames.map(c => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+    const leadingCitiesRe = new RegExp(`^(?:(?:${escaped})(?:\\s*[/、,，]\\s*(?:${escaped}))*)\\s+`);
+    normalized = normalized.replace(leadingCitiesRe, '');
+    const trailingParenCitiesRe = new RegExp(`[（(](?:${escaped})(?:\\s*[/、,，]\\s*(?:${escaped}))*[）)]$`);
+    normalized = normalized.replace(trailingParenCitiesRe, '');
+  }
+  normalized = normalized
+    .replace(/^(?:华东|华南|华北|西南|西北|东北|华中)?\s*\d+\s*城\s+/, '')
+    .replace(/^(?:\d{4}年)?\d{1,2}月(?:\s*)/, '')
+    .replace(/[（(](?:全量|全授权城市|全部城市)[）)]/g, '')
+    .replace(/\s*(?:同步任务|全量拉取|巡检)$/, '')
+    .trim();
+
+  const short = normalized || cleanTaskTitle(rawTitle, options.platformName, options.kindLabel);
+  return { short, full: rawTitle || short };
+}
+
+export function formatCitiesCompact(cities: string[], datasets: string[] = []): { short: string; full: string } {
   const list = (cities || []).map(c => c.trim()).filter(Boolean);
-  if (!list.length) return { short: '全部城市', full: '全部城市' };
+  if (!list.length) {
+    if (datasets.length > 0 && datasets.every(isGlobalDataset)) {
+      return { short: '全量', full: '全量数据' };
+    }
+    return { short: '全部城市', full: '全部城市' };
+  }
+  if (list.length === 1 && list[0] === '全量') {
+    return { short: '全量', full: '全量范围' };
+  }
+  if (list.length === 1 && list[0] === '按业务筛选范围') {
+    return { short: '按筛选范围', full: '按业务筛选范围' };
+  }
   const full = list.join('、');
   if (list.length <= 2) return { short: full, full };
-  return { short: `${list.slice(0, 2).join('、')}等${list.length}城`, full };
+  return { short: `${list[0]}等${list.length}城`, full };
 }
 
 function shortDate(value?: string): string {
@@ -92,9 +183,14 @@ export function formatPeriodCompact(
   start: string,
   end: string,
   datasets: string[],
+  kind?: string,
 ): { short: string; full: string } {
-  if (!datasets.length) return { short: '业务记录', full: '详见业务记录' };
-  if (datasets.every(isGlobalDataset)) return { short: '全量范围', full: '全量数据' };
+  if (!datasets.length) {
+    if (kind === 'approval') return { short: '单次审批', full: '价格批量审批批次' };
+    if (kind === 'price-export') return { short: '按筛选范围', full: '按业务筛选范围导出' };
+    return { short: '—', full: '详见业务记录' };
+  }
+  if (datasets.every(isGlobalDataset)) return { short: '全量数据', full: '全量数据' };
   if (datasets.every(id => id === 'rider_archive')) return { short: '当前快照', full: '当前最新快照' };
   const s = shortDate(start);
   const e = shortDate(end);
@@ -104,6 +200,12 @@ export function formatPeriodCompact(
   }
   const fallback = s || e || '—';
   return { short: fallback, full: start || end || '—' };
+}
+
+export function canPermanentlyDeleteTask(task: Pick<TaskDisplayRecord, 'status'>): boolean {
+  return !['queued', 'running', 'waiting_login', 'waiting_manual', 'cancelling', 'preparing', 'stopping'].includes(
+    task.status,
+  );
 }
 
 /**
@@ -153,7 +255,7 @@ export function formatCompactTimestamp(iso?: string, nowMs: number = Date.now())
   if (target.ymd === yesterday.ymd) {
     return { short: `昨天 ${target.hm}`, full };
   }
-  return { short: `${target.md} ${target.hm}`, full };
+  return { short: `${target.md.replace('-', '.')} ${target.hm}`, full };
 }
 
 /**

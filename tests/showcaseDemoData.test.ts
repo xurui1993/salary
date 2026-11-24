@@ -86,10 +86,10 @@ test('任务中心示例数据：精确 30 条并覆盖全部状态、类型、�
   }
 });
 
-test('扣款规则示例数据：精确 30 站覆盖风神与小象全部配置状态与关键词规则', () => {
+test('扣款规则示例数据：精确 12 城 36 站覆盖风神与小象全部配置状态与关键词规则', () => {
   const fs = buildDemoDeductionData('fengshen');
-  assert.equal(fs.entries.length, 30);
-  assert.equal(fs.cities.length, 10);
+  assert.equal(fs.entries.length, 36);
+  assert.equal(fs.cities.length, 12);
   assert.equal(fs.columns.length, 15);
 
   assert.ok(fs.entries.some(e => e.inherited_city), 'should include inherited_city');
@@ -99,7 +99,7 @@ test('扣款规则示例数据：精确 30 站覆盖风神与小象全部配置�
   assert.ok(fs.entries.some(e => !e.configured && !e.legacy), 'should include pending');
 
   const summaries = summarizeCitiesProgress(fs.cities, fs.entries, fs.directoryCities);
-  assert.equal(summaries.length, 10);
+  assert.equal(summaries.length, 12);
   assert.ok(summaries.some(s => s.pendingStations === 0 && s.cityDefaultConfigured), 'should have 100% done city');
   assert.ok(summaries.some(s => s.pendingStations > 0 && s.configuredStations > 0), 'should have partial city');
   assert.ok(summaries.some(s => !s.cityDefaultConfigured), 'should have unconfigured city default');
@@ -110,7 +110,7 @@ test('扣款规则示例数据：精确 30 站覆盖风神与小象全部配置�
   assert.ok(totalProblemRules >= 10, 'should include rich city + station problem keyword rules');
 
   const xx = buildDemoDeductionData('xiaoxiang');
-  assert.equal(xx.entries.length, 30);
+  assert.equal(xx.entries.length, 36);
   assert.equal(xx.columns.length, 3);
 });
 
@@ -138,10 +138,10 @@ test('蓝橙批量审批示例数据：精确 30 条待审批 + 全状态结果�
   }
 });
 
-test('待审每日价格导出示例数据：提供 10 城 30 站筛选目录及已完成/部分完成双态回执', () => {
+test('待审每日价格导出示例数据：提供 12 城 36 站筛选目录及已完成/部分完成双态回执', () => {
   const demo = buildDemoPriceExportData();
-  assert.equal(demo.options.cities.length, 10);
-  assert.equal(demo.options.stations.length, 30);
+  assert.equal(demo.options.cities.length, 12);
+  assert.equal(demo.options.stations.length, 36);
   assert.ok(demo.options.months.length >= 2);
   assert.equal(demo.exports.length, 2);
   assert.ok(demo.exports.some(e => e.status === 'completed' && e.receipts.length >= 10));

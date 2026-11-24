@@ -105,14 +105,14 @@ test('shouldUseDemoData: 未登录无数据时启用示例，真实登录或已�
 test('新增示例目录、运行日志与回执 CSV 构建器结构完整', () => {
   const fsDir = buildDemoStationDirectory('fengshen');
   assert.equal(fsDir.status, 'ready');
-  assert.equal(fsDir.cities.length, 10);
-  assert.equal(fsDir.stations.length, 30);
+  assert.equal(fsDir.cities.length, 12);
+  assert.equal(fsDir.stations.length, 36);
   assert.ok(fsDir.cities.every(c => typeof c.station_count === 'number' && c.station_count > 0));
 
   const xxDir = buildDemoStationDirectory('xiaoxiang');
   assert.equal(xxDir.platform, 'xiaoxiang');
-  assert.equal(xxDir.cities.length, 10);
-  assert.equal(xxDir.stations.length, 30);
+  assert.equal(xxDir.cities.length, 12);
+  assert.equal(xxDir.stations.length, 36);
 
   const logs = buildDemoEngineLogs();
   assert.ok(logs.length >= 5);

@@ -1,2 +1,41 @@
-// @ts-nocheck
-var __defProp=Object.defineProperty;var __name=(target,value)=>__defProp(target,"name",{value,configurable:true});const FLOW_STEPS=["\u9009\u62E9\u4E1A\u52A1","\u786E\u8BA4\u8303\u56F4","\u5904\u7406\u8D44\u6599","\u9886\u53D6\u7ED3\u679C"];function flowStep(status){if(["success","calculated"].includes(status))return 3;if(status==="create")return 0;if(status==="review")return 1;return 2}__name(flowStep,"flowStep");const needsAction=__name(status=>["queued","running","waiting_login","waiting_manual","cancelling","preparing","pending_download","waiting_materials","ready","error","partial","interrupted"].includes(status),"needsAction");function prioritizeTasks(records,selectedId){const rank=__name(item=>item.member_ids?.includes(selectedId)?0:needsAction(item.status)?1:2,"rank");return records.map((item,index)=>({item,index})).sort((a,b)=>rank(a.item)-rank(b.item)||a.index-b.index).map(x=>x.item)}__name(prioritizeTasks,"prioritizeTasks");export{FLOW_STEPS,flowStep,needsAction,prioritizeTasks};
+export const FLOW_STEPS = ['选择业务', '确认范围', '处理资料', '领取结果'] as const;
+
+const ACTION_STATUSES = new Set([
+  'queued',
+  'running',
+  'waiting_login',
+  'waiting_manual',
+  'cancelling',
+  'preparing',
+  'pending_download',
+  'waiting_materials',
+  'ready',
+  'error',
+  'partial',
+  'interrupted',
+]);
+
+export function flowStep(status: string): number {
+  if (status === 'success' || status === 'calculated') return 3;
+  if (status === 'create') return 0;
+  if (status === 'review') return 1;
+  return 2;
+}
+
+export function needsAction(status: string): boolean {
+  return ACTION_STATUSES.has(status);
+}
+
+export function prioritizeTasks<T extends { status: string; member_ids?: string[] }>(
+  records: T[],
+  selectedId?: string,
+): T[] {
+  const rank = (item: T): number => {
+    if (selectedId && item.member_ids?.includes(selectedId)) return 0;
+    return needsAction(item.status) ? 1 : 2;
+  };
+  return records
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => rank(a.item) - rank(b.item) || a.index - b.index)
+    .map(entry => entry.item);
+}

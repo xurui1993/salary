@@ -269,6 +269,15 @@ class ApprovalManager:
         with self.lock,self.connection() as db:db.execute("UPDATE batches SET stop=1,status='stopping' WHERE id=? AND scope=? AND status IN ('queued','running')",(key,scope))
         return self.batch(scope,key)
 
+    def delete_batch(self,scope,key):
+        batch=self.batch(scope,key)
+        if batch['status'] in ACTIVE:raise ApprovalError('请先停止执行中的任务再彻底删除','busy')
+        with self.lock,self.connection() as db:
+            db.execute('DELETE FROM items WHERE batch_id=?',(key,))
+            db.execute('DELETE FROM claims WHERE batch_id=?',(key,))
+            db.execute('DELETE FROM batches WHERE id=? AND scope=?',(key,scope))
+        return True
+
     def recheck(self,scope,key):
         batch=self.batch(scope,key)
         if batch['status'] in ACTIVE:raise ApprovalError('本批仍在执行，请稍后核实','busy')

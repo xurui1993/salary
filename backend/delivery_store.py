@@ -239,6 +239,51 @@ class DeliveryStore:
         with self.db() as db:
             db.execute('UPDATE moves SET committed=1 WHERE id=?',(transaction,))
 
+    def purge(self, key, delete_files=True):
+        """Remove delivery metadata for key and optionally delete its confined delivery folder."""
+        with LOCK:
+            folder = None
+            root = None
+            with self.db() as db:
+                row = db.execute('SELECT folder, root FROM deliveries WHERE key=?', (key,)).fetchone()
+                if row is not None:
+                    folder = Path(row['folder'])
+                    root = Path(row['root'])
+                db.execute('DELETE FROM artifacts WHERE task_key=?', (key,))
+                db.execute('DELETE FROM deliveries WHERE key=?', (key,))
+                if folder is not None:
+                    prefix = str(folder) + os.sep
+                    db.execute('DELETE FROM moves WHERE destination=? OR destination LIKE ?', (str(folder), prefix + '%'))
+            if delete_files:
+                if folder is not None and root is not None:
+                    try:
+                        resolved_root = root.resolve()
+                        resolved_folder = folder.resolve()
+                        if (
+                            resolved_root.is_absolute()
+                            and not folder.is_symlink()
+                            and resolved_folder == folder
+                            and resolved_folder.parent == resolved_root
+                            and resolved_folder.is_relative_to(resolved_root)
+                            and resolved_folder.exists()
+                        ):
+                            shutil.rmtree(resolved_folder, ignore_errors=True)
+                    except OSError:
+                        pass
+                history_dir = self.private / 'history' / hashlib.sha256(key.encode()).hexdigest()
+                try:
+                    resolved_private = self.private.resolve()
+                    resolved_hist = history_dir.resolve()
+                    if (
+                        not history_dir.is_symlink()
+                        and resolved_hist.is_relative_to(resolved_private)
+                        and resolved_hist.exists()
+                    ):
+                        shutil.rmtree(resolved_hist, ignore_errors=True)
+                except OSError:
+                    pass
+            return folder is not None
+
 
 def project_store():
     from download_jobs import ROOT, configured_output_root

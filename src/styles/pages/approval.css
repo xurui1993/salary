@@ -905,7 +905,8 @@
   box-shadow: 0 1px 0 #e2e8f0;
 }
 
-.wbx-approvals__table .ap-col-check {
+.workbench-app .wbx-approvals__table thead th.ap-col-check,
+.workbench-app .wbx-approvals__table tbody td.ap-col-check {
   width: 46px;
   text-align: center;
   padding-left: 16px;
@@ -913,39 +914,42 @@
 }
 
 .wbx-approvals__table .ap-col-code {
-  width: 17%;
+  width: 18%;
 }
 
 .wbx-approvals__table .ap-col-city {
-  width: 17%;
+  width: 19%;
 }
 
 .wbx-approvals__table .ap-col-period {
-  width: 18%;
+  width: 14%;
   white-space: nowrap;
 }
 
-.wbx-approvals__table .ap-col-count {
-  width: 7%;
+.workbench-app .wbx-approvals__table thead th.ap-col-count,
+.workbench-app .wbx-approvals__table tbody td.ap-col-count {
+  width: 8%;
   text-align: right;
-  padding-right: 24px;
+  padding-right: 32px;
   white-space: nowrap;
 }
 
-.wbx-approvals__table .ap-col-creator {
-  width: 16%;
-  padding-left: 14px;
+.workbench-app .wbx-approvals__table thead th.ap-col-creator,
+.workbench-app .wbx-approvals__table tbody td.ap-col-creator {
+  width: 17%;
+  padding-left: 18px;
 }
 
 .wbx-approvals__table .ap-col-node {
   width: 13%;
 }
 
-.wbx-approvals__table thead th.wbx-table__actions,
-.wbx-approvals__table tbody td.wbx-table__actions {
+.workbench-app .wbx-approvals__table thead th.wbx-table__actions,
+.workbench-app .wbx-approvals__table tbody td.wbx-table__actions {
   width: 11%;
-  text-align: right;
-  padding-right: 18px;
+  text-align: center;
+  padding-left: 10px;
+  padding-right: 12px;
 }
 
 .wbx-approvals__table thead th.wbx-table__actions {
@@ -1060,6 +1064,24 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.wbx-approvals__page-size {
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+}
+
+.wbx-approvals__page-size:focus {
+  border-color: #0284c7;
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.12);
 }
 
 .wbx-approval__batch-picker {

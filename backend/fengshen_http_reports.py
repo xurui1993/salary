@@ -104,14 +104,14 @@ def file_info(path):
     return {"path": path.name, "bytes": path.stat().st_size, "sha256": checksum}
 
 
-def order_recovery_batches(plan, source):
+def order_recovery_batches(plan, source, *, max_days=60):
     """Use the current span, falling back to legacy 5-day batch directories."""
     source = Path(source)
     for span in (ORDER_BATCH_SPAN, 5):
-        batches = date_batches(plan.start, plan.end, span=span)
+        batches = date_batches(plan.start, plan.end, span=span, max_days=max_days)
         if all((source / (first + "_" + last)).is_dir() for first, last in batches):
             return batches
-    return date_batches(plan.start, plan.end, span=ORDER_BATCH_SPAN)
+    return date_batches(plan.start, plan.end, span=ORDER_BATCH_SPAN, max_days=max_days)
 
 
 def order_recovery_manifests(plan, source, selected):
@@ -120,7 +120,8 @@ def order_recovery_manifests(plan, source, selected):
     result = []
     if not selected or not set(selected) <= {"fraud", "problem"} or source.is_symlink():
         raise BillCollectionError("原运单恢复范围无效")
-    for first, last in order_recovery_batches(plan, source):
+    max_days = 90 if set(selected) == {"problem"} else 60
+    for first, last in order_recovery_batches(plan, source, max_days=max_days):
         directory = source / (first + "_" + last)
         def proof(name):
             path = directory / name
@@ -592,8 +593,9 @@ class ReportHttpCollector:
         if concurrency not in (1, 2):
             raise HttpTransportError("运单导出并发数只能为 1 或 2")
         raw = Path(raw)
+        max_days = 90 if set(selected) == {"problem"} else 60
         batches = list(batches if batches is not None
-                       else date_batches(plan.start, plan.end, span=ORDER_BATCH_SPAN))
+                       else date_batches(plan.start, plan.end, span=ORDER_BATCH_SPAN, max_days=max_days))
         if not batches:
             return
         if not allow_existing_batches and raw.exists() and any(raw.rglob("*submission.json")):
@@ -648,9 +650,10 @@ class ReportHttpCollector:
             raise
 
     def orders(self, plan, raw, selected, *, allow_existing_batches=False):
+        max_days = 90 if set(selected) == {"problem"} else 60
         manifests = list(self.orders_stream(
             plan, raw, selected,
-            date_batches(plan.start, plan.end, span=ORDER_BATCH_SPAN),
+            date_batches(plan.start, plan.end, span=ORDER_BATCH_SPAN, max_days=max_days),
             concurrency=1, allow_existing_batches=allow_existing_batches))
         return sorted(manifests, key=lambda manifest: manifest["start"])
 

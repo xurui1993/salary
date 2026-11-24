@@ -13,6 +13,7 @@ import {
   buildDemoLanorangeApprovals,
 } from '../lib/showcaseDemoData';
 import {DemoDataChip} from './DemoDataChip';
+import {formatPayrollDateTime,payrollPeriodRange} from '../lib/payrollQueue';
 
 type Fetcher=(url:string,init?:RequestInit)=>Promise<Response>;
 type Query={city:string;station:string;period:string};
@@ -25,7 +26,8 @@ const BASE='/api/fengshen-downloads/lanorange-approvals',EMPTY:Query={city:'',st
 const ACTIVE=new Set(['queued','running','stopping']);
 const batchLabels:Record<string,string>={queued:'等待执行',running:'正在审批',stopping:'正在停止后续',completed:'本批已完成',partial:'部分完成',needs_review:'有结果待核实',interrupted:'执行曾中断'};
 const code=(task:Task)=>task.businessCode || task.id;
-const period=(task:Task)=>task.period_start?`${task.period_start.slice(0,10)} 至 ${task.period_end?.slice(0,10) || '—'}`:'—';
+const period=(task:Task)=>payrollPeriodRange({start:task.period_start,end:task.period_end}) || '—';
+const periodTitle=(task:Task)=>task.period_start?`${task.period_start.slice(0,10)} 至 ${task.period_end?.slice(0,10) || '—'}`:'';
 const message=(error:unknown)=>error instanceof Error?error.message:'操作未完成，请稍后重试';
 function remember(key:string,value:Attempt|null){try{if(value)sessionStorage.setItem(key,JSON.stringify(value));else sessionStorage.removeItem(key);}catch{/* A small recovery hint must never break the workbench. */}}
 
@@ -87,7 +89,7 @@ function PriceTable({price}:{price:Price}){
 export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchView,focusId}:{apiFetch:Fetcher;workspaceId:string;onActiveCount:(count:number)=>void;onSwitchView?:(view:'approval'|'price-export')=>void;focusId?:string}){
   const fetchRef=useRef(apiFetch);fetchRef.current=apiFetch;
   const query=EMPTY;
-  const [page,setPage]=useState(1),[refresh,setRefresh]=useState(0);
+  const [page,setPage]=useState(1),[pageSize,setPageSize]=useState(20),[refresh,setRefresh]=useState(0);
   const [allRows,setAllRows]=useState<Task[]>([]);
   const [scopeCities,setScopeCities]=useState<string[]>([]),[scopeMonths,setScopeMonths]=useState<string[]>([]),[scopeSite,setScopeSite]=useState('');
   const [eligibilityFilter,setEligibilityFilter]=useState<ApprovalEligibilityFilter>('all');
@@ -212,7 +214,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
   const filtered=useMemo(()=>filterApprovalTasks(displayRows,{scopeCities,scopeMonths,scopeSite,eligibility:eligibilityFilter,keyword}),[displayRows,scopeCities,scopeMonths,scopeSite,eligibilityFilter,keyword]);
   const eligibleScopeCount=useMemo(()=>scopeFiltered.filter(r=>!r.reason).length,[scopeFiltered]);
   const blockedScopeCount=scopeFiltered.length-eligibleScopeCount;
-  const rows=filtered.slice((page-1)*20,page*20);
+  const rows=filtered.slice((page-1)*pageSize,page*pageSize);
 
   const rowMonth=(r:Task)=>(r.settle_month||r.period_start||'').slice(0,7);
   const cityChoices=useMemo(()=>[...new Set(displayRows.map(r=>r.cityName||'').filter(Boolean))].sort(),[displayRows]);
@@ -234,7 +236,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
     if(inflight.current)return;inflight.current=true;setCommand(kind);setError('');setNotice('');
     try{await action();}catch(err){if(alive.current)setError(message(err));}finally{inflight.current=false;if(alive.current)setCommand('');}
   }
-  const selected=Object.values(selection),pages=Math.max(1,Math.ceil(filtered.length/20)),active=displayHistory.some(b=>ACTIVE.has(b.status));
+  const selected=Object.values(selection),pages=Math.max(1,Math.ceil(filtered.length/pageSize)),active=displayHistory.some(b=>ACTIVE.has(b.status));
   function choose(tasks:Task[],checked:boolean){
     const next={...selection};for(const task of tasks){if(task.reason)continue;if(checked)next[task.id]=task;else delete next[task.id];}
     if(Object.keys(next).length>200){setError('每批最多选择200条，请分批处理。');return;}setSelection(next);
@@ -687,7 +689,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
                       <span className="wbx-approvals__city">{task.cityName || '—'}</span>
                       <small className="wbx-approvals__site" title={task.siteName || '—'}>{task.siteName || '—'}</small>
                     </td>
-                    <td className="ap-col-period tabular-nums">{period(task)}</td>
+                    <td className="ap-col-period tabular-nums" title={periodTitle(task)}>{period(task)}</td>
                     <td className="ap-col-count tabular-nums">{task.rider_count ?? '—'}</td>
                     <td className="ap-col-creator">
                       <span>{task.createByName || '—'}</span>
@@ -720,9 +722,22 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
           </div>
           <div className="wbx-approvals__pagination tabular-nums">
             <span className="wbx-approvals__page-meta">
-              共 {filtered.length} 条 · 第 {page} / {pages} 页（每页 20 条）
+              共 {filtered.length} 条 · 第 {page} / {pages} 页
             </span>
             <div className="wbx-approvals__page-btns">
+              <select
+                className="wbx-approvals__page-size"
+                aria-label="每页显示条数"
+                value={pageSize}
+                onChange={e => {
+                  setPageSize(Number(e.target.value));
+                  setPage(1);
+                }}
+              >
+                <option value={20}>20 条/页</option>
+                <option value={50}>50 条/页</option>
+                <option value={100}>100 条/页</option>
+              </select>
               <button
                 type="button"
                 className="wbx-btn wbx-btn--sm"
@@ -834,7 +849,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
                   )}
                   {displayHistory.map(b => (
                     <option value={b.id} key={b.id}>
-                      {new Date(b.created * 1000).toLocaleString('zh-CN')} · {batchLabels[b.status] || b.status} · {b.items.length}条
+                      {formatPayrollDateTime(b.created * 1000)} · {batchLabels[b.status] || b.status} · {b.items.length}条
                     </option>
                   ))}
                 </select>

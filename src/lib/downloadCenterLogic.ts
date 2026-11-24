@@ -29,7 +29,7 @@ export const PHASE_LABELS: Record<string, string> = {
   queued: '排队中', waiting_collection: '等待主机采集会话', waiting_login: '等待来源登录认证',
   waiting_manual: '等待平台验证', preparing: '准备资料', submitting: '提交平台导出',
   waiting_export: '等待平台生成文件', downloading: '下载文件', validating: '校验文件',
-  generating: '生成业务表', publishing: '归档成品', summarizing: '汇总合并',
+  generating: '生成业务报表', publishing: '归档成品', summarizing: '汇总合并',
   completed: '已完成', failed: '失败', cancelled: '已取消', interrupted: '已中断',
 };
 export function phaseLabel(phase?: string) { return phase ? PHASE_LABELS[phase] || '正在处理' : ''; }

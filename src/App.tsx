@@ -31,6 +31,8 @@ import { WorkbenchDrawer } from "./components/WorkbenchDrawer";
 import { SystemConnections } from "./components/SystemConnections";
 import { fetchWithPreflight } from "./lib/authPreflight";
 import { HeaderApprovalNotifier } from "./components/HeaderApprovalNotifier";
+import { HeaderDownloadCenter } from "./components/HeaderDownloadCenter";
+import { TaskStatusNotifier } from "./components/TaskStatusNotifier";
 import { LanorangeApprovals } from "./components/LanorangeApprovals";
 import { LanorangePriceExports } from "./components/LanorangePriceExports";
 import { StationDeductionManager } from "./components/StationDeductionManager";
@@ -42,7 +44,6 @@ import {
   getPayrollSidebarBadge,
   type PayrollSubView,
   type PlatformStatusMap,
-  type SystemResourceStatsInput,
 } from "./lib/workbench";
 import { DOWNLOAD_PLATFORMS,type DownloadPlatform } from './lib/downloadModules';
 import { PlatformDock } from './components/PlatformDock';
@@ -64,6 +65,15 @@ import {
   useDemoDataVisibility,
 } from './lib/demoMode';
 import { buildDemoEngineLogs } from './lib/showcaseDemoData';
+import {
+  buildTaskReturnTarget,
+  detectTaskNotifications,
+  readAutoJumpPreference,
+  writeAutoJumpPreference,
+  type TaskNotificationRecord,
+  type TaskReturnTarget,
+  type TaskStatusAlert,
+} from './lib/taskWorkflow';
 
 const showDesktopNotification = (title: string, body: string) => {
   if (!("Notification" in window)) {
@@ -258,38 +268,58 @@ export default function App() {
   const [approvalActiveCount,setApprovalActiveCount]=useState(0);
   const [approvalPendingCount,setApprovalPendingCount]=useState(0);
   const [priceRecordId,setPriceRecordId]=useState<string|undefined>();
-  const [systemStats, setSystemStats] = useState<SystemResourceStatsInput | null>(null);
   useEffect(()=>{
     let disposed=false;const controller=new AbortController();
-    const read=()=>fetchWithAuth('/api/fengshen-downloads/lanorange-approvals/activity',{signal:controller.signal}).then(r=>r.ok?r.json():null).then(value=>{if(!disposed && value)setApprovalActiveCount(value.active?1:0);}).catch(()=>{});
-    void read();const timer=setInterval(read,10000);
-    return()=>{disposed=true;controller.abort();clearInterval(timer);};
-  },[workspaceId]);
-  useEffect(() => {
-    let disposed = false;
-    const controller = new AbortController();
-    const readStats = () => {
-      fetch('/api/system/stats', { signal: controller.signal })
-        .then(r => (r.ok ? r.json() : null))
-        .then(data => {
-          if (!disposed && data?.success) {
-            setSystemStats(data);
+    const read=()=>{
+      if (document.visibilityState !== 'visible') return;
+      fetchWithAuth('/api/fengshen-downloads/lanorange-approvals/activity',{signal:controller.signal})
+        .then(r=>r.ok?r.json():null)
+        .then(value=>{
+          if(!disposed && value){
+            const next = value.active ? 1 : 0;
+            setApprovalActiveCount(prev => (prev === next ? prev : next));
           }
         })
-        .catch(() => {});
+        .catch(()=>{});
     };
-    readStats();
-    const timer = setInterval(readStats, 6000);
-    return () => {
-      disposed = true;
-      controller.abort();
-      clearInterval(timer);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void read();
     };
-  }, []);
+    void read();
+    const timer=setInterval(read,12000);
+    document.addEventListener('visibilitychange', onVisibility);
+    return()=>{disposed=true;controller.abort();clearInterval(timer);document.removeEventListener('visibilitychange', onVisibility);};
+  },[workspaceId]);
   const [taskKind, setTaskKind] = useState<TaskKind>(() => initialTaskKind());
   const [taskFormLocked, setTaskFormLocked] = useState(false);
   const [activeDownloadCount, setActiveDownloadCount] = useState(0);
+  const [taskAttentionCount, setTaskAttentionCount] = useState(0);
+  const [autoJumpTaskCenter, setAutoJumpTaskCenter] = useState<boolean>(() => readAutoJumpPreference());
+  const [taskReturnTarget, setTaskReturnTarget] = useState<TaskReturnTarget | null>(null);
+  const [taskHighlightId, setTaskHighlightId] = useState('');
+  const [taskFocusRecordId, setTaskFocusRecordId] = useState('');
+  const [taskAlerts, setTaskAlerts] = useState<TaskStatusAlert[]>([]);
+  const taskSnapshotRef = useRef<Map<string, string> | null>(null);
+  const seenTaskAlertKeysRef = useRef<Set<string>>(new Set());
   const [payrollResumeVersion, setPayrollResumeVersion] = useState(0);
+  const [pageAnimFlip, setPageAnimFlip] = useState(false);
+  const lastRouteSigRef = useRef('');
+  const currentRouteSig = `${workspaceView}|${taskKind}|${downloadPlatform}|${activeReportId}|${payrollSubView}`;
+  useEffect(() => {
+    if (!lastRouteSigRef.current) {
+      lastRouteSigRef.current = currentRouteSig;
+      return;
+    }
+    if (lastRouteSigRef.current !== currentRouteSig) {
+      lastRouteSigRef.current = currentRouteSig;
+      setPageAnimFlip(v => !v);
+    }
+  }, [currentRouteSig]);
+
+  const handleToggleAutoJumpTaskCenter = (next: boolean) => {
+    setAutoJumpTaskCenter(next);
+    writeAutoJumpPreference(next);
+  };
   useEffect(() => { try { localStorage.setItem('workbench_task_kind', taskKind); } catch {} setActiveMenu(taskKind === 'payroll' ? 'core' : 'fengshen_downloads'); }, [taskKind]);
   const navigateWorkspace = (view: 'create' | 'history' | 'approval' | 'price-export') => {
     setWorkspaceView(view);
@@ -328,18 +358,43 @@ export default function App() {
     window.addEventListener('workbench:platform-statuses', onStatuses);
     return () => window.removeEventListener('workbench:platform-statuses', onStatuses);
   }, []);
+  const openTaskCenterFromCurrent = (options?: { focusId?: string; highlightId?: string }) => {
+    const returnTarget = buildTaskReturnTarget({
+      workspaceView,
+      taskKind,
+      downloadPlatform,
+      payrollSubView,
+      reportId: activeReportId,
+    });
+    if (returnTarget) {
+      setTaskReturnTarget(returnTarget);
+    }
+    if (options?.focusId) {
+      setTaskFocusRecordId(options.focusId);
+    }
+    if (options?.highlightId) {
+      setTaskHighlightId(options.highlightId);
+    }
+    setHistoryAll(true);
+    setTaskKind('download');
+    navigateWorkspace('history');
+  };
+
   const executeShellAction = (action: ShellCommandAction) => {
     if (action.type === 'platform') {
+      setTaskReturnTarget(null);
       openDownloadModule(action.platform);
       setMobileNavOpen(false);
       return;
     }
     if (action.type === 'report') {
+      setTaskReturnTarget(null);
       openReportModule(action.reportId);
       setMobileNavOpen(false);
       return;
     }
     if (action.type === 'payroll') {
+      setTaskReturnTarget(null);
       setPayrollSubView(action.subView);
       setTaskKind('payroll');
       navigateWorkspace('create');
@@ -348,10 +403,9 @@ export default function App() {
     }
     if (action.type === 'workspace') {
       if (action.view === 'history') {
-        setHistoryAll(true);
-        setTaskKind('download');
-        navigateWorkspace('history');
+        openTaskCenterFromCurrent();
       } else {
+        setTaskReturnTarget(null);
         setPriceRecordId(undefined);
         navigateWorkspace(action.view);
       }
@@ -691,14 +745,92 @@ export default function App() {
     id: number;
     text: string;
     type: string;
+    actionLabel?: string;
+    onAction?: () => void;
   } | null>(null);
-  const showToast = (text: string, type: string = "info") => {
+  const showToast = (
+    text: string,
+    type: string = "info",
+    options?: { actionLabel?: string; onAction?: () => void; durationMs?: number },
+  ) => {
     const id = Date.now();
-    setToastMsg({ id, text, type });
+    setToastMsg({
+      id,
+      text,
+      type,
+      actionLabel: options?.actionLabel,
+      onAction: options?.onAction,
+    });
     setTimeout(
       () => setToastMsg((prev) => (prev && prev.id === id ? null : prev)),
-      3000,
+      options?.durationMs ?? (options?.actionLabel ? 5500 : 3200),
     );
+  };
+
+  const handleTaskRecordsPolled = (
+    records: TaskNotificationRecord[],
+    summary: { activeCount: number; attentionCount: number; readyCount: number; isDemo: boolean },
+  ) => {
+    setTaskAttentionCount(summary.attentionCount);
+    if (summary.isDemo) return;
+    const { alerts, nextSnapshot } = detectTaskNotifications(
+      taskSnapshotRef.current,
+      records,
+      seenTaskAlertKeysRef.current,
+    );
+    taskSnapshotRef.current = nextSnapshot;
+    if (alerts.length > 0) {
+      for (const item of alerts) {
+        seenTaskAlertKeysRef.current.add(item.key);
+      }
+      setTaskAlerts(prev => {
+        const existingKeys = new Set(prev.map(item => item.key));
+        const fresh = alerts.filter(item => !existingKeys.has(item.key));
+        return [...fresh, ...prev].slice(0, 4);
+      });
+      const latest = alerts[0];
+      showDesktopNotification(
+        latest.kind === 'completed' ? '任务已完成' : '任务需要处理',
+        `${latest.title} — ${latest.subtitle}`,
+      );
+    }
+  };
+
+  const handleOpenAlertDirectory = async (alert: TaskStatusAlert) => {
+    try {
+      const infoRes = await fetchWithAuth(
+        `/api/workbench/task-center/directory?record_id=${encodeURIComponent(alert.taskId)}`,
+        { signal: AbortSignal.timeout(15000) },
+      );
+      const info = await infoRes.json().catch(() => ({}));
+      if (infoRes.ok && info.exists && info.can_open) {
+        const openRes = await fetchWithAuth('/api/workbench/task-center/directory/open', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ record_id: alert.taskId }),
+          signal: AbortSignal.timeout(15000),
+        });
+        if (openRes.ok) {
+          showToast('已打开本地结果目录', 'success');
+          return;
+        }
+      }
+    } catch {
+      // Fallback to opening the task detail drawer in Task Center.
+    }
+    openTaskCenterFromCurrent({ focusId: alert.taskId });
+  };
+
+  const handleTaskSubmitted = (info: { id: string; name: string; autoJump: boolean }) => {
+    if (info.autoJump) {
+      openTaskCenterFromCurrent({ highlightId: info.id });
+      showToast(`已提交「${info.name}」，已定位到任务中心`, 'success');
+      return;
+    }
+    showToast(`「${info.name}」已在后台开始执行`, 'success', {
+      actionLabel: '查看任务中心',
+      onAction: () => openTaskCenterFromCurrent({ highlightId: info.id }),
+    });
   };
 
   const uploadExtractedFilesAndGetPath = async (
@@ -1189,12 +1321,12 @@ export default function App() {
           isDrawerMode={isDrawerMode}
           taskFormLocked={taskFormLocked}
           platformStatuses={platformStatuses}
-          systemStats={systemStats}
           activeDownloadCount={activeDownloadCount}
           payrollBadge={getPayrollSidebarBadge(payrollPreparation?.status, isRunning)}
           approvalActiveCount={approvalActiveCount}
           approvalPendingCount={approvalPendingCount}
           totalActiveCount={activeDownloadCount + (isRunning ? 1 : 0) + approvalActiveCount}
+          taskAttentionCount={taskAttentionCount}
           onExecuteAction={executeShellAction}
           onToggleCollapse={toggleSidebarCollapsed}
           onCloseMobile={() => setMobileNavOpen(false)}
@@ -1278,31 +1410,24 @@ export default function App() {
                     />
                   </PlatformDock>
 
-                  <button
-                    type="button"
-                    data-nav-key="workspace:history"
-                    disabled={taskFormLocked}
-                    aria-current={workspaceView === 'history' ? 'page' : undefined}
-                    className={`wbx-header-tool-btn${workspaceView === 'history' ? ' is-open' : ''}`}
-                    title="打开任务中心，查看全部采集、核算与导出任务记录"
-                    onClick={() => {
-                      setHistoryAll(true);
-                      setTaskKind('download');
-                      navigateWorkspace('history');
+                  <HeaderDownloadCenter
+                    apiFetch={fetchWithAuth}
+                    activeCount={activeDownloadCount + approvalActiveCount}
+                    runningTask={runningTask}
+                    progress={progress}
+                    progressText={progressText}
+                    onOpenTaskCenter={() => openTaskCenterFromCurrent()}
+                    onOpenTaskRecord={record => openTaskCenterFromCurrent({ focusId: record.id })}
+                    onOpenPlatformAuth={platformKey => {
+                      if (platformKey === 'fengshen') {
+                        setFengshenLoginRequest(value => value + 1);
+                      } else {
+                        setDockOpen(true);
+                      }
                     }}
-                  >
-                    <FolderCheck
-                      size={13.5}
-                      className={`wbx-header-tool-icon${workspaceView === 'history' || totalActiveCount > 0 ? ' is-active' : ''}`}
-                      aria-hidden="true"
-                    />
-                    <span className="wbx-header-taskcenter-label">任务中心</span>
-                    {totalActiveCount > 0 && (
-                      <span className="wbx-header-tool-live tabular-nums">
-                        {totalActiveCount} 进行中
-                      </span>
-                    )}
-                  </button>
+                    onShowToast={(message, type) => showToast(message, type || 'info')}
+                    onRecordsPolled={handleTaskRecordsPolled}
+                  />
 
                   <button
                     type="button"
@@ -1325,7 +1450,7 @@ export default function App() {
             );
           })()}
           <main className="wb-main wbx-main">
-            <div className="wbx-page">
+            <div className={`wbx-page ${pageAnimFlip ? 'wbx-page-enter-a' : 'wbx-page-enter-b'}`}>
             {missingCityTeams.length > 0 && (
               <section className="mb-4 rounded-xl border border-amber-300 bg-amber-50/95 p-4 shadow-xs" role="alert" aria-label="未匹配城市团队警告">
                 <div className="flex items-center justify-between mb-2">
@@ -1430,6 +1555,7 @@ export default function App() {
                 apiFetch={fetchWithAuth}
                 workspaceId={workspaceId}
                 navigation={downloadNavigation}
+                isVisible={!(workspaceView === 'approval' || workspaceView === 'price-export' || (workspaceView !== 'history' && taskKind === 'payroll'))}
                 embedded
                 hideNavigation
                 taskKind={taskKind === 'generate' ? 'generate' : 'download'}
@@ -1459,6 +1585,23 @@ export default function App() {
                 }}
                 fengshenAuthStatus={fengshenAuthStatus}
                 onAccountChange={setDownloadAccountId}
+                autoJumpTaskCenter={autoJumpTaskCenter}
+                onAutoJumpTaskCenterChange={handleToggleAutoJumpTaskCenter}
+                focusTaskId={taskFocusRecordId}
+                onFocusTaskHandled={() => setTaskFocusRecordId('')}
+                highlightTaskId={taskHighlightId}
+                onHighlightHandled={() => setTaskHighlightId('')}
+                returnTarget={taskReturnTarget}
+                onReturnSource={
+                  taskReturnTarget
+                    ? () => {
+                        const target = taskReturnTarget;
+                        setTaskReturnTarget(null);
+                        executeShellAction(target.action);
+                      }
+                    : undefined
+                }
+                onTaskSubmitted={handleTaskSubmitted}
               />
             </section>
             <section
@@ -1469,6 +1612,7 @@ export default function App() {
             >
               {payrollSubView === 'batches' && (
                 <CorePage
+                  active={workspaceView === 'create' && taskKind === 'payroll' && payrollSubView === 'batches'}
                   onOpenDeductions={(defaultOnly = false) => { setDeductionDefaultOnly(defaultOnly); setPayrollSubView('deductions'); }}
                   onOpenConnections={() => window.dispatchEvent(new CustomEvent('workbench:connections'))}
                   onNavigateDownloadCenter={() => { setTaskKind('download'); navigateWorkspace('create'); }}
@@ -1581,6 +1725,20 @@ export default function App() {
       />
 
       
+      <TaskStatusNotifier
+        alerts={taskAlerts}
+        onDismiss={key => setTaskAlerts(prev => prev.filter(item => item.key !== key))}
+        onOpenTask={alert => openTaskCenterFromCurrent({ focusId: alert.taskId })}
+        onOpenDirectory={alert => void handleOpenAlertDirectory(alert)}
+        onOpenAuth={system => {
+          if (system === 'fengshen') {
+            setFengshenLoginRequest(value => value + 1);
+          } else {
+            setDockOpen(true);
+          }
+        }}
+      />
+
       {toastMsg && (
         <div className="fixed top-5 right-5 z-[9999] pointer-events-none transition-all animate-in fade-in slide-in-from-top-2">
           <div className={`pointer-events-auto px-4 py-3 rounded-xl border shadow-xl text-xs font-semibold flex items-center gap-2.5 ${
@@ -1590,6 +1748,19 @@ export default function App() {
           }`}>
             <span>{toastMsg.type === 'error' ? '✕' : toastMsg.type === 'warn' ? '⚠' : '✓'}</span>
             <span>{toastMsg.text}</span>
+            {toastMsg.actionLabel && toastMsg.onAction && (
+              <button
+                type="button"
+                className="ml-1 px-2 py-0.5 rounded-md bg-white/85 border border-current/20 hover:bg-white text-[11px] font-semibold cursor-pointer"
+                onClick={() => {
+                  const act = toastMsg.onAction;
+                  setToastMsg(null);
+                  act?.();
+                }}
+              >
+                {toastMsg.actionLabel}
+              </button>
+            )}
           </div>
         </div>
       )}

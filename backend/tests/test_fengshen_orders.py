@@ -84,6 +84,12 @@ class OrderTests(unittest.TestCase):
             with self.subTest(start=start), self.assertRaisesRegex(BillCollectionError, "近 60"):
                 date_batches(start, end, today)
 
+    def test_problem_ninety_day_window_allows_89_days_back_and_rejects_90_days_back(self):
+        today = dt.date(2026, 10, 11)
+        self.assertEqual(date_batches("2026-07-14", "2026-07-14", today, max_days=90), [("2026-07-14", "2026-07-14")])
+        with self.assertRaisesRegex(BillCollectionError, "近 90"):
+            date_batches("2026-07-13", "2026-07-20", today, max_days=90)
+
     def test_reversed_or_eight_day_batch_is_rejected(self):
         for start, end in (("2026-08-20", "2026-08-16"), ("2026-08-16", "2026-08-23")):
             with self.assertRaises(BillCollectionError):

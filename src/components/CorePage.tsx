@@ -51,6 +51,7 @@ export interface CorePageProps {
   lastOutputFolder?: string | null;
   lastRunResult: RunResult | null;
   workspaceId: string;
+  active?: boolean;
 }
 
 export function CorePage(props:CorePageProps) {

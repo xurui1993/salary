@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
   ArchiveRestore,
+  ArrowLeft,
   Calendar,
   ChevronRight,
   Download,
@@ -14,6 +15,7 @@ import {
   RotateCcw,
   Search,
   Square,
+  Trash2,
   X,
 } from 'lucide-react';
 import { readDownloadResponse, saveDownloadBlob, downloadErrorMessage } from '../lib/outputDownload';
@@ -36,12 +38,14 @@ import { taskTone, toneClass } from '../lib/statusSemantics';
 import {
   buildTaskProgressPopoverData,
   canOpenTaskResultDirectory,
+  canPermanentlyDeleteTask,
   cleanTaskTitle,
   computeDatePresetRange,
   computeTaskDiagnosticNote,
   formatCitiesCompact,
   formatCompactTimestamp,
   formatPeriodCompact,
+  formatTaskContentDisplay,
   platformTone,
   resolveTaskPrimaryAction,
   sortTaskDisplayRecords,
@@ -60,6 +64,8 @@ import {
   queryDemoTaskCenter,
 } from '../lib/showcaseDemoData';
 import { DemoDataChip } from './DemoDataChip';
+import type { TaskReturnTarget } from '../lib/taskWorkflow';
+import { buildTaskListFingerprint, computeAdaptivePollDelay } from '../lib/perfUtils';
 interface File {
   id: string;
   run_id?: string;
@@ -112,9 +118,19 @@ export function DownloadRecords({
   onRetryTask,
   initialRunId,
   onInitialFocusHandled,
+  highlightTaskId,
+  onHighlightHandled,
+  returnTarget,
+  onReturnSource,
+  visible = true,
 }: {
+  visible?: boolean;
   initialRunId?: string;
   onInitialFocusHandled?: () => void;
+  highlightTaskId?: string;
+  onHighlightHandled?: () => void;
+  returnTarget?: TaskReturnTarget | null;
+  onReturnSource?: () => void;
   apiFetch: DownloadFetch;
   workspaceId: string;
   selectedRunId: string;
@@ -158,6 +174,9 @@ export function DownloadRecords({
   const [toast, setToast] = useState<ToastNotice | null>(null);
   const [pollError, setPollError] = useState('');
   const [confirm, setConfirm] = useState<Task[] | null>(null);
+  const [deleteTargets, setDeleteTargets] = useState<Task[] | null>(null);
+  const [deleteFiles, setDeleteFiles] = useState(true);
+  const [pulsingTaskId, setPulsingTaskId] = useState('');
   const [directory, setDirectory] = useState<{
     path: string;
     exists: boolean;
@@ -232,10 +251,16 @@ export function DownloadRecords({
     return () => clearTimeout(timer);
   }, [search]);
 
+  const hasLoadedRecordsRef = useRef(false);
+  const pollFingerprintRef = useRef('');
+
   useEffect(() => {
+    if (!visible) return;
     const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = async () => {
+      if (controller.signal.aborted || document.visibilityState !== 'visible') return;
+      let anyActive = false;
       try {
         const params = new URLSearchParams({
           page: String(page),
@@ -255,45 +280,77 @@ export function DownloadRecords({
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || '任务列表暂不可读');
         if (controller.signal.aborted) return;
+        const incoming: Task[] = Array.isArray(data.records) ? data.records : [];
+        anyActive = incoming.some(r => ACTIVE.has(r.status)) || (data.counts?.active || 0) > 0;
         const serverHasLive =
-          (data.records?.length || 0) > 0 || (data.counts?.all || 0) > 0 || (data.counts?.archived || 0) > 0;
-        setHasLiveServerData(serverHasLive);
-        setRecords(previous =>
-          selectedRef.current.length
-            ? previous.map(r => data.records.find((next: Task) => next.id === r.id) || r)
-            : data.records,
+          incoming.length > 0 || (data.counts?.all || 0) > 0 || (data.counts?.archived || 0) > 0;
+        hasLoadedRecordsRef.current = true;
+        const nextFingerprint = buildTaskListFingerprint(
+          incoming,
+          data.counts || {},
+          `${data.total}|${data.pages}|${data.page}|${serverHasLive ? 1 : 0}|${data.focused?.id || ''}|${data.focused?.status || ''}|${(data.warnings || []).join(';')}`,
         );
-        setSyncMs(Date.now());
-        setTotal(data.total);
-        setPages(data.pages);
-        if (serverHasLive) {
-          setPage(data.page);
+        if (nextFingerprint !== pollFingerprintRef.current) {
+          pollFingerprintRef.current = nextFingerprint;
+          setHasLiveServerData(serverHasLive);
+          setRecords(previous =>
+            selectedRef.current.length
+              ? previous.map(r => incoming.find((next: Task) => next.id === r.id) || r)
+              : incoming,
+          );
+          setSyncMs(Date.now());
+          setNowMs(Date.now());
+          setTotal(data.total);
+          setPages(data.pages);
+          if (serverHasLive) {
+            setPage(data.page);
+          }
+          setCounts(data.counts);
+          setPollError((data.warnings || []).join('；'));
+          setFocused(previous =>
+            previous
+              ? data.focused?.id === previous.id
+                ? data.focused
+                : incoming.find((r: Task) => r.id === previous.id) || previous
+              : null,
+          );
         }
-        setCounts(data.counts);
         setLoading(false);
-        setPollError((data.warnings || []).join('；'));
-        setFocused(previous =>
-          previous
-            ? data.focused?.id === previous.id
-              ? data.focused
-              : data.records.find((r: Task) => r.id === previous.id) || previous
-            : null,
-        );
       } catch (e) {
         if (!controller.signal.aborted) {
           setPollError(pollErrorMessage(e));
           setLoading(false);
         }
       }
-      if (!controller.signal.aborted) timer = setTimeout(poll, 5000);
+      if (!controller.signal.aborted) {
+        const delay = computeAdaptivePollDelay({
+          hasActiveTasks: anyActive,
+          isDocumentVisible: document.visibilityState === 'visible',
+          isViewActive: true,
+          activeMs: 3500,
+          idleMs: 12000,
+        });
+        if (delay !== null) {
+          timer = setTimeout(poll, delay);
+        }
+      }
     };
-    setLoading(true);
+    const onVisibility = () => {
+      clearTimeout(timer);
+      if (document.visibilityState === 'visible') void poll();
+    };
+    // Only show skeleton loading state on the very first fetch so returning to Task Center never flashes.
+    if (!hasLoadedRecordsRef.current) {
+      setLoading(true);
+    }
     void poll();
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       controller.abort();
       clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [page, query, status, system, kind, from, to, archived, recordModule, version, refreshVersion]);
+  }, [visible, page, query, status, system, kind, from, to, archived, recordModule, version, refreshVersion]);
 
   // 真实登录后立即切回后台实时数据并刷新一次，清除本地演示焦点
   const prevLoggedInRef = useRef(auth.anyLoggedIn);
@@ -302,6 +359,7 @@ export function DownloadRecords({
       setSelected([]);
       setFocused(null);
       setConfirm(null);
+      setDeleteTargets(null);
       setPage(1);
       setVersion(v => v + 1);
     }
@@ -371,12 +429,18 @@ export function DownloadRecords({
     () => effectiveRecords.some(r => ACTIVE.has(r.status)) || (activeFocused ? ACTIVE.has(activeFocused.status) : false),
     [effectiveRecords, activeFocused],
   );
+  const focusedTaskIsActive = Boolean(activeFocused && ACTIVE.has(activeFocused.status));
   useEffect(() => {
-    if (!hasActiveTasks) return;
-    setNowMs(Date.now());
-    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    if (!visible || (!hasActiveTasks && !focusedTaskIsActive)) return;
+    // Only tick at 1s when the detail drawer is open on an active task; otherwise gently refresh every 30s.
+    const cadenceMs = focusedTaskIsActive ? 1000 : 30000;
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        setNowMs(Date.now());
+      }
+    }, cadenceMs);
     return () => clearInterval(id);
-  }, [hasActiveTasks]);
+  }, [visible, hasActiveTasks, focusedTaskIsActive]);
 
   useEffect(() => {
     if (!initialRunId) return;
@@ -389,6 +453,29 @@ export function DownloadRecords({
       onInitialFocusHandled?.();
     }
   }, [initialRunId, effectiveRecords, onInitialFocusHandled]);
+
+  useEffect(() => {
+    if (!highlightTaskId) return;
+    const matched = effectiveRecords.find(
+      r => (r.member_ids || []).includes(highlightTaskId) || r.action_run_id === highlightTaskId || r.id === highlightTaskId,
+    );
+    if (!matched) return;
+    setPulsingTaskId(matched.id);
+    onHighlightHandled?.();
+    const scrollTimer = setTimeout(() => {
+      const rowEl = document.querySelector(`tr[data-task-row-id="${CSS.escape(matched.id)}"]`);
+      if (rowEl && typeof rowEl.scrollIntoView === 'function') {
+        rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 80);
+    const clearTimer = setTimeout(() => {
+      setPulsingTaskId(curr => (curr === matched.id ? '' : curr));
+    }, 3200);
+    return () => {
+      clearTimeout(scrollTimer);
+      clearTimeout(clearTimer);
+    };
+  }, [highlightTaskId, effectiveRecords, onHighlightHandled]);
 
   const rawTitle = (r: Task) => r.title || r.datasets.map(datasetLabel).join('、').replaceAll('（生成表）', '');
   const platform = (r: Task) =>
@@ -619,7 +706,54 @@ export function DownloadRecords({
       );
     });
 
+  const openPermanentDelete = (rows: Task[]) => {
+    const deletable = rows.filter(canPermanentlyDeleteTask);
+    if (!deletable.length) {
+      pushToast('进行中或排队中的任务请先停止后再彻底删除。', 'info');
+      return;
+    }
+    if (deletable.length < rows.length) {
+      pushToast(`已自动跳过 ${rows.length - deletable.length} 项进行中任务，仅对已结束任务执行彻底删除。`, 'info');
+    }
+    setDeleteFiles(true);
+    setDeleteTargets(deletable);
+  };
+
+  const permanentDelete = (rows: Task[]) =>
+    act(async () => {
+      const targetIds = new Set(rows.map(r => r.id));
+      if (demoActive) {
+        setDemoRecords(prev => prev.filter(r => !targetIds.has(r.id)));
+        setDemoArchivedIds(prev => {
+          const next = new Set(prev);
+          for (const id of targetIds) next.delete(id);
+          return next;
+        });
+        if (focused && targetIds.has(focused.id)) setFocused(null);
+        setDeleteTargets(null);
+        setSelected(prev => prev.filter(id => !targetIds.has(id)));
+        pushToast(
+          `示例模式：已彻底删除 ${rows.length} 条示例任务${deleteFiles ? '（含模拟结果目录）' : '（保留本地文件）'}。`,
+        );
+        return;
+      }
+      await request(`${API}/delete`, {
+        ids: rows.map(r => r.id),
+        delete_files: deleteFiles,
+      });
+      if (focused && targetIds.has(focused.id)) setFocused(null);
+      setDeleteTargets(null);
+      setSelected(prev => prev.filter(id => !targetIds.has(id)));
+      setVersion(v => v + 1);
+      pushToast(
+        deleteFiles
+          ? `已彻底删除 ${rows.length} 个任务并清理本地结果目录。`
+          : `已彻底删除 ${rows.length} 个任务记录（本地文件已保留）。`,
+      );
+    });
+
   const chosen = effectiveRecords.filter(r => selected.includes(r.id));
+  const deletableChosen = chosen.filter(canPermanentlyDeleteTask);
   const batchSummary = useMemo(() => summarizeTaskBatchSelection(chosen), [chosen]);
   const context = (r: Task) => ({
     status: r.status,
@@ -639,6 +773,17 @@ export function DownloadRecords({
         {/* 1. 与兼职核算统一的卡片顶栏 */}
         <header className="wbx-tc-topbar">
           <div className="wbx-tc-topbar__left">
+            {returnTarget && onReturnSource && !archived && (
+              <button
+                type="button"
+                className="wbx-tc-return-btn"
+                onClick={onReturnSource}
+                title={`一键返回${returnTarget.label.replace(/^返回/, '')}`}
+              >
+                <ArrowLeft size={13.5} aria-hidden="true" />
+                <span>{returnTarget.label}</span>
+              </button>
+            )}
             <h3 className="wbx-tc-title">
               <span>{archived ? '已移出任务' : '任务中心'}</span>
               <span className="wbx-tc-title__count tabular-nums">{effectiveCounts.all || 0}</span>
@@ -957,6 +1102,20 @@ export function DownloadRecords({
             >
               {archived ? '恢复显示' : '移出列表'}
             </button>
+            <button
+              type="button"
+              className="wbx-btn wbx-btn--sm wbx-btn--danger"
+              disabled={busy || !deletableChosen.length}
+              title={
+                deletableChosen.length
+                  ? `彻底删除 ${deletableChosen.length} 项已结束任务`
+                  : '所选任务正在进行中，请先停止后再彻底删除'
+              }
+              onClick={() => openPermanentDelete(chosen)}
+            >
+              <Trash2 size={13} aria-hidden="true" />
+              <span>彻底删除{deletableChosen.length ? ` (${deletableChosen.length})` : ''}</span>
+            </button>
             <button type="button" className="wb-link" onClick={() => setSelected([])}>
               取消选择
             </button>
@@ -978,7 +1137,8 @@ export function DownloadRecords({
                 </th>
                 <th className="tc-col-task">任务内容</th>
                 <th className="tc-col-source">来源 / 类型</th>
-                <th className="tc-col-scope">范围 / 周期</th>
+                <th className="tc-col-city">覆盖范围</th>
+                <th className="tc-col-period">业务周期</th>
                 <th className="tc-col-progress">状态与进度</th>
                 <th className="tc-col-time">创建时间</th>
                 <th className="tc-col-ops">操作</th>
@@ -988,13 +1148,19 @@ export function DownloadRecords({
               {effectiveRecords.map(r => {
                 const pName = platform(r);
                 const kLabel = kindLabel(r.kind);
-                const cleanTitle = cleanTaskTitle(rawTitle(r), pName, kLabel);
+                const contentDisplay = formatTaskContentDisplay(r, {
+                  datasetLabel,
+                  platformName: pName,
+                  kindLabel: kLabel,
+                });
+                const cleanTitle = contentDisplay.short;
                 const diagNote = computeTaskDiagnosticNote(r);
-                const citiesMeta = formatCitiesCompact(r.cities);
-                const periodMeta = formatPeriodCompact(r.start, r.end, r.datasets);
+                const citiesMeta = formatCitiesCompact(r.cities, r.datasets);
+                const periodMeta = formatPeriodCompact(r.start, r.end, r.datasets, r.kind);
                 const createdMeta = formatCompactTimestamp(r.created_at, nowMs);
                 const guidance = taskGuidance(context(r));
                 const isActive = ACTIVE.has(r.status);
+                const canDelete = canPermanentlyDeleteTask(r);
                 const progressMeta = computeTaskProgressMeta(r);
                 const showProgressBar =
                   progressMeta.isActive &&
@@ -1025,8 +1191,9 @@ export function DownloadRecords({
                 return (
                   <tr
                     key={r.id}
+                    data-task-row-id={r.id}
                     data-task-ids={(r.member_ids && r.member_ids.length ? r.member_ids : [r.id]).join(' ')}
-                    className={`tc-row${isDetailOpen ? ' is-detail-open' : ''}`}
+                    className={`tc-row${isDetailOpen ? ' is-detail-open' : ''}${pulsingTaskId === r.id ? ' is-newly-created' : ''}`}
                     onClick={() => openDetail(r)}
                   >
                     <td className="tc-col-check">
@@ -1041,11 +1208,11 @@ export function DownloadRecords({
                       />
                     </td>
 
-                    {/* 任务内容：严格单行排版，诊断提示合入 title 与右侧详情抽屉 */}
+                    {/* 任务内容：规范化单行展示，悬停与详情保留完整信息 */}
                     <td className="tc-col-task">
                       <span
                         className="tc-task-title"
-                        title={diagNote ? `${cleanTitle} — ${diagNote.text}` : rawTitle(r)}
+                        title={diagNote ? `${contentDisplay.full} — ${diagNote.text}` : contentDisplay.full}
                       >
                         {cleanTitle}
                       </span>
@@ -1058,14 +1225,17 @@ export function DownloadRecords({
                       <span className="tc-kind-text">{kLabel}</span>
                     </td>
 
-                    {/* 范围 / 周期：单行合并展示 */}
-                    <td className="tc-col-scope">
-                      <span
-                        className="tc-scope-inline tabular-nums"
-                        title={`${citiesMeta.full} · ${periodMeta.full}`}
-                      >
+                    {/* 覆盖范围：精简整齐对齐 */}
+                    <td className="tc-col-city">
+                      <span className="tc-city-inline" title={citiesMeta.full}>
                         {citiesMeta.short}
-                        {periodMeta.short ? ` · ${periodMeta.short}` : ''}
+                      </span>
+                    </td>
+
+                    {/* 业务周期：等宽对齐 */}
+                    <td className="tc-col-period">
+                      <span className="tc-period-inline tabular-nums" title={periodMeta.full}>
+                        {periodMeta.short}
                       </span>
                     </td>
 
@@ -1104,7 +1274,17 @@ export function DownloadRecords({
 
                     {/* 创建时间 */}
                     <td className="tc-col-time tabular-nums" title={createdMeta.full}>
-                      {createdMeta.short}
+                      {(() => {
+                        const [dayPart, clockPart] = createdMeta.short.split(' ');
+                        return clockPart ? (
+                          <span className="tc-time-pair">
+                            <span>{dayPart}</span>
+                            <span>{clockPart}</span>
+                          </span>
+                        ) : (
+                          createdMeta.short
+                        );
+                      })()}
                     </td>
 
                     {/* 4 轨定宽操作网格：[自适应辅助图标] [74px 主操作] [9px 分割线] [26px 移出] */}
@@ -1238,7 +1418,21 @@ export function DownloadRecords({
                           </button>
                         )}
 
-                        {!archived && (
+                        {archived ? (
+                          <>
+                            <span className="tc-op-sep tc-op-slot-sep" aria-hidden="true" />
+                            <button
+                              type="button"
+                              className="tc-icon-btn tc-delete-btn tc-op-slot-remove"
+                              title={canDelete ? '彻底删除' : '进行中任务请先停止后再彻底删除'}
+                              aria-label={`彻底删除 ${cleanTitle}`}
+                              disabled={busy || !canDelete}
+                              onClick={() => openPermanentDelete([r])}
+                            >
+                              <Trash2 size={13.5} aria-hidden="true" />
+                            </button>
+                          </>
+                        ) : (
                           <>
                             <span className="tc-op-sep tc-op-slot-sep" aria-hidden="true" />
                             <button
@@ -1265,7 +1459,7 @@ export function DownloadRecords({
         {!effectiveRecords.length &&
           (loading ? (
             <div className="wbx-taskcenter__skeleton">
-              <SkeletonRows rows={5} columns={6} label="任务列表加载中" />
+              <SkeletonRows rows={5} columns={7} label="任务列表加载中" />
             </div>
           ) : (
             <EmptyState
@@ -1390,6 +1584,7 @@ export function DownloadRecords({
           onShowDirectory={r => void showDirectory(r)}
           onStopTask={stopTask}
           onArchiveOrRestore={r => setConfirm([r])}
+          onPermanentDelete={r => openPermanentDelete([r])}
           onRetryTask={handleRetryTask}
           onOpenAuth={authSys => handleOpenAuth(authSys)}
           onNavigatePayroll={onNavigatePayroll}
@@ -1457,6 +1652,39 @@ export function DownloadRecords({
             error={error}
             onCancel={() => setConfirm(null)}
             onConfirm={() => void changeVisibility(confirm)}
+          />
+        )}
+
+        {deleteTargets && (
+          <WorkbenchConfirmModal
+            title="彻底删除任务"
+            description={`将永久删除 ${deleteTargets.length} 个任务的数据库记录，此操作不可撤销，且无法从「已移出」恢复。`}
+            hint="进行中或排队中的任务需先停止后才能彻底删除。"
+            items={deleteTargets.map(r => {
+              const display = formatTaskContentDisplay(r, {
+                datasetLabel,
+                platformName: platform(r),
+                kindLabel: kindLabel(r.kind),
+              });
+              return `${display.short} · ${r.id.slice(-6).toUpperCase()}`;
+            })}
+            extraContent={
+              <label className="wbx-modal__check">
+                <input
+                  type="checkbox"
+                  checked={deleteFiles}
+                  disabled={busy}
+                  onChange={e => setDeleteFiles(e.target.checked)}
+                />
+                <span>同时清理该任务的本地结果目录与产出文件（取消勾选仅删除记录，保留本地文件）</span>
+              </label>
+            }
+            confirmLabel="确认彻底删除"
+            confirmTone="danger"
+            busy={busy}
+            error={error}
+            onCancel={() => setDeleteTargets(null)}
+            onConfirm={() => void permanentDelete(deleteTargets)}
           />
         )}
 
