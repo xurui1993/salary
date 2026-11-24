@@ -60,11 +60,8 @@ import {
 import { APP_TITLE } from './lib/appMeta';
 import { BP, currentViewportWidth } from './lib/breakpoints';
 import {
-  hasAnyAuthenticatedPlatform,
   syncGlobalPlatformAuth,
-  useDemoDataVisibility,
 } from './lib/demoMode';
-import { buildDemoEngineLogs } from './lib/showcaseDemoData';
 import {
   buildTaskReturnTarget,
   detectTaskNotifications,
@@ -74,6 +71,7 @@ import {
   type TaskReturnTarget,
   type TaskStatusAlert,
 } from './lib/taskWorkflow';
+import { arePlatformStatusMapsEqual } from './lib/perfUtils';
 
 const showDesktopNotification = (title: string, body: string) => {
   if (!("Notification" in window)) {
@@ -356,11 +354,61 @@ export default function App() {
     const onStatuses = (event: Event) => {
       const detail = (event as CustomEvent).detail;
       if (detail && typeof detail === 'object') {
-        setPlatformStatuses(detail as PlatformStatusMap);
+        setPlatformStatuses(prev =>
+          arePlatformStatusMapsEqual(prev, detail as PlatformStatusMap)
+            ? prev
+            : (detail as PlatformStatusMap),
+        );
       }
     };
     window.addEventListener('workbench:platform-statuses', onStatuses);
     return () => window.removeEventListener('workbench:platform-statuses', onStatuses);
+  }, []);
+
+  const [mountedPanels, setMountedPanels] = useState<{
+    batches: boolean;
+    deductions: boolean;
+    templates: boolean;
+    approval: boolean;
+  }>(() => ({
+    batches: workspaceView === 'create' && taskKind === 'payroll' && payrollSubView === 'batches',
+    deductions: workspaceView === 'create' && taskKind === 'payroll' && payrollSubView === 'deductions',
+    templates: workspaceView === 'create' && taskKind === 'payroll' && payrollSubView === 'templates',
+    approval: workspaceView === 'approval',
+  }));
+
+  useEffect(() => {
+    const wantBatches = workspaceView === 'create' && taskKind === 'payroll' && payrollSubView === 'batches';
+    const wantDeductions = workspaceView === 'create' && taskKind === 'payroll' && payrollSubView === 'deductions';
+    const wantTemplates = workspaceView === 'create' && taskKind === 'payroll' && payrollSubView === 'templates';
+    const wantApproval = workspaceView === 'approval';
+    setMountedPanels(prev => {
+      if (
+        ( !wantBatches || prev.batches ) &&
+        ( !wantDeductions || prev.deductions ) &&
+        ( !wantTemplates || prev.templates ) &&
+        ( !wantApproval || prev.approval )
+      ) {
+        return prev;
+      }
+      return {
+        batches: prev.batches || wantBatches,
+        deductions: prev.deductions || wantDeductions,
+        templates: prev.templates || wantTemplates,
+        approval: prev.approval || wantApproval,
+      };
+    });
+  }, [workspaceView, taskKind, payrollSubView]);
+
+  // Pre-warm heavy secondary modules during idle time after initial paint so first tab switch is 0ms instant
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setMountedPanels(prev => {
+        if (prev.batches && prev.deductions && prev.templates && prev.approval) return prev;
+        return { batches: true, deductions: true, templates: true, approval: true };
+      });
+    }, 650);
+    return () => window.clearTimeout(timer);
   }, []);
   const openTaskCenterFromCurrent = (options?: { focusId?: string; highlightId?: string }) => {
     const returnTarget = buildTaskReturnTarget({
@@ -498,21 +546,14 @@ export default function App() {
   useEffect(() => { setFengshenLoginRequest(0); }, [workspaceId]);
   const [fengshenAuthStatus, setFengshenAuthStatus] = useState<FengshenAuthStatus | null>(null);
   const [fengshenAuthEvent, setFengshenAuthEvent] = useState<FengshenAuthStatus | null>(null);
-  const { demoHidden } = useDemoDataVisibility();
 
   useEffect(() => {
     syncGlobalPlatformAuth(platformStatuses, fengshenAuthStatus);
   }, [platformStatuses, fengshenAuthStatus]);
 
-  const anyPlatformLoggedIn = hasAnyAuthenticatedPlatform(platformStatuses, fengshenAuthStatus);
-
   const [logsMap, setLogsMap] = useState<Record<string, LogEntry[]>>({});
 
-  const logs =
-    logsMap['core'] ||
-    (!anyPlatformLoggedIn && !isRunning && !demoHidden
-      ? buildDemoEngineLogs()
-      : [{ text: theme.log_init, level: "INFO" }]);
+  const logs = logsMap['core'] || [{ text: theme.log_init, level: "INFO" }];
 
   const setLogs = (updater: any, target: string = activeMenu) => {
     if (target === 'download_rider_sources' || target === 'download_shangyi_employees') target = 'core';
@@ -1386,7 +1427,7 @@ export default function App() {
                 <div
                   className="wb-header-actions wbx-header__tools"
                   role="group"
-                  aria-label="全局审批待办通知、平台授权、任务中心与运行日志"
+                  aria-label="全局审批待办通知与平台授权"
                 >
                   <HeaderApprovalNotifier
                     apiFetch={fetchWithAuth}
@@ -1413,42 +1454,6 @@ export default function App() {
                       onOpenChange={setDockOpen}
                     />
                   </PlatformDock>
-
-                  <HeaderDownloadCenter
-                    apiFetch={fetchWithAuth}
-                    activeCount={activeDownloadCount + approvalActiveCount}
-                    runningTask={runningTask}
-                    progress={progress}
-                    progressText={progressText}
-                    onOpenTaskCenter={() => openTaskCenterFromCurrent()}
-                    onOpenTaskRecord={record => openTaskCenterFromCurrent({ focusId: record.id })}
-                    onOpenPlatformAuth={platformKey => {
-                      if (platformKey === 'fengshen') {
-                        setFengshenLoginRequest(value => value + 1);
-                      } else {
-                        setDockOpen(true);
-                      }
-                    }}
-                    onShowToast={(message, type) => showToast(message, type || 'info')}
-                    onRecordsPolled={handleTaskRecordsPolled}
-                  />
-
-                  <button
-                    type="button"
-                    className={`wbx-header-tool-btn wbx-header-tool-btn--log relative${logDrawerOpen ? ' is-open' : ''}${errorLogCount > 0 ? ' has-errors' : ''}`}
-                    aria-label={errorLogCount > 0 ? `打开运行日志（${errorLogCount} 条异常）` : '打开运行日志（快捷键 L）'}
-                    aria-expanded={logDrawerOpen}
-                    title="运行日志 (快捷键 L)"
-                    onClick={() => setLogDrawerOpen(v => !v)}
-                  >
-                    <Terminal size={13.5} className="wbx-header-tool-icon" aria-hidden="true" />
-                    <span className="wbx-header-log-label">运行日志</span>
-                    {errorLogCount > 0 && (
-                      <span className="wbx-header-tool-badge tabular-nums">
-                        {errorLogCount > 99 ? '99+' : errorLogCount}
-                      </span>
-                    )}
-                  </button>
                 </div>
               </header>
             );
@@ -1527,14 +1532,21 @@ export default function App() {
               </section>
             )}
 
-            {workspaceView === 'approval' && (
-              <LanorangeApprovals
-                focusId={priceRecordId}
-                apiFetch={fetchWithAuth}
-                workspaceId={workspaceId}
-                onActiveCount={setApprovalActiveCount}
-                onSwitchView={view => navigateWorkspace(view)}
-              />
+            {(mountedPanels.approval || workspaceView === 'approval') && (
+              <div
+                hidden={workspaceView !== 'approval'}
+                aria-hidden={workspaceView !== 'approval' || undefined}
+                style={workspaceView !== 'approval' ? { display: 'none' } : undefined}
+              >
+                <LanorangeApprovals
+                  active={workspaceView === 'approval'}
+                  focusId={priceRecordId}
+                  apiFetch={fetchWithAuth}
+                  workspaceId={workspaceId}
+                  onActiveCount={setApprovalActiveCount}
+                  onSwitchView={view => navigateWorkspace(view)}
+                />
+              </div>
             )}
             {workspaceView === 'price-export' && (
               <LanorangePriceExports
@@ -1614,66 +1626,84 @@ export default function App() {
               style={workspaceView !== 'create' || taskKind !== 'payroll' ? { display: 'none' } : undefined}
               aria-label="兼职薪资核算"
             >
-              {payrollSubView === 'batches' && (
-                <CorePage
-                  active={workspaceView === 'create' && taskKind === 'payroll' && payrollSubView === 'batches'}
-                  onOpenDeductions={(defaultOnly = false) => { setDeductionDefaultOnly(defaultOnly); setPayrollSubView('deductions'); }}
-                  onOpenConnections={() => window.dispatchEvent(new CustomEvent('workbench:connections'))}
-                  onNavigateDownloadCenter={() => { setTaskKind('download'); navigateWorkspace('create'); }}
-                  onNavigateTaskCenter={() => navigateWorkspace('history')}
-                  deductionVersion={deductionVersion}
-                  appTheme={appTheme}
-                  config={{...appConfig,cities:directoryCities}}
-                  onConfigChange={(patch) => setAppConfig(prev => ({ ...prev, ...patch }))}
-                  runningTask={runningTask}
-                  isRiderSourceUploading={isRiderSourceUploading}
-                  progress={progress}
-                  progressText={progressText}
-                  logs={logs}
-                  taskQueue={taskQueue}
-                  payrollPreparation={payrollPreparation}
-                  resumeVersion={payrollResumeVersion}
-                  onPreparationChange={setPayrollPreparation}
-                  apiFetch={fetchWithAuth}
-                  uploadExtracted={(file) => uploadExtractedFilesAndGetPath([{ file, relativePath: file.name }], true)}
-                  onRun={(overrides) => void handleRun(overrides)}
-                  onUploadFiles={uploadFilesAndExecute}
-                  onDownloadRiderSources={downloadRiderSources}
-                  onDownloadShangyi={() => void handleRun({ action: 'download_shangyi_employees', sourcePath: '' })}
-                  onOpenShangyi={lastShangyiOutput ? () => {
-                    triggerUrlDownload(`/api/download?path=${encodeURIComponent(lastShangyiOutput)}&workspace_id=${encodeURIComponent(getWorkspaceId())}`);
-                  } : undefined}
-                  onOpenRiderSources={lastRiderSourcesOutput ? () => {
-                    triggerUrlDownload(`/api/download?path=${encodeURIComponent(lastRiderSourcesOutput)}&workspace_id=${encodeURIComponent(getWorkspaceId())}`);
-                  } : undefined}
-                  onOpenFengshenLogin={() => setFengshenLoginRequest(value => value + 1)}
-                  fengshenAuthStatus={fengshenAuthStatus}
-                  lastOutputFolder={lastOutputFolder}
-                  lastRunResult={lastRunResult}
-                  workspaceId={getWorkspaceId()}
-                />
+              {(mountedPanels.batches || payrollSubView === 'batches') && (
+                <div
+                  hidden={payrollSubView !== 'batches'}
+                  aria-hidden={payrollSubView !== 'batches' || undefined}
+                  style={payrollSubView !== 'batches' ? { display: 'none' } : undefined}
+                >
+                  <CorePage
+                    active={workspaceView === 'create' && taskKind === 'payroll' && payrollSubView === 'batches'}
+                    onOpenDeductions={(defaultOnly = false) => { setDeductionDefaultOnly(defaultOnly); setPayrollSubView('deductions'); }}
+                    onOpenConnections={() => window.dispatchEvent(new CustomEvent('workbench:connections'))}
+                    onNavigateDownloadCenter={() => { setTaskKind('download'); navigateWorkspace('create'); }}
+                    onNavigateTaskCenter={() => navigateWorkspace('history')}
+                    deductionVersion={deductionVersion}
+                    appTheme={appTheme}
+                    config={{...appConfig,cities:directoryCities}}
+                    onConfigChange={(patch) => setAppConfig(prev => ({ ...prev, ...patch }))}
+                    runningTask={runningTask}
+                    isRiderSourceUploading={isRiderSourceUploading}
+                    progress={progress}
+                    progressText={progressText}
+                    logs={logs}
+                    taskQueue={taskQueue}
+                    payrollPreparation={payrollPreparation}
+                    resumeVersion={payrollResumeVersion}
+                    onPreparationChange={setPayrollPreparation}
+                    apiFetch={fetchWithAuth}
+                    uploadExtracted={(file) => uploadExtractedFilesAndGetPath([{ file, relativePath: file.name }], true)}
+                    onRun={(overrides) => void handleRun(overrides)}
+                    onUploadFiles={uploadFilesAndExecute}
+                    onDownloadRiderSources={downloadRiderSources}
+                    onDownloadShangyi={() => void handleRun({ action: 'download_shangyi_employees', sourcePath: '' })}
+                    onOpenShangyi={lastShangyiOutput ? () => {
+                      triggerUrlDownload(`/api/download?path=${encodeURIComponent(lastShangyiOutput)}&workspace_id=${encodeURIComponent(getWorkspaceId())}`);
+                    } : undefined}
+                    onOpenRiderSources={lastRiderSourcesOutput ? () => {
+                      triggerUrlDownload(`/api/download?path=${encodeURIComponent(lastRiderSourcesOutput)}&workspace_id=${encodeURIComponent(getWorkspaceId())}`);
+                    } : undefined}
+                    onOpenFengshenLogin={() => setFengshenLoginRequest(value => value + 1)}
+                    fengshenAuthStatus={fengshenAuthStatus}
+                    lastOutputFolder={lastOutputFolder}
+                    lastRunResult={lastRunResult}
+                    workspaceId={getWorkspaceId()}
+                  />
+                </div>
               )}
 
-              {payrollSubView === 'deductions' && (
-                <StationDeductionManager
-                  inline
-                  platform={(!deductionDefaultOnly && payrollPreparation ? payrollPreparation.mode : appConfig.payrollSourceMode) === 'xiaoxiang' ? 'xiaoxiang' : 'fengshen'}
-                  apiFetch={fetchWithAuth}
-                  onClose={() => setPayrollSubView('batches')}
-                  onSaved={() => setDeductionVersion(value => value + 1)}
-                />
+              {(mountedPanels.deductions || payrollSubView === 'deductions') && (
+                <div
+                  hidden={payrollSubView !== 'deductions'}
+                  aria-hidden={payrollSubView !== 'deductions' || undefined}
+                  style={payrollSubView !== 'deductions' ? { display: 'none' } : undefined}
+                >
+                  <StationDeductionManager
+                    inline
+                    platform={(!deductionDefaultOnly && payrollPreparation ? payrollPreparation.mode : appConfig.payrollSourceMode) === 'xiaoxiang' ? 'xiaoxiang' : 'fengshen'}
+                    apiFetch={fetchWithAuth}
+                    onClose={() => setPayrollSubView('batches')}
+                    onSaved={() => setDeductionVersion(value => value + 1)}
+                  />
+                </div>
               )}
 
-              {payrollSubView === 'templates' && (
-                <SystemTemplatesPanel
-                  onNavigatePayroll={() => setPayrollSubView('batches')}
-                  onQuickUpload={files => {
-                    setPayrollSubView('batches');
-                    void uploadFilesAndExecute(
-                      files.map(file => ({ file, relativePath: file.name })),
-                    );
-                  }}
-                />
+              {(mountedPanels.templates || payrollSubView === 'templates') && (
+                <div
+                  hidden={payrollSubView !== 'templates'}
+                  aria-hidden={payrollSubView !== 'templates' || undefined}
+                  style={payrollSubView !== 'templates' ? { display: 'none' } : undefined}
+                >
+                  <SystemTemplatesPanel
+                    onNavigatePayroll={() => setPayrollSubView('batches')}
+                    onQuickUpload={files => {
+                      setPayrollSubView('batches');
+                      void uploadFilesAndExecute(
+                        files.map(file => ({ file, relativePath: file.name })),
+                      );
+                    }}
+                  />
+                </div>
               )}
             </section>
             </div>

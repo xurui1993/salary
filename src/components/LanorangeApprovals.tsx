@@ -14,6 +14,7 @@ import {
 } from '../lib/showcaseDemoData';
 import {DemoDataChip} from './DemoDataChip';
 import {formatPayrollDateTime,payrollPeriodRange} from '../lib/payrollQueue';
+import {buildApprovalBatchesFingerprint} from '../lib/perfUtils';
 
 type Fetcher=(url:string,init?:RequestInit)=>Promise<Response>;
 type Query={city:string;station:string;period:string};
@@ -86,7 +87,7 @@ function PriceTable({price}:{price:Price}){
   </div>;
 }
 
-export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchView,focusId}:{apiFetch:Fetcher;workspaceId:string;onActiveCount:(count:number)=>void;onSwitchView?:(view:'approval'|'price-export')=>void;focusId?:string}){
+export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchView,focusId,active:viewActive=true}:{apiFetch:Fetcher;workspaceId:string;onActiveCount:(count:number)=>void;onSwitchView?:(view:'approval'|'price-export')=>void;focusId?:string;active?:boolean}){
   const fetchRef=useRef(apiFetch);fetchRef.current=apiFetch;
   const query=EMPTY;
   const [page,setPage]=useState(1),[pageSize,setPageSize]=useState(20),[refresh,setRefresh]=useState(0);
@@ -138,18 +139,50 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
     void request<Batch>(`/batches/${encodeURIComponent(focusId)}`).then(value=>{if(!disposed){setBatch(value);setActiveViewTab('results');}}).catch(err=>{if(!disposed)setError(err instanceof Error?err.message:'指定记录读取失败');});
     return()=>{disposed=true;};
   },[focusId,workspaceId]);
-  async function readHistory(){
+  const historyFingerprintRef=useRef('');
+  const hasActiveBatchRef=useRef(false);
+  async function readHistory(force=false){
+    if(document.visibilityState!=='visible' && !force)return;
     try{
       const value=await request<{batches:Batch[]}>('/batches');if(!alive.current)return;
-      setHistory(value.batches);onActiveCount(value.batches.filter(b=>ACTIVE.has(b.status)).length);
-      setBatch(current=>value.batches.find(b=>b.id===current?.id) || current || value.batches[0] || null);
+      const incoming=Array.isArray(value.batches)?value.batches:[];
+      const activeCount=incoming.filter(b=>ACTIVE.has(b.status)).length;
+      hasActiveBatchRef.current=activeCount>0;
+      const fp=buildApprovalBatchesFingerprint(incoming.map(b=>({
+        id:b.id,
+        status:b.status,
+        updated_at:String(b.created||''),
+        approved_count:b.counts?.approved??0,
+        failed_count:b.counts?.failed??0,
+        total_count:b.items?.length??0,
+      })));
+      if(force || fp!==historyFingerprintRef.current){
+        historyFingerprintRef.current=fp;
+        setHistory(incoming);
+        onActiveCount(activeCount);
+        setBatch(current=>incoming.find(b=>b.id===current?.id) || current || incoming[0] || null);
+      }
     }catch(err){
       if(alive.current){
         setError(message(err));
       }
     }
   }
-  useEffect(()=>{void readHistory();const timer=setInterval(()=>void readHistory(),4000);return()=>{clearInterval(timer);};},[workspaceId]);
+  useEffect(()=>{
+    if(!viewActive)return;
+    let disposed=false;
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    const schedule=()=>{
+      if(disposed)return;
+      const delay=hasActiveBatchRef.current?4000:15000;
+      timer=setTimeout(async()=>{
+        await readHistory();
+        schedule();
+      },delay);
+    };
+    void readHistory(true).finally(schedule);
+    return()=>{disposed=true;clearTimeout(timer);};
+  },[workspaceId,viewActive]);
 
   // 真实蓝橙登录或会话变更时，立即切回后台实时待办并清除本地示例选择
   const prevLanorangeRef=useRef(auth.isLoggedIn('lanorange'));

@@ -178,11 +178,12 @@ export function HeaderApprovalNotifier({
   );
 
   const pollPendingApprovals = useCallback(
-    async (announceNew = true) => {
+    async (announceNew = true, silent = false) => {
       if (inflightRef.current) return;
+      if (silent && document.visibilityState !== 'visible') return;
       inflightRef.current = true;
       const startEpoch = snapshotEpochRef.current;
-      setLoading(true);
+      if (!silent) setLoading(true);
       try {
         const auth = await platformAuthRequest<{ saved?: boolean; state?: string }>(
           fetchRef.current,
@@ -197,9 +198,9 @@ export function HeaderApprovalNotifier({
           auth?.saved && !['signed_out', 'login_required'].includes(auth.state || ''),
         );
         if (!isAuthed) {
-          setLoggedIn(false);
-          setActorLabel('');
-          setRows([]);
+          setLoggedIn(prev => (prev ? false : prev));
+          setActorLabel(prev => (prev ? '' : prev));
+          setRows(prev => (prev.length ? [] : prev));
           return;
         }
 
@@ -223,16 +224,16 @@ export function HeaderApprovalNotifier({
         // Keep last known rows on transient error
       } finally {
         inflightRef.current = false;
-        setLoading(false);
+        if (!silent) setLoading(false);
       }
     },
     [applyPendingSnapshot],
   );
 
   useEffect(() => {
-    void pollPendingApprovals(true);
+    void pollPendingApprovals(true, false);
     const timer = setInterval(() => {
-      void pollPendingApprovals(true);
+      void pollPendingApprovals(true, true);
     }, 25000);
     return () => clearInterval(timer);
   }, [pollPendingApprovals]);

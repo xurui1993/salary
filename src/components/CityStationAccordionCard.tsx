@@ -30,7 +30,7 @@ interface CityStationAccordionCardProps {
   onBulkUpdateStations?: (updatedEntries: DeductionEntry[]) => void;
 }
 
-export function CityStationAccordionCard({
+export const CityStationAccordionCard = React.memo(function CityStationAccordionCard({
   group,
   visibleColumns,
   onOpenCity,
@@ -158,5 +158,6 @@ export function CityStationAccordionCard({
       </button>
     </article>
   );
-}
+});
+
 

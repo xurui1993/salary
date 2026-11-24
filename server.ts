@@ -120,7 +120,30 @@ async function startServer() {
   // A local 1–2 GiB upload can exceed Node's five-minute request deadline.
   server.requestTimeout = 60 * 60 * 1000;
   try {
-    await assertPortAvailable(backendPort, "127.0.0.1");
+    try {
+      await assertPortAvailable(backendPort, "127.0.0.1");
+    } catch (portErr) {
+      if (localTestMode) throw portErr;
+      // In dev/cloud restarts, the previous Node process may have exited moments ago while
+      // its child uvicorn is still releasing backendPort. Clean up orphaned uvicorn and retry.
+      try {
+        const killer = spawn("pkill", ["-9", "-f", `uvicorn main:app.*--port ${backendPort}`], {
+          stdio: "ignore",
+          shell: false,
+        });
+        await new Promise((r) => killer.on("close", r));
+      } catch {}
+      let freed = false;
+      for (let i = 0; i < 15; i++) {
+        await new Promise((r) => setTimeout(r, 150));
+        try {
+          await assertPortAvailable(backendPort, "127.0.0.1");
+          freed = true;
+          break;
+        } catch {}
+      }
+      if (!freed) throw portErr;
+    }
     // Own the frontend port before starting Python. A second launch must not
     // spawn a backend and discover the frontend conflict only afterwards.
     await new Promise<void>((resolve, reject) => {
@@ -168,7 +191,7 @@ async function startServer() {
     });
 
     const cleanup = () => {
-      try { pythonProcess.kill(); } catch (e) {}
+      try { pythonProcess.kill("SIGKILL"); } catch (e) {}
     };
     process.on("exit", cleanup);
     process.on("SIGINT", () => { cleanup(); server.close(); releaseStartupLock(); process.exit(0); });

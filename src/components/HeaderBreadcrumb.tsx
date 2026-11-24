@@ -30,7 +30,7 @@ export interface HeaderBreadcrumbProps {
   onOpenPlatformAuth?: (platform?: DownloadPlatform) => void;
 }
 
-export function HeaderBreadcrumb({
+export const HeaderBreadcrumb = React.memo(function HeaderBreadcrumb({
   model,
   platformStatuses,
   isRunning = false,
@@ -92,4 +92,4 @@ export function HeaderBreadcrumb({
       )}
     </div>
   );
-}
+});

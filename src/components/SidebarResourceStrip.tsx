@@ -63,88 +63,42 @@ export const SidebarResourceStrip = React.memo(function SidebarResourceStrip({
 
   const effectiveStats = isControlled ? stats : internalStats;
   const view = formatSystemResourceStats(effectiveStats ?? null);
-  const cpuWidth = Math.max(3, Math.min(100, view.cpuPercent));
-  const memWidth = Math.max(3, Math.min(100, view.memPercent));
   const ariaSummary = `本机运算引擎状态：CPU ${view.cpuText}，内存 ${view.memText}，${view.statusText}`;
+  const fullTooltip = `本机运算引擎 · ${view.statusText}\nCPU (${view.cpuCores} 核)：${view.cpuText}\n内存 (${view.memDetailText})：${view.memText}\n引擎进程占用：${view.procMemMb} MB`;
 
   if (collapsed) {
     return (
       <section
-        className={`wbx-res-panel is-collapsed is-${view.level}`}
+        className={`wbx-res-panel wbx-res-panel--mini is-collapsed is-${view.level}`}
         aria-label={ariaSummary}
-        title={`${ariaSummary}（进程 ${view.procMemMb} MB）`}
+        title={fullTooltip}
       >
-        <div className="wbx-res-panel__compact-row tabular-nums">
-          <span className="wbx-res-panel__compact-tag">C</span>
-          <strong className="wbx-res-panel__compact-val">{view.cpuText}</strong>
-        </div>
-        <div className="wbx-res-panel__track" aria-hidden="true">
-          <span
-            className="wbx-res-panel__bar is-cpu"
-            style={{ width: `${cpuWidth}%` }}
-          />
-        </div>
-        <div className="wbx-res-panel__compact-row tabular-nums">
-          <span className="wbx-res-panel__compact-tag">M</span>
-          <strong className="wbx-res-panel__compact-val">{view.memText}</strong>
-        </div>
-        <div className="wbx-res-panel__track" aria-hidden="true">
-          <span
-            className="wbx-res-panel__bar is-mem"
-            style={{ width: `${memWidth}%` }}
-          />
-        </div>
+        <span className={`wbx-res-mini__dot is-${view.level}`} aria-hidden="true" />
+        <strong className="wbx-res-mini__val tabular-nums">{view.cpuText}</strong>
       </section>
     );
   }
 
   return (
     <section
-      className={`wbx-res-panel is-${view.level}`}
+      className={`wbx-res-panel wbx-res-panel--mini is-${view.level}`}
       aria-label={ariaSummary}
+      title={fullTooltip}
     >
-      <div className="wbx-res-panel__head">
-        <span className="wbx-res-panel__title">本机运算引擎</span>
-        <span className={`wbx-res-panel__status is-${view.level}`}>
-          {view.statusText}
+      <div className="wbx-res-mini__lead">
+        <span className={`wbx-res-mini__dot is-${view.level}`} aria-hidden="true" />
+        <span className="wbx-res-mini__title">引擎</span>
+      </div>
+      <div className="wbx-res-mini__metrics tabular-nums">
+        <span className="wbx-res-mini__pair">
+          <span className="wbx-res-mini__k">CPU</span>
+          <strong className="wbx-res-mini__v">{view.cpuText}</strong>
         </span>
-      </div>
-
-      <div className="wbx-res-panel__metrics">
-        <div className="wbx-res-panel__item">
-          <div className="wbx-res-panel__row tabular-nums">
-            <span className="wbx-res-panel__label">
-              CPU · {view.cpuCores} 核
-            </span>
-            <strong className="wbx-res-panel__val">{view.cpuText}</strong>
-          </div>
-          <div className="wbx-res-panel__track" aria-hidden="true">
-            <span
-              className="wbx-res-panel__bar is-cpu"
-              style={{ width: `${cpuWidth}%` }}
-            />
-          </div>
-        </div>
-
-        <div className="wbx-res-panel__item">
-          <div className="wbx-res-panel__row tabular-nums">
-            <span className="wbx-res-panel__label" title={view.memDetailText}>
-              内存 · {view.memDetailText}
-            </span>
-            <strong className="wbx-res-panel__val">{view.memText}</strong>
-          </div>
-          <div className="wbx-res-panel__track" aria-hidden="true">
-            <span
-              className="wbx-res-panel__bar is-mem"
-              style={{ width: `${memWidth}%` }}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="wbx-res-panel__foot tabular-nums">
-        <span>引擎进程占用</span>
-        <strong>{view.procMemMb} MB</strong>
+        <span className="wbx-res-mini__sep" aria-hidden="true">·</span>
+        <span className="wbx-res-mini__pair">
+          <span className="wbx-res-mini__k">内存</span>
+          <strong className="wbx-res-mini__v">{view.memText}</strong>
+        </span>
       </div>
     </section>
   );

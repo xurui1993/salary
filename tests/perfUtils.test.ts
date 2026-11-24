@@ -2,9 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  arePlatformStatusMapsEqual,
   areSystemStatsVisuallyEqual,
+  buildApprovalBatchesFingerprint,
+  buildPayrollQueueFingerprint,
   buildTaskListFingerprint,
   computeAdaptivePollDelay,
+  hasActiveApprovalBatches,
+  hasActivePayrollQueueTasks,
+  isPlatformStatusRecordEqual,
 } from '../src/lib/perfUtils';
 
 test('computeAdaptivePollDelay pauses when hidden and throttles based on view activity and task activity', () => {
@@ -90,3 +96,43 @@ test('areSystemStatsVisuallyEqual ignores sub-decimal jitter and flags real disp
   assert.equal(areSystemStatsVisuallyEqual(null, a), false);
   assert.equal(areSystemStatsVisuallyEqual(null, null), true);
 });
+
+test('isPlatformStatusRecordEqual and arePlatformStatusMapsEqual prevent redundant status re-renders', () => {
+  const s1 = { state: 'ready', saved: true, offline: false, session_version: 'v1' };
+  const s2 = { state: 'ready', saved: true, offline: false, session_version: 'v1' };
+  const s3 = { state: 'login_required', saved: false, offline: false, session_version: 'v2' };
+
+  assert.equal(isPlatformStatusRecordEqual(s1, s2), true);
+  assert.equal(isPlatformStatusRecordEqual(s1, s3), false);
+  assert.equal(
+    arePlatformStatusMapsEqual({ lanorange: s1, baize: s1 }, { lanorange: s2, baize: s2 }),
+    true,
+  );
+  assert.equal(
+    arePlatformStatusMapsEqual({ lanorange: s1, baize: s1 }, { lanorange: s3, baize: s2 }),
+    false,
+  );
+});
+
+test('buildPayrollQueueFingerprint and buildApprovalBatchesFingerprint stabilize idle polling', () => {
+  const tasks = [
+    { id: 't1', status: 'calculated', stage: 'done', applicant_count: 42 },
+  ];
+  assert.equal(hasActivePayrollQueueTasks(tasks), false);
+  assert.equal(hasActivePayrollQueueTasks([{ id: 't2', status: 'running' }]), true);
+  assert.equal(
+    buildPayrollQueueFingerprint(tasks),
+    buildPayrollQueueFingerprint(tasks.map(t => ({ ...t }))),
+  );
+
+  const batches = [
+    { id: 'b1', status: 'completed', approved_count: 10, total_count: 10, failed_count: 0 },
+  ];
+  assert.equal(hasActiveApprovalBatches(batches), false);
+  assert.equal(hasActiveApprovalBatches([{ id: 'b2', status: 'running' }]), true);
+  assert.equal(
+    buildApprovalBatchesFingerprint(batches),
+    buildApprovalBatchesFingerprint(batches.map(b => ({ ...b }))),
+  );
+});
+

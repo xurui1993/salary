@@ -2430,7 +2430,7 @@
   border-top: 1px solid #eef2f6;
 }
 
-/* 11. 侧栏底部常驻展开式本机引擎资源面板（微光冰晶胶囊） */
+/* 11. 侧栏底部迷你本机引擎状态胶囊（单行紧凑微条，释放左侧纵向导航空间） */
 .wbx-res-panel {
   display: flex;
   flex-direction: column;
@@ -2444,167 +2444,97 @@
   box-sizing: border-box;
 }
 
-.wbx-res-panel.is-collapsed {
-  padding: 8px 6px;
-  gap: 4px;
-  border-radius: 10px;
-}
-
-.wbx-res-panel__compact-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 2px;
-  font-size: 10px;
-  line-height: 1.1;
-}
-
-.wbx-res-panel__compact-tag {
-  font-weight: 700;
-  color: var(--wbx-text-muted);
-}
-
-.wbx-res-panel__compact-val {
-  font-family: var(--wbx-font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--wbx-text);
-}
-
-.wbx-res-panel__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
-
-.wbx-res-panel__title {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--wbx-text-secondary);
-}
-
-.wbx-res-panel__status {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--wbx-success);
-}
-
-.wbx-res-panel__status.is-warn {
-  color: var(--wbx-warn);
-}
-
-.wbx-res-panel__status.is-high {
-  color: var(--wbx-danger);
-}
-
-.wbx-res-panel__metrics {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.wbx-res-panel__item {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.wbx-res-panel__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  font-size: 11px;
-  line-height: 1.25;
-}
-
-.wbx-res-panel__label {
-  color: var(--wbx-text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-.wbx-res-panel__val {
-  font-family: var(--wbx-font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--wbx-text);
-  flex-shrink: 0;
-}
-
-.wbx-res-panel__track {
-  width: 100%;
-  height: 5px;
-  border-radius: 999px;
-  background: rgba(24, 25, 28, 0.07);
-  overflow: hidden;
-}
-
-.wbx-res-panel__bar {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  transition: width 260ms var(--wbx-ease);
-}
-
-.wbx-res-panel__bar.is-cpu {
-  background: linear-gradient(90deg, #009CE0 0%, #38bdf8 100%);
-}
-
-.wbx-res-panel__bar.is-mem {
-  background: linear-gradient(90deg, #0d9488 0%, #34d399 100%);
-}
-
-.wbx-res-panel__foot {
-  display: flex;
+.wbx-res-panel.wbx-res-panel--mini {
+  flex-direction: row;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding-top: 6px;
-  border-top: 1px solid rgba(24, 25, 28, 0.05);
-  font-size: 11px;
-  color: var(--wbx-text-muted);
+  height: 32px;
+  min-height: 32px;
+  padding: 0 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(226, 232, 240, 0.75);
+  background: rgba(248, 250, 252, 0.85);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  cursor: default;
+  user-select: none;
 }
 
-.wbx-res-panel__foot strong {
+.wbx-res-panel.wbx-res-panel--mini.is-collapsed {
+  justify-content: center;
+  gap: 4px;
+  padding: 0 6px;
+  height: 28px;
+  min-height: 28px;
+  border-radius: 8px;
+}
+
+.wbx-res-mini__lead {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.wbx-res-mini__dot {
+  width: 6.5px;
+  height: 6.5px;
+  border-radius: 999px;
+  background: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.16);
+  flex-shrink: 0;
+}
+
+.wbx-res-mini__dot.is-warn {
+  background: #f59e0b;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.18);
+}
+
+.wbx-res-mini__dot.is-high {
+  background: #ef4444;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.18);
+}
+
+.wbx-res-mini__title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--wbx-text-secondary);
+  line-height: 1;
+}
+
+.wbx-res-mini__metrics {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1;
+  min-width: 0;
+}
+
+.wbx-res-mini__pair {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3.5px;
+}
+
+.wbx-res-mini__k {
+  color: var(--wbx-text-subtle);
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+.wbx-res-mini__v,
+.wbx-res-mini__val {
   font-family: var(--wbx-font-mono);
   font-size: 11px;
   font-weight: 600;
-  color: var(--wbx-text-secondary);
+  color: var(--wbx-text);
 }
 
-/* 矮屏（<=780px 高度，如 1280×720）紧凑双列资源面板，避免挤占左侧 9 项导航空间 */
-@media (max-height: 780px) {
-  .wbx-res-panel {
-    gap: 6px;
-    padding: 7px 9px;
-  }
-
-  .wbx-res-panel__metrics {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-  }
-
-  .wbx-res-panel__item {
-    gap: 3px;
-  }
-
-  .wbx-res-panel__row {
-    font-size: 10.5px;
-  }
-
-  .wbx-res-panel__val {
-    font-size: 10.5px;
-  }
-
-  .wbx-res-panel__foot {
-    padding-top: 5px;
-    font-size: 10.5px;
-  }
+.wbx-res-mini__sep {
+  color: #cbd5e1;
+  font-size: 10px;
 }
 
 .wbx-res-strip-wrap {

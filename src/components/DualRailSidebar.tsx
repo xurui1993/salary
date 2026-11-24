@@ -148,8 +148,6 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
       icon: <WalletCards size={15.5} />,
       active: workspaceView === 'create' && activeGroup === 'payroll' && payrollSubView === 'batches',
       action: { type: 'payroll', subView: 'batches' },
-      badgeText: payrollBadge?.label,
-      badgeTone: payrollBadge?.tone,
     },
     {
       id: 'payroll:deductions',
@@ -171,13 +169,6 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
       icon: <BadgeDollarSign size={15.5} />,
       active: workspaceView === 'approval' || workspaceView === 'price-export',
       action: { type: 'workspace', view: 'approval' },
-      badgeText:
-        approvalActiveCount > 0
-          ? '运行中'
-          : approvalPendingCount > 0
-            ? `${approvalPendingCount}`
-            : undefined,
-      badgeTone: approvalActiveCount > 0 ? 'active' : 'warn',
     },
   ];
 
@@ -188,13 +179,6 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
       icon: <FolderCheck size={15.5} />,
       active: workspaceView === 'history',
       action: { type: 'workspace', view: 'history' },
-      badgeText:
-        totalActiveCount > 0
-          ? `${totalActiveCount} 进行中`
-          : taskAttentionCount > 0
-            ? `${taskAttentionCount} 待处理`
-            : undefined,
-      badgeTone: totalActiveCount > 0 ? 'active' : 'warn',
     },
   ];
 
@@ -252,11 +236,6 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
         <section className="wbx-snav-group" aria-label="数据采集">
           <div className="wbx-snav-group__head">
             <span className="wbx-snav-group__title">数据采集</span>
-            {activeDownloadCount > 0 && (
-              <span className="wbx-snav-group__meta tabular-nums">
-                {activeDownloadCount} 采集中
-              </span>
-            )}
           </div>
           <div className="wbx-snav-group__list">
             {collectionItems.map(renderNavItem)}

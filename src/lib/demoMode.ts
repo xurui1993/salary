@@ -200,32 +200,13 @@ export function useDemoDataVisibility(): {
   setDemoHidden: (hidden: boolean) => void;
   toggleDemoHidden: () => void;
 } {
-  const [demoHidden, setState] = useState<boolean>(() => readDemoHiddenPreference());
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const onVisibility = (event: Event) => {
-      const detail = (event as CustomEvent<{ hidden?: boolean }>).detail;
-      if (typeof detail?.hidden === 'boolean') {
-        setState(detail.hidden);
-      } else {
-        setState(readDemoHiddenPreference());
-      }
-    };
-    window.addEventListener(DEMO_VISIBILITY_EVENT, onVisibility);
-    return () => window.removeEventListener(DEMO_VISIBILITY_EVENT, onVisibility);
-  }, []);
-
-  const setDemoHidden = useCallback((hidden: boolean) => {
-    setState(hidden);
-    writeDemoHiddenPreference(hidden);
+  const setDemoHidden = useCallback((_hidden: boolean) => {
+    // 示例数据已全局关闭，界面全部绑定真实数据
   }, []);
 
   const toggleDemoHidden = useCallback(() => {
-    const next = !readDemoHiddenPreference();
-    setState(next);
-    writeDemoHiddenPreference(next);
+    // 示例数据已全局关闭，界面全部绑定真实数据
   }, []);
 
-  return { demoHidden, setDemoHidden, toggleDemoHidden };
+  return { demoHidden: true, setDemoHidden, toggleDemoHidden };
 }

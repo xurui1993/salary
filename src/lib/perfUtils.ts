@@ -98,3 +98,127 @@ export function areSystemStatsVisuallyEqual(
     (prev.totalMemGb ?? 0) === (next.totalMemGb ?? 0)
   );
 }
+
+/**
+ * Compare two single-platform status snapshots so background polling in SystemConnections
+ * skips state updates and CustomEvent broadcasts when nothing changed.
+ */
+export function isPlatformStatusRecordEqual(
+  prev: Record<string, any> | undefined | null,
+  next: Record<string, any> | undefined | null,
+): boolean {
+  if (prev === next) return true;
+  if (!prev || !next) return false;
+  return (
+    (prev.state ?? '') === (next.state ?? '') &&
+    Boolean(prev.saved) === Boolean(next.saved) &&
+    Boolean(prev.offline) === Boolean(next.offline) &&
+    (prev.session_version ?? '') === (next.session_version ?? '') &&
+    (prev.account_label ?? '') === (next.account_label ?? '') &&
+    (prev.message ?? '') === (next.message ?? '') &&
+    (prev.updated_at ?? '') === (next.updated_at ?? '')
+  );
+}
+
+/**
+ * Compare two full PlatformStatusMap objects so App root never re-renders on redundant broadcasts.
+ */
+export function arePlatformStatusMapsEqual(
+  prev: Record<string, any> | undefined | null,
+  next: Record<string, any> | undefined | null,
+): boolean {
+  if (prev === next) return true;
+  if (!prev || !next) return false;
+  const prevKeys = Object.keys(prev);
+  const nextKeys = Object.keys(next);
+  if (prevKeys.length !== nextKeys.length) return false;
+  for (let i = 0; i < prevKeys.length; i += 1) {
+    const k = prevKeys[i];
+    if (!isPlatformStatusRecordEqual(prev[k], next[k])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export interface FingerprintablePayrollTask {
+  id?: string;
+  status?: string;
+  stage?: string;
+  updated_at?: string | number;
+  error?: string;
+  applicant_count?: number;
+  output_name?: string;
+  approval_code?: string;
+  hidden?: boolean;
+  [key: string]: any;
+}
+
+const ACTIVE_PAYROLL_STATUSES = new Set([
+  'queued',
+  'running',
+  'preparing',
+  'calculating',
+  'stopping',
+]);
+
+export function hasActivePayrollQueueTasks(
+  tasks: ReadonlyArray<FingerprintablePayrollTask>,
+): boolean {
+  for (let i = 0; i < tasks.length; i += 1) {
+    const status = String(tasks[i]?.status || '').toLowerCase();
+    if (ACTIVE_PAYROLL_STATUSES.has(status)) return true;
+  }
+  return false;
+}
+
+export function buildPayrollQueueFingerprint(
+  tasks: ReadonlyArray<FingerprintablePayrollTask>,
+): string {
+  const parts: string[] = [];
+  for (let i = 0; i < tasks.length; i += 1) {
+    const t = tasks[i];
+    parts.push(
+      `${t.id ?? ''}|${t.status ?? ''}|${t.stage ?? ''}|${t.updated_at ?? ''}|${t.applicant_count ?? 0}|${t.output_name ?? ''}|${t.approval_code ?? ''}|${t.hidden ? 1 : 0}|${t.error ?? ''}`,
+    );
+  }
+  return parts.join(';');
+}
+
+export interface FingerprintableApprovalBatch {
+  id?: string;
+  status?: string;
+  updated_at?: string;
+  approved_count?: number;
+  failed_count?: number;
+  total_count?: number;
+  receipts?: ReadonlyArray<unknown>;
+  [key: string]: any;
+}
+
+const ACTIVE_APPROVAL_STATUSES = new Set(['queued', 'running', 'stopping']);
+
+export function hasActiveApprovalBatches(
+  batches: ReadonlyArray<FingerprintableApprovalBatch>,
+): boolean {
+  for (let i = 0; i < batches.length; i += 1) {
+    if (ACTIVE_APPROVAL_STATUSES.has(String(batches[i]?.status || '').toLowerCase())) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function buildApprovalBatchesFingerprint(
+  batches: ReadonlyArray<FingerprintableApprovalBatch>,
+): string {
+  const parts: string[] = [];
+  for (let i = 0; i < batches.length; i += 1) {
+    const b = batches[i];
+    parts.push(
+      `${b.id ?? ''}|${b.status ?? ''}|${b.updated_at ?? ''}|${b.approved_count ?? 0}/${b.total_count ?? 0}|f${b.failed_count ?? 0}|r${b.receipts?.length ?? 0}`,
+    );
+  }
+  return parts.join(';');
+}
+

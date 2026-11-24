@@ -30,6 +30,11 @@ import { SystemTemplatesPanel } from './SystemTemplatesPanel';
 import { readDownloadResponse, saveDownloadBlob } from '../lib/outputDownload';
 import { businessLogEntries } from '../lib/payrollBusinessLogs';
 import {
+  buildPayrollQueueFingerprint,
+  computeAdaptivePollDelay,
+  hasActivePayrollQueueTasks,
+} from '../lib/perfUtils';
+import {
   buildPayrollProgressPopoverData,
   canPermanentlyDeletePayrollTask,
   detectDuplicateUploadNames,
@@ -646,6 +651,8 @@ export function FlashPayrollWorkbench({
   }, []);
 
   const refreshSeq = useRef(0);
+  const tasksFingerprintRef = useRef('');
+  const hasActiveTasksRef = useRef(false);
   const refresh = useCallback(
     async (force = false) => {
       if (fetching.current && !force) return null;
@@ -672,8 +679,14 @@ export function FlashPayrollWorkbench({
           throw Error(typeof result.detail === 'string' ? result.detail : '任务队列暂时无法更新');
         }
         if (mounted.current && !controller.signal.aborted && seq === refreshSeq.current) {
-          setTasks(result.tasks);
-          setLoadError('');
+          const incomingTasks = result.tasks as PayrollQueueTask[];
+          hasActiveTasksRef.current = hasActivePayrollQueueTasks(incomingTasks);
+          const nextFp = `${selectedRef.current || ''}#${buildPayrollQueueFingerprint(incomingTasks)}`;
+          if (force || nextFp !== tasksFingerprintRef.current) {
+            tasksFingerprintRef.current = nextFp;
+            setTasks(incomingTasks);
+          }
+          setLoadError(prev => (prev ? '' : prev));
         }
         return result.tasks as PayrollQueueTask[];
       } catch (e) {
@@ -683,7 +696,7 @@ export function FlashPayrollWorkbench({
         return null;
       } finally {
         if (seq === refreshSeq.current) fetching.current = false;
-        if (mounted.current && seq === refreshSeq.current) setLoading(false);
+        if (mounted.current && seq === refreshSeq.current) setLoading(prev => (prev ? false : prev));
       }
     },
     [hidden],
@@ -696,22 +709,36 @@ export function FlashPayrollWorkbench({
         readController.current?.abort();
       };
     }
-    void refresh();
-    let timer = 0;
-    const interval = () => (document.visibilityState === 'visible' ? 2500 : 10000);
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const schedule = () => {
-      window.clearInterval(timer);
-      timer = window.setInterval(() => void refresh(), interval());
+      if (disposed) return;
+      const delay = computeAdaptivePollDelay({
+        hasActiveTasks: hasActiveTasksRef.current,
+        isDocumentVisible: document.visibilityState === 'visible',
+        isViewActive: true,
+        activeMs: 2800,
+        idleMs: 12000,
+      });
+      if (delay !== null) {
+        timer = setTimeout(async () => {
+          await refresh();
+          schedule();
+        }, delay);
+      }
     };
     const onVisibility = () => {
-      if (document.visibilityState === 'visible') void refresh();
-      schedule();
+      clearTimeout(timer);
+      if (document.visibilityState === 'visible') {
+        void refresh().finally(schedule);
+      }
     };
-    schedule();
+    void refresh().finally(schedule);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
+      disposed = true;
       mounted.current = false;
-      window.clearInterval(timer);
+      clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisibility);
       readController.current?.abort();
     };

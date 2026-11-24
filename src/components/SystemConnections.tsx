@@ -11,6 +11,7 @@ import { getPlatformCardBadge, getPlatformStatusCluster } from '../lib/workbench
 import { systemLabel } from '../lib/platformCatalog';
 import { SourceLoginPanel } from './SourceLoginPanel';
 import { WorkbenchDrawer } from './WorkbenchDrawer';
+import { isPlatformStatusRecordEqual } from '../lib/perfUtils';
 
 function getActionLabel(_source: string, _status: any) {
   return '登录';
@@ -112,7 +113,12 @@ export function SystemConnections({
     if (nextStatus.session_version) {
       lastVersionRef.current[source] = nextStatus.session_version;
     }
-    setStatuses(prev => ({ ...prev, [source]: nextStatus }));
+    setStatuses(prev => {
+      if (isPlatformStatusRecordEqual(prev[source], nextStatus)) {
+        return prev;
+      }
+      return { ...prev, [source]: nextStatus };
+    });
     if (
       prevVersion &&
       nextStatus.session_version &&
@@ -181,17 +187,22 @@ export function SystemConnections({
       });
 
     async function poll(source: string) {
-      try {
-        const res = await fetchPlatformAuthJson(
-          wrappedFetch,
-          `/api/fengshen-downloads/platform-auth/${source}`,
-          undefined,
-          10000,
-        );
-        if (!disposed) updateStatus(source, { ...res, offline: false });
-      } catch {
-        if (!disposed) {
-          setStatuses(prev => ({ ...prev, [source]: { ...prev[source], offline: true } }));
+      if (document.visibilityState === 'visible') {
+        try {
+          const res = await fetchPlatformAuthJson(
+            wrappedFetch,
+            `/api/fengshen-downloads/platform-auth/${source}`,
+            undefined,
+            10000,
+          );
+          if (!disposed) updateStatus(source, { ...res, offline: false });
+        } catch {
+          if (!disposed) {
+            setStatuses(prev => {
+              if (prev[source]?.offline === true) return prev;
+              return { ...prev, [source]: { ...prev[source], offline: true } };
+            });
+          }
         }
       }
       if (!disposed) {
@@ -200,7 +211,7 @@ export function SystemConnections({
             ? 500
             : drawerOpen || activeSessionKey
               ? 2000
-              : 10000;
+              : 20000;
         timers.set(source, setTimeout(() => void poll(source), delay));
       }
     }

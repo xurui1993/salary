@@ -60,19 +60,19 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
 @keyframes wbx-spin { to { transform: rotate(1turn); } }
 @keyframes wbx-shimmer { 0% { opacity: 0.55; } 50% { opacity: 1; } 100% { opacity: 0.55; } }
 @keyframes wbx-page-enter-a {
-  from { opacity: 0.72; transform: translate3d(0, 5px, 0); }
-  to { opacity: 1; transform: translate3d(0, 0, 0); }
+  from { opacity: 0.82; transform: translate3d(0, 3px, 0); }
+  to { opacity: 1; transform: none; }
 }
 @keyframes wbx-page-enter-b {
-  from { opacity: 0.72; transform: translate3d(0, 5px, 0); }
-  to { opacity: 1; transform: translate3d(0, 0, 0); }
+  from { opacity: 0.82; transform: translate3d(0, 3px, 0); }
+  to { opacity: 1; transform: none; }
 }
 .wbx-spin { animation: wbx-spin var(--wbx-dur-spin) linear infinite; will-change: transform; }
 .wbx-page-enter-a {
-  animation: wbx-page-enter-a 160ms var(--wbx-ease) both;
+  animation: wbx-page-enter-a 130ms var(--wbx-ease);
 }
 .wbx-page-enter-b {
-  animation: wbx-page-enter-b 160ms var(--wbx-ease) both;
+  animation: wbx-page-enter-b 130ms var(--wbx-ease);
 }
 
 /* 无障碍兜底：不写强制标记，靠双类特异性压过上面的单类声明 */

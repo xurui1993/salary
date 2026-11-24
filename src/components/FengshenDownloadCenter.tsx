@@ -334,17 +334,11 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const effectiveBindingPlatforms = bindingPlatformsDemoActive
     ? demoBindingPlatforms
     : bindingPlatforms;
-  const [datasets, setDatasets] = useState<string[]>(() =>
-    platform === 'payout'
-      ? ['baize_employees', 'benlai_employees']
-      : platform === 'xiaoxiang'
-        ? ['rider_daily']
-        : [],
-  );
+  const [datasets, setDatasets] = useState<string[]>([]);
   const categorySelections = useRef<Record<string, string[]>>({
     download: [],
-    payout: ['baize_employees', 'benlai_employees'],
-    xiaoxiang: ['rider_daily'],
+    payout: [],
+    xiaoxiang: [],
   });
   const [fengshenCategory, setFengshenCategory] = useState<FengshenDatasetCategoryId>('all');
   /** 「只看已选」独立开关（P0-3）：与分类互不叠加语义，点击仅过滤已勾选资料；无已选资料时自动恢复全览。 */
