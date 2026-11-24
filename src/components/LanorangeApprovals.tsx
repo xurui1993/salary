@@ -5,14 +5,7 @@ import {toneClass, normalizeTone} from '../lib/statusSemantics';
 import {RefreshCw, ArrowRightLeft, KeyRound, Search, CheckCircle2, ClipboardList, Download, RotateCcw} from 'lucide-react';
 import {platformAuthRequest,PlatformAuthError} from '../lib/platformAuthApi';
 import {filterApprovalTasks,type ApprovalEligibilityFilter} from '../lib/workbenchFilters';
-import {shouldUseDemoData,useDemoDataVisibility,usePlatformAuthSnapshot} from '../lib/demoMode';
-import {
-  buildDemoApprovalPriceTable,
-  buildDemoApprovalReceiptBatches,
-  buildDemoApprovalReceiptCsv,
-  buildDemoLanorangeApprovals,
-} from '../lib/showcaseDemoData';
-import {DemoDataChip} from './DemoDataChip';
+import {usePlatformAuthSnapshot} from '../lib/platformAuthStore';
 
 type Fetcher=(url:string,init?:RequestInit)=>Promise<Response>;
 type Query={city:string;station:string;period:string};
@@ -101,28 +94,13 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
   const [activeViewTab,setActiveViewTab]=useState<'pending'|'results'>('pending');
   const [receiptStatusFilter,setReceiptStatusFilter]=useState<'all'|'success'|'issue'|'failed'|'uncertain'|'changed'|'not_sent'|'pending'>('all');
   const [serverLoggedIn,setServerLoggedIn]=useState(false);
-  const [demoRows,setDemoRows]=useState<Task[]>(()=>
-    buildDemoLanorangeApprovals().map(r=>({...r,business_id:r.businessCode,revision:'demo-rev-1'})) as Task[]
-  );
-  const [demoHistory,setDemoHistory]=useState<Batch[]>(()=>buildDemoApprovalReceiptBatches());
-  const [demoBatch,setDemoBatch]=useState<Batch|null>(null);
 
   const auth=usePlatformAuthSnapshot();
-  const {demoHidden,toggleDemoHidden}=useDemoDataVisibility();
   const isLanorangeLoggedIn=serverLoggedIn || auth.isLoggedIn('lanorange');
   const hasLiveData=allRows.length>0||history.length>0;
-  const demoActive=shouldUseDemoData({
-    isLoggedIn:isLanorangeLoggedIn,
-    hasLiveData,
-    demoHidden,
-  });
-
-  const displayRows=demoActive?demoRows:allRows;
-  const displayHistory=demoActive?demoHistory:history;
-  const displayBatch=demoActive?(demoBatch || demoHistory[0] || null):batch;
 
   const listSequence=useRef(0),inflight=useRef(false),versionRef=useRef(''),batchRef=useRef<Batch|null>(null),alive=useRef(true);
-  batchRef.current=displayBatch;
+  batchRef.current=batch;
   const attemptKey=`lanorange-approval-attempt:${workspaceId}`;
   const request=<T,>(path:string,body?:object,timeout=60000)=>platformAuthRequest<T>(fetchRef.current,BASE+path,body,timeout);
   useEffect(()=>{alive.current=true;return()=>{alive.current=false;listSequence.current++;};},[]);
@@ -208,25 +186,25 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
     }).finally(()=>{if(alive.current && sequence===listSequence.current)setListBusy(false);});
   },[refresh,workspaceId]);
 
-  const scopeFiltered=useMemo(()=>filterApprovalTasks(displayRows,{scopeCities,scopeMonths,scopeSite,eligibility:'all',keyword:''}),[displayRows,scopeCities,scopeMonths,scopeSite]);
-  const filtered=useMemo(()=>filterApprovalTasks(displayRows,{scopeCities,scopeMonths,scopeSite,eligibility:eligibilityFilter,keyword}),[displayRows,scopeCities,scopeMonths,scopeSite,eligibilityFilter,keyword]);
+  const scopeFiltered=useMemo(()=>filterApprovalTasks(allRows,{scopeCities,scopeMonths,scopeSite,eligibility:'all',keyword:''}),[allRows,scopeCities,scopeMonths,scopeSite]);
+  const filtered=useMemo(()=>filterApprovalTasks(allRows,{scopeCities,scopeMonths,scopeSite,eligibility:eligibilityFilter,keyword}),[allRows,scopeCities,scopeMonths,scopeSite,eligibilityFilter,keyword]);
   const eligibleScopeCount=useMemo(()=>scopeFiltered.filter(r=>!r.reason).length,[scopeFiltered]);
   const blockedScopeCount=scopeFiltered.length-eligibleScopeCount;
   const rows=filtered.slice((page-1)*20,page*20);
 
   const rowMonth=(r:Task)=>(r.settle_month||r.period_start||'').slice(0,7);
-  const cityChoices=useMemo(()=>[...new Set(displayRows.map(r=>r.cityName||'').filter(Boolean))].sort(),[displayRows]);
+  const cityChoices=useMemo(()=>[...new Set(allRows.map(r=>r.cityName||'').filter(Boolean))].sort(),[allRows]);
   const monthChoices=useMemo(
-    ()=>[...new Set(displayRows.filter(r=>!scopeCities.length||scopeCities.includes(r.cityName||'')).map(rowMonth).filter(Boolean))].sort().reverse(),
-    [displayRows,scopeCities],
+    ()=>[...new Set(allRows.filter(r=>!scopeCities.length||scopeCities.includes(r.cityName||'')).map(rowMonth).filter(Boolean))].sort().reverse(),
+    [allRows,scopeCities],
   );
   const siteChoices=useMemo(
     ()=>[...new Map(
-      displayRows
+      allRows
         .filter(r=>(!scopeCities.length||scopeCities.includes(r.cityName||''))&&(!scopeMonths.length||scopeMonths.includes(rowMonth(r))))
         .map(r=>[JSON.stringify([r.cityName,r.siteName]),r] as const),
     )],
-    [displayRows,scopeCities,scopeMonths],
+    [allRows,scopeCities,scopeMonths],
   );
   const hasAnyScopeFilter=scopeCities.length>0||scopeMonths.length>0||Boolean(scopeSite)||Boolean(keyword.trim())||eligibilityFilter!=='all';
 
@@ -234,37 +212,15 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
     if(inflight.current)return;inflight.current=true;setCommand(kind);setError('');setNotice('');
     try{await action();}catch(err){if(alive.current)setError(message(err));}finally{inflight.current=false;if(alive.current)setCommand('');}
   }
-  const selected=Object.values(selection),pages=Math.max(1,Math.ceil(filtered.length/20)),active=displayHistory.some(b=>ACTIVE.has(b.status));
+  const selected=Object.values(selection),pages=Math.max(1,Math.ceil(filtered.length/20)),active=history.some(b=>ACTIVE.has(b.status));
   function choose(tasks:Task[],checked:boolean){
     const next={...selection};for(const task of tasks){if(task.reason)continue;if(checked)next[task.id]=task;else delete next[task.id];}
     if(Object.keys(next).length>200){setError('每批最多选择200条，请分批处理。');return;}setSelection(next);
   }
   async function showDetail(task:Task){
-    if(demoActive){
-      setDetail({task,price:buildDemoApprovalPriceTable(task as any)});
-      return;
-    }
     await perform('detail',async()=>setDetail(await request<{task:Task;price:Price}>(`/pending/${encodeURIComponent(task.id)}?session_version=${encodeURIComponent(sessionVersion)}`)));
   }
   async function makePreview(){
-    if(demoActive){
-      const previewItems=selected.map(task=>({
-        eligible:!task.reason,
-        reason:task.reason||'',
-        task,
-        price:buildDemoApprovalPriceTable(task as any),
-      }));
-      setPreview({
-        id:`DEMO-PREV-${Date.now()}`,
-        actor_label:'林雅琪（示例审批人）',
-        expires_at:Math.floor(Date.now()/1000)+600,
-        eligible_count:previewItems.filter(i=>i.eligible).length,
-        opinion:'同意（示例模式本地模拟）',
-        filters:query,
-        items:previewItems,
-      });
-      return;
-    }
     await perform('preview',async()=>{
       const value=await request<Preview>('/previews',{selected:selected.map(t=>({id:t.id,revision:t.revision})),filters:query,session_version:sessionVersion},180000);
       if(alive.current)setPreview(value);
@@ -279,34 +235,6 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
   });}
   async function submit(){
     if(!preview)return;
-    if(demoActive){
-      const eligibleTasks=preview.items.filter(i=>i.eligible).map(i=>i.task);
-      const createdBatch:Batch={
-        id:`DEMO-BATCH-${Date.now().toString().slice(-6)}`,
-        actor_label:'林雅琪（示例审批人）',
-        status:'completed',
-        created:Math.floor(Date.now()/1000),
-        counts:{success:eligibleTasks.length,failed:0,uncertain:0,changed:0,not_sent:0,pending:0},
-        items:eligibleTasks.map(task=>({
-          task,
-          status:'success',
-          status_label:'已同意',
-          message:'示例模式：已本地模拟审批通过（不会真实提交蓝橙）',
-        })),
-      };
-      const approvedIds=new Set(eligibleTasks.map(t=>t.id));
-      const nextDemoRows=demoRows.filter(r=>!approvedIds.has(r.id));
-      setDemoRows(nextDemoRows);
-      setDemoHistory(prev=>[createdBatch,...prev]);
-      setDemoBatch(createdBatch);
-      setPreview(null);
-      setSelection({});
-      setReceiptStatusFilter('all');
-      setActiveViewTab('results');
-      setNotice(`示例模式：已模拟批量同意 ${eligibleTasks.length} 条价格提审单，真实登录蓝橙后将对接正式审批流程。`);
-      window.dispatchEvent(new CustomEvent('workbench:lanorange-approvals-updated', { detail: { demo: true, rows: nextDemoRows } }));
-      return;
-    }
     await sendAttempt(attempt?.preview_id===preview.id?attempt:{preview_id:preview.id,request_id:crypto.randomUUID()});
   }
   async function findAttempt(){if(!attempt)return;await perform('find',async()=>{
@@ -314,21 +242,10 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
     catch(err){if(err instanceof PlatformAuthError && err.status===404){setAttemptMissing(true);throw new Error('尚未找到本次批次。可用原提交标识重试，已存在的批次会直接返回。');}throw err;}
   });}
   async function downloadResult(){
-    if(!displayBatch)return;
-    if(demoActive){
-      const csv=buildDemoApprovalReceiptCsv(displayBatch);
-      const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
-      const link=document.createElement('a');
-      link.href=url;
-      link.download=`蓝橙价格审批结果_${displayBatch.id.slice(0,12)}_示例.csv`;
-      link.click();
-      setTimeout(()=>URL.revokeObjectURL(url),1000);
-      setNotice('示例模式：已导出当前回执批次 CSV 文件。');
-      return;
-    }
+    if(!batch)return;
     await perform('export',async()=>{
-      const response=await fetchRef.current(`${BASE}/batches/${displayBatch.id}/result.csv`);if(!response.ok)throw new Error('结果下载失败，请稍后重试');
-      const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=url;link.download=`蓝橙价格审批结果_${displayBatch.id.slice(0,8)}.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+      const response=await fetchRef.current(`${BASE}/batches/${batch.id}/result.csv`);if(!response.ok)throw new Error('结果下载失败，请稍后重试');
+      const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=url;link.download=`蓝橙价格审批结果_${batch.id.slice(0,8)}.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
     });
   }
 
@@ -336,8 +253,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
     window.dispatchEvent(new CustomEvent('workbench:connections', { detail: 'lanorange' }));
   };
 
-  const displayError = demoActive ? '' : error;
-  const isAuthBlocked = Boolean(displayError && displayError.includes('登录') && displayRows.length === 0);
+  const isAuthBlocked = Boolean(error && error.includes('登录') && allRows.length === 0);
 
   return <div className="wb-approvals wbx-approval">
     {/* 顶层清爽下划线视图切换条（与数据采集页保持统一） */}
@@ -352,7 +268,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
         >
           <ClipboardList size={15} className="wbx-ap-tab__icon" aria-hidden="true" />
           <span>待办审批列表</span>
-          <span className="wbx-ap-tab__count tabular-nums">{displayRows.length}</span>
+          <span className="wbx-ap-tab__count tabular-nums">{allRows.length}</span>
         </button>
         <button
           type="button"
@@ -363,31 +279,20 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
         >
           <CheckCircle2 size={15} className="wbx-ap-tab__icon" aria-hidden="true" />
           <span>审批结果回执</span>
-          <span className="wbx-ap-tab__count tabular-nums">{displayHistory.length}</span>
+          <span className="wbx-ap-tab__count tabular-nums">{history.length}</span>
         </button>
       </div>
 
       <div className="wbx-ap-topbar__right">
-        {activeViewTab === 'pending' && displayBatch && (
+        {activeViewTab === 'pending' && batch && (
           <button
             type="button"
             className="wbx-ap-link-btn tabular-nums"
             onClick={() => setActiveViewTab('results')}
           >
-            最近批次：{batchLabels[displayBatch.status] || displayBatch.status}（{displayBatch.counts.success || 0}/{displayBatch.items.length}）→
+            最近批次：{batchLabels[batch.status] || batch.status}（{batch.counts.success || 0}/{batch.items.length}）→
           </button>
         )}
-        <DemoDataChip
-          demoActive={demoActive}
-          canShowDemo={!isLanorangeLoggedIn && !hasLiveData && demoHidden}
-          onToggle={() => {
-            setSelection({});
-            setPreview(null);
-            setDetail(null);
-            setPage(1);
-            toggleDemoHidden();
-          }}
-        />
         {(() => {
           const needsLogin = !isLanorangeLoggedIn && (!hasLiveData || Boolean(error && error.includes('登录')));
           return (
@@ -413,17 +318,17 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
       </div>
     </section>
 
-    {displayError && !isAuthBlocked && (
-      <div className={`wbx-ap-notice ${displayError.includes('登录') ? 'is-auth' : 'is-danger'}`} role="alert">
+    {error && !isAuthBlocked && (
+      <div className={`wbx-ap-notice ${error.includes('登录') ? 'is-auth' : 'is-danger'}`} role="alert">
         <div className="wbx-ap-notice__body">
           <KeyRound size={15} className="wbx-ap-notice__icon" aria-hidden="true" />
           <div className="wbx-ap-notice__copy">
-            <strong>{displayError.includes('登录') ? '需先完成蓝橙平台登录授权' : '操作提示'}</strong>
-            <span>{displayError}</span>
+            <strong>{error.includes('登录') ? '需先完成蓝橙平台登录授权' : '操作提示'}</strong>
+            <span>{error}</span>
           </div>
         </div>
         <div className="wbx-ap-notice__actions">
-          {displayError.includes('登录') && (
+          {error.includes('登录') && (
             <button type="button" className="wbx-btn wbx-btn--primary wbx-btn--sm" onClick={openLanorangeLogin}>
               登录蓝橙
             </button>
@@ -501,7 +406,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
       </div>
 
       {/* 统一工作台单行页签 + 紧凑筛选控件栏 */}
-      {displayRows.length > 0 && (
+      {allRows.length > 0 && (
         <div className="wbx-approvals__toolbar">
           <div className="wbx-approvals__tabs" role="tablist" aria-label="按审批状态筛选">
             {([
@@ -553,7 +458,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
               <option value="">全部城市 ({cityChoices.length})</option>
               {cityChoices.map(c => (
                 <option key={c} value={c}>
-                  {c} ({displayRows.filter(r => r.cityName === c).length})
+                  {c} ({allRows.filter(r => r.cityName === c).length})
                 </option>
               ))}
             </select>
@@ -575,7 +480,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
               <option value="">全部月份</option>
               {monthChoices.map(m => (
                 <option key={m} value={m}>
-                  {m} ({displayRows.filter(r => (!scopeCities.length || scopeCities.includes(r.cityName || '')) && rowMonth(r) === m).length})
+                  {m} ({allRows.filter(r => (!scopeCities.length || scopeCities.includes(r.cityName || '')) && rowMonth(r) === m).length})
                 </option>
               ))}
             </select>
@@ -785,41 +690,40 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
           <div className="wbx-approval__queue-title">
             <h3>
               审批结果回执
-              <span>{displayBatch ? displayBatch.items.length : 0}</span>
-              {displayBatch && (
-                <em className={`wbx-pill ${toneClass(normalizeTone(displayBatch.status))}`}>
+              <span>{batch ? batch.items.length : 0}</span>
+              {batch && (
+                <em className={`wbx-pill ${toneClass(normalizeTone(batch.status))}`}>
                   <span className="wbx-pill__dot" aria-hidden="true" />
-                  {batchLabels[displayBatch.status] || displayBatch.status}
+                  {batchLabels[batch.status] || batch.status}
                 </em>
               )}
             </h3>
             <p className="tabular-nums">
-              {displayBatch
-                ? `执行账号：${displayBatch.actor_label || actor || '当前授权账号'} · 共 ${displayHistory.length} 批记录`
+              {batch
+                ? `执行账号：${batch.actor_label || actor || '当前授权账号'} · 共 ${history.length} 批记录`
                 : '暂无已提交的批量审批批次记录'}
             </p>
           </div>
           <div className="wbx-approval__actions">
-            {displayHistory.length > 0 && (
+            {history.length > 0 && (
               <label className="wbx-approval__batch-picker">
                 <span>切换批次</span>
                 <select
                   className="wbx-ap-select"
                   aria-label="选择审批回执批次"
-                  value={displayBatch?.id || ''}
+                  value={batch?.id || ''}
                   onChange={e => {
-                    const found = displayHistory.find(b => b.id === e.target.value) || null;
+                    const found = history.find(b => b.id === e.target.value) || null;
                     setReceiptStatusFilter('all');
-                    if (demoActive) setDemoBatch(found);
-                    else setBatch(found);
+                    setBatch(found);
                   }}
                 >
-                  {displayBatch && !displayHistory.some(b => b.id === displayBatch.id) && (
-                    <option value={displayBatch.id}>
-                      当前任务 · {batchLabels[displayBatch.status] || displayBatch.status}
+                  {batch && !history.some(b => b.id === batch.id) && (
+                    <option value={batch.id}>
+                      当前任务 · {batchLabels[batch.status] || batch.status}
                     </option>
                   )}
-                  {displayHistory.map(b => (
+                  {history.map(b => (
                     <option value={b.id} key={b.id}>
                       {new Date(b.created * 1000).toLocaleString('zh-CN')} · {batchLabels[b.status] || b.status} · {b.items.length}条
                     </option>
@@ -831,29 +735,19 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
               type="button"
               className="wbx-btn wbx-btn--sm"
               disabled={!!command}
-              onClick={() => {
-                if (demoActive) {
-                  setNotice('当前为示例回执数据，真实登录蓝橙后可同步后台实时回执。');
-                  return;
-                }
-                void readHistory();
-              }}
+              onClick={() => void readHistory()}
             >
               <RefreshCw size={13} />
               刷新结果
             </button>
-            {displayBatch && ACTIVE.has(displayBatch.status) && (
+            {batch && ACTIVE.has(batch.status) && (
               <button
                 type="button"
                 className="wbx-btn wbx-btn--sm wbx-btn--danger"
-                disabled={!!command || displayBatch.status === 'stopping'}
+                disabled={!!command || batch.status === 'stopping'}
                 onClick={() => {
-                  if (demoActive) {
-                    setNotice('示例模式：已模拟停止后续审批。');
-                    return;
-                  }
                   void perform('stop', async () => {
-                    setBatch(await request<Batch>(`/batches/${displayBatch.id}/stop`, { confirm: true }));
+                    setBatch(await request<Batch>(`/batches/${batch.id}/stop`, { confirm: true }));
                     void readHistory();
                   });
                 }}
@@ -861,34 +755,14 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
                 停止后续审批
               </button>
             )}
-            {displayBatch && !!displayBatch.counts.uncertain && !ACTIVE.has(displayBatch.status) && (
+            {batch && !!batch.counts.uncertain && !ACTIVE.has(batch.status) && (
               <button
                 type="button"
                 className="wbx-btn wbx-btn--sm"
                 disabled={!!command}
                 onClick={() => {
-                  if (demoActive) {
-                    const updated: Batch = {
-                      ...displayBatch,
-                      status: 'completed',
-                      counts: {
-                        ...displayBatch.counts,
-                        success: (displayBatch.counts.success || 0) + (displayBatch.counts.uncertain || 0),
-                        uncertain: 0,
-                      },
-                      items: displayBatch.items.map(it =>
-                        it.status === 'uncertain'
-                          ? { ...it, status: 'success', status_label: '已同意', message: '示例复核完成：蓝橙端已确认通过' }
-                          : it,
-                      ),
-                    };
-                    setDemoHistory(prev => prev.map(b => (b.id === updated.id ? updated : b)));
-                    setDemoBatch(updated);
-                    setNotice('示例模式：已完成待核实项模拟复核。');
-                    return;
-                  }
                   void perform('recheck', async () => {
-                    setBatch(await request<Batch>(`/batches/${displayBatch.id}/recheck`, {}, 120000));
+                    setBatch(await request<Batch>(`/batches/${batch.id}/recheck`, {}, 120000));
                     void readHistory();
                     setRefresh(x => x + 1);
                   });
@@ -897,7 +771,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
                 核实待确认结果
               </button>
             )}
-            {displayBatch && (
+            {batch && (
               <button
                 type="button"
                 className="wbx-btn wbx-btn--primary wbx-btn--sm"
@@ -911,7 +785,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
           </div>
         </div>
 
-        {!displayBatch ? (
+        {!batch ? (
           <div className="wbx-ap-empty">
             <span className="wbx-ap-empty__icon" aria-hidden="true">
               <CheckCircle2 size={20} />
@@ -932,17 +806,17 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
           <>
             <div className="wbx-approval__result-banner">
               <div className="wbx-approval__result-status">
-                <TaskOutcome task={{ status: displayBatch.status, kind: 'approval', availableFiles: 1 }} />
+                <TaskOutcome task={{ status: batch.status, kind: 'approval', availableFiles: 1 }} />
               </div>
 
               <div className="wbx-approval__result-kpis tabular-nums" role="group" aria-label="按审批结果快捷筛选">
                 {([
-                  { key: 'success', label: '已同意', count: displayBatch.counts.success || 0, tone: 'is-success' },
-                  { key: 'failed', label: '被拒绝', count: displayBatch.counts.failed || 0, tone: 'is-danger' },
-                  { key: 'uncertain', label: '待核实', count: displayBatch.counts.uncertain || 0, tone: 'is-warn' },
-                  { key: 'changed', label: '状态变化', count: displayBatch.counts.changed || 0, tone: 'is-warn' },
-                  { key: 'not_sent', label: '未提交', count: displayBatch.counts.not_sent || 0, tone: '' },
-                  { key: 'pending', label: '等待中', count: displayBatch.counts.pending || 0, tone: 'is-primary' },
+                  { key: 'success', label: '已同意', count: batch.counts.success || 0, tone: 'is-success' },
+                  { key: 'failed', label: '被拒绝', count: batch.counts.failed || 0, tone: 'is-danger' },
+                  { key: 'uncertain', label: '待核实', count: batch.counts.uncertain || 0, tone: 'is-warn' },
+                  { key: 'changed', label: '状态变化', count: batch.counts.changed || 0, tone: 'is-warn' },
+                  { key: 'not_sent', label: '未提交', count: batch.counts.not_sent || 0, tone: '' },
+                  { key: 'pending', label: '等待中', count: batch.counts.pending || 0, tone: 'is-primary' },
                 ] as const).map(kpi => {
                   const isActive = receiptStatusFilter === kpi.key;
                   const toneCls = kpi.count > 0 ? kpi.tone : 'is-zero';
@@ -963,12 +837,12 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
               </div>
             </div>
 
-            {displayBatch.status === 'stopping' && (
+            {batch.status === 'stopping' && (
               <p className="wb-muted">当前已发出的官方请求会先核实结果，后续条目不再提交。</p>
             )}
 
             {(() => {
-              const allItems = displayBatch.items || [];
+              const allItems = batch.items || [];
               const issueCount = allItems.filter(it => it.status !== 'success').length;
               const successCount = allItems.length - issueCount;
               const shownItems =

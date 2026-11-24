@@ -345,7 +345,8 @@ def create_xiaoxiang(source, plan, template, wid, root=None, download_owner=None
     state['baize_account'] = account
     if account.get('account_type') != 'xiaoxiang':
         state['status'] = 'waiting_materials'
-        state['pause_reason'] = '商翼当前不是小象超市账户，请先在系统连接中切换到小象账户后重新发起任务'
+        from baize_accounts import XIAOXIANG_REQUIRED_MESSAGE
+        state['pause_reason'] = XIAOXIANG_REQUIRED_MESSAGE
         save(folder, state)
         return folder, state
     save(folder, state)
@@ -377,7 +378,8 @@ def start_xiaoxiang_download(folder, state, manager):
     state['baize_account'] = account
     if account.get('account_type') != 'xiaoxiang':
         state['status'] = 'waiting_materials'
-        state['pause_reason'] = '商翼当前不是小象超市账户，请先在系统连接中切换到小象账户后重新发起任务'
+        from baize_accounts import XIAOXIANG_REQUIRED_MESSAGE
+        state['pause_reason'] = XIAOXIANG_REQUIRED_MESSAGE
         save(folder, state)
         return
     try:
@@ -942,8 +944,11 @@ async def _run_payroll(config, request, folder, state, cancelled, *, context=Non
             yield log_event(message,'ERROR')
             yield tasks.create_finish_event('error','任务已结束，详情见执行日志')
         else:
-            yield log_event('资料获取未完成，任务已暂停。请完成平台登录或重试失败项；已有资料保留。' if mode == 'fengshen' else '资料未齐全，请核对缺项。','WARN')
-            yield tasks.create_finish_event('paused','等待处理资料，尚未执行核算')
+            reason = state.get('pause_reason') or (
+                '资料获取未完成，任务已暂停。请完成平台登录或重试失败项；已有资料保留。'
+                if mode == 'fengshen' else '资料未齐全，请核对缺项。')
+            yield log_event(reason, 'WARN')
+            yield tasks.create_finish_event('paused', reason)
         return
     checkpoint(cancelled)
     if not automatic and mode == 'fengshen' and state.get('deduction_intent') and (state.get('deduction_confirmation') or {}).get('stage') != 'final':
@@ -1154,19 +1159,17 @@ async def supplement(key: str, request: Request):
         raise HTTPException(400, str(exc)) from None
 
 
-@router.post('/{key}/retry')
-def retry_preparation(key: str, request: Request):
+def retry_preparation_batch(wid, owner, key):
     """One retry per original run. Manager enforces retained-receipt recovery policy."""
     from download_jobs import get_manager
     from download_routes import _call
-    wid, owner = workspace(request), account(request)
     folder = directory(wid, key)
     with batch_lock(folder), LOCK:
         folder, state = load(wid, key, owner)
         if state.get('input_policy')=='readable_delivery_v1':
-            raise HTTPException(410,'自动核算不提供失败项重试，请重新上传模板发起新任务')
+            raise SourceError('自动核算不提供失败项重试，请重新上传模板发起新任务')
         if state['status'] not in ('waiting_materials', 'interrupted'):
-            raise HTTPException(409, '当前任务不可重试，请刷新状态')
+            raise SourceError('当前任务不可重试，请刷新状态')
         manager = get_manager()
         selected = {}
         for kind, value in state['items'].items():
@@ -1184,9 +1187,10 @@ def retry_preparation(key: str, request: Request):
         if not selected:
             if state.get('workflow') == 'two_step_v1':
                 state['status'] = 'preparing'
+                state.pop('pause_reason', None)
                 save(folder, state)
                 return public(state)
-            raise HTTPException(409, '没有可安全重试的下载项，请查看任务详情')
+            raise SourceError('没有可安全重试的下载项，请查看任务详情')
         for run_id, kinds in selected.items():
             run = manager.get_run(owner, run_id)
             from auth_preflight import gate_datasets
@@ -1200,5 +1204,14 @@ def retry_preparation(key: str, request: Request):
             for kind in kinds:
                 state['items'][kind].update(status='pending', run_id=retry['id'])
             state['status'] = 'preparing'
+            state.pop('pause_reason', None)
             save(folder, state)
         return public(state)
+
+
+@router.post('/{key}/retry')
+def retry_preparation(key: str, request: Request):
+    try:
+        return retry_preparation_batch(workspace(request), account(request), key)
+    except SourceError as exc:
+        raise HTTPException(409, str(exc)) from None

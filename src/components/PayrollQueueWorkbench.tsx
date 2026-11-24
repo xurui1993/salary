@@ -53,13 +53,7 @@ import {
   filterPayrollQueueTasks,
   type PayrollQueueFilterTab,
 } from '../lib/workbenchFilters';
-import {
-  shouldUseDemoData,
-  useDemoDataVisibility,
-  usePlatformAuthSnapshot,
-} from '../lib/demoMode';
-import { buildDemoPayrollTasks } from '../lib/showcaseDemoData';
-import { DemoDataChip } from './DemoDataChip';
+import { usePlatformAuthSnapshot } from '../lib/platformAuthStore';
 
 type Props = Pick<
   CorePageProps,
@@ -573,11 +567,7 @@ export function FlashPayrollWorkbench({
   const [sortKey, setSortKey] = useState<PayrollSortKey>('default');
   const [queuePage, setQueuePage] = useState(1);
   const [queuePageSize, setQueuePageSize] = useState(20);
-  const [demoTasks, setDemoTasks] = useState<PayrollQueueTask[]>(() => buildDemoPayrollTasks());
-  const [demoArchivedIds, setDemoArchivedIds] = useState<Set<string>>(() => new Set());
-
   const auth = usePlatformAuthSnapshot();
-  const { demoHidden, toggleDemoHidden } = useDemoDataVisibility();
 
   const api = useRef(apiFetch);
   api.current = apiFetch;
@@ -740,20 +730,7 @@ export function FlashPayrollWorkbench({
       ? legacyPayrollTask(value, logs, progress, progressText)
       : null;
   const liveVisible = legacy ? [legacy, ...tasks] : tasks;
-  const hasLiveData = liveVisible.length > 0;
-  const demoActive = shouldUseDemoData({
-    isLoggedIn: auth.anyLoggedIn,
-    hasLiveData,
-    demoHidden,
-  });
-  const demoVisible = useMemo(
-    () =>
-      demoActive
-        ? demoTasks.filter(task => (hidden ? demoArchivedIds.has(task.id) : !demoArchivedIds.has(task.id)))
-        : [],
-    [demoActive, demoTasks, demoArchivedIds, hidden],
-  );
-  const visible = demoActive ? demoVisible : liveVisible;
+  const visible = liveVisible;
 
   const availableCities = useMemo(() => {
     const set = new Set<string>();
@@ -867,11 +844,6 @@ export function FlashPayrollWorkbench({
 
   const updateApproval = async (task: PayrollQueueTask, code: string) => {
     setError('');
-    if (demoActive) {
-      setDemoTasks(prev => prev.map(item => (item.id === task.id ? { ...item, approval_code: code } : item)));
-      pushToast('示例模式：审批编号已更新（仅本地预览）');
-      return;
-    }
     try {
       const response = await request(`${API}/${task.id}/approval`, { approval_code: code });
       await response.json().catch(() => ({}));
@@ -894,17 +866,6 @@ export function FlashPayrollWorkbench({
 
   const stop = (task: PayrollQueueTask) =>
     void act(async () => {
-      if (demoActive) {
-        setDemoTasks(prev =>
-          prev.map(item =>
-            item.id === task.id
-              ? { ...item, status: 'cancelled', current_action: '已在本地示例预览中停止' }
-              : item,
-          ),
-        );
-        pushToast('示例模式：已停止该示例批次（仅本地预览）', 'info');
-        return;
-      }
       if (task.legacy) {
         await request('/api/workbench/task-center/stop', { id: 'payroll_' + task.batch_id });
         onPreparationChange(await (await request(`/api/parttime/preparations/${task.batch_id}`)).json());
@@ -918,19 +879,6 @@ export function FlashPayrollWorkbench({
   const batchStop = (targets: PayrollQueueTask[]) =>
     void act(async () => {
       if (!targets.length) return;
-      if (demoActive) {
-        const targetIds = new Set(targets.map(t => t.id));
-        setDemoTasks(prev =>
-          prev.map(item =>
-            targetIds.has(item.id)
-              ? { ...item, status: 'cancelled', current_action: '已在本地示例预览中批量停止' }
-              : item,
-          ),
-        );
-        setChecked([]);
-        pushToast(`示例模式：已批量停止 ${targets.length} 条示例批次（仅本地预览）`, 'info');
-        return;
-      }
       for (const task of targets) {
         if (task.legacy) {
           await request('/api/workbench/task-center/stop', { id: 'payroll_' + task.batch_id });
@@ -945,23 +893,6 @@ export function FlashPayrollWorkbench({
 
   const retryTask = (task: PayrollQueueTask) =>
     void act(async () => {
-      if (demoActive) {
-        setDemoTasks(prev =>
-          prev.map(item =>
-            item.id === task.id
-              ? {
-                  ...item,
-                  status: 'calculating',
-                  progress: 42,
-                  current_action: '示例重试中：正在重算骑手出勤与扣款明细',
-                  error: undefined,
-                }
-              : item,
-          ),
-        );
-        pushToast('示例模式：已模拟重新提交核算（仅本地预览）', 'info');
-        return;
-      }
       await request(`${API}/${task.id}/retry`, {});
       pushToast('已重新提交核算请求');
       await refresh();
@@ -969,22 +900,6 @@ export function FlashPayrollWorkbench({
 
   const confirmDeductions = (task: PayrollQueueTask) =>
     void act(async () => {
-      if (demoActive) {
-        setDemoTasks(prev =>
-          prev.map(item =>
-            item.id === task.id
-              ? {
-                  ...item,
-                  status: 'calculating',
-                  progress: 76,
-                  current_action: '已确认扣款口径，正在生成核算汇总表',
-                }
-              : item,
-          ),
-        );
-        pushToast('示例模式：已模拟确认扣款口径并继续核算（仅本地预览）');
-        return;
-      }
       await request(`${API}/${task.id}/confirm-deductions`, {});
       pushToast('已确认扣款口径，核算继续推进');
       await refresh();
@@ -992,22 +907,6 @@ export function FlashPayrollWorkbench({
 
   const download = (task: PayrollQueueTask) =>
     void act(async () => {
-      if (demoActive) {
-        const filename = `${(task.template_name || task.id).replace(/\.xlsx?$/i, '')}_示例核算回执.txt`;
-        const amount = extractPayrollAmount(task);
-        const content = [
-          `兼职核算示例成品包预览（未登录演示模式）`,
-          `审批编号：${task.approval_code || '待填写'}`,
-          `城市：${task.plan?.city || '—'}`,
-          `周期：${payrollPeriodRange(task.plan) || '—'}`,
-          `人数：${task.plan?.applicants ?? '—'} 人`,
-          `核算总额：${amount !== null ? `¥${formatPayrollAmount(amount)}` : '—'}`,
-          `说明：真实登录后点击下载将直接拉取后台生成的正式 Excel 成品包。`,
-        ].join('\n');
-        saveDownloadBlob(new Blob([`\uFEFF${content}`], { type: 'text/plain;charset=utf-8' }), filename);
-        pushToast(`示例模式：已下载预览回执「${filename}」`, 'info');
-        return;
-      }
       const response = await request(
         `/api/fengshen-downloads/delivery-download?batch_id=${encodeURIComponent(task.batch_id!)}`,
       );
@@ -1020,26 +919,12 @@ export function FlashPayrollWorkbench({
 
   const directory = (task: PayrollQueueTask) =>
     void act(async () => {
-      if (demoActive) {
-        pushToast(`示例模式：本地结果目录 ~/SalaryWorkbench/payroll/${task.batch_id || task.id}`, 'info');
-        return;
-      }
       await request('/api/workbench/task-center/directory/open', { record_id: 'payroll_' + task.batch_id });
       pushToast('已打开本地结果目录');
     });
 
   const restore = (entries: PayrollQueueTask[]) =>
     void act(async () => {
-      if (demoActive) {
-        setDemoArchivedIds(prev => {
-          const next = new Set(prev);
-          for (const entry of entries) next.delete(entry.id);
-          return next;
-        });
-        setChecked([]);
-        pushToast(`示例模式：已恢复 ${entries.length} 条示例核算批次`);
-        return;
-      }
       await request(API + '/visibility', { ids: entries.map(task => task.id), restore: true });
       setChecked([]);
       pushToast(`已恢复 ${entries.length} 条核算批次`);
@@ -1227,16 +1112,6 @@ export function FlashPayrollWorkbench({
             )}
           </div>
           <div className="pq-queue-actions">
-            <DemoDataChip
-              demoActive={demoActive}
-              canShowDemo={!auth.anyLoggedIn && !hasLiveData && demoHidden}
-              onToggle={() => {
-                setChecked([]);
-                setDetailTaskId('');
-                setQueuePage(1);
-                toggleDemoHidden();
-              }}
-            />
             {chosen.length > 0 && <span className="pq-selection tabular-nums">已选 {chosen.length} 项</span>}
             {hidden ? (
               chosen.length > 0 && (
@@ -1264,20 +1139,6 @@ export function FlashPayrollWorkbench({
                     disabled={busy}
                     onClick={() =>
                       void act(async () => {
-                        if (demoActive) {
-                          const lines = [
-                            `兼职核算批量成品包示例清单（共 ${downloadable.length} 批）`,
-                            ...downloadable.map(
-                              t => `- ${t.approval_code || '待填编号'} | ${t.plan?.city || '—'} | ${t.template_name}`,
-                            ),
-                          ].join('\n');
-                          saveDownloadBlob(
-                            new Blob([`\uFEFF${lines}`], { type: 'text/plain;charset=utf-8' }),
-                            '示例_批量薪资核算清单.txt',
-                          );
-                          pushToast(`示例模式：已生成 ${downloadable.length} 批预览清单`, 'info');
-                          return;
-                        }
                         if (downloadable.length === 1) {
                           const response = await request(
                             `/api/fengshen-downloads/delivery-download?batch_id=${encodeURIComponent(downloadable[0].batch_id!)}`,
@@ -1575,19 +1436,6 @@ export function FlashPayrollWorkbench({
           onCancel={() => setRemoveTargets([])}
           onConfirm={() =>
             void act(async () => {
-              if (demoActive) {
-                setDemoArchivedIds(prev => {
-                  const next = new Set(prev);
-                  for (const t of removeTargets) next.add(t.id);
-                  return next;
-                });
-                if (detailTaskId && removeTargets.some(task => task.id === detailTaskId)) setDetailTaskId('');
-                const removedCount = removeTargets.length;
-                setRemoveTargets([]);
-                setChecked([]);
-                pushToast(`示例模式：已移出 ${removedCount} 条示例批次，可在「已移出」恢复`);
-                return;
-              }
               const current = removeTargets.filter(task => !task.legacy);
               const old = removeTargets.filter(task => task.legacy);
               if (current.length) {

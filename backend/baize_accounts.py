@@ -4,6 +4,7 @@ import time
 import binding_source_auth
 
 CACHE_SECONDS = 30
+XIAOXIANG_REQUIRED_MESSAGE = '商翼当前不是小象超市账户，请先在系统连接中切换到小象账户后重新发起任务'
 _cache = {'at': 0, 'value': None, 'key': None}
 
 

@@ -32,13 +32,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import {
-  shouldUseDemoData,
-  useDemoDataVisibility,
-  usePlatformAuthSnapshot,
-} from '../lib/demoMode';
-import { buildDemoDeductionData } from '../lib/showcaseDemoData';
-import { DemoDataChip } from './DemoDataChip';
+import { usePlatformAuthSnapshot } from '../lib/platformAuthStore';
 
 function readErrorMessage(err: unknown, networkFallback: string): string {
   const raw = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
@@ -97,24 +91,9 @@ export function StationDeductionManager({
   const directory = useStationDirectory(currentPlatform, apiFetch);
 
   const auth = usePlatformAuthSnapshot();
-  const { demoHidden, toggleDemoHidden } = useDemoDataVisibility();
-
-  const [demoStore, setDemoStore] = useState<
-    Record<'fengshen' | 'xiaoxiang', ReturnType<typeof buildDemoDeductionData>>
-  >(() => ({
-    fengshen: buildDemoDeductionData('fengshen'),
-    xiaoxiang: buildDemoDeductionData('xiaoxiang'),
-  }));
-
   const isPlatformLoggedIn = auth.isLoggedIn(currentPlatform);
-  const hasLiveData = entries.length > 0 || cities.length > 0;
-  const demoActive = shouldUseDemoData({
-    isLoggedIn: isPlatformLoggedIn,
-    hasLiveData,
-    demoHidden,
-  });
 
-  // 真实登录后立即重置演示态并重新拉取该平台后台扣款配置
+  // 真实登录后重新拉取该平台后台扣款配置
   const prevPlatformLoggedInRef = useRef(isPlatformLoggedIn);
   useEffect(() => {
     if (isPlatformLoggedIn && !prevPlatformLoggedInRef.current) {
@@ -158,52 +137,14 @@ export function StationDeductionManager({
     return () => controller.abort();
   }, [currentPlatform, directory.data?.stations?.length, directory.data?.fetched_at, directory.data?.status, reloadKey, dirty]);
 
-  const currentDemo = demoStore[currentPlatform];
-  const displayProfile = demoActive
-    ? {
-        platform: currentPlatform,
-        version: currentDemo.profile.version,
-        columns: currentDemo.columns,
-        entries: currentDemo.entries,
-        cities: currentDemo.cities,
-        demo: true,
-      }
-    : profile;
-  const displayEntries = demoActive ? currentDemo.entries : entries;
-  const displayCities = demoActive ? currentDemo.cities : cities;
-
-  const setActiveEntries = (updater: any[] | ((prev: any[]) => any[])) => {
-    if (demoActive) {
-      setDemoStore(prev => {
-        const cur = prev[currentPlatform];
-        const nextEntries = typeof updater === 'function' ? updater(cur.entries) : updater;
-        return { ...prev, [currentPlatform]: { ...cur, entries: nextEntries } };
-      });
-      return;
-    }
-    setEntries(updater as any);
-  };
-
-  const setActiveCities = (updater: any[] | ((prev: any[]) => any[])) => {
-    if (demoActive) {
-      setDemoStore(prev => {
-        const cur = prev[currentPlatform];
-        const nextCities = typeof updater === 'function' ? updater(cur.cities) : updater;
-        return { ...prev, [currentPlatform]: { ...cur, cities: nextCities } };
-      });
-      return;
-    }
-    setCities(updater as any);
-  };
-
   const effectiveDirectoryCities = useMemo(
-    () => (demoActive ? currentDemo.directoryCities : directory.data?.cities || []),
-    [demoActive, currentDemo.directoryCities, directory.data?.cities],
+    () => directory.data?.cities || [],
+    [directory.data?.cities],
   );
 
   const activeColumns: string[] = useMemo(
-    () => (displayProfile?.columns?.length ? displayProfile.columns : [...CONFIG_RULE_COLUMNS_WITH_THRESHOLDS]),
-    [displayProfile?.columns],
+    () => (profile?.columns?.length ? profile.columns : [...CONFIG_RULE_COLUMNS_WITH_THRESHOLDS]),
+    [profile?.columns],
   );
 
   const categorySpecs = useMemo(
@@ -217,25 +158,25 @@ export function StationDeductionManager({
   );
 
   const citySummaries = useMemo(
-    () => summarizeCitiesProgress(displayCities, displayEntries, effectiveDirectoryCities),
-    [displayCities, displayEntries, effectiveDirectoryCities],
+    () => summarizeCitiesProgress(cities, entries, effectiveDirectoryCities),
+    [cities, entries, effectiveDirectoryCities],
   );
 
   const allCityGroups = useMemo(
-    () => groupDeductionsByCity(displayCities, displayEntries, effectiveDirectoryCities, {}),
-    [displayCities, displayEntries, effectiveDirectoryCities],
+    () => groupDeductionsByCity(cities, entries, effectiveDirectoryCities, {}),
+    [cities, entries, effectiveDirectoryCities],
   );
 
   const cityGroups = useMemo(
     () =>
-      groupDeductionsByCity(displayCities, displayEntries, effectiveDirectoryCities, {
+      groupDeductionsByCity(cities, entries, effectiveDirectoryCities, {
         cityFilter,
         citySearch,
         stationSearch: search,
         onlyPendingCities,
         onlyUnconfigured,
       }),
-    [displayCities, displayEntries, effectiveDirectoryCities, cityFilter, citySearch, search, onlyPendingCities, onlyUnconfigured],
+    [cities, entries, effectiveDirectoryCities, cityFilter, citySearch, search, onlyPendingCities, onlyUnconfigured],
   );
 
   const activeCityGroup = useMemo(
@@ -244,18 +185,18 @@ export function StationDeductionManager({
   );
 
   useEffect(() => {
-    if (!displayCities.length && !displayEntries.length) return;
-    const firstCityId = displayCities[0]?.station?.city_id || displayEntries[0]?.station?.city_id || '';
+    if (!cities.length && !entries.length) return;
+    const firstCityId = cities[0]?.station?.city_id || entries[0]?.station?.city_id || '';
     if (!firstCityId) return;
-    const signature = `${currentPlatform}:${demoActive ? 'demo' : 'live'}:${firstCityId}:${displayEntries.length > 0 ? '1' : '0'}`;
+    const signature = `${currentPlatform}:${firstCityId}:${entries.length > 0 ? '1' : '0'}`;
     if (initializedExpandRef.current !== signature) {
       initializedExpandRef.current = signature;
       setActiveCityId(null);
     }
-  }, [displayCities, displayEntries, currentPlatform, demoActive]);
+  }, [cities, entries, currentPlatform]);
 
-  const pendingCount = displayEntries.filter(item => !item.configured).length;
-  const configuredCount = displayEntries.length - pendingCount;
+  const pendingCount = entries.filter(item => !item.configured).length;
+  const configuredCount = entries.length - pendingCount;
 
   const clearFilters = () => {
     setCityFilter('');
@@ -299,8 +240,8 @@ export function StationDeductionManager({
     switchPlatform(next);
   };
 
-  const modifiedCityCount = displayCities.filter(item => item.edited).length;
-  const modifiedStationCount = displayEntries.filter(item => item.edited).length;
+  const modifiedCityCount = cities.filter(item => item.edited).length;
+  const modifiedStationCount = entries.filter(item => item.edited).length;
   const hasUnsavedChanges = dirty || problemDirty || Boolean(pendingProblemRows?.length);
 
   const handleDiscard = () => {
@@ -311,40 +252,11 @@ export function StationDeductionManager({
     setProblemPreview(null);
     setUndoEntries(null);
     setError('');
-    if (demoActive) {
-      setDemoStore(prev => ({ ...prev, [currentPlatform]: buildDemoDeductionData(currentPlatform) }));
-      setNotice('示例模式：已还原为初始示例扣款配置。');
-      return;
-    }
     setNotice('已放弃未保存的修改，恢复为上次保存的扣款配置。');
     setReloadKey(val => val + 1);
   };
 
   async function handleSave() {
-    if (demoActive) {
-      setDemoStore(prev => {
-        const cur = prev[currentPlatform];
-        return {
-          ...prev,
-          [currentPlatform]: {
-            ...cur,
-            profile: {
-              ...cur.profile,
-              version: `${cur.profile.version}-saved`,
-            },
-            cities: cur.cities.map(c => ({ ...c, edited: false })),
-            entries: cur.entries.map(e => ({ ...e, edited: false })),
-          },
-        };
-      });
-      setDirty(false);
-      setProblemDirty(false);
-      setPendingProblemRows(null);
-      setProblemPreview(null);
-      setUndoEntries(null);
-      setNotice('示例模式：修改已保存在本地预览，登录真实平台后可同步至后台。');
-      return;
-    }
     if (!profile) return;
     setSaving(true);
     setError('');
@@ -425,7 +337,7 @@ export function StationDeductionManager({
     setError('');
     try {
       const XLSX = await import('xlsx');
-      const workbook = buildUnifiedConfigWorkbookData(displayCities, displayEntries, activeColumns);
+      const workbook = buildUnifiedConfigWorkbookData(cities, entries, activeColumns);
       const book = XLSX.utils.book_new();
 
       const itemSheet = workbook.itemRows.length
@@ -449,7 +361,7 @@ export function StationDeductionManager({
       setNotice(
         currentPlatform === 'xiaoxiang'
           ? `已导出小象超市扣款配置：包含「${workbook.itemSheetName}」${workbook.itemRows.length} 行。`
-          : displayEntries.length > 0
+          : entries.length > 0
             ? `已导出 Excel 配置：包含「${workbook.itemSheetName}」${workbook.itemRows.length} 行、「${workbook.problemSheetName}」${workbook.problemRows.length} 条。`
             : '已导出标准 2 表合一 Excel 配置模板（含扣款项与问题单关键词表）。',
       );
@@ -465,7 +377,7 @@ export function StationDeductionManager({
     setProblemNotice('');
     setProblemPreview(null);
     try {
-      if (!displayProfile || (!displayCities.length && !displayEntries.length)) {
+      if (!profile || (!cities.length && !entries.length)) {
         throw new Error('请先登录平台并等待后台城市与站点目录加载完成，再导入匹配到对应站点');
       }
 
@@ -500,8 +412,8 @@ export function StationDeductionManager({
         );
       }
 
-      let nextCities = displayCities;
-      let nextEntries = displayEntries;
+      let nextCities = cities;
+      let nextEntries = entries;
       const summaryParts: string[] = [];
 
       if (itemRows.length > 0) {
@@ -529,7 +441,7 @@ export function StationDeductionManager({
           `关键词规则：识别城市 ${kwResult.matchedCityRules} 条、站点 ${kwResult.matchedStationRules} 条（新增 ${kwResult.diff.addedCount} / 变更 ${kwResult.diff.updatedCount} / 移除 ${kwResult.diff.removedCount}）`,
         );
 
-        if (!demoActive && itemRows.length === 0) {
+        if (itemRows.length === 0) {
           const res = await apiFetch(`/api/workbench/deduction-profiles/${currentPlatform}/problem-rules/preview`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -541,8 +453,8 @@ export function StationDeductionManager({
         }
       }
 
-      setActiveCities(nextCities);
-      setActiveEntries(nextEntries);
+      setCities(nextCities);
+      setEntries(nextEntries);
       setDirty(true);
       setNotice(`已从 Excel 导入并解析（${summaryParts.join('；')}），核对无误后请点击“保存后续默认扣款”。`);
     } catch (err) {
@@ -585,27 +497,25 @@ export function StationDeductionManager({
     else onClose?.();
   };
 
-  const errorMessage = demoActive
-    ? ''
-    : String(
-        error ||
-          (directory.error ? readErrorMessage(directory.error, '扣款配置读取失败，请检查后台连接后重试') : '') ||
-          directory.data?.message ||
-          '',
-      );
+  const errorMessage = String(
+    error ||
+      (directory.error ? readErrorMessage(directory.error, '扣款配置读取失败，请检查后台连接后重试') : '') ||
+      directory.data?.message ||
+      '',
+  );
 
   const visibleProblemRules = useMemo(() => {
     const visibleCityIds = activeCityGroup
       ? new Set([activeCityGroup.summary.cityId])
       : new Set(cityGroups.map(g => g.summary.cityId));
-    const filteredCities = displayCities.filter(c => visibleCityIds.has(c.station.city_id));
-    const filteredEntries = displayEntries.filter(e => visibleCityIds.has(e.station.city_id));
+    const filteredCities = cities.filter(c => visibleCityIds.has(c.station.city_id));
+    const filteredEntries = entries.filter(e => visibleCityIds.has(e.station.city_id));
     return buildProblemRuleExportRows(filteredCities, filteredEntries);
-  }, [displayCities, displayEntries, cityGroups, activeCityGroup]);
+  }, [cities, entries, cityGroups, activeCityGroup]);
 
   const totalProblemRules =
-    displayCities.reduce((sum: number, city: any) => sum + (city.problem_rules?.length || 0), 0) +
-    displayEntries.reduce((sum: number, entry: any) => sum + (entry.problem_rules?.length || 0), 0);
+    cities.reduce((sum: number, city: any) => sum + (city.problem_rules?.length || 0), 0) +
+    entries.reduce((sum: number, entry: any) => sum + (entry.problem_rules?.length || 0), 0);
 
   const filteredCityJumpSummaries = useMemo(() => {
     const q = citySearch.trim().toLowerCase();
@@ -617,8 +527,8 @@ export function StationDeductionManager({
   }, [citySummaries, citySearch, onlyPendingCities]);
 
   const isOfflineLoginEmpty =
-    displayEntries.length === 0 &&
-    displayCities.length === 0 &&
+    entries.length === 0 &&
+    cities.length === 0 &&
     Boolean(errorMessage && errorMessage.includes('登录'));
 
   const content = (
@@ -654,21 +564,12 @@ export function StationDeductionManager({
           </div>
 
           <span className="wbx-ded-inline-meta tabular-nums">
-            <strong>{citySummaries.length}</strong> 城 / <strong>{displayEntries.length}</strong> 站 · 已配 {configuredCount} · 待配 {pendingCount}
+            <strong>{citySummaries.length}</strong> 城 / <strong>{entries.length}</strong> 站 · 已配 {configuredCount} · 待配 {pendingCount}
           </span>
           {dirty && <span className="wbx-ded-dirty-tag">有未保存修改</span>}
         </div>
 
         <div className="wbx-ded-topbar__right">
-          <DemoDataChip
-            demoActive={demoActive}
-            canShowDemo={!isPlatformLoggedIn && !hasLiveData && demoHidden}
-            onToggle={() => {
-              setActiveCityId(null);
-              setSelectedStations(new Set());
-              toggleDemoHidden();
-            }}
-          />
           <button
             type="button"
             className="wbx-btn wbx-btn--sm"
@@ -711,7 +612,7 @@ export function StationDeductionManager({
         />
       </div>
 
-      {!displayEntries.length && !errorMessage && (
+      {!entries.length && !errorMessage && (
         <div className="wbx-deduction-alert" role="status">
           <div className="wbx-deduction-alert__body">
             <AlertCircle size={15} aria-hidden="true" />
@@ -779,7 +680,7 @@ export function StationDeductionManager({
           <CityDeductionTableView
             group={activeCityGroup}
             allCitySummaries={citySummaries}
-            allEntries={displayEntries}
+            allEntries={entries}
             columns={activeColumns}
             categorySpecs={categorySpecs}
             activeCategory={activeCategory}
@@ -809,43 +710,43 @@ export function StationDeductionManager({
               })
             }
             onUpdateCity={updatedCity => {
-              const prevCity = displayCities.find(c => c.key === updatedCity.key);
+              const prevCity = cities.find(c => c.key === updatedCity.key);
               if (
                 JSON.stringify(prevCity?.problem_rules || []) !==
                 JSON.stringify((updatedCity as any).problem_rules || [])
               ) {
                 setProblemDirty(true);
               }
-              setActiveCities(prev => prev.map(c => (c.key === updatedCity.key ? updatedCity : c)));
+              setCities(prev => prev.map(c => (c.key === updatedCity.key ? updatedCity : c)));
               setDirty(true);
               setNotice('');
             }}
             onApplyCityToStations={cityEntry => {
-              setUndoEntries(displayEntries);
-              const updatedEntries = applyCityAmounts(displayEntries, [cityEntry], activeColumns);
-              setActiveEntries(updatedEntries);
+              setUndoEntries(entries);
+              const updatedEntries = applyCityAmounts(entries, [cityEntry], activeColumns);
+              setEntries(updatedEntries);
               setDirty(true);
               setNotice(
                 `已将「${cityEntry.station.city}」统一金额同步应用到同城沿用或未配置站点，核对后请点击“保存后续默认扣款”。`,
               );
             }}
             onUpdateStation={updatedStation => {
-              const prevStation = displayEntries.find(e => e.key === updatedStation.key);
+              const prevStation = entries.find(e => e.key === updatedStation.key);
               if (
                 JSON.stringify(prevStation?.problem_rules || []) !==
                 JSON.stringify((updatedStation as any).problem_rules || [])
               ) {
                 setProblemDirty(true);
               }
-              setActiveEntries(prev =>
+              setEntries(prev =>
                 prev.map(e => (e.key === updatedStation.key ? updatedStation : e)),
               );
               setDirty(true);
               setNotice('');
             }}
             onBulkUpdateStations={nextEntries => {
-              setUndoEntries(displayEntries);
-              setActiveEntries(nextEntries);
+              setUndoEntries(entries);
+              setEntries(nextEntries);
               setDirty(true);
               setNotice('已同步批量站点金额（可点击「撤销同步」回退）。');
             }}
@@ -921,7 +822,7 @@ export function StationDeductionManager({
                     className="wbx-btn wbx-btn--sm"
                     disabled={saving}
                     onClick={() => {
-                      setActiveEntries(undoEntries);
+                      setEntries(undoEntries);
                       setUndoEntries(null);
                       setNotice('已撤销上次站点批量同步操作。');
                     }}
@@ -948,7 +849,7 @@ export function StationDeductionManager({
 
             {/* 工作区主体：统一克制的空态引导 OR 竖向城市卡片墙 */}
             <div className="wbx-ded-workspace__body">
-              {displayEntries.length === 0 && displayCities.length === 0 ? (
+              {entries.length === 0 && cities.length === 0 ? (
                 <div className="wbx-ded-empty">
                   <span className="wbx-ded-empty__icon" aria-hidden="true">
                     <FolderCog size={20} />
@@ -1012,7 +913,7 @@ export function StationDeductionManager({
       </section>
 
       {/* 3. 主容器二：问题单关键词扣款明细面板（小象超市仅 3 项扣款，不展示） */}
-      {displayProfile && currentPlatform !== 'xiaoxiang' && (
+      {profile && currentPlatform !== 'xiaoxiang' && (
         <section className="wbx-problem-panel" aria-label="问题单关键词扣款明细">
           <header className="wbx-problem-panel__head">
             <div className="wbx-problem-panel__title">
@@ -1150,7 +1051,7 @@ export function StationDeductionManager({
           </button>
           <button
             className="wb-primary"
-            disabled={saving || !dirty || (!demoActive && directory.data?.status !== 'ready')}
+            disabled={saving || !dirty || directory.data?.status !== 'ready'}
             onClick={() => void handleSave()}
           >
             {saving ? '保存中…' : '保存后续默认扣款'}
@@ -1189,7 +1090,7 @@ export function StationDeductionManager({
             <button
               type="button"
               className="wbx-btn wbx-btn--primary wbx-btn--sm"
-              disabled={saving || (!demoActive && directory.data?.status !== 'ready')}
+              disabled={saving || directory.data?.status !== 'ready'}
               onClick={() => void handleSave()}
             >
               {saving ? '保存中…' : '保存后续默认扣款'}

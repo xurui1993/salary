@@ -57,12 +57,7 @@ import {
 } from './lib/shellNav';
 import { APP_TITLE } from './lib/appMeta';
 import { BP, currentViewportWidth } from './lib/breakpoints';
-import {
-  hasAnyAuthenticatedPlatform,
-  syncGlobalPlatformAuth,
-  useDemoDataVisibility,
-} from './lib/demoMode';
-import { buildDemoEngineLogs } from './lib/showcaseDemoData';
+import { syncGlobalPlatformAuth } from './lib/platformAuthStore';
 
 const showDesktopNotification = (title: string, body: string) => {
   if (!("Notification" in window)) {
@@ -420,21 +415,14 @@ export default function App() {
   useEffect(() => { setFengshenLoginRequest(0); }, [workspaceId]);
   const [fengshenAuthStatus, setFengshenAuthStatus] = useState<FengshenAuthStatus | null>(null);
   const [fengshenAuthEvent, setFengshenAuthEvent] = useState<FengshenAuthStatus | null>(null);
-  const { demoHidden } = useDemoDataVisibility();
 
   useEffect(() => {
     syncGlobalPlatformAuth(platformStatuses, fengshenAuthStatus);
   }, [platformStatuses, fengshenAuthStatus]);
 
-  const anyPlatformLoggedIn = hasAnyAuthenticatedPlatform(platformStatuses, fengshenAuthStatus);
-
   const [logsMap, setLogsMap] = useState<Record<string, LogEntry[]>>({});
 
-  const logs =
-    logsMap['core'] ||
-    (!anyPlatformLoggedIn && !isRunning && !demoHidden
-      ? buildDemoEngineLogs()
-      : [{ text: theme.log_init, level: "INFO" }]);
+  const logs = logsMap['core'] || [{ text: theme.log_init, level: "INFO" }];
 
   const setLogs = (updater: any, target: string = activeMenu) => {
     if (target === 'download_rider_sources' || target === 'download_shangyi_employees') target = 'core';
