@@ -23,6 +23,9 @@ class IntentTests(unittest.TestCase):
     def test_three_generation_scopes_and_dependency_catalog(self):
         values = {value['id']: value for value in catalog.generators()}
         self.assertEqual(set(values), set(catalog.GENERATORS))
+        self.assertIn('problem', values)
+        self.assertEqual(values['problem']['scope'], 'city_range')
+        self.assertEqual(values['problem']['station_rule'], 'separation')
         self.assertEqual(values['abnormal_riders']['scope'], 'all')
         self.assertEqual(values['payment_binding']['scope'], 'city_month')
         self.assertEqual(len(values['abnormal_riders']['sources']), 5)
@@ -37,6 +40,7 @@ class IntentTests(unittest.TestCase):
     def test_raw_and_generation_requests_cannot_mix_business_intent(self):
         self.assertEqual(catalog.intent({'datasets': ['payment_binding']}), {})
         for payload in ({'task_kind': 'download', 'datasets': ['payment_binding']},
+                        {'task_kind': 'download', 'datasets': ['problem']},
                         {'task_kind': 'generate', 'generation_target': 'payment_binding', 'datasets': ['payment_binding', 'delivery_fee']},
                         {'task_kind': 'generate', 'generation_target': 'unknown', 'datasets': ['unknown']},
                         {'task_kind': 'payroll_source', 'datasets': ['delivery_fee']}):
@@ -55,6 +59,14 @@ class IntentTests(unittest.TestCase):
                      'cities': ['泉州'], 'start': '2026-09-01', 'end': '2026-10-15'}
             config = service.validate_request(value, today=dt.date(2026, 10, 25))
             self.assertEqual(config['months'], ['2026-09', '2026-10'])
+            problem_value = {'task_kind': 'generate', 'generation_target': 'problem', 'datasets': ['problem'],
+                             'cities': ['泉州'], 'start': '2026-10-01', 'end': '2026-10-20',
+                             'exclude_separation': True, 'refresh_history': True}
+            problem_config = service.validate_request(problem_value, today=dt.date(2026, 10, 25))
+            self.assertEqual(problem_config['generation_target'], 'problem')
+            self.assertEqual(problem_config['task_kind'], 'generate')
+            self.assertTrue(problem_config['refresh_history'])
+            self.assertTrue(problem_config['exclude_separation'])
             with self.assertRaises(service.ValidationError): service.validate_request({**value, 'cities': []})
 
 

@@ -66,7 +66,7 @@ const SYSTEMS: Record<string, string> = {
 
 const KINDS: Record<string, string> = {
   download: '资料采集',
-  generate: '专项报表',
+  generate: '业务报表',
   approval: '价格审批',
   'price-export': '每日价格',
 };

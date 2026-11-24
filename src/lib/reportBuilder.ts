@@ -42,6 +42,34 @@ export function monthBounds(month: string): { start: string; end: string } | nul
   return { start: `${month}-01`, end: `${month}-${pad2(lastDay)}` };
 }
 
+export function computeOrderWindowBounds(
+  today: string,
+  windowDays = 60,
+): { earliest: string; latest: string } {
+  const safeDays = Math.max(1, Math.floor(windowDays || 60));
+  if (!validDate(today)) {
+    return { earliest: today || '', latest: today || '' };
+  }
+  const earliestDate = new Date(`${today}T00:00:00Z`);
+  earliestDate.setUTCDate(earliestDate.getUTCDate() - safeDays + 1);
+  return {
+    earliest: earliestDate.toISOString().slice(0, 10),
+    latest: today,
+  };
+}
+
+export function isWithinOrderWindow(
+  start: string,
+  end: string,
+  today: string,
+  windowDays = 60,
+): boolean {
+  if (!validDate(start) || !validDate(end) || start > end) return false;
+  if (!validDate(today)) return true;
+  const { earliest, latest } = computeOrderWindowBounds(today, windowDays);
+  return start >= earliest && end <= latest;
+}
+
 export function reportRange(
   report: ReportDefinition | undefined | null,
   start: string,
@@ -218,7 +246,7 @@ export function summarizeSelectedReportsScope(
   const sortedMonths = selectedMonths
     ? [...new Set(selectedMonths.filter(m => /^\d{4}-\d{2}$/.test(m)))].sort()
     : [];
-  const monthChunks = sortedMonths.length > 0 ? buildReportMonthChunks(sortedMonths, today || '') : [];
+  const rawMonthChunks = sortedMonths.length > 0 ? buildReportMonthChunks(sortedMonths, today || '') : [];
   const contiguousMonths = areMonthsContiguous(sortedMonths);
 
   if (!selectedReports.length) {
@@ -232,7 +260,7 @@ export function summarizeSelectedReportsScope(
       effectiveScope: 'none',
       range: null,
       selectedMonths: sortedMonths,
-      monthChunks,
+      monthChunks: rawMonthChunks,
       contiguousMonths,
     };
   }
@@ -251,8 +279,9 @@ export function summarizeSelectedReportsScope(
   const effectiveScope: SelectedReportsScopeSummary['effectiveScope'] = primaryScoped
     ? primaryScoped.scope
     : 'all';
+  const monthChunks = primaryScoped?.scope === 'city_month' ? rawMonthChunks : [];
   const range = primaryScoped
-    ? monthChunks.length > 0
+    ? primaryScoped.scope === 'city_month' && monthChunks.length > 0
       ? {
           start: monthChunks[0].start,
           end: monthChunks[monthChunks.length - 1].end,
@@ -288,12 +317,14 @@ export interface GenerateRunPayload {
   lanorange_full_delivery?: boolean;
   include_separation?: boolean;
   exclude_separation?: boolean;
+  refresh_history?: boolean;
   binding_platforms?: Record<string, BindingPlatform>;
 }
 
 export interface GenerateBatchOptions {
   includeSeparation?: boolean;
   excludeSeparation?: boolean;
+  refreshHistory?: boolean;
   selectedMonths?: string[];
   bindingPlatforms?: Record<string, BindingPlatform>;
 }
@@ -336,6 +367,8 @@ export function buildGenerateBatchPayloads(
     const platformField: Partial<GenerateRunPayload> = Object.keys(platformOverrides).length
       ? { binding_platforms: platformOverrides }
       : {};
+    const refreshField: Partial<GenerateRunPayload> =
+      report.id === 'problem' && options.refreshHistory ? { refresh_history: true } : {};
 
     if (isAll) {
       payloads.push({
@@ -351,7 +384,7 @@ export function buildGenerateBatchPayloads(
       continue;
     }
 
-    if (chunks.length > 0) {
+    if (report.scope === 'city_month' && chunks.length > 0) {
       for (const chunk of chunks) {
         payloads.push({
           task_kind: 'generate',
@@ -378,6 +411,7 @@ export function buildGenerateBatchPayloads(
       end: computed?.end || end,
       ...(isLanorangeTarget ? { lanorange_full_delivery: true } : {}),
       ...separationField,
+      ...refreshField,
       ...platformField,
     });
   }
@@ -399,7 +433,7 @@ export const DEFAULT_REPORT_DEFINITIONS: ReportDefinition[] = [
     label: '异常跟进',
     scope: 'city_month',
     description: '以支付绑定为基准，关联物资租用、月度 UB 账单、价格与骑手档案，定位异常待跟进名单。',
-    systems: ['风神', '蓝橙', '商翼'],
+    systems: ['风神', '蓝橙', '商翼', '本来人力'],
     sources: [],
     station_rule: 'separation',
   },
@@ -411,6 +445,15 @@ export const DEFAULT_REPORT_DEFINITIONS: ReportDefinition[] = [
     systems: ['蓝橙'],
     sources: [],
     station_rule: 'none',
+  },
+  {
+    id: 'problem',
+    label: '问题单',
+    scope: 'city_range',
+    description: '按城市与日期范围采集风神问题单并过滤取分离站点，生成问题单汇总与明细工作簿。',
+    systems: ['风神'],
+    sources: ['风神问题单（按城市日期范围采集并应用取分离站点过滤）'],
+    station_rule: 'separation',
   },
 ];
 

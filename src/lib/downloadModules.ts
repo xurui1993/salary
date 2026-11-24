@@ -117,7 +117,7 @@ export function computeDynamicScopeRequirements(
       needsDate: false,
       needsSeparationRule: false,
       autoScopeBadge: '待选择资料',
-      autoScopeDesc: '请先在 Step 01 勾选需要采集的数据表，系统将根据所选资料自动展开所需的城市与账期配置。',
+      autoScopeDesc: '请先在「01 选择资料」勾选需要采集的数据表，系统将根据所选资料自动展开所需的城市与账期配置。',
     };
   }
 
@@ -163,7 +163,7 @@ export function computeDynamicScopeRequirements(
     };
   }
 
-  // fengshen (raw collection datasets only; special reports live in dedicated 专项报表 module)
+  // fengshen (raw collection datasets only; business reports live in dedicated 业务报表 module)
 
   const needsDate = platformDatasets.some(id => !FENGSHEN_NO_DATE_DATASETS.has(id));
   const merchantOnly = platformDatasets.every(id => id === 'invitation_records' || id === 'attendance_detail');

@@ -636,7 +636,9 @@ export function StationDeductionManager({
             >
               <span>风神 / 闪购</span>
               {currentPlatform === 'fengshen' && (
-                <span className="wbx-ded-tab__count tabular-nums">{activeColumns.length}</span>
+                <span className="wbx-ded-tab__count tabular-nums" title="当前业务线可配置扣款科目数">
+                  {activeColumns.length} 项
+                </span>
               )}
             </button>
             <button
@@ -648,7 +650,9 @@ export function StationDeductionManager({
             >
               <span>小象超市</span>
               {currentPlatform === 'xiaoxiang' && (
-                <span className="wbx-ded-tab__count tabular-nums">{activeColumns.length}</span>
+                <span className="wbx-ded-tab__count tabular-nums" title="当前业务线可配置扣款科目数">
+                  {activeColumns.length} 项
+                </span>
               )}
             </button>
           </div>

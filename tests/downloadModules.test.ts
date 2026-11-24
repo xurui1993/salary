@@ -15,6 +15,7 @@ test('platform downloads exclude generated reports from all download platforms i
   assert(!moduleAcceptsDataset('payment_binding', 'fengshen'));
   assert(!moduleAcceptsDataset('abnormal_followup', 'fengshen'));
   assert(!moduleAcceptsDataset('abnormal_riders', 'fengshen'));
+  assert(!moduleAcceptsDataset('problem', 'fengshen'));
   assert(moduleAcceptsDataset('lanorange_part_price', 'lanorange'));
   assert(moduleAcceptsDataset('baize_employees', 'payout'));
   assert(moduleAcceptsDataset('benlai_employees', 'payout'));

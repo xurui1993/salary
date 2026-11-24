@@ -4,6 +4,7 @@ import {
   Compass,
   CreditCard,
   FileSpreadsheet,
+  FileWarning,
   FolderKanban,
   Layers,
   Radar,
@@ -71,6 +72,7 @@ export function DualRailSidebar({
   downloadPlatform,
   activeReportId = SPECIAL_REPORT_SUBMODULES[0].id,
   payrollSubView,
+  collapsed = false,
   isDrawerMode,
   taskFormLocked,
   platformStatuses,
@@ -81,9 +83,9 @@ export function DualRailSidebar({
   approvalPendingCount = 0,
   onExecuteAction,
   onCloseMobile,
-  onOpenPlatformDock,
 }: DualRailSidebarProps) {
   const activeGroup = getActiveNavGroup({ workspaceView, taskKind });
+  const isCollapsedRail = Boolean(collapsed && !isDrawerMode);
 
   const collectionItems: SidebarNavItem[] = [
     {
@@ -123,6 +125,7 @@ export function DualRailSidebar({
   const reportIconFor = (id: string) => {
     if (id === 'payment_binding') return <CreditCard size={15.5} />;
     if (id === 'abnormal_followup') return <UserSearch size={15.5} />;
+    if (id === 'problem') return <FileWarning size={15.5} />;
     return <FolderKanban size={15.5} />;
   };
 
@@ -162,7 +165,7 @@ export function DualRailSidebar({
       id: 'workspace:approval',
       label: '价格审批',
       icon: <BadgeDollarSign size={15.5} />,
-      active: workspaceView === 'approval',
+      active: workspaceView === 'approval' || workspaceView === 'price-export',
       action: { type: 'workspace', view: 'approval' },
       badgeText:
         approvalActiveCount > 0
@@ -180,6 +183,8 @@ export function DualRailSidebar({
       type="button"
       data-nav-key={item.id}
       disabled={taskFormLocked}
+      title={isCollapsedRail ? item.label : undefined}
+      aria-label={isCollapsedRail ? item.label : undefined}
       aria-current={item.active ? 'page' : undefined}
       className={`wbx-snav-item${item.active ? ' is-active' : ''}`}
       onClick={() => onExecuteAction(item.action)}
@@ -198,13 +203,13 @@ export function DualRailSidebar({
 
   return (
     <aside
-      className="wb-sidebar wbx-sidebar wbx-flat-sidebar"
+      className={`wb-sidebar wbx-sidebar wbx-flat-sidebar${isCollapsedRail ? ' is-collapsed' : ''}`}
       aria-label="工作台主导航"
     >
       {/* 顶部品牌区：与右侧 56px 顶栏精确对齐 */}
       <div className="wbx-flat-sidebar__brand">
         <BrandLogo
-          collapsed={false}
+          collapsed={isCollapsedRail}
           onClick={() => {
             onExecuteAction({ type: 'platform', platform: 'fengshen' });
           }}
@@ -221,7 +226,7 @@ export function DualRailSidebar({
         )}
       </div>
 
-      {/* 全展开三分栏核心业务导航：数据采集 / 专项报表 / 薪资核算 */}
+      {/* 全展开三分栏核心业务导航：数据采集 / 业务报表 / 薪资核算 */}
       <nav className="wbx-flat-sidebar__nav" aria-label="业务功能导航">
         <section className="wbx-snav-group" aria-label="数据采集">
           <div className="wbx-snav-group__head">
@@ -237,9 +242,9 @@ export function DualRailSidebar({
           </div>
         </section>
 
-        <section className="wbx-snav-group" aria-label="专项报表">
+        <section className="wbx-snav-group" aria-label="业务报表">
           <div className="wbx-snav-group__head">
-            <span className="wbx-snav-group__title">专项报表</span>
+            <span className="wbx-snav-group__title">业务报表</span>
           </div>
           <div className="wbx-snav-group__list">
             {reportItems.map(renderNavItem)}
@@ -258,7 +263,7 @@ export function DualRailSidebar({
 
       {/* 底部引擎资源状态条 */}
       <div className="wbx-flat-sidebar__footer">
-        <SidebarResourceStrip stats={systemStats} collapsed={false} />
+        <SidebarResourceStrip stats={systemStats} collapsed={isCollapsedRail} />
       </div>
     </aside>
   );

@@ -189,6 +189,32 @@ export function resolveTaskPrimaryAction(
   return null;
 }
 
+const ACTIVE_DIR_BLOCKED_STATUSES = new Set([
+  'queued',
+  'running',
+  'waiting_login',
+  'waiting_manual',
+  'cancelling',
+  'preparing',
+  'stopping',
+]);
+
+/**
+ * 判断任务行是否可在操作列展示「打开本地结果目录」快捷按钮。
+ */
+export function canOpenTaskResultDirectory(
+  task: Pick<TaskDisplayRecord, 'status' | 'kind' | 'available_files'>,
+  archived = false,
+): boolean {
+  if (archived) return false;
+  if (task.available_files > 0) return true;
+  if (ACTIVE_DIR_BLOCKED_STATUSES.has(task.status)) return false;
+  if (task.kind === 'approval' && task.status === 'success') return true;
+  if (task.kind === 'price-export') return task.available_files > 0;
+  if (task.status === 'empty') return false;
+  return ['success', 'partial', 'error', 'failed', 'interrupted', 'cancelled', 'stopped'].includes(task.status);
+}
+
 /**
  * 仅在存在真实异常、阻塞或空数据时返回一行诊断说明；健康任务返回空串以保持首列极致清爽。
  */
@@ -443,7 +469,7 @@ export function buildTaskProgressPopoverData(
   task: Pick<
     TaskDisplayRecord,
     'status' | 'created_at' | 'updated_at' | 'completed_items' | 'total_items' | 'failed_items' | 'available_files' | 'error'
-  >,
+  > & { files?: TaskDisplayRecord['files'] },
   options: {
     statusLabel: string;
     tone: 'active' | 'waiting' | 'success' | 'error' | 'muted';
@@ -457,6 +483,12 @@ export function buildTaskProgressPopoverData(
   const total = Math.max(1, task.total_items || 0);
   const completed = Math.max(0, Math.min(total, task.completed_items || 0));
   const failed = Math.max(0, task.failed_items || 0);
+  const availableFiles =
+    typeof task.available_files === 'number'
+      ? Math.max(0, task.available_files)
+      : Array.isArray(task.files)
+        ? task.files.filter((file) => file.available !== false).length
+        : 0;
   const platformPrefix = options.platformName ? `${options.platformName}` : '来源平台';
 
   let currentNode = options.diagNote?.text || '';
@@ -483,7 +515,7 @@ export function buildTaskProgressPopoverData(
         currentNode = `已完成 ${completed} 项，${failed || 1} 项待处理，已有文件可先行下载`;
         break;
       case 'success':
-        currentNode = `全部 ${total} 项已采集完成，归档 ${task.available_files} 个可下载文件`;
+        currentNode = `全部 ${total} 项已采集完成，归档 ${availableFiles} 个可下载文件`;
         break;
       case 'cancelled':
         currentNode = '任务已手动停止，历史执行记录与已有文件已保留';
@@ -519,11 +551,11 @@ export function buildTaskProgressPopoverData(
       value: `${failed} 项失败`,
       tone: 'danger',
     });
-  } else if (task.available_files > 0 || task.status === 'success') {
+  } else if (availableFiles > 0 || task.status === 'success') {
     metrics.push({
       label: '产出文件',
-      value: `${task.available_files} 个`,
-      tone: task.available_files > 0 ? 'accent' : 'default',
+      value: `${availableFiles} 个`,
+      tone: availableFiles > 0 ? 'accent' : 'default',
     });
   }
 

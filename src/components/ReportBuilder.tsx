@@ -13,15 +13,19 @@ import {
   buildGenerateBatchPayloads,
   buildRecentReportMonths,
   buildReportMonthChunks,
+  computeOrderWindowBounds,
   deriveSelectedMonthsFromRange,
+  isWithinOrderWindow,
   summarizeSelectedReportsScope,
   toggleReportMonthSelection,
   toggleReportSelection,
   type ReportDefinition,
 } from '../lib/reportBuilder';
+import { computeDateRangeSpanDays } from '../lib/workbench';
 import { useStationDirectory } from '../lib/useStationDirectory';
 import { CityStationCount } from './CityStationCount';
 import { BindingPlatformConfig } from './BindingPlatformConfig';
+import { WorkbenchDatePicker } from './WorkbenchDatePicker';
 
 interface CityItem {
   id: string;
@@ -65,6 +69,16 @@ export interface ReportBuilderProps {
   bindingPlatforms?: Record<string, string>;
   onBindingPlatformsChange?: (next: Record<string, string>) => void;
   bindingPlatformsSaving?: boolean;
+  refreshHistory?: boolean;
+  onRefreshHistory?: (value: boolean) => void;
+  orderWindowDays?: number;
+}
+
+function shiftIsoDate(ymd: string, deltaDays: number): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd;
+  const date = new Date(`${ymd}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + deltaDays);
+  return date.toISOString().slice(0, 10);
 }
 
 function reportScopeLabel(scope: ReportDefinition['scope']): string {
@@ -102,7 +116,35 @@ export function ReportBuilder(props: ReportBuilderProps) {
   );
   const range = scopeSummary.range;
   const monthChunks =
-    activeMonths.length > 0 ? buildReportMonthChunks(activeMonths, props.today) : [];
+    scopeSummary.effectiveScope === 'city_month' && activeMonths.length > 0
+      ? buildReportMonthChunks(activeMonths, props.today)
+      : [];
+  const isCityRangeScope = scopeSummary.effectiveScope === 'city_range';
+  const isProblemReport = selectedReports.some(report => report.id === 'problem');
+  const effectiveWindowDays = props.orderWindowDays || 60;
+  const orderWindowBounds = computeOrderWindowBounds(props.today, effectiveWindowDays);
+  const minRangeDate = isProblemReport ? orderWindowBounds.earliest : undefined;
+  const isDateInOrderWindow =
+    !isCityRangeScope ||
+    !isProblemReport ||
+    isWithinOrderWindow(props.start, props.end, props.today, effectiveWindowDays);
+  const rangeSpanDays =
+    isCityRangeScope && range ? computeDateRangeSpanDays(range.start, range.end) : null;
+  const clampRangeStart = (candidate: string) =>
+    minRangeDate && candidate < minRangeDate ? minRangeDate : candidate;
+  const rangePresets = isCityRangeScope
+    ? [
+        { id: '7d', label: '近7天', start: clampRangeStart(shiftIsoDate(props.today, -6)), end: props.today },
+        { id: '15d', label: '近15天', start: clampRangeStart(shiftIsoDate(props.today, -14)), end: props.today },
+        { id: '30d', label: '近30天', start: clampRangeStart(shiftIsoDate(props.today, -29)), end: props.today },
+        {
+          id: 'mtd',
+          label: '本月至今',
+          start: clampRangeStart(`${props.today.slice(0, 7)}-01`),
+          end: props.today,
+        },
+      ]
+    : [];
 
   const effectiveExcludeSeparation =
     props.excludeSeparation !== undefined
@@ -216,8 +258,12 @@ export function ReportBuilder(props: ReportBuilderProps) {
     : scopeSummary.needsCity && !selectedCities.length
       ? '请至少选择 1 个处理城市'
       : scopeSummary.needsDate && !range
-        ? '请选择有效的业务月份'
-        : '';
+        ? isCityRangeScope
+          ? '请选择有效的业务日期'
+          : '请选择有效的业务月份'
+        : isCityRangeScope && !isDateInOrderWindow
+          ? `问题单仅支持最近 ${effectiveWindowDays} 天（${orderWindowBounds.earliest} 至 ${orderWindowBounds.latest}）`
+          : '';
 
   const plannedBatches = buildGenerateBatchPayloads(
     selectedReports,
@@ -227,7 +273,8 @@ export function ReportBuilder(props: ReportBuilderProps) {
     props.today,
     {
       excludeSeparation: effectiveExcludeSeparation,
-      selectedMonths: activeMonths,
+      refreshHistory: props.refreshHistory,
+      selectedMonths: scopeSummary.effectiveScope === 'city_month' ? activeMonths : undefined,
     },
   );
   const plannedBatchCount = plannedBatches.length;
@@ -253,7 +300,7 @@ export function ReportBuilder(props: ReportBuilderProps) {
   const monthStepNumber = singleMode ? '02' : '03';
 
   return (
-    <section className={`rb-workbench${singleMode ? ' is-single-module' : ''}`} aria-label="专项报表生成">
+    <section className={`rb-workbench${singleMode ? ' is-single-module' : ''}`} aria-label="业务报表生成">
       <div className="rb-main">
         {singleMode && singleReport ? (
           !scopeSummary.allGlobal && scopeSummary.sources.length > 0 ? (
@@ -325,7 +372,7 @@ export function ReportBuilder(props: ReportBuilderProps) {
                 </span>
                 {selectedReports.length === 0 ? (
                   <span className="rb-dropdown-placeholder">
-                    请选择需要生成的专项报表（支持多选）
+                    请选择需要生成的业务报表（支持多选）
                   </span>
                 ) : (
                   <div className="rb-dropdown-chips">
@@ -354,7 +401,7 @@ export function ReportBuilder(props: ReportBuilderProps) {
                 className="rb-report-dropdown-menu"
                 role="listbox"
                 aria-multiselectable={!!props.onSelectIds}
-                aria-label="专项报表下拉列表"
+                aria-label="业务报表下拉列表"
               >
                 {reports.length > 4 && (
                   <label className="rb-dropdown-search">
@@ -699,16 +746,30 @@ export function ReportBuilder(props: ReportBuilderProps) {
           )
         )}
 
-        {/* 业务月份（近3个月多选 + 风神样式排除取分离站点开关） */}
+        {/* 业务月份 / 业务日期 + 风神样式排除取分离站点 / 强制刷新历史问题单 */}
         {selectedReports.length > 0 && scopeSummary.needsDate && (
-          <section className={`${singleMode ? 'wbx-card wbx-step' : 'wb-step-card'} rb-step-card`} aria-labelledby="report-month-label">
+          <section
+            className={`${singleMode ? 'wbx-card wbx-step' : 'wb-step-card'} rb-step-card`}
+            aria-labelledby="report-month-label"
+          >
             <div className="wb-step-card-header">
               <div className="wb-step-badge">
                 <span className="wb-step-number">{monthStepNumber}</span>
                 <span id="report-month-label" className="wb-step-title">
-                  业务月份
+                  {isCityRangeScope ? '业务日期' : '业务月份'}
                 </span>
-                {activeMonths.length > 1 ? (
+                {isCityRangeScope ? (
+                  range ? (
+                    <span className="wb-step-count-pill tabular-nums">
+                      {range.start} ~ {range.end}
+                      {rangeSpanDays ? `（共 ${rangeSpanDays} 天）` : ''}
+                    </span>
+                  ) : (
+                    <span className="wb-step-count-pill">
+                      近 {effectiveWindowDays} 天内任意起止日期
+                    </span>
+                  )
+                ) : activeMonths.length > 1 ? (
                   <span className="wb-step-count-pill tabular-nums">
                     已选 {activeMonths.length} 个月（{activeMonths.join('、')}）
                   </span>
@@ -721,56 +782,114 @@ export function ReportBuilder(props: ReportBuilderProps) {
                 )}
               </div>
 
-              {allowedMonthCodes.length > 1 && (
-                <div className="wb-city-preset-group">
-                  <button
-                    type="button"
-                    className={`wb-city-preset-btn ${allMonthsSelected ? 'is-active' : ''}`}
-                    disabled={locked}
-                    onClick={() =>
-                      applyMonths(
-                        allMonthsSelected ? [allowedMonthCodes[0]] : [...allowedMonthCodes],
-                      )
-                    }
-                  >
-                    {allMonthsSelected ? '仅选最新月' : `全选近${allowedMonthCodes.length}月`}
-                  </button>
+              {isCityRangeScope ? (
+                <div className="wb-city-preset-group" role="group" aria-label="常用日期范围">
+                  {rangePresets.map(preset => {
+                    const active = props.start === preset.start && props.end === preset.end;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        className={`wb-city-preset-btn ${active ? 'is-active' : ''}`}
+                        disabled={locked}
+                        onClick={() => {
+                          props.onStart(preset.start);
+                          props.onEnd(preset.end);
+                        }}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
                 </div>
+              ) : (
+                allowedMonthCodes.length > 1 && (
+                  <div className="wb-city-preset-group">
+                    <button
+                      type="button"
+                      className={`wb-city-preset-btn ${allMonthsSelected ? 'is-active' : ''}`}
+                      disabled={locked}
+                      onClick={() =>
+                        applyMonths(
+                          allMonthsSelected ? [allowedMonthCodes[0]] : [...allowedMonthCodes],
+                        )
+                      }
+                    >
+                      {allMonthsSelected ? '仅选最新月' : `全选近${allowedMonthCodes.length}月`}
+                    </button>
+                  </div>
+                )
               )}
             </div>
 
-            <div
-              className="wb-month-grid-3"
-              role="group"
-              aria-labelledby="report-month-label"
-            >
-              {recentMonths.map(item => {
-                const selected = activeMonths.includes(item.month);
-                return (
-                  <button
-                    key={item.month}
-                    type="button"
+            {isCityRangeScope ? (
+              <div className="wbx-period-rangebar rb-period-rangebar">
+                <div className="rb-date-range-picker-group">
+                  <span className="wbx-period-rangebar__label">起止日期</span>
+                  <WorkbenchDatePicker
+                    mode="range"
+                    compact
+                    prefixLabel="日期区间"
+                    activeHighlight={Boolean(range)}
+                    ariaLabel="业务起止日期"
+                    placeholder="选择起止日期"
+                    value={props.start}
+                    rangeStart={props.start}
+                    rangeEnd={props.end}
+                    min={minRangeDate}
+                    max={props.today}
+                    today={props.today}
                     disabled={locked}
-                    aria-pressed={selected}
-                    title={`${item.start} 至 ${item.end}（支持多选）`}
-                    onClick={() => handleToggleMonth(item.month)}
-                    className={`wb-month-card-3 tabular-nums ${selected ? 'is-selected' : ''}`}
-                  >
-                    <span className="wb-month-chip-left">
-                      <span className="wb-month-check-box" aria-hidden="true">
-                        {selected && '✓'}
+                    onChange={nextDate => {
+                      props.onStart(nextDate);
+                      props.onEnd(nextDate);
+                    }}
+                    onRangeChange={(nextStart, nextEnd) => {
+                      props.onStart(nextStart);
+                      props.onEnd(nextEnd);
+                    }}
+                  />
+                </div>
+                {isProblemReport && (
+                  <span className="rb-date-range-meta tabular-nums">
+                    可选窗口：{orderWindowBounds.earliest} 至 {orderWindowBounds.latest}（近 {effectiveWindowDays} 天）
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div
+                className="wb-month-grid-3"
+                role="group"
+                aria-labelledby="report-month-label"
+              >
+                {recentMonths.map(item => {
+                  const selected = activeMonths.includes(item.month);
+                  return (
+                    <button
+                      key={item.month}
+                      type="button"
+                      disabled={locked}
+                      aria-pressed={selected}
+                      title={`${item.start} 至 ${item.end}（支持多选）`}
+                      onClick={() => handleToggleMonth(item.month)}
+                      className={`wb-month-card-3 tabular-nums ${selected ? 'is-selected' : ''}`}
+                    >
+                      <span className="wb-month-chip-left">
+                        <span className="wb-month-check-box" aria-hidden="true">
+                          {selected && '✓'}
+                        </span>
+                        <span className="wb-month-card-title">{item.label}</span>
                       </span>
-                      <span className="wb-month-card-title">{item.label}</span>
-                    </span>
-                    <span className="wb-month-chip-range">
-                      {item.start.slice(5)} ~ {item.end.slice(5)}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+                      <span className="wb-month-chip-range">
+                        {item.start.slice(5)} ~ {item.end.slice(5)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
-            {monthChunks.length > 1 && (
+            {!isCityRangeScope && monthChunks.length > 1 && (
               <p className="mt-2.5 text-xs leading-relaxed text-sky-700">
                 已多选非连续月份（{activeMonths.join('、')}），提交后将自动拆分为 {monthChunks.length}{' '}
                 个月度批次依次生成。
@@ -779,28 +898,56 @@ export function ReportBuilder(props: ReportBuilderProps) {
 
             {!range && (
               <small role="alert" className="rb-invalid">
-                请在上方选择近 3 个月内的有效业务月份。
+                {isCityRangeScope
+                  ? '请选择有效的业务起止日期（开始日期不能晚于结束日期）。'
+                  : '请在上方选择近 3 个月内的有效业务月份。'}
               </small>
             )}
 
-            {scopeSummary.needsSeparation && (
-              <div className="wb-date-rule-bar" role="group" aria-label="报表站点范围">
-                <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-700">
-                  <input
-                    type="checkbox"
-                    aria-label="排除取分离站点"
-                    checked={effectiveExcludeSeparation}
-                    disabled={locked}
-                    onChange={event => handleExcludeSeparationChange(event.target.checked)}
-                    className="accent-sky-700 h-3.5 w-3.5 rounded border-slate-300"
-                  />
-                  <span>
-                    排除取分离站点{' '}
-                    <span className="font-normal text-slate-400">
-                      （不勾选则下载全部站点）
+            {range && !isDateInOrderWindow && (
+              <small role="alert" className="rb-invalid">
+                问题单仅支持最近 {effectiveWindowDays} 天（{orderWindowBounds.earliest} 至 {orderWindowBounds.latest}），请调整日期区间。
+              </small>
+            )}
+
+            {(scopeSummary.needsSeparation || isProblemReport) && (
+              <div className="wb-date-rule-bar flex-wrap" role="group" aria-label="报表过滤与重采选项">
+                {scopeSummary.needsSeparation && (
+                  <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-700">
+                    <input
+                      type="checkbox"
+                      aria-label="排除取分离站点"
+                      checked={effectiveExcludeSeparation}
+                      disabled={locked}
+                      onChange={event => handleExcludeSeparationChange(event.target.checked)}
+                      className="accent-sky-700 h-3.5 w-3.5 rounded border-slate-300"
+                    />
+                    <span>
+                      排除取分离站点{' '}
+                      <span className="font-normal text-slate-400">
+                        （不勾选则下载全部站点）
+                      </span>
                     </span>
-                  </span>
-                </label>
+                  </label>
+                )}
+                {isProblemReport && (
+                  <label className="flex items-center gap-2 cursor-pointer font-medium text-slate-700">
+                    <input
+                      type="checkbox"
+                      aria-label="强制刷新24小时内历史问题单"
+                      checked={Boolean(props.refreshHistory)}
+                      disabled={locked}
+                      onChange={event => props.onRefreshHistory?.(event.target.checked)}
+                      className="accent-sky-700 h-3.5 w-3.5 rounded border-slate-300"
+                    />
+                    <span>
+                      强制刷新24小时内历史问题单{' '}
+                      <span className="font-normal text-slate-400">
+                        （已结案历史日期默认复用缓存，勾选后重新抓取）
+                      </span>
+                    </span>
+                  </label>
+                )}
               </div>
             )}
           </section>
@@ -924,33 +1071,46 @@ export function ReportBuilder(props: ReportBuilderProps) {
               </div>
             )}
             <div className="wb-compact-scope-row">
-              <span className="wb-compact-scope-k">业务账期</span>
+              <span className="wb-compact-scope-k">{isCityRangeScope ? '业务日期' : '业务账期'}</span>
               <span className="wb-compact-scope-v wb-compact-scope-period tabular-nums">
                 {!selectedReports.length
                   ? '待选择'
                   : scopeSummary.allGlobal
                     ? '当前全量（不限账期）'
-                    : monthChunks.length > 1
-                      ? (
-                        <>
-                          <span className="font-mono">{activeMonths.join('、')}</span>
-                          <span className="wb-compact-period-badge">
-                            共 {activeMonths.length} 个月
-                          </span>
-                        </>
-                      )
-                      : range
+                    : isCityRangeScope
+                      ? range
                         ? (
                           <>
                             <span className="font-mono">
-                              {range.start.slice(5)} ~ {range.end.slice(5)}
+                              {range.start} ~ {range.end}
                             </span>
-                            {range.months > 0 && (
-                              <span className="wb-compact-period-badge">共 {range.months} 个月</span>
+                            {rangeSpanDays && (
+                              <span className="wb-compact-period-badge">共 {rangeSpanDays} 天</span>
                             )}
                           </>
                         )
-                        : '无效月份'}
+                        : '无效日期'
+                      : monthChunks.length > 1
+                        ? (
+                          <>
+                            <span className="font-mono">{activeMonths.join('、')}</span>
+                            <span className="wb-compact-period-badge">
+                              共 {activeMonths.length} 个月
+                            </span>
+                          </>
+                        )
+                        : range
+                          ? (
+                            <>
+                              <span className="font-mono">
+                                {range.start.slice(5)} ~ {range.end.slice(5)}
+                              </span>
+                              {range.months > 0 && (
+                                <span className="wb-compact-period-badge">共 {range.months} 个月</span>
+                              )}
+                            </>
+                          )
+                          : '无效月份'}
               </span>
             </div>
             <div className="wb-compact-scope-row">
@@ -990,7 +1150,11 @@ export function ReportBuilder(props: ReportBuilderProps) {
             <button
               type="button"
               className="wb-compact-submit-btn wb-rail-submit-btn"
-              disabled={props.disabled || !selectedReports.length || (scopeSummary.needsDate && !range)}
+              disabled={
+                props.disabled ||
+                !selectedReports.length ||
+                (scopeSummary.needsDate && (!range || !isDateInOrderWindow))
+              }
               onClick={props.onSubmit}
             >
               <FileSpreadsheet size={16} />

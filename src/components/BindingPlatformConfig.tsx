@@ -184,7 +184,7 @@ export function BindingPlatformConfig({
             </div>
           ) : (
             <span className="rb-bind-caption">
-              未在左侧展示的城市默认归入天津商翼，可通过新增或删除快速调整
+              当前未勾选处理城市（以下为全局各城默认归属，未在左侧展示的城市默认归入天津商翼 / 白泽商翼）
             </span>
           )}
         </div>
@@ -219,6 +219,12 @@ export function BindingPlatformConfig({
             lane.key === '本来人力' ? visiblePartition.benlai : visiblePartition.shangyi;
           const totalLaneCount =
             lane.key === '本来人力' ? allPartition.benlai.length : allPartition.shangyi.length;
+          const selectedInLaneCount =
+            activeSelectedCities.length > 0
+              ? (lane.key === '本来人力' ? allPartition.benlai : allPartition.shangyi).filter(c =>
+                  activeSelectedCities.includes(c.name),
+                ).length
+              : 0;
           const candidateCities =
             lane.key === '本来人力' ? allPartition.shangyi : allPartition.benlai;
           const isAddOpen = addLane === lane.key;
@@ -231,9 +237,17 @@ export function BindingPlatformConfig({
             >
               <div className="rb-bind-lane__head">
                 <div className="rb-bind-lane__heading">
-                  <span className="rb-bind-lane__title">{lane.title}</span>
+                  <span className="rb-bind-lane__title">
+                    {lane.title}
+                    {lane.key === '商翼' && (
+                      <span className="rb-bind-lane__alias" title="对应顶栏平台连接中的「白泽商翼」">
+                        （白泽商翼）
+                      </span>
+                    )}
+                  </span>
                   <span className="rb-bind-lane__count tabular-nums">
                     {totalLaneCount} 城
+                    {activeSelectedCities.length > 0 && ` · 本次已选 ${selectedInLaneCount} 城`}
                   </span>
                 </div>
 
@@ -300,24 +314,42 @@ export function BindingPlatformConfig({
               <div className="rb-bind-lane__body">
                 {laneCities.length > 0 ? (
                   <div className="rb-bind-chip-list">
-                    {laneCities.map(city => (
-                      <span
-                        key={city.id}
-                        className={`rb-bind-tag is-platform-${lane.tone}`}
-                      >
-                        <span className="rb-bind-tag__name">{city.name}</span>
-                        <button
-                          type="button"
-                          className="rb-bind-tag__remove"
-                          aria-label={`从${lane.title}删除${city.name}`}
-                          title={`删除后将自动归入「${lane.oppositeTitle}」`}
-                          disabled={controlsDisabled}
-                          onClick={() => handleMoveCity(city.name, lane.oppositeKey)}
+                    {laneCities.map(city => {
+                      const isCityActive =
+                        activeSelectedCities.length === 0 ||
+                        activeSelectedCities.includes(city.name);
+                      return (
+                        <span
+                          key={city.id}
+                          className={`rb-bind-tag is-platform-${lane.tone}${
+                            activeSelectedCities.length > 0
+                              ? isCityActive
+                                ? ' is-selected-city'
+                                : ' is-unselected-city'
+                              : ''
+                          }`}
+                          title={
+                            activeSelectedCities.length > 0
+                              ? isCityActive
+                                ? `${city.name}（已纳入本次报表处理范围）`
+                                : `${city.name}（未勾选，本次执行不处理）`
+                              : `${city.name}（默认归属${lane.title}）`
+                          }
                         >
-                          <X size={12} aria-hidden="true" />
-                        </button>
-                      </span>
-                    ))}
+                          <span className="rb-bind-tag__name">{city.name}</span>
+                          <button
+                            type="button"
+                            className="rb-bind-tag__remove"
+                            aria-label={`从${lane.title}删除${city.name}`}
+                            title={`删除后将自动归入「${lane.oppositeTitle}」`}
+                            disabled={controlsDisabled}
+                            onClick={() => handleMoveCity(city.name, lane.oppositeKey)}
+                          >
+                            <X size={12} aria-hidden="true" />
+                          </button>
+                        </span>
+                      );
+                    })}
                   </div>
                 ) : (
                   <p className="rb-bind-lane__empty">

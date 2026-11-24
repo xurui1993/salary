@@ -194,6 +194,8 @@ test('lighthouse period presets stay within yesterday and expose blocked future 
 
 test('built-in scenario presets and dataset system attribution map to 2-char system names', () => {
   assert.equal(BUILTIN_DOWNLOAD_SCENARIOS.length, 3);
+  const monitor = BUILTIN_DOWNLOAD_SCENARIOS.find(s => s.id === 'shangou_daily_monitor');
+  assert.deepEqual(monitor?.datasets, ['rider_detail', 'fraud']);
   assert.equal(inferDatasetSystemTag('delivery_fee'), '风神');
   assert.equal(inferDatasetSystemTag('lanorange_rider_profile'), '蓝橙');
   assert.equal(inferDatasetSystemTag('shangyi_employees'), '商翼');
@@ -202,10 +204,10 @@ test('built-in scenario presets and dataset system attribution map to 2-char sys
 });
 
 test('report generation cards and payroll mode cards expose structured metadata and localized labels', () => {
-  assert.equal(GENERATION_REPORT_CARDS.length, 3);
+  assert.equal(GENERATION_REPORT_CARDS.length, 4);
   assert.deepEqual(
     GENERATION_REPORT_CARDS.map(item => item.id),
-    ['payment_binding', 'abnormal_followup', 'abnormal_riders'],
+    ['payment_binding', 'abnormal_followup', 'abnormal_riders', 'problem'],
   );
   assert.equal(PAYROLL_MODE_CARDS.length, 3);
   assert.ok(PAYROLL_MODE_CARDS.every(card => !card.subtitle.toLowerCase().includes('template')));
@@ -271,7 +273,7 @@ test('Scheme B header context and multi-platform status cluster map module group
     iconKey: 'compass',
   });
   assert.equal(getHeaderModuleContext('create', 'download', 'payout', false).title, '发薪平台');
-  assert.equal(getHeaderModuleContext('create', 'generate', 'fengshen', false).groupLabel, '专项报表');
+  assert.equal(getHeaderModuleContext('create', 'generate', 'fengshen', false).groupLabel, '业务报表');
   assert.equal(getHeaderModuleContext('history', 'download', 'fengshen', true).groupLabel, '任务记录');
 
   const cluster = getPlatformStatusCluster(
@@ -776,7 +778,7 @@ test('multi-month selection toggles, detects continuity, and builds Fengshen/Xia
   assert.equal(lanorangeMultiRail.periodSpanBadge, '共 2 个月');
 });
 
-test('Fengshen 全部资料 category filter excludes extracted 专项报表 and preserves raw dataset counts', () => {
+test('Fengshen 全部资料 category filter excludes extracted 业务报表 and preserves raw dataset counts', () => {
   const sampleDatasets = [
     { id: 'delivery_fee' },
     { id: 'penalty' },
@@ -786,19 +788,18 @@ test('Fengshen 全部资料 category filter excludes extracted 专项报表 and 
     { id: 'attendance_detail' },
     { id: 'invitation_records' },
     { id: 'fraud' },
-    { id: 'problem' },
     { id: 'delivery_waybill' },
     { id: 'rider_info' },
     { id: 'goods_rent' },
   ];
   assert.equal(FENGSHEN_DATASET_CATEGORIES[0].label, '全部资料');
-  assert.equal(FENGSHEN_DATASET_CATEGORIES.some(c => c.label === '专项报表'), false);
-  assert.equal(countFengshenDatasetsByCategory(sampleDatasets, 'all'), 12);
+  assert.equal(FENGSHEN_DATASET_CATEGORIES.some(c => c.label === '专项报表' || c.label === '业务报表'), false);
+  assert.equal(countFengshenDatasetsByCategory(sampleDatasets, 'all'), 11);
   assert.deepEqual(
     filterFengshenDatasetsByCategory(sampleDatasets, 'settlement').map(d => d.id),
     ['delivery_fee', 'penalty', 'rider_monthly', 'receive_account'],
   );
-  assert.equal(countFengshenDatasetsByCategory(sampleDatasets, 'orders'), 3);
+  assert.equal(countFengshenDatasetsByCategory(sampleDatasets, 'orders'), 2);
   assert.equal(countFengshenDatasetsByCategory(sampleDatasets, 'attendance'), 3);
   assert.equal(countFengshenDatasetsByCategory(sampleDatasets, 'profile'), 2);
 });
@@ -944,7 +945,7 @@ test('flat 2-module primary navigation and embedded sub-view headers reflect upd
   );
   assert.equal(
     getPrimaryHeaderContext({ workspaceView: 'create', taskKind: 'generate', downloadPlatform: 'fengshen' }).groupLabel,
-    '专项报表',
+    '业务报表',
   );
   assert.equal(
     getPrimaryHeaderContext({ workspaceView: 'history', taskKind: 'download', downloadPlatform: 'fengshen' }).title,

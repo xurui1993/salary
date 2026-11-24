@@ -442,7 +442,7 @@ export function SystemConnections({
                   const badge = getPlatformCardBadge(st, pendingActions[key]);
                   const accountLine = [st.account_label, st.organization].filter(Boolean).join(' · ');
                   const baizeAccountHint =
-                    key === 'baize' && baizeAccount?.account_type
+                    key === 'baize' && ready && baizeAccount?.account_type
                       ? `${baizeAccount.account_type === 'shanggou' ? '闪购业务账户' : '小象业务账户'}${
                           baizeAccount.region_text ? `（${baizeAccount.region_text}）` : ''
                         }`

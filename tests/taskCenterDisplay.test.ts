@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildTaskProgressPopoverData,
   buildTaskTimelineSteps,
+  canOpenTaskResultDirectory,
   cleanTaskTitle,
   computeDatePresetRange,
   computeTaskDiagnosticNote,
@@ -100,6 +101,39 @@ test('resolveTaskPrimaryAction converges to a single contextual CTA without dupl
   assert.equal(
     resolveTaskPrimaryAction({ status: 'success', kind: 'download', available_files: 1, failed_items: 0 }, true)?.type,
     'restore',
+  );
+
+  assert.equal(
+    canOpenTaskResultDirectory({ status: 'success', kind: 'download', available_files: 3 }),
+    true,
+  );
+  assert.equal(
+    canOpenTaskResultDirectory({ status: 'partial', kind: 'download', available_files: 2 }),
+    true,
+  );
+  assert.equal(
+    canOpenTaskResultDirectory({ status: 'error', kind: 'download', available_files: 0 }),
+    true,
+  );
+  assert.equal(
+    canOpenTaskResultDirectory({ status: 'running', kind: 'download', available_files: 0 }),
+    false,
+  );
+  assert.equal(
+    canOpenTaskResultDirectory({ status: 'running', kind: 'download', available_files: 2 }),
+    true,
+  );
+  assert.equal(
+    canOpenTaskResultDirectory({ status: 'empty', kind: 'download', available_files: 0 }),
+    false,
+  );
+  assert.equal(
+    canOpenTaskResultDirectory({ status: 'success', kind: 'approval', available_files: 0 }),
+    true,
+  );
+  assert.equal(
+    canOpenTaskResultDirectory({ status: 'success', kind: 'download', available_files: 3 }, true),
+    false,
   );
 });
 

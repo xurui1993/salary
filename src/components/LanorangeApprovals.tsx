@@ -365,6 +365,19 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
           <span>审批结果回执</span>
           <span className="wbx-ap-tab__count tabular-nums">{displayHistory.length}</span>
         </button>
+        {onSwitchView && (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={false}
+            className="wbx-ap-tab"
+            title="切换至蓝橙待审每日价格导出工作台"
+            onClick={() => onSwitchView('price-export')}
+          >
+            <Download size={15} className="wbx-ap-tab__icon" aria-hidden="true" />
+            <span>待审每日价格导出</span>
+          </button>
+        )}
       </div>
 
       <div className="wbx-ap-topbar__right">
@@ -495,7 +508,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
             disabled={!selected.length || !!command || active || !!attempt || listBusy}
             onClick={() => void makePreview()}
           >
-            {command === 'preview' ? '正在核对明细…' : `预览已选 (${selected.length})`}
+            {command === 'preview' ? '正在核对明细…' : `预览并批量审批 (${selected.length})`}
           </button>
         </div>
       </div>

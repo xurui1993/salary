@@ -16,6 +16,7 @@ import {
   buildGenerateBatchPayloads,
   buildUnifiedSubmissionPayloads,
   deriveSelectedMonthsFromRange,
+  isWithinOrderWindow,
   mergeAvailableReports,
   type ReportDefinition,
   type BindingPlatform,
@@ -348,13 +349,21 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     if (primary.start <= primary.end) return primary;
     return computeMonthSelectionRange(recent[1], today, { capAtYesterday: forXiaoxiang });
   };
-  const [start, setStart] = useState(() => taskKind === 'generate' ? computeBillingPeriodRange('last_full_month', shanghaiToday()).start : defaultMonthRange(platform === 'xiaoxiang').start);
-  const [end, setEnd] = useState(() => taskKind === 'generate' ? computeBillingPeriodRange('last_full_month', shanghaiToday()).end : defaultMonthRange(platform === 'xiaoxiang').end);
+  const [start, setStart] = useState(() =>
+    taskKind === 'generate'
+      ? computeBillingPeriodRange(currentReportId === 'problem' ? 'current_month_to_date' : 'last_full_month', shanghaiToday()).start
+      : defaultMonthRange(platform === 'xiaoxiang').start,
+  );
+  const [end, setEnd] = useState(() =>
+    taskKind === 'generate'
+      ? computeBillingPeriodRange(currentReportId === 'problem' ? 'current_month_to_date' : 'last_full_month', shanghaiToday()).end
+      : defaultMonthRange(platform === 'xiaoxiang').end,
+  );
   const [refreshHistory, setRefreshHistory] = useState(false);
   const [waybillAllCitySend, setWaybillAllCitySend] = useState(false);
   const [selectedMonths, setSelectedMonths] = useState<string[]>(() => [
     taskKind === 'generate'
-      ? computeBillingPeriodRange('last_full_month', shanghaiToday()).start.slice(0, 7)
+      ? computeBillingPeriodRange(currentReportId === 'problem' ? 'current_month_to_date' : 'last_full_month', shanghaiToday()).start.slice(0, 7)
       : defaultMonthRange(platform === 'xiaoxiang').start.slice(0, 7),
   ]);
   const [lanorangeMonths, setLanorangeMonths] = useState<string[]>(() => [defaultMonthRange(platform === 'xiaoxiang').start.slice(0, 7)]);
@@ -500,8 +509,11 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     if (savedScope) {
       setCities(savedScope.cities); setStart(savedScope.start); setEnd(savedScope.end); setSelectedMonths(savedScope.selectedMonths); setLanorangeMonths(savedScope.selectedMonths); setIncludeSeparation(savedScope.includeSeparation); setExcludeSeparation(savedScope.excludeSeparation); setXiaoxiangAllDates(savedScope.allDates);
     } else if (taskKind === 'generate') {
-      const period = computeBillingPeriodRange('last_full_month', shanghaiToday());
-      setCities([]); setStart(period.start); setEnd(period.end); setSelectedMonths([period.start.slice(0, 7)]); setIncludeSeparation(false); setExcludeSeparation(true); setXiaoxiangAllDates(false);
+      const period = computeBillingPeriodRange(
+        currentReportId === 'problem' ? 'current_month_to_date' : 'last_full_month',
+        shanghaiToday(),
+      );
+      setCities([]); setStart(period.start); setEnd(period.end); setSelectedMonths([period.start.slice(0, 7)]); setIncludeSeparation(false); setExcludeSeparation(true); setXiaoxiangAllDates(false); setRefreshHistory(false);
     } else {
       const range = defaultMonthRange(platform === 'xiaoxiang');
       const initialMonth = range.start.slice(0, 7);
@@ -1411,14 +1423,23 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
         shanghaiToday(),
         {
           excludeSeparation,
-          selectedMonths: reportActiveMonths.length > 0 ? reportActiveMonths : undefined,
+          refreshHistory: activeReport.id === 'problem' ? refreshHistory : undefined,
+          selectedMonths:
+            activeReport.scope === 'city_month' && reportActiveMonths.length > 0
+              ? reportActiveMonths
+              : undefined,
           bindingPlatforms: effectiveBindingPlatforms,
         },
       )
     : [];
+  const reportRangeWithinWindow =
+    activeReport?.scope !== 'city_range' ||
+    activeReport.id !== 'problem' ||
+    isWithinOrderWindow(start, end, shanghaiToday(), orderWindowDays);
   const reportCanSubmit = Boolean(
     activeReport &&
-    (activeReport.scope === 'all' || (cities.length > 0 && reportPayloads.length > 0 && validDates)),
+    (activeReport.scope === 'all' ||
+      (cities.length > 0 && reportPayloads.length > 0 && validDates && reportRangeWithinWindow)),
   );
   const singleReportSelection = reportPayloads.length === 1 ? (reportPayloads[0] as CreateSelection) : undefined;
   const singleReportKey = singleReportSelection ? selectionKey(singleReportSelection) : '';
@@ -1467,7 +1488,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
         selectRun(lastRun);
         void refreshRef.current();
       } catch (error) {
-        setRequestError(error instanceof Error ? error.message : '专项报表提交失败，请刷新记录查看后再重试');
+        setRequestError(error instanceof Error ? error.message : '业务报表提交失败，请刷新记录查看后再重试');
       } finally {
         creatingRef.current = false;
         setCreating(false);
@@ -1665,26 +1686,45 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                   monthlyDatasets.length * Math.max(1, monthPreview.length)
                 ) +
                 (hasAbnormalRiders ? 1 : 0);
+  const effectiveRailPlatform =
+    platform && activeDatasets.length === 0 && activePlatformCount === 1 && activePlatformList[0]
+      ? activePlatformList[0]
+      : platform;
+  const railPayoutOnly =
+    effectiveRailPlatform === 'payout' || (!effectiveRailPlatform && (payoutBoth || baizeOnly || benlaiOnly));
+  const railXiaoxiangOnly =
+    effectiveRailPlatform
+      ? effectiveRailPlatform === 'xiaoxiang'
+      : datasets.length > 0 && datasets.every(isXiaoxiang);
+  const railArchiveOnly =
+    railXiaoxiangOnly && datasets.length > 0 && datasets.every(isRiderArchive);
+  const railXiaoxiangDated = railXiaoxiangOnly && !railArchiveOnly;
+  const railBlueOnly =
+    effectiveRailPlatform === 'lanorange' ||
+    (!effectiveRailPlatform && !railPayoutOnly && !railXiaoxiangOnly && !abnormalRidersOnly && datasets.length > 0 && datasets.every(isGlobalDataset));
+  const railNoCity = railBlueOnly || railPayoutOnly || abnormalRidersOnly;
+  const railNoDate = railPayoutOnly || abnormalRidersOnly;
+
   const submitReady = !!uncertainCreate || canSubmit;
   const railSummary = buildExecutionRailSummary({
     datasetsCount: datasets.length,
-    cities: payoutOnly || abnormalRidersOnly ? [] : blueOnly ? (hasAbnormalRiders ? [] : blueCities) : cities,
+    cities: railPayoutOnly || abnormalRidersOnly ? [] : railBlueOnly ? (hasAbnormalRiders ? [] : blueCities) : cities,
     start,
     end,
     selectedMonths: activeSelectedMonths,
-    noCity,
-    noDate,
-    archiveOnly,
-    xiaoxiangDated,
-    xiaoxiangOnly,
-    blueOnly,
+    noCity: railNoCity,
+    noDate: railNoDate,
+    archiveOnly: railArchiveOnly,
+    xiaoxiangDated: railXiaoxiangDated,
+    xiaoxiangOnly: railXiaoxiangOnly,
+    blueOnly: railBlueOnly,
     baizeOnly,
     benlaiOnly,
-    payoutOnly,
+    payoutOnly: railPayoutOnly,
     payoutBoth,
     abnormalRidersOnly,
-    generatedCount: selectedGeneratorIds.length,
-    rawCount: rawSelectedDatasets.length,
+    generatedCount: datasets.filter(isGenerator).length,
+    rawCount: datasets.filter(id => !isGenerator(id)).length,
     merchantOnly,
     merchantSnapshotOnly,
     merchantDateValid,
@@ -1705,7 +1745,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     return `${railSummary.estimateValue} ${railSummary.estimateUnit}`.trim();
   })();
 
-  /** 引导到 Step 02 城市区（跨平台时先切回风神平台再定位）。 */
+  /** 引导到 02 作用范围与账期 城市区（跨平台时先切回风神平台再定位）。 */
   const goToCitiesStep = () => {
     if (platform && platform !== 'fengshen') {
       onSelectPlatform?.('fengshen');
@@ -1724,7 +1764,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       return {
         text: '请先在左侧勾选至少 1 项待采集资料',
         tone: 'warn',
-        title: '点击定位至 Step 01 选择资料',
+        title: '点击定位至「01 选择资料」',
         run: () => scrollToStep('datasets'),
       };
     }
@@ -1732,7 +1772,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       return {
         text: '请为风神数据选择至少 1 个城市 · 定位',
         tone: 'warn',
-        title: '点击定位至风神数据 Step 02 城市选择',
+        title: '点击定位至风神数据「02 作用范围与账期」城市选择',
         run: goToCitiesStep,
       };
     }
@@ -1741,7 +1781,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       return {
         text: railSummary.blockerHint,
         tone: 'warn',
-        title: needsPeriod ? '点击定位至 Step 02 账期配置' : '点击定位至 Step 02 城市选择',
+        title: needsPeriod ? '点击定位至「02 作用范围与账期」账期配置' : '点击定位至「02 作用范围与账期」城市选择',
         run: needsPeriod ? () => scrollToStep('period') : goToCitiesStep,
       };
     }
@@ -1841,7 +1881,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
               ) : !options ? (
                 <p role="status" className={`${panel} flex items-center gap-2 p-6 text-sm text-slate-500`}>
                   <Loader2 size={16} className="animate-spin" />
-                  正在加载专项报表配置…
+                  正在加载业务报表配置…
                 </p>
               ) : (
                 <ReportBuilder
@@ -1875,6 +1915,12 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                     setExcludeSeparation(value);
                     setDuplicateApproval('');
                   }}
+                  refreshHistory={refreshHistory}
+                  onRefreshHistory={value => {
+                    setRefreshHistory(value);
+                    setDuplicateApproval('');
+                  }}
+                  orderWindowDays={orderWindowDays}
                   locked={formLocked}
                   creating={creating}
                   disabled={!uncertainCreate && !reportCanSubmit}
@@ -3009,7 +3055,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                             {activeDatasets.includes('delivery_waybill') && <span className="font-normal text-slate-400">运单数据按运单终态时间筛选（当日仅含已完成运单）</span>}
                           </div>
                         )}
-                        {orderWindowWarning && <p role="alert" className="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">欺诈单和问题单仅支持最近 {orderWindowDays} 天（{earliestOrder} 至 {shanghaiToday()}），请调整日期或取消这两类资料。</p>}
+                        {orderWindowWarning && <p role="alert" className="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">欺诈单仅支持最近 {orderWindowDays} 天（{earliestOrder} 至 {shanghaiToday()}），请调整日期或取消该资料。</p>}
                       </fieldset>
                     )}
                     </div>
@@ -3100,11 +3146,13 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                       <h4 className="wbx-rail__title">执行规则与摘要</h4>
                       <span className="wbx-pill wbx-pill--neutral tabular-nums">
                         {datasets.length > 0
-                          ? activePlatformCount > 1
-                            ? `已选 ${datasets.length} 项 · 跨 ${activePlatformCount} 平台`
-                            : activePlatformList[0] && platform && activePlatformList[0] !== platform
-                              ? `已选 ${datasets.length} 项（${DOWNLOAD_PLATFORMS.find(item => item.id === activePlatformList[0])?.label || '其它平台'}）`
-                              : `已选 ${datasets.length} 项`
+                          ? platform && activeDatasets.length === 0
+                            ? `本页 0 项 · 跨平台待提交 ${datasets.length} 项`
+                            : activePlatformCount > 1
+                              ? `已选 ${datasets.length} 项 · 跨 ${activePlatformCount} 平台`
+                              : activePlatformList[0] && platform && activePlatformList[0] !== platform
+                                ? `已选 ${datasets.length} 项（${DOWNLOAD_PLATFORMS.find(item => item.id === activePlatformList[0])?.label || '其它平台'}）`
+                                : `已选 ${datasets.length} 项`
                           : '0 项'}
                       </span>
                     </div>
@@ -3125,15 +3173,28 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                       <span>
                         当前队列含{activePlatformList.filter(p => p !== platform).map(p => DOWNLOAD_PLATFORMS.find(item => item.id === p)?.label).filter(Boolean).join(' / ')}待提交项
                       </span>
-                      {activePlatformCount === 1 && activePlatformList[0] && onSelectPlatform && (
+                      <div className="wbx-rail__cross-actions">
+                        {activePlatformList.find(p => p !== platform) && onSelectPlatform && (
+                          <button
+                            type="button"
+                            className="wbx-rail__cross-btn"
+                            onClick={() => {
+                              const otherPlat = activePlatformList.find(p => p !== platform);
+                              if (otherPlat) onSelectPlatform(otherPlat);
+                            }}
+                          >
+                            切回查看 →
+                          </button>
+                        )}
                         <button
                           type="button"
-                          className="wbx-rail__cross-btn"
-                          onClick={() => onSelectPlatform(activePlatformList[0])}
+                          className="wbx-rail__cross-btn is-muted"
+                          disabled={formLocked}
+                          onClick={() => setDatasets(prev => prev.filter(id => inferDatasetPlatform(id) === platform))}
                         >
-                          切回查看 →
+                          仅清空其它平台
                         </button>
-                      )}
+                      </div>
                     </div>
                   )}
 
@@ -3148,7 +3209,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                     )}
                     <div className="wbx-rail__fact">
                       <dt>处理城市</dt>
-                      <dd title={(blueOnly ? blueCities : cities).join('、')}>
+                      <dd title={(railBlueOnly ? blueCities : cities).join('、')}>
                         {datasets.length === 0 ? (
                           <span className="wbx-rail__pending-hint">待选资料后配置</span>
                         ) : railSummary.cityLabel === '未选择城市' ? (
@@ -3220,7 +3281,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                         })}
                       </ul>
                     ) : (
-                      <p className="wbx-hint">尚未勾选采集资料，在 Step 01 勾选后这里会列出摘要。</p>
+                      <p className="wbx-hint">尚未勾选采集资料，在「01 选择资料」勾选后这里会列出摘要。</p>
                     )}
                   </details>
 

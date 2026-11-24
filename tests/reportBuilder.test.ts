@@ -10,8 +10,10 @@ import {
   buildRecentReportMonths,
   buildReportMonthChunks,
   buildUnifiedSubmissionPayloads,
+  computeOrderWindowBounds,
   deriveSelectedMonthsFromRange,
   groupCitiesByBindingPlatform,
+  isWithinOrderWindow,
   mergeAvailableReports,
   monthBounds,
   partitionCitiesByBindingPlatform,
@@ -441,6 +443,15 @@ test('mergeAvailableReports keeps canonical frontend labels even when backend se
       sources: ['源表C'],
       station_rule: 'none',
     },
+    {
+      id: 'problem',
+      label: '问题单',
+      scope: 'city_range',
+      description: '问题单旧描述',
+      systems: ['风神'],
+      sources: ['源表D'],
+      station_rule: 'separation',
+    },
   ]);
   assert.deepEqual(
     merged.map(item => [item.id, item.label]),
@@ -448,9 +459,11 @@ test('mergeAvailableReports keeps canonical frontend labels even when backend se
       ['payment_binding', '支付绑定'],
       ['abnormal_followup', '异常跟进'],
       ['abnormal_riders', '异常名单'],
+      ['problem', '问题单'],
     ],
   );
   assert.deepEqual(merged[0].sources, ['源表A']);
+  assert.deepEqual(merged[3].sources, ['源表D']);
 });
 
 function props(report: ReportDefinition) {
@@ -577,4 +590,96 @@ test('binding platform helpers handle single updates, batch updates, auto cleari
   assert.match(html, /已勾 1 城设为/);
   assert.match(html, /is-platform-shangyi/);
   assert.match(html, /is-platform-benlai/);
+});
+
+test('problem city_range report preserves exact dates, order window bounds, refresh_history, and renders date range UI', () => {
+  const problemDef: ReportDefinition = {
+    id: 'problem',
+    label: '问题单',
+    scope: 'city_range',
+    description: '采集风神问题单并输出汇总与明细',
+    systems: ['风神'],
+    sources: ['风神问题单'],
+    station_rule: 'separation',
+  };
+
+  assert.deepEqual(computeOrderWindowBounds('2026-11-24', 60), {
+    earliest: '2026-09-26',
+    latest: '2026-11-24',
+  });
+  assert.equal(isWithinOrderWindow('2026-09-26', '2026-11-24', '2026-11-24', 60), true);
+  assert.equal(isWithinOrderWindow('2026-09-25', '2026-11-24', '2026-11-24', 60), false);
+
+  const summary = summarizeSelectedReportsScope(
+    [problemDef],
+    '2026-11-10',
+    '2026-11-20',
+    '2026-11-24',
+    ['2026-10', '2026-11'],
+  );
+  assert.equal(summary.effectiveScope, 'city_range');
+  assert.equal(summary.monthChunks.length, 0);
+  assert.deepEqual(summary.range, { start: '2026-11-10', end: '2026-11-20', months: 0 });
+  assert.equal(summary.needsSeparation, true);
+
+  const payloads = buildGenerateBatchPayloads(
+    [problemDef],
+    ['上海'],
+    '2026-11-10',
+    '2026-11-20',
+    '2026-11-24',
+    {
+      excludeSeparation: true,
+      refreshHistory: true,
+      selectedMonths: ['2026-10', '2026-11'],
+    },
+  );
+  assert.deepEqual(payloads, [
+    {
+      task_kind: 'generate',
+      generation_target: 'problem',
+      datasets: ['problem'],
+      cities: ['上海'],
+      start: '2026-11-10',
+      end: '2026-11-20',
+      exclude_separation: true,
+      refresh_history: true,
+    },
+  ]);
+
+  const html = renderToStaticMarkup(
+    React.createElement(ReportBuilder, {
+      ...props(problemDef),
+      singleReportMode: true,
+      selectedCities: ['上海'],
+      start: '2026-11-10',
+      end: '2026-11-20',
+      today: '2026-11-24',
+      refreshHistory: true,
+      orderWindowDays: 60,
+    }),
+  );
+  assert.match(html, /业务日期/);
+  assert.match(html, /近7天/);
+  assert.match(html, /本月至今/);
+  assert.match(html, /2026-11-10 ~ 2026-11-20/);
+  assert.match(html, /共 11 天/);
+  assert.match(html, /type="checkbox" aria-label="排除取分离站点"/);
+  assert.match(html, /type="checkbox" aria-label="强制刷新24小时内历史问题单"/);
+  assert.doesNotMatch(html, /2026年10月/);
+
+  const expiredHtml = renderToStaticMarkup(
+    React.createElement(ReportBuilder, {
+      ...props(problemDef),
+      singleReportMode: true,
+      selectedCities: ['上海'],
+      start: '2026-09-01',
+      end: '2026-09-30',
+      today: '2026-11-24',
+      orderWindowDays: 60,
+      disabled: false,
+    }),
+  );
+  assert.match(expiredHtml, /role="alert"/);
+  assert.match(expiredHtml, /2026-09-26 至 2026-11-24/);
 });

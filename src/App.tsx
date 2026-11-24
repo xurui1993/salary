@@ -32,6 +32,7 @@ import { SystemConnections } from "./components/SystemConnections";
 import { fetchWithPreflight } from "./lib/authPreflight";
 import { HeaderApprovalNotifier } from "./components/HeaderApprovalNotifier";
 import { LanorangeApprovals } from "./components/LanorangeApprovals";
+import { LanorangePriceExports } from "./components/LanorangePriceExports";
 import { StationDeductionManager } from "./components/StationDeductionManager";
 import {useStationDirectory,stationCountText} from './lib/useStationDirectory';
 import { SystemTemplatesPanel } from "./components/SystemTemplatesPanel";
@@ -165,8 +166,6 @@ export default function App() {
     activeMenuRef.current = activeMenu;
   }, [activeMenu]);
 
-  const [deductionOpen, setDeductionOpen] = useState(false);
-  const [globalTemplatesOpen, setGlobalTemplatesOpen] = useState(false);
   const quickPayrollInputRef = useRef<HTMLInputElement>(null);
   // 外壳断点状态（D6：只用 1280/1024/768 三档；纯函数来自 lib/breakpoints）
   const [viewportWidth, setViewportWidth] = useState<number>(() => currentViewportWidth());
@@ -187,7 +186,22 @@ export default function App() {
     };
   }, []);
   const isDrawerMode = viewportWidth <= BP.sm;
-  const sidebarIsCollapsed = false;
+  const [sidebarIsCollapsed, setSidebarIsCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('workbench_sidebar_collapsed') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleSidebarCollapsed = () => {
+    setSidebarIsCollapsed(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('workbench_sidebar_collapsed', next ? '1' : '0');
+      } catch {}
+      return next;
+    });
+  };
   useEffect(() => {
     if (!isDrawerMode) setMobileNavOpen(false);
   }, [isDrawerMode]);
@@ -210,6 +224,9 @@ export default function App() {
       if (event.key.toLowerCase() === 'l') {
         event.preventDefault();
         setLogDrawerOpen(prev => !prev);
+      } else if (event.key === '[') {
+        event.preventDefault();
+        toggleSidebarCollapsed();
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -275,10 +292,9 @@ export default function App() {
   const [payrollResumeVersion, setPayrollResumeVersion] = useState(0);
   useEffect(() => { try { localStorage.setItem('workbench_task_kind', taskKind); } catch {} setActiveMenu(taskKind === 'payroll' ? 'core' : 'fengshen_downloads'); }, [taskKind]);
   const navigateWorkspace = (view: 'create' | 'history' | 'approval' | 'price-export') => {
-    const resolvedView = view === 'price-export' ? 'approval' : view;
-    setWorkspaceView(resolvedView);
-    if (resolvedView === 'create' || resolvedView === 'history') {
-      setDownloadNavigation(previous => ({ view: resolvedView, version: previous.version + 1 }));
+    setWorkspaceView(view);
+    if (view === 'create' || view === 'history') {
+      setDownloadNavigation(previous => ({ view, version: previous.version + 1 }));
     }
   };
   const triggerUrlDownload = (url: string) => {
@@ -348,6 +364,10 @@ export default function App() {
     }
     if (action.type === 'open-logs') {
       setLogDrawerOpen(true);
+      return;
+    }
+    if (action.type === 'toggle-sidebar') {
+      toggleSidebarCollapsed();
     }
   };
   const [downloadNavigation, setDownloadNavigation] = useState({ view: 'create' as 'create' | 'history', version: 0 });
@@ -470,8 +490,8 @@ export default function App() {
     });
     showToast(
       cities.length
-        ? `已带入 ${cities.length} 个城市至「专项报表 / 支付绑定」，请确认月份后生成`
-        : '已跳转至「专项报表 / 支付绑定」',
+        ? `已带入 ${cities.length} 个城市至「业务报表 / 支付绑定」，请确认月份后生成`
+        : '已跳转至「业务报表 / 支付绑定」',
       'info',
     );
   };
@@ -487,35 +507,20 @@ export default function App() {
   };
 
   const [rawTaskQueue, setRawTaskQueue] = useState<TaskItem[]>([]);
-  const taskQueue = rawTaskQueue.filter(t => {
-    if (t.isSalaryBind) return false;
-    const name = t.name || '';
+  const isLegacyBindSystemTask = (t: TaskItem) => {
+    if (t.isSalaryBind) return true;
+    const name = (t.name || '').trim();
     const lowerName = name.toLowerCase();
-    return !(
-      name === '绑定' || 
-      name.includes('绑定') || 
-      lowerName.includes('salary_bind') || 
-      name.includes('发薪工具') ||
-      lowerName.includes('rider_bind') ||
-      lowerName.includes('fengshen') ||
-      lowerName.includes('shangyi')
+    return (
+      name === '绑定' ||
+      name === '发薪工具' ||
+      lowerName === 'salary_bind' ||
+      lowerName === 'rider_bind'
     );
-  });
+  };
+  const taskQueue = rawTaskQueue.filter(t => !isLegacyBindSystemTask(t));
   const setTaskQueue = (value: TaskItem[] | ((prev: TaskItem[]) => TaskItem[])) => {
-    const filterFn = (list: TaskItem[]) => list.filter(t => {
-      if (t.isSalaryBind) return false;
-      const name = t.name || '';
-      const lowerName = name.toLowerCase();
-      return !(
-        name === '绑定' || 
-        name.includes('绑定') || 
-        lowerName.includes('salary_bind') || 
-        name.includes('发薪工具') ||
-        lowerName.includes('rider_bind') ||
-        lowerName.includes('fengshen') ||
-        lowerName.includes('shangyi')
-      );
-    });
+    const filterFn = (list: TaskItem[]) => list.filter(t => !isLegacyBindSystemTask(t));
     if (typeof value === 'function') {
       setRawTaskQueue(prev => filterFn(value(prev)));
     } else {
@@ -1180,6 +1185,7 @@ export default function App() {
           downloadPlatform={downloadPlatform}
           activeReportId={activeReportId}
           payrollSubView={payrollSubView}
+          collapsed={sidebarIsCollapsed}
           isDrawerMode={isDrawerMode}
           taskFormLocked={taskFormLocked}
           platformStatuses={platformStatuses}
@@ -1190,6 +1196,7 @@ export default function App() {
           approvalPendingCount={approvalPendingCount}
           totalActiveCount={activeDownloadCount + (isRunning ? 1 : 0) + approvalActiveCount}
           onExecuteAction={executeShellAction}
+          onToggleCollapse={toggleSidebarCollapsed}
           onCloseMobile={() => setMobileNavOpen(false)}
           onOpenPlatformDock={() => setDockOpen(true)}
         />
@@ -1391,8 +1398,34 @@ export default function App() {
               </section>
             )}
 
-            {(workspaceView==='approval' || workspaceView==='price-export') && <LanorangeApprovals focusId={priceRecordId} apiFetch={fetchWithAuth} workspaceId={workspaceId} onActiveCount={setApprovalActiveCount} onSwitchView={view => navigateWorkspace(view)} />}
-            <section hidden={workspaceView==='approval' || workspaceView==='price-export' || (workspaceView !== 'history' && taskKind === 'payroll')} aria-label="任务下载">
+            {workspaceView === 'approval' && (
+              <LanorangeApprovals
+                focusId={priceRecordId}
+                apiFetch={fetchWithAuth}
+                workspaceId={workspaceId}
+                onActiveCount={setApprovalActiveCount}
+                onSwitchView={view => navigateWorkspace(view)}
+              />
+            )}
+            {workspaceView === 'price-export' && (
+              <LanorangePriceExports
+                focusId={priceRecordId}
+                apiFetch={fetchWithAuth}
+                workspaceId={workspaceId}
+                onActiveCount={setApprovalActiveCount}
+                onSwitchView={view => navigateWorkspace(view)}
+              />
+            )}
+            <section
+              hidden={workspaceView === 'approval' || workspaceView === 'price-export' || (workspaceView !== 'history' && taskKind === 'payroll')}
+              aria-hidden={workspaceView === 'approval' || workspaceView === 'price-export' || (workspaceView !== 'history' && taskKind === 'payroll') || undefined}
+              style={
+                workspaceView === 'approval' || workspaceView === 'price-export' || (workspaceView !== 'history' && taskKind === 'payroll')
+                  ? { display: 'none' }
+                  : undefined
+              }
+              aria-label="任务下载"
+            >
               <FengshenDownloadCenter
                 apiFetch={fetchWithAuth}
                 workspaceId={workspaceId}
@@ -1428,7 +1461,12 @@ export default function App() {
                 onAccountChange={setDownloadAccountId}
               />
             </section>
-            <section hidden={workspaceView !== 'create' || taskKind !== 'payroll'} aria-label="兼职薪资核算">
+            <section
+              hidden={workspaceView !== 'create' || taskKind !== 'payroll'}
+              aria-hidden={workspaceView !== 'create' || taskKind !== 'payroll' || undefined}
+              style={workspaceView !== 'create' || taskKind !== 'payroll' ? { display: 'none' } : undefined}
+              aria-label="兼职薪资核算"
+            >
               {payrollSubView === 'batches' && (
                 <CorePage
                   onOpenDeductions={(defaultOnly = false) => { setDeductionDefaultOnly(defaultOnly); setPayrollSubView('deductions'); }}
@@ -1494,33 +1532,6 @@ export default function App() {
           </main>
         </div>
       </div>
-      {globalTemplatesOpen && (
-        <WorkbenchDrawer
-          title="系统标准模板"
-          wide
-          bodyClassName="wb-template-body"
-          onClose={() => setGlobalTemplatesOpen(false)}
-        >
-          <SystemTemplatesPanel
-            embeddedInDrawer
-            onNavigatePayroll={() => {
-              setGlobalTemplatesOpen(false);
-              handleNavigatePayroll();
-            }}
-            onQuickUpload={files => {
-              setGlobalTemplatesOpen(false);
-              setPayrollSubView('batches');
-              setTaskKind('payroll');
-              navigateWorkspace('create');
-              void uploadFilesAndExecute(
-                files.map(file => ({ file, relativePath: file.name })),
-              );
-            }}
-          />
-        </WorkbenchDrawer>
-      )}
-      {deductionOpen && <StationDeductionManager platform={(!deductionDefaultOnly && payrollPreparation ? payrollPreparation.mode : appConfig.payrollSourceMode)==='xiaoxiang'?'xiaoxiang':'fengshen'} apiFetch={fetchWithAuth} onClose={() => { setDeductionOpen(false); setDeductionVersion(value => value + 1); }} onSaved={() => setDeductionVersion(value => value + 1)} />}
-
       {logDrawerOpen && (
         <WorkbenchDrawer
           title="引擎运行日志终端"

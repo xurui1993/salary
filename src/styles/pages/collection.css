@@ -204,6 +204,13 @@
   .wb-download-workbench > .wbx-rail {
     grid-column: 1;
     position: static;
+    top: auto;
+    bottom: auto;
+  }
+  .wb-download-workbench > .wbx-rail .wbx-rail__facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
   }
   .wbx-stage-hero__metrics {
     width: 100%;
@@ -761,7 +768,8 @@
 
 @media (max-width: 640px) {
   .wbx-dc-grid,
-  .wbx-dc-grid.is-two-col {
+  .wbx-dc-grid.is-two-col,
+  .wb-download-workbench > .wbx-rail .wbx-rail__facts {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -995,13 +1003,22 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px 10px;
   padding: 8px 11px;
   border-radius: 9px;
   background: rgba(0, 174, 236, 0.08);
   border: 1px solid rgba(0, 174, 236, 0.22);
   font-size: 12px;
   color: var(--wbx-primary);
+}
+
+.wbx-rail__cross-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .wbx-rail__cross-btn {
@@ -1015,8 +1032,17 @@
   white-space: nowrap;
 }
 
-.wbx-rail__cross-btn:hover {
+.wbx-rail__cross-btn.is-muted {
+  color: var(--wbx-text-secondary);
+  font-weight: 500;
+}
+
+.wbx-rail__cross-btn:hover:not(:disabled) {
   text-decoration: underline;
+}
+
+.wbx-rail__cross-btn.is-muted:hover:not(:disabled) {
+  color: var(--wbx-danger);
 }
 
 .wbx-rail__facts {
@@ -1143,6 +1169,10 @@
 
 .wbx-rail__selected[open] > summary::after {
   content: "收起 ▴";
+}
+
+[hidden] .wbx-rail__selected > summary::after {
+  content: none;
 }
 
 .wbx-rail__list {
@@ -1777,10 +1807,10 @@
   color: #64748b;
 }
 
-/* 4 轨定宽操作网格：[26px 辅助图标] [74px 柔光主按钮] [9px 分割线] [26px 移出图标] */
+/* 4 轨定宽操作网格：[自适应辅助图标组] [74px 柔光主按钮] [9px 分割线] [26px 移出图标] */
 .tc-row-ops {
   display: inline-grid;
-  grid-template-columns: 26px 74px 9px 26px;
+  grid-template-columns: minmax(26px, auto) 74px 9px 26px;
   column-gap: 4px;
   align-items: center;
   justify-items: center;
@@ -1795,6 +1825,15 @@
 
 .tc-op-slot-aux {
   grid-column: 1;
+  justify-self: end;
+}
+
+.tc-aux-group {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 26px;
 }
 
 .tc-op-slot-main {
@@ -3042,6 +3081,27 @@
   transition: border-color 140ms ease, background-color 140ms ease;
 }
 
+.rb-bind-lane__alias {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--wbx-text-subtle);
+}
+
+.rb-bind-tag.is-selected-city {
+  border-color: rgba(0, 174, 236, 0.42);
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.rb-bind-tag.is-unselected-city {
+  opacity: 0.6;
+}
+
+.rb-bind-tag.is-unselected-city:hover {
+  opacity: 1;
+}
+
 .rb-bind-tag.is-platform-benlai {
   border-color: rgba(24, 25, 28, 0.1);
   background: rgba(248, 250, 252, 0.92);
@@ -3538,6 +3598,25 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 业务报表按日期区间筛选条 */
+.rb-period-rangebar {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.rb-date-range-picker-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.rb-date-range-meta {
+  font-size: 12px;
+  color: #64748b;
 }
 
 

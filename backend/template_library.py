@@ -98,7 +98,7 @@ def _validate_directory_safety(directory: Path, path: Path) -> None:
 
 def template_path(root, filename):
     if filename in RETIRED:
-        raise TemplateError('该报表已改为代码生成，请使用专项报表入口', 410)
+        raise TemplateError('该报表已改为代码生成，请使用业务报表入口', 410)
     if not filename:
         raise TemplateError('请先选择对应业务的模板')
     catalog = get_catalog(root)

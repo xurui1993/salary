@@ -125,7 +125,7 @@
 
   /* 应用壳尺寸令牌（清爽固定 238px 单栏导航 + 56px 顶栏） */
   --wbx-sidebar-w: 238px;
-  --wbx-sidebar-w-collapsed: 238px;
+  --wbx-sidebar-w-collapsed: 68px;
   --wbx-header-h: 56px;
   --wbx-rail-w: 320px;
   --wbx-drawer-w: 468px;

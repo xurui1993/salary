@@ -50,9 +50,9 @@ test('getBreadcrumbModel provides interactive sibling switchers for collection, 
     payrollSubView: 'batches',
     reportId: 'abnormal_followup',
   });
-  assert.equal(reports.moduleLabel, '专项报表');
+  assert.equal(reports.moduleLabel, '业务报表');
   assert.equal(reports.viewLabel, '异常跟进');
-  assert.equal(reports.siblings.length, 3);
+  assert.equal(reports.siblings.length, 4);
   assert.equal(reports.siblings.find(s => s.active)?.id, 'abnormal_followup');
 
   const payroll = getBreadcrumbModel({
@@ -109,6 +109,10 @@ test('buildShellCommands and filterShellCommands support Chinese, English, and p
   const byLog = filterShellCommands(commands, 'log');
   assert.equal(byLog[0]?.id, 'act-log-drawer');
 
+  const byReport = filterShellCommands(commands, '问题单');
+  assert.equal(byReport[0]?.id, 'nav-report-problem');
+  assert.equal(byReport[0]?.group, '业务报表');
+
   const empty = filterShellCommands(commands, '不存在的指令xyz');
   assert.equal(empty.length, 0);
 });
@@ -138,6 +142,16 @@ test('Dual-Rail helpers compute kinetic rail indices, quick target IDs, and pin/
       reportId: 'abnormal_riders',
     }),
     'report:abnormal_riders',
+  );
+  assert.equal(
+    getCurrentQuickTargetId({
+      workspaceView: 'create',
+      taskKind: 'generate',
+      downloadPlatform: 'fengshen',
+      payrollSubView: 'batches',
+      reportId: 'problem',
+    }),
+    'report:problem',
   );
   assert.equal(
     getCurrentQuickTargetId({

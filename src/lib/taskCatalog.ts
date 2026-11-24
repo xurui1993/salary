@@ -1,4 +1,4 @@
-export const GENERATOR_IDS = ['payment_binding', 'abnormal_followup', 'abnormal_riders'] as const;
+export const GENERATOR_IDS = ['payment_binding', 'abnormal_followup', 'abnormal_riders', 'problem'] as const;
 
 export const TASK_KIND_LABELS: Record<TaskKind, string> = {
   download: '资料下载',

@@ -398,7 +398,7 @@ export function TaskDetailDrawer({
           </div>
         </dl>
 
-        {/* 5. 次级快捷操作条（目录 / 复核包 / 专项报表 / 核算联动 / 移出） */}
+        {/* 5. 次级快捷操作条（目录 / 复核包 / 业务报表 / 核算联动 / 移出） */}
         <div className="tc-drawer__subactions">
           <button
             type="button"
@@ -430,7 +430,7 @@ export function TaskDetailDrawer({
               }}
             >
               <Sparkles size={13} aria-hidden="true" />
-              <span>生成专项报表</span>
+              <span>生成业务报表</span>
             </button>
           )}
           {task.status === 'success' && task.kind === 'download' && onNavigatePayroll && (

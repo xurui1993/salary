@@ -29,6 +29,7 @@ export type QuickTargetId =
   | 'report:payment_binding'
   | 'report:abnormal_followup'
   | 'report:abnormal_riders'
+  | 'report:problem'
   | 'payroll:batches'
   | 'payroll:deductions'
   | 'payroll:templates'
@@ -64,7 +65,7 @@ export interface BreadcrumbModel {
 
 export interface ShellCommandItem {
   id: string;
-  group: '数据采集' | '专项报表' | '薪资核算' | '价格审批' | '全局调度';
+  group: '数据采集' | '业务报表' | '薪资核算' | '价格审批' | '全局调度';
   label: string;
   subtitle: string;
   keywords: string[];
@@ -74,7 +75,7 @@ export interface ShellCommandItem {
 }
 
 export interface SpecialReportSubModuleMeta {
-  id: 'payment_binding' | 'abnormal_followup' | 'abnormal_riders';
+  id: 'payment_binding' | 'abnormal_followup' | 'abnormal_riders' | 'problem';
   label: string;
   shortLabel: string;
   hint: string;
@@ -89,7 +90,7 @@ export const SPECIAL_REPORT_SUBMODULES: SpecialReportSubModuleMeta[] = [
     shortLabel: '支付绑定',
     hint: '按城市按月关联收薪绑定与发薪档案',
     subtitle: '自动关联风神收薪绑定与蓝橙、商翼及本来人力档案，输出多城汇总',
-    keywords: ['payment', 'binding', 'zfbd', '支付', '绑定', '专项报表'],
+    keywords: ['payment', 'binding', 'zfbd', '支付', '绑定', '业务报表', '专项报表'],
   },
   {
     id: 'abnormal_followup',
@@ -97,7 +98,7 @@ export const SPECIAL_REPORT_SUBMODULES: SpecialReportSubModuleMeta[] = [
     shortLabel: '异常跟进',
     hint: '按城市按月排查物资、UB账单与档案异常',
     subtitle: '以支付绑定为基准，关联物资租用、月度 UB 账单与价格档案定位异常',
-    keywords: ['abnormal', 'followup', 'ycgj', '异常', '跟进', '专项报表'],
+    keywords: ['abnormal', 'followup', 'ycgj', '异常', '跟进', '业务报表', '专项报表'],
   },
   {
     id: 'abnormal_riders',
@@ -105,7 +106,15 @@ export const SPECIAL_REPORT_SUBMODULES: SpecialReportSubModuleMeta[] = [
     shortLabel: '异常名单',
     hint: '全城全量汇总蓝橙离职、请假与骑手档案',
     subtitle: '固定全城全量汇总蓝橙 5 类离职、请假与骑手档案，免选城市与月份',
-    keywords: ['abnormal', 'riders', 'ycmd', 'yczl', '异常', '名单', '整理', '全量', '专项报表'],
+    keywords: ['abnormal', 'riders', 'ycmd', 'yczl', '异常', '名单', '整理', '全量', '业务报表', '专项报表'],
+  },
+  {
+    id: 'problem',
+    label: '问题单',
+    shortLabel: '问题单',
+    hint: '按城市与日期范围生成风神问题单汇总及明细',
+    subtitle: '按城市与日期范围采集风神问题单并过滤取分离站点，生成汇总与明细工作簿',
+    keywords: ['problem', 'wtd', '问题单', '风神', '业务报表', '专项报表'],
   },
 ];
 
@@ -157,7 +166,7 @@ export const QUICK_TARGETS: QuickTargetMeta[] = [
     groupId: 'reports' as NavGroupId,
     label: report.label,
     shortLabel: report.shortLabel,
-    moduleLabel: '专项报表',
+    moduleLabel: '业务报表',
     hint: report.hint,
     accent: 'sapphire' as const,
     action: { type: 'report' as const, reportId: report.id },
@@ -341,7 +350,7 @@ export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
       SPECIAL_REPORT_SUBMODULES[0];
     return {
       groupId,
-      moduleLabel: '专项报表',
+      moduleLabel: '业务报表',
       viewLabel: current.label,
       siblings: SPECIAL_REPORT_SUBMODULES.map(item => ({
         id: item.id,
@@ -459,7 +468,7 @@ export function buildShellCommands(
     },
     ...SPECIAL_REPORT_SUBMODULES.map(report => ({
       id: `nav-report-${report.id}`,
-      group: '专项报表' as const,
+      group: '业务报表' as const,
       label: report.label,
       subtitle: report.subtitle,
       keywords: report.keywords,

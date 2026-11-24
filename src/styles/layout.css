@@ -43,6 +43,54 @@
   user-select: none;
 }
 
+.wbx-shell.has-collapsed-sidebar,
+.wb-shell.wbx-shell.has-collapsed-sidebar {
+  grid-template-columns: var(--wbx-sidebar-w-collapsed, 68px) minmax(0, 1fr);
+}
+
+.wb-sidebar.wbx-sidebar.wbx-flat-sidebar.is-collapsed,
+.wbx-flat-sidebar.is-collapsed {
+  width: var(--wbx-sidebar-w-collapsed, 68px);
+  min-width: var(--wbx-sidebar-w-collapsed, 68px);
+  max-width: var(--wbx-sidebar-w-collapsed, 68px);
+}
+
+.wbx-flat-sidebar.is-collapsed .wbx-flat-sidebar__brand {
+  justify-content: center;
+  padding: 0 8px;
+}
+
+.wbx-flat-sidebar.is-collapsed .wbx-brand-logo {
+  justify-content: center;
+  padding: 5px;
+}
+
+.wbx-flat-sidebar.is-collapsed .wbx-brand-logo__wordmark,
+.wbx-flat-sidebar.is-collapsed .wbx-snav-group__head,
+.wbx-flat-sidebar.is-collapsed .wbx-snav-label,
+.wbx-flat-sidebar.is-collapsed .wbx-snav-badge {
+  display: none;
+}
+
+.wbx-flat-sidebar.is-collapsed .wbx-flat-sidebar__nav {
+  padding: 14px 8px;
+  gap: 12px;
+}
+
+.wbx-flat-sidebar.is-collapsed .wbx-snav-item {
+  justify-content: center;
+  padding: 0;
+}
+
+.wbx-flat-sidebar.is-collapsed .wbx-snav-item.is-active::before {
+  top: 7px;
+  bottom: 7px;
+}
+
+.wbx-flat-sidebar.is-collapsed .wbx-flat-sidebar__footer {
+  padding: 8px 6px;
+}
+
 /* 顶部 56px 品牌栏（与右侧顶栏等高平齐，轻透无硬割裂） */
 .wbx-flat-sidebar__brand {
   display: flex;
@@ -724,12 +772,28 @@
   }
 }
 
+@media (max-width: 1120px) {
+  .wbx-topbar-module,
+  .wbx-topbar-sep,
+  .wbx-topbar-status-tag__action {
+    display: none;
+  }
+  .wbx-topbar-title {
+    min-width: 84px;
+    flex-shrink: 0;
+  }
+}
+
 @media (max-width: 1024px) {
   .wbx-header,
   .wb-header.wbx-header,
   .wbx-main {
     padding-left: var(--wbx-s4);
     padding-right: var(--wbx-s4);
+  }
+  .wbx-topbar-status-tag,
+  .wbx-topbar-live-pill {
+    display: none;
   }
 }
 
@@ -787,5 +851,37 @@
   }
   .wbx-shell[data-mobile-open="true"] .wbx-sidebar {
     transform: translateX(0);
+  }
+}
+
+@media (max-width: 640px) {
+  .wbx-shell,
+  .wb-shell.wbx-shell {
+    padding: 8px 10px 14px;
+  }
+  .wbx-header,
+  .wb-header.wbx-header {
+    height: 50px;
+    min-height: 50px;
+    padding: 0 10px;
+    gap: 6px;
+  }
+  .wbx-burger {
+    width: 30px;
+    height: 30px;
+  }
+  .wbx-topbar-title {
+    min-width: 0;
+    flex-shrink: 1;
+    font-size: 14.5px;
+  }
+  .wbx-header__tools,
+  .wb-header-actions.wbx-header__tools {
+    padding: 3px 4px;
+    gap: 3px;
+  }
+  .wbx-main {
+    padding-left: 0;
+    padding-right: 0;
   }
 }

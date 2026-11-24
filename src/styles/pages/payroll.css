@@ -4417,18 +4417,12 @@
 /* ─── 扣款配置一级视图：精致城市卡片墙 ─────────────────────────────────────── */
 .wbx-city-vcard-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
   align-items: stretch;
 }
 
-@media (max-width: 1380px) {
-  .wbx-city-vcard-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 1120px) {
+@media (max-width: 1180px) {
   .wbx-city-vcard-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -5015,17 +5009,17 @@
 .wbx-ded-sheet__td-check {
   position: sticky;
   left: 0;
-  z-index: 3;
+  z-index: 4;
   width: 34px;
   min-width: 34px;
   max-width: 34px;
   text-align: center;
   padding: 0 5px;
-  background: inherit;
+  background: #ffffff;
 }
 
 .wbx-ded-sheet thead .wbx-ded-sheet__th-check {
-  z-index: 5;
+  z-index: 6;
   text-align: center;
   background: #f8fafc;
 }
@@ -5034,13 +5028,13 @@
 .wbx-ded-sheet__td-station {
   position: sticky;
   left: 34px;
-  z-index: 3;
+  z-index: 4;
   min-width: 174px;
   max-width: 196px;
   text-align: left;
   padding: 8px 10px 8px 6px;
   border-right: 1px solid #e2e8f0;
-  background: inherit;
+  background: #ffffff;
   box-shadow: 5px 0 10px -8px rgba(15, 23, 42, 0.14);
 }
 
@@ -5077,20 +5071,20 @@
 .wbx-ded-sheet__td-kw {
   position: sticky;
   right: 184px;
-  z-index: 3;
+  z-index: 4;
   width: 72px;
   min-width: 72px;
   max-width: 72px;
   box-sizing: border-box;
   text-align: center;
   padding: 6px 5px;
-  border-left: 1px solid rgba(24, 25, 28, 0.12);
-  background: inherit;
-  box-shadow: -14px 0 22px -10px rgba(15, 23, 42, 0.22), -3px 0 6px -2px rgba(15, 23, 42, 0.08);
+  border-left: 1px solid #cbd5e1;
+  background: #ffffff;
+  box-shadow: -10px 0 16px -8px rgba(15, 23, 42, 0.16), -2px 0 4px -2px rgba(15, 23, 42, 0.06);
 }
 
 .wbx-ded-sheet thead .wbx-ded-sheet__th-kw {
-  z-index: 5;
+  z-index: 6;
   text-align: center;
   background: #f8fafc;
 }
@@ -5099,24 +5093,24 @@
 .wbx-ded-sheet__td-ops {
   position: sticky;
   right: 0;
-  z-index: 4;
+  z-index: 5;
   width: 184px;
   min-width: 184px;
   max-width: 184px;
   box-sizing: border-box;
   text-align: right;
   padding: 6px 12px 6px 6px;
-  background: inherit;
+  background: #ffffff;
 }
 
 .wbx-ded-sheet__th-ops.is-sticky-edge,
 .wbx-ded-sheet__td-ops.is-sticky-edge {
   border-left: 1px solid #cbd5e1;
-  box-shadow: -12px 0 18px -10px rgba(15, 23, 42, 0.24), -2px 0 6px -2px rgba(15, 23, 42, 0.08);
+  box-shadow: -10px 0 16px -8px rgba(15, 23, 42, 0.18), -2px 0 4px -2px rgba(15, 23, 42, 0.06);
 }
 
 .wbx-ded-sheet thead .wbx-ded-sheet__th-ops {
-  z-index: 6;
+  z-index: 7;
   text-align: right;
   background: #f8fafc;
 }
@@ -5130,7 +5124,21 @@
   background: #fafcff;
 }
 
+.wbx-ded-sheet__row:hover .wbx-ded-sheet__td-check,
+.wbx-ded-sheet__row:hover .wbx-ded-sheet__td-station,
+.wbx-ded-sheet__row:hover .wbx-ded-sheet__td-kw,
+.wbx-ded-sheet__row:hover .wbx-ded-sheet__td-ops {
+  background: #fafcff;
+}
+
 .wbx-ded-sheet__row.is-city-default {
+  background: #f3f9ff;
+}
+
+.wbx-ded-sheet__row.is-city-default .wbx-ded-sheet__td-check,
+.wbx-ded-sheet__row.is-city-default .wbx-ded-sheet__td-station,
+.wbx-ded-sheet__row.is-city-default .wbx-ded-sheet__td-kw,
+.wbx-ded-sheet__row.is-city-default .wbx-ded-sheet__td-ops {
   background: #f3f9ff;
 }
 
@@ -5138,7 +5146,21 @@
   background: #ebf5ff;
 }
 
+.wbx-ded-sheet__row.is-city-default:hover .wbx-ded-sheet__td-check,
+.wbx-ded-sheet__row.is-city-default:hover .wbx-ded-sheet__td-station,
+.wbx-ded-sheet__row.is-city-default:hover .wbx-ded-sheet__td-kw,
+.wbx-ded-sheet__row.is-city-default:hover .wbx-ded-sheet__td-ops {
+  background: #ebf5ff;
+}
+
 .wbx-ded-sheet__row.is-selected {
+  background: #f5faff;
+}
+
+.wbx-ded-sheet__row.is-selected .wbx-ded-sheet__td-check,
+.wbx-ded-sheet__row.is-selected .wbx-ded-sheet__td-station,
+.wbx-ded-sheet__row.is-selected .wbx-ded-sheet__td-kw,
+.wbx-ded-sheet__row.is-selected .wbx-ded-sheet__td-ops {
   background: #f5faff;
 }
 
@@ -5805,22 +5827,21 @@
 }
 
 .wbx-city-vcard__trigger {
-  padding: 11px 14px 10px;
+  padding: 11px 12px 10px;
   gap: 8px;
 }
 
 .wbx-city-vcard__head {
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .wbx-city-vcard__head-left {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 5px;
   min-width: 0;
-  flex-wrap: nowrap;
-  overflow: hidden;
+  flex-wrap: wrap;
 }
 
 .wbx-city-vcard__name {

@@ -260,8 +260,8 @@ export const BUILTIN_DOWNLOAD_SCENARIOS: BuiltinScenarioPreset[] = [
     id: 'shangou_daily_monitor',
     name: '闪购日常监控包',
     systemTag: '风神',
-    description: '骑手数据明细 + 欺诈单 + 问题单',
-    datasets: ['rider_detail', 'fraud', 'problem'],
+    description: '骑手数据明细 + 欺诈单',
+    datasets: ['rider_detail', 'fraud'],
   },
   {
     id: 'lanorange_hr_full',
@@ -291,7 +291,7 @@ export function inferDatasetSystemTag(datasetId: string, mode?: string): '风神
 }
 
 export interface GenerationReportCardMeta {
-  id: 'payment_binding' | 'abnormal_followup' | 'abnormal_riders';
+  id: 'payment_binding' | 'abnormal_followup' | 'abnormal_riders' | 'problem';
   title: string;
   systems: ('风神' | '蓝橙')[];
   granularity: string;
@@ -323,6 +323,14 @@ export const GENERATION_REPORT_CARDS: GenerationReportCardMeta[] = [
     granularity: '全部城市 · 全量交付',
     summary: '自动汇总原雷神 5 类离职、请假与骑手档案，无需风神登录即可生成全城异常名单工作簿。',
     requiresCityAndDate: false,
+  },
+  {
+    id: 'problem',
+    title: '问题单',
+    systems: ['风神'],
+    granularity: '按城市 · 按日期范围',
+    summary: '按城市与日期范围采集风神问题单并过滤取分离站点，生成问题单汇总与明细工作簿。',
+    requiresCityAndDate: true,
   },
 ];
 
@@ -514,7 +522,7 @@ export const SIDEBAR_FOOTER_ITEM: SidebarNavItemSpec = {
 };
 
 export interface HeaderModuleContext {
-  groupLabel: '数据采集' | '专项报表' | '核算与业务' | '任务记录' | '薪资核算' | '价格审批';
+  groupLabel: '数据采集' | '业务报表' | '核算与业务' | '任务记录' | '薪资核算' | '价格审批';
   title: string;
   subtitle: string;
   description?: string;
@@ -567,16 +575,16 @@ export function getPrimaryHeaderContext(options: {
     return {
       groupLabel: '数据采集',
       title: '任务中心',
-      subtitle: '统一查看跨平台采集任务、专项报表与核算进度，一键领取产出文件',
+      subtitle: '统一查看跨平台采集任务、业务报表与核算进度，一键领取产出文件',
       iconKey: 'folder-check',
     };
   }
 
   if (workspaceView === 'create' && taskKind === 'generate') {
     return {
-      groupLabel: '专项报表',
-      title: '专项报表',
-      subtitle: '支付绑定、异常跟进、异常名单独立生成工作台',
+      groupLabel: '业务报表',
+      title: '业务报表',
+      subtitle: '支付绑定、异常跟进、异常名单、问题单独立生成工作台',
       iconKey: 'bar-chart-3',
     };
   }
@@ -620,9 +628,9 @@ export function getHeaderModuleContext(
   }
   if (taskKind === 'generate') {
     return {
-      groupLabel: '专项报表',
-      title: '专项报表',
-      subtitle: '支付绑定、异常跟进、异常名单自动关联生成',
+      groupLabel: '业务报表',
+      title: '业务报表',
+      subtitle: '支付绑定、异常跟进、异常名单、问题单自动关联生成',
       iconKey: 'bar-chart-3',
     };
   }
@@ -1711,8 +1719,8 @@ export function buildExecutionRailSummary(input: ExecutionRailSummaryInput): Exe
         : `已选 ${rawCount} 类资料 + ${generatedCount} 份报表 · 待选择处理城市`;
     } else if (generatedCount > 0) {
       listFooterText = cities.length > 0
-        ? `已选 ${generatedCount} 份专项报表 · 预计 ${subitemCount} 个生成子项`
-        : `已选 ${generatedCount} 份专项报表 · 待选择处理城市`;
+        ? `已选 ${generatedCount} 份业务报表 · 预计 ${subitemCount} 个生成子项`
+        : `已选 ${generatedCount} 份业务报表 · 待选择处理城市`;
     } else {
       listFooterText = cities.length > 0
         ? `已选 ${datasetsCount} 类资料 · 预计 ${subitemCount} 个采集子项`
@@ -1778,11 +1786,11 @@ export const FENGSHEN_DATASET_CATEGORIES: FengshenDatasetCategoryDef[] = [
   { id: 'all', label: '全部资料', datasetIds: [] },
   { id: 'settlement', label: '账单结算', datasetIds: ['delivery_fee', 'penalty', 'rider_monthly', 'receive_account'] },
   { id: 'attendance', label: '明细与出勤', datasetIds: ['rider_detail', 'attendance_detail', 'invitation_records'] },
-  { id: 'orders', label: '风控与运单', datasetIds: ['fraud', 'problem', 'delivery_waybill'] },
+  { id: 'orders', label: '风控与运单', datasetIds: ['fraud', 'delivery_waybill'] },
   { id: 'profile', label: '档案与物资', datasetIds: ['rider_info', 'goods_rent'] },
 ];
 
-const FENGSHEN_REPORT_ORDER = ['payment_binding', 'abnormal_followup', 'abnormal_riders'];
+const FENGSHEN_REPORT_ORDER = ['payment_binding', 'abnormal_followup', 'abnormal_riders', 'problem'];
 
 export function sortFengshenDatasetsWithReportsLast<T extends { id: string }>(datasets: T[]): T[] {
   const reportIndex = new Map(FENGSHEN_REPORT_ORDER.map((id, index) => [id, index]));

@@ -12,6 +12,10 @@ REPORTS = (
     {'id':'abnormal_riders', 'label':'异常骑手整理', 'scope':'all',
      'systems':['蓝橙'], 'station_rule':'none',
      'description':'整理蓝橙全量异常骑手资料。', '_source_group':'ABNORMAL_RIDERS_DEPENDENCIES'},
+    {'id':'problem', 'label':'问题单', 'scope':'city_range',
+     'systems':['风神'], 'station_rule':'separation',
+     'description':'按城市和日期范围生成问题单汇总与明细工作簿。',
+     '_source_labels':['风神问题单（按城市日期范围采集并应用取分离站点过滤）']},
 )
 GENERATORS = tuple(report['id'] for report in REPORTS)
 TASK_LABELS = {'download': '资料下载', 'generate': '业务表生成', 'payroll': '兼职薪资核算'}

@@ -238,7 +238,7 @@ export function TerminalPanel({
               </strong>
               <span className="wbx-log-empty__desc">
                 {normalized.length === 0
-                  ? '发起数据采集、专项报表或薪资核算任务后，执行节点与实时日志将在此流式呈现'
+                  ? '发起数据采集、业务报表或薪资核算任务后，执行节点与实时日志将在此流式呈现'
                   : '可切换上方日志级别标签或清空搜索关键词查看完整记录'}
               </span>
               {(levelFilter !== 'ALL' || query) && (

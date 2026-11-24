@@ -35,6 +35,7 @@ import { TaskDetailDrawer, type TaskDetailItem, type TaskDetailTab } from './Tas
 import { taskTone, toneClass } from '../lib/statusSemantics';
 import {
   buildTaskProgressPopoverData,
+  canOpenTaskResultDirectory,
   cleanTaskTitle,
   computeDatePresetRange,
   computeTaskDiagnosticNote,
@@ -577,8 +578,12 @@ export function DownloadRecords({
       }
       const response = await request(`${API}/directory${r ? `?record_id=${encodeURIComponent(r.id)}` : ''}`);
       const info = await response.json();
+      if (info.exists && info.can_open) {
+        await request(`${API}/directory/open`, { record_id: r?.id });
+        pushToast('已打开本地结果目录');
+        return;
+      }
       setDirectory({ ...info, record_id: r?.id });
-      if (info.exists && info.can_open) await request(`${API}/directory/open`, { record_id: r?.id });
     });
 
   const changeVisibility = (rows: Task[]) =>
@@ -1000,6 +1005,7 @@ export function DownloadRecords({
                 const elapsedSec = computeTaskElapsedSeconds(r, nowMs, syncMs);
                 const elapsedText = formatTaskDuration(elapsedSec);
                 const primaryAction = resolveTaskPrimaryAction(r, archived);
+                const showDirBtn = canOpenTaskResultDirectory(r, archived);
                 const isDetailOpen = activeFocused?.id === r.id;
                 const pTone = platformTone(pName);
                 const resolvedTone = taskTone(r.status);
@@ -1101,12 +1107,59 @@ export function DownloadRecords({
                       {createdMeta.short}
                     </td>
 
-                    {/* 4 轨定宽操作网格：[26px 辅助图标] [74px 主操作] [9px 分割线] [26px 移出] */}
+                    {/* 4 轨定宽操作网格：[自适应辅助图标] [74px 主操作] [9px 分割线] [26px 移出] */}
                     <td className="tc-col-ops">
                       <div
                         className={`tc-row-ops${archived ? ' is-archived' : ''}`}
                         onClick={e => e.stopPropagation()}
                       >
+                        {!archived && (
+                          <div className="tc-aux-group tc-op-slot-aux">
+                            {primaryAction?.type === 'attention' && isActive && (
+                              <button
+                                type="button"
+                                className="tc-icon-btn tc-stop-icon-btn"
+                                title={
+                                  ['stopping', 'cancelling'].includes(r.status)
+                                    ? '停止中'
+                                    : r.status === 'queued'
+                                      ? '取消排队'
+                                      : '停止任务'
+                                }
+                                aria-label={`${r.status === 'queued' ? '取消排队' : '停止'} ${cleanTitle}`}
+                                disabled={busy || ['stopping', 'cancelling'].includes(r.status)}
+                                onClick={() => stopTask(r)}
+                              >
+                                <Square size={9} fill="currentColor" strokeWidth={1.8} aria-hidden="true" />
+                              </button>
+                            )}
+                            {primaryAction?.type === 'attention' && !isActive && r.available_files > 0 && (
+                              <button
+                                type="button"
+                                className="tc-icon-btn"
+                                title={`先下载已生成的 ${r.available_files} 个文件`}
+                                aria-label={`下载 ${cleanTitle} 已有文件`}
+                                disabled={busy}
+                                onClick={() => downloadResult(r)}
+                              >
+                                <Download size={13.5} aria-hidden="true" />
+                              </button>
+                            )}
+                            {showDirBtn && (
+                              <button
+                                type="button"
+                                className="tc-icon-btn"
+                                title="打开本地结果目录"
+                                aria-label={`打开 ${cleanTitle} 本地结果目录`}
+                                disabled={busy}
+                                onClick={() => void showDirectory(r)}
+                              >
+                                <FolderOpen size={13.5} aria-hidden="true" />
+                              </button>
+                            )}
+                          </div>
+                        )}
+
                         {primaryAction?.type === 'restore' && (
                           <button
                             type="button"
@@ -1141,45 +1194,13 @@ export function DownloadRecords({
                         )}
 
                         {primaryAction?.type === 'attention' && (
-                          <>
-                            {!archived && isActive && (
-                              <button
-                                type="button"
-                                className="tc-icon-btn tc-stop-icon-btn tc-op-slot-aux"
-                                title={
-                                  ['stopping', 'cancelling'].includes(r.status)
-                                    ? '停止中'
-                                    : r.status === 'queued'
-                                      ? '取消排队'
-                                      : '停止任务'
-                                }
-                                aria-label={`${r.status === 'queued' ? '取消排队' : '停止'} ${cleanTitle}`}
-                                disabled={busy || ['stopping', 'cancelling'].includes(r.status)}
-                                onClick={() => stopTask(r)}
-                              >
-                                <Square size={9} fill="currentColor" strokeWidth={1.8} aria-hidden="true" />
-                              </button>
-                            )}
-                            {!isActive && r.available_files > 0 && (
-                              <button
-                                type="button"
-                                className="tc-icon-btn tc-op-slot-aux"
-                                title={`先下载已生成的 ${r.available_files} 个文件`}
-                                aria-label={`下载 ${cleanTitle} 已有文件`}
-                                disabled={busy}
-                                onClick={() => downloadResult(r)}
-                              >
-                                <Download size={13.5} aria-hidden="true" />
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              className={`tc-op-cta is-${primaryAction.tone} tc-op-slot-main`}
-                              onClick={() => (r.price_id ? openPrice(r) : openDetail(r, 'history'))}
-                            >
-                              <span>{primaryAction.label}</span>
-                            </button>
-                          </>
+                          <button
+                            type="button"
+                            className={`tc-op-cta is-${primaryAction.tone} tc-op-slot-main`}
+                            onClick={() => (r.price_id ? openPrice(r) : openDetail(r, 'history'))}
+                          >
+                            <span>{primaryAction.label}</span>
+                          </button>
                         )}
 
                         {!archived && isActive && !primaryAction && (
