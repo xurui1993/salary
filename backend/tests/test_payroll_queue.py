@@ -56,47 +56,10 @@ class QueueTests(TestCase):
 
     def test_xiaoxiang_template_is_detected_regardless_of_queue_mode(self):
         self.template('小象-template.xlsx')
-        q=self.queue()
-        with patch('baize_accounts.snapshot',return_value={'state':'ready','account_type':'xiaoxiang'}):
-            tasks=self.enqueue(q,mode='fengshen')
+        q=self.queue();tasks=self.enqueue(q,mode='fengshen')
         self.assertEqual(tasks[0]['mode'],'xiaoxiang')
         saved=self.raw(q,tasks[0]['id'])
         self.assertEqual(saved['config']['payrollSourceMode'],'xiaoxiang')
-
-    def test_xiaoxiang_enqueue_requires_xiaoxiang_baize_account(self):
-        self.template('小象-template.xlsx')
-        q=self.queue()
-        with patch('baize_accounts.snapshot',return_value={'state':'ready','account_type':'shanggou'}), \
-             self.assertRaisesRegex(SourceError,'不是小象超市账户'):
-            self.enqueue(q)
-        with patch('baize_accounts.snapshot',return_value={'state':'ready','account_type':'xiaoxiang'}):
-            tasks=self.enqueue(q)
-        self.assertEqual(tasks[0]['mode'],'xiaoxiang')
-
-    def test_paused_finish_keeps_waiting_materials_and_reason(self):
-        self.template()
-        reason='商翼当前不是小象超市账户，请先在系统连接中切换到小象账户后重新发起任务'
-        async def runner(config,request,*,context):
-            prep={'id':'b'*32,'mode':'manual','status':'waiting_materials','items':{},'jobs':[],
-                  'plan':{'city':'小象','start':'2026-11-16','end':'2026-11-22'},'pause_reason':reason}
-            yield 'data: '+json.dumps({'type':'payroll_preparation','preparation':prep})+'\n\n'
-            yield 'data: '+json.dumps({'type':'finish','status':'paused','message':'等待处理资料，尚未执行核算'})+'\n\n'
-        q=self.queue(runner);task=self.raw(q,self.enqueue(q,'manual')[0]['id'])
-        with patch.object(q,'_stage',return_value=self.source):
-            asyncio.run(q._run(task))
-        saved=self.raw(q,task['id'])
-        self.assertEqual(saved['status'],'waiting_materials')
-        self.assertEqual(saved['current_action'],reason)
-        self.assertEqual(saved['preparation']['pause_reason'],reason)
-
-    def test_retry_task_requeues_waiting_materials_batch(self):
-        self.template();q=self.queue();task=self.raw(q,self.enqueue(q,'manual')[0]['id'])
-        q._update(task['id'],{'status':'waiting_materials','batch_id':'b'*32})
-        with patch('payroll_inputs.retry_preparation_batch') as retry:
-            result=q.retry_task('shared','download_shared',task['id'])
-        retry.assert_called_once_with('shared','download_shared','b'*32)
-        self.assertEqual(result['status'],'queued')
-        self.assertEqual(result['current_action'],'已重新排队，正在准备资料')
 
     def test_approval_code_is_manual_editable_per_task(self):
         self.template('one-template.xlsx');self.template('two-template.xlsx')
@@ -300,7 +263,7 @@ class QueueTests(TestCase):
         plan=TemplatePlan('泉州','31029436','2026-08-16','2026-08-31','2026-08','半月结','template.xlsx',1)
         with patch.object(inputs,'ROOT',self.root),patch('parttime_source.read_template',return_value=plan):
             q=self.queue(autostart=True);self.enqueue(q,'manual')
-            task=self.wait(q,lambda rows:rows and rows[0]['status'] in ('completed','error','waiting_materials'))[0]
+            task=self.wait(q,lambda rows:rows and rows[0]['status'] in ('completed','error'))[0]
             self.assertTrue(task['batch_id']);self.assertEqual(task['preparation']['mode'],'manual')
             self.assertNotEqual(task['status'],'waiting_confirmation')
             _,state=inputs.load('shared',task['batch_id'],'download_shared',self.root)

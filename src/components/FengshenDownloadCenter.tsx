@@ -55,6 +55,12 @@ import {
   type BuiltinScenarioPreset,
   type FengshenDatasetCategoryId,
 } from '../lib/workbench';
+import {
+  shouldUseDemoData,
+  useDemoDataVisibility,
+  usePlatformAuthSnapshot,
+} from '../lib/demoMode';
+import { buildDemoBindingPlatforms, buildDemoTaskCenterRecords } from '../lib/showcaseDemoData';
 
 interface DownloadOptions {
   generators?: ReportDefinition[];
@@ -285,7 +291,20 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const [optionVersion, setOptionVersion] = useState(0);
   const [cities, setCities] = useState<string[]>([]);
   const [bindingPlatforms, setBindingPlatforms] = useState<Record<string, BindingPlatform>>({});
+  const [demoBindingPlatforms, setDemoBindingPlatforms] = useState<Record<string, BindingPlatform>>(
+    () => buildDemoBindingPlatforms(),
+  );
   const [bindingPlatformsBusy, setBindingPlatformsBusy] = useState(false);
+  const authSnapshot = usePlatformAuthSnapshot();
+  const { demoHidden } = useDemoDataVisibility();
+  const bindingPlatformsDemoActive = shouldUseDemoData({
+    isLoggedIn: authSnapshot.anyLoggedIn,
+    hasLiveData: Object.keys(bindingPlatforms).length > 0,
+    demoHidden,
+  });
+  const effectiveBindingPlatforms = bindingPlatformsDemoActive
+    ? demoBindingPlatforms
+    : bindingPlatforms;
   const [datasets, setDatasets] = useState<string[]>(() =>
     platform === 'payout'
       ? ['baize_employees', 'benlai_employees']
@@ -559,10 +578,14 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       })
       .catch(() => {});
     return () => { active = false; };
-  }, [getJson]);
+  }, [getJson, authSnapshot.anyLoggedIn]);
 
   const updateBindingPlatforms = useCallback(async (next: Record<string, string>) => {
     const clean = cleanBindingPlatforms(next);
+    if (bindingPlatformsDemoActive) {
+      setDemoBindingPlatforms(clean);
+      return;
+    }
     setBindingPlatforms(clean);
     setBindingPlatformsBusy(true);
     try {
@@ -577,7 +600,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     } finally {
       setBindingPlatformsBusy(false);
     }
-  }, [getJson]);
+  }, [bindingPlatformsDemoActive, getJson]);
 
   const stationDirectory=useStationDirectory(platform==='xiaoxiang'?'xiaoxiang':'fengshen',apiRef.current,platform!=='payout');
 
@@ -1389,7 +1412,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
         {
           excludeSeparation,
           selectedMonths: reportActiveMonths.length > 0 ? reportActiveMonths : undefined,
-          bindingPlatforms: bindingPlatforms,
+          bindingPlatforms: effectiveBindingPlatforms,
         },
       )
     : [];
@@ -1736,7 +1759,29 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     : `资料项已结束，正在生成多城市汇总${summaryMonth ? `（${summaryMonth}）` : ''}${summaryDetail?.total ? `：${summaryDetail.current || 0}/${summaryDetail.total} 个城市` : ''}${summaryDetail?.city ? ` · 正在合并 ${summaryDetail.city}` : ''}。`;
   const summary = selectedRun?.summary && typeof selectedRun.summary === 'object' ? selectedRun.summary : null;
 
-  const runningCount = runs.filter(run => !TERMINAL_STATUSES.has(run.status.toLowerCase())).length;
+  const [demoTaskActiveCount, setDemoTaskActiveCount] = useState<number>(() =>
+    buildDemoTaskCenterRecords().filter(r =>
+      ['queued', 'running', 'cancelling', 'preparing', 'stopping'].includes(r.status),
+    ).length,
+  );
+  useEffect(() => {
+    const onDemoActiveCount = (event: Event) => {
+      const next = Number((event as CustomEvent)?.detail);
+      if (Number.isFinite(next) && next >= 0) {
+        setDemoTaskActiveCount(next);
+      }
+    };
+    window.addEventListener('workbench:demo-active-count', onDemoActiveCount);
+    return () => window.removeEventListener('workbench:demo-active-count', onDemoActiveCount);
+  }, []);
+
+  const liveRunningCount = runs.filter(run => !TERMINAL_STATUSES.has(run.status.toLowerCase())).length;
+  const demoActiveForHeader = shouldUseDemoData({
+    isLoggedIn: authSnapshot.anyLoggedIn,
+    hasLiveData: runs.length > 0,
+    demoHidden,
+  });
+  const runningCount = demoActiveForHeader ? demoTaskActiveCount : liveRunningCount;
   useEffect(() => { onActiveCountChange?.(runningCount); }, [runningCount, onActiveCountChange]);
   const failedItems = selectedRun?.items?.filter(item => ['error', 'failed', 'interrupted'].includes(item.status)) || [];
   const choiceStyle = (selected: boolean) => `flex min-w-0 cursor-pointer items-center gap-2.5 rounded-lg border px-3.5 py-2.5 text-sm transition-all select-none ${selected ? 'border-sky-600 bg-sky-50 text-sky-900 font-medium shadow-2xs' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50/80'}`;
@@ -1841,7 +1886,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                   onRecollect={checked => setDuplicateApproval(checked ? singleReportKey : '')}
                   refreshing={optionsLoading}
                   onRefreshCities={() => setOptionVersion(version => version + 1)}
-                  bindingPlatforms={bindingPlatforms}
+                  bindingPlatforms={effectiveBindingPlatforms}
                   onBindingPlatformsChange={next => void updateBindingPlatforms(next)}
                   bindingPlatformsSaving={bindingPlatformsBusy}
                 />
@@ -3343,6 +3388,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                 onOpenPrice={onOpenPrice}
         onOpenAttempt={id => {
           setRequestError('');
+          if (id.startsWith('TC-') || id.startsWith('demo-')) return;
           attemptOpenController.current?.abort();
           const controller = new AbortController(); attemptOpenController.current = controller;
           void getJson(`${API_ROOT}/runs/${encodeURIComponent(id)}`, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) })

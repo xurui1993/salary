@@ -133,14 +133,6 @@ class PayrollQueue:
         templates=sorted([p for p in files if 'template' in p.name.lower() and p.suffix.lower()=='.xlsx'])
         if not templates:raise SourceError('没有找到 .xlsx template 薪资申请表')
         if len(templates)>100:raise SourceError('单次最多添加100份薪资模板，请分批提交')
-        from payroll_business import xiaoxiang_template
-        if mode=='xiaoxiang' or any(xiaoxiang_template(path) for path in templates):
-            from baize_accounts import snapshot as baize_snapshot, XIAOXIANG_REQUIRED_MESSAGE
-            account=baize_snapshot(force=True)
-            if account.get('state')!='ready':
-                raise SourceError('商翼账号状态未确认，请先在系统连接确认已登录小象超市账户后重试')
-            if account.get('account_type')!='xiaoxiang':
-                raise SourceError(XIAOXIANG_REQUIRED_MESSAGE)
         config=frozen_config(config,mode)
         fingerprint=hashlib.sha256(json.dumps([str(folder),mode,config,[str(p.relative_to(folder)) for p in templates]],sort_keys=True,ensure_ascii=False).encode()).hexdigest()
         with self.lock,self.connection() as db:
@@ -151,6 +143,7 @@ class PayrollQueue:
             ids=[];tasks=[]
             for template in templates:
                 key=uuid.uuid4().hex
+                from payroll_business import xiaoxiang_template
                 actual_mode='xiaoxiang' if xiaoxiang_template(template) else mode
                 task={'id':key,'wid':wid,'owner':owner,'mode':actual_mode,'source_path':str(folder),'template_path':template.relative_to(folder).as_posix(),
                       'template_name':template.name,'status':'queued','progress':0,'current_action':'排队中','created_at':now(),
@@ -271,15 +264,10 @@ class PayrollQueue:
                     try:
                         _,stored=load(task['wid'],task['batch_id'],task['owner'],self.root);last=public(stored)
                     except SourceError:pass
-                if status=='paused':
-                    reason=(last or {}).get('pause_reason') or data.get('message') or '等待处理资料，尚未执行核算'
-                    self._update(task['id'],{'status':'waiting_materials','preparation':last,'progress':0,
-                                            'current_action':reason,'_finished_clock':None})
-                else:
-                    mapped='completed' if status=='success' else 'cancelled' if status=='cancelled' else 'error'
-                    self._update(task['id'],{'status':mapped,'preparation':last,'progress':100 if mapped=='completed' else 0,
-                                            'current_action':'核算完成，可下载结果' if mapped=='completed' else '任务已停止，资料保留' if mapped=='cancelled' else '任务已结束，请查看日志',
-                                            '_finished_clock':time.time()})
+                mapped='completed' if status=='success' else 'cancelled' if status=='cancelled' else 'error'
+                self._update(task['id'],{'status':mapped,'preparation':last,'progress':100 if mapped=='completed' else 0,
+                                        'current_action':'核算完成，可下载结果' if mapped=='completed' else '任务已停止，资料保留' if mapped=='cancelled' else '任务已结束，请查看日志',
+                                        '_finished_clock':time.time()})
             if self._stopped(task['id']) and not (kind=='finish' and data.get('status')=='success'):
                 if task.get('batch_id'):
                     from payroll_control import stop
@@ -342,22 +330,6 @@ class PayrollQueue:
             require_confirmation(state,stored)
             task.update(status='queued',current_action='已确认扣款，等待核算',_continue_version=stored,stop_requested=False)
             self._write(db,task)
-        self.wake.set();return self.get(wid,owner,key)
-
-    def retry_task(self,wid,owner,key):
-        with self.lock,self.connection() as db:
-            task=self._find(db,wid,owner,key)
-            if task.get('hidden') or task['status'] not in ('waiting_materials','error','interrupted','cancelled'):
-                raise SourceError('当前任务不可继续')
-            batch_id=task.get('batch_id')
-        if not batch_id:raise SourceError('原批次不存在，请重新上传')
-        from payroll_inputs import retry_preparation_batch
-        retry_preparation_batch(wid,owner,batch_id)
-        with self.lock,self.connection() as db:
-            task=self._find(db,wid,owner,key)
-            task.update(status='queued',current_action='已重新排队，正在准备资料',stop_requested=False,_finished_clock=None)
-            self._write(db,task)
-        if self.autostart:self.start()
         self.wake.set();return self.get(wid,owner,key)
 
     def bundle(self,wid,owner,ids):
@@ -465,11 +437,6 @@ async def bundle_tasks(request:Request):
 async def set_approval(key:str,request:Request):
     wid,owner=identity(request);data=await payload(request)
     return call(get_queue().set_approval,wid,owner,key,data.get('approval_code'))
-
-
-@router.post('/{key}/retry')
-def retry_task(key:str,request:Request):
-    wid,owner=identity(request);return {'task':call(get_queue().retry_task,wid,owner,key)}
 
 
 @router.post('/{key}/stop')

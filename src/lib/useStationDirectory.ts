@@ -2,6 +2,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getWorkspaceId } from '../utils';
 import { sortCitiesWithLanorangeFirst } from './workbench';
+import { shouldUseDemoData, useDemoDataVisibility, usePlatformAuthSnapshot } from './demoMode';
+import { buildDemoStationDirectory } from './showcaseDemoData';
 
 const defaultFetch = (url: string, init?: RequestInit) => {
   const headers = new Headers(init?.headers);
@@ -15,6 +17,7 @@ export interface StationDirectory {
   status?: string;
   fetched_at?: string;
   message?: string;
+  demo?: boolean;
   [key: string]: any;
 }
 
@@ -24,10 +27,12 @@ export function useStationDirectory(
   platform: any,
   fetcher: any = defaultFetch,
   enabled = true,
-): { data: StationDirectory | null; error: string; refresh: () => void } {
+): { data: StationDirectory | null; error: string; refresh: () => void; isDemo?: boolean } {
   const [data, setData] = useState<StationDirectory | null>(null);
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
+  const auth = usePlatformAuthSnapshot();
+  const { demoHidden } = useDemoDataVisibility();
 
   useEffect(() => {
     if (!enabled) return;
@@ -83,10 +88,33 @@ export function useStationDirectory(
     };
   }, [platform, reload, enabled]);
 
+  const normalizedPlatform: 'fengshen' | 'xiaoxiang' = platform === 'xiaoxiang' ? 'xiaoxiang' : 'fengshen';
+  const isLoggedIn = auth.isLoggedIn(normalizedPlatform);
+  const hasLiveDirectory = Boolean(
+    data &&
+      data.status === 'ready' &&
+      Array.isArray(data.cities) &&
+      data.cities.some(c => typeof c.station_count === 'number'),
+  );
+  const useDemo =
+    typeof window !== 'undefined' &&
+    enabled &&
+    shouldUseDemoData({
+      isLoggedIn,
+      hasLiveData: hasLiveDirectory,
+      demoHidden,
+    });
+
+  const demoData = useMemo(
+    () => (useDemo ? buildDemoStationDirectory(normalizedPlatform) : null),
+    [useDemo, normalizedPlatform],
+  );
+
   return {
-    data,
-    error,
+    data: useDemo ? demoData : data,
+    error: useDemo ? '' : error,
     refresh: () => setReload(value => value + 1),
+    isDemo: useDemo,
   };
 }
 

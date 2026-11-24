@@ -308,8 +308,7 @@ export function PayrollBatchDetailDrawer({
         )}
 
         {/* 3. 状态指引条（待确认扣款支持就地一键确认继续；失败支持查看关联采集任务） */}
-        {((task.status === 'waiting_materials' && (task.preparation?.pause_reason || task.current_action)) ||
-          (task.status === 'error' && task.preparation?.pause_reason)) && (
+        {task.status === 'waiting_materials' && (task.preparation?.pause_reason || task.current_action) && (
           <div className="pq-drawer__callout is-warn" role="status">
             <div className="pq-drawer__callout-copy">
               <AlertTriangle size={14} aria-hidden="true" />
@@ -319,11 +318,6 @@ export function PayrollBatchDetailDrawer({
               <button type="button" className="wbx-btn wbx-btn--sm wbx-btn--primary" onClick={onOpenConnections}>
                 检查平台授权
               </button>
-              {task.status === 'waiting_materials' && onRetry && (
-                <button type="button" className="wbx-btn wbx-btn--sm wbx-btn--primary" onClick={() => onRetry(task)}>
-                  继续执行
-                </button>
-              )}
               {onNavigateTaskCenter && (
                 <button
                   type="button"

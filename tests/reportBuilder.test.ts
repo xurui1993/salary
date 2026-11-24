@@ -23,6 +23,7 @@ import {
   toggleReportSelection,
   type ReportDefinition,
 } from '../src/lib/reportBuilder';
+import { buildDemoBindingPlatforms } from '../src/lib/showcaseDemoData';
 import { isGenerator, registerGeneratorIds } from '../src/lib/taskCatalog';
 
 const monthly: ReportDefinition = {
@@ -540,6 +541,9 @@ test('binding platform helpers handle single updates, batch updates, auto cleari
     partitioned.shangyi.map(c => c.name),
     ['北京', '上海', '广州'],
   );
+
+  const demoMap = buildDemoBindingPlatforms(['上海', '北京', '宁波']);
+  assert.deepEqual(demoMap, { 上海: '本来人力', 宁波: '本来人力', 北京: '商翼' });
 
   const cleared = applyBatchBindingPlatform(state, ['上海', '深圳'], '');
   assert.deepEqual(cleared, {});
