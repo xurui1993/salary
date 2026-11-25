@@ -8,9 +8,7 @@ import {filterApprovalTasks,type ApprovalEligibilityFilter} from '../lib/workben
 import {shouldUseDemoData,useDemoDataVisibility,usePlatformAuthSnapshot} from '../lib/demoMode';
 import {
   buildDemoApprovalPriceTable,
-  buildDemoApprovalReceiptBatches,
   buildDemoApprovalReceiptCsv,
-  buildDemoLanorangeApprovals,
 } from '../lib/showcaseDemoData';
 import {DemoDataChip} from './DemoDataChip';
 import {formatPayrollDateTime,payrollPeriodRange} from '../lib/payrollQueue';
@@ -104,10 +102,8 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
   const [activeViewTab,setActiveViewTab]=useState<'pending'|'results'>('pending');
   const [receiptStatusFilter,setReceiptStatusFilter]=useState<'all'|'success'|'issue'|'failed'|'uncertain'|'changed'|'not_sent'|'pending'>('all');
   const [serverLoggedIn,setServerLoggedIn]=useState(false);
-  const [demoRows,setDemoRows]=useState<Task[]>(()=>
-    buildDemoLanorangeApprovals().map(r=>({...r,business_id:r.businessCode,revision:'demo-rev-1'})) as Task[]
-  );
-  const [demoHistory,setDemoHistory]=useState<Batch[]>(()=>buildDemoApprovalReceiptBatches());
+  const [demoRows,setDemoRows]=useState<Task[]>([]);
+  const [demoHistory,setDemoHistory]=useState<Batch[]>([]);
   const [demoBatch,setDemoBatch]=useState<Batch|null>(null);
 
   const auth=usePlatformAuthSnapshot();
@@ -441,7 +437,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
           return (
             <button
               type="button"
-              className="wbx-btn wbx-btn--sm"
+              className="wbx-btn wbx-btn--sm wbx-ap-sync-btn"
               disabled={listBusy || !!command}
               title={needsLogin ? '登录真实蓝橙账号并切换实时待办' : '刷新并同步本人蓝橙待办'}
               onClick={() => {

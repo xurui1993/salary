@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useStationDirectory } from '../lib/useStationDirectory';
 import { CityStationAccordionCard } from './CityStationAccordionCard';
 import { CityDeductionTableView } from './CityDeductionTableView';
@@ -104,8 +104,8 @@ export function StationDeductionManager({
   const [demoStore, setDemoStore] = useState<
     Record<'fengshen' | 'xiaoxiang', ReturnType<typeof buildDemoDeductionData>>
   >(() => ({
-    fengshen: buildDemoDeductionData('fengshen'),
-    xiaoxiang: buildDemoDeductionData('xiaoxiang'),
+    fengshen: { platform: 'fengshen', profile: { version: 0 }, columns: [], entries: [], cities: [] } as unknown as ReturnType<typeof buildDemoDeductionData>,
+    xiaoxiang: { platform: 'xiaoxiang', profile: { version: 0 }, columns: [], entries: [], cities: [] } as unknown as ReturnType<typeof buildDemoDeductionData>,
   }));
 
   const isPlatformLoggedIn = auth.isLoggedIn(currentPlatform);
@@ -134,7 +134,7 @@ export function StationDeductionManager({
     prevPlatformLoggedInRef.current = isPlatformLoggedIn;
   }, [isPlatformLoggedIn]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const mainEl = document.querySelector<HTMLElement>('.wbx-main');
     if (mainEl) {
       mainEl.scrollTop = 0;

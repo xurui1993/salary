@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   Check,
   ChevronDown,
@@ -309,9 +309,25 @@ export function ReportBuilder(props: ReportBuilderProps) {
   const singleReport = singleMode ? selectedReports[0] : undefined;
   const cityStepNumber = singleMode ? '01' : '02';
   const monthStepNumber = singleMode ? '02' : '03';
+  const workbenchRef = useRef<HTMLElement | null>(null);
+  const selectedIdsKey = activeSelectedIds.join(',');
+  const lastReportSwitchKeyRef = useRef('');
+  useLayoutEffect(() => {
+    if (!lastReportSwitchKeyRef.current) {
+      lastReportSwitchKeyRef.current = selectedIdsKey;
+      return;
+    }
+    if (lastReportSwitchKeyRef.current === selectedIdsKey) return;
+    lastReportSwitchKeyRef.current = selectedIdsKey;
+    const el = workbenchRef.current;
+    if (!el) return;
+    el.classList.remove('is-entering');
+    void el.offsetWidth;
+    el.classList.add('is-entering');
+  }, [selectedIdsKey]);
 
   return (
-    <section className={`rb-workbench${singleMode ? ' is-single-module' : ''}`} aria-label="业务报表生成">
+    <section ref={workbenchRef} className={`rb-workbench wbx-route-stage${singleMode ? ' is-single-module' : ''}`} aria-label="业务报表生成">
       <div className="rb-main">
         {singleMode && singleReport ? (
           !scopeSummary.allGlobal && scopeSummary.sources.length > 0 ? (

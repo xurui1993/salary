@@ -14,7 +14,6 @@ import {
   useDemoDataVisibility,
   usePlatformAuthSnapshot,
 } from '../lib/demoMode';
-import { buildDemoLanorangeApprovals } from '../lib/showcaseDemoData';
 
 export interface ApprovalPendingTaskItem {
   id: string;
@@ -86,9 +85,7 @@ export function HeaderApprovalNotifier({
   const [loggedIn, setLoggedIn] = useState(false);
   const [actorLabel, setActorLabel] = useState('');
   const [rows, setRows] = useState<ApprovalPendingTaskItem[]>([]);
-  const [demoRows, setDemoRows] = useState<ApprovalPendingTaskItem[]>(() =>
-    buildDemoLanorangeApprovals() as unknown as ApprovalPendingTaskItem[],
-  );
+  const [demoRows, setDemoRows] = useState<ApprovalPendingTaskItem[]>([]);
   const [unreadIds, setUnreadIds] = useState<string[]>([]);
   const [lastCheckedAt, setLastCheckedAt] = useState<string>('');
 

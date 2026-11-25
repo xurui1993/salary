@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import {createUploadArchive} from './lib/uploadArchive';
 import { uploadSource } from "./lib/uploadSource";
 import {pendingQueueSubmission,prepareQueueSubmission,sendQueueSubmission} from './lib/payrollQueueSubmit';
@@ -18,7 +18,6 @@ import {
   UsersRound,
   Radar,
   Search,
-  Terminal,
 } from "lucide-react";
 import { UploadProgressOverlay } from "./components/UploadProgressOverlay";
 import type { PayrollPreparationState } from './components/PayrollPreparation';
@@ -31,7 +30,6 @@ import { WorkbenchDrawer } from "./components/WorkbenchDrawer";
 import { SystemConnections } from "./components/SystemConnections";
 import { fetchWithPreflight } from "./lib/authPreflight";
 import { HeaderApprovalNotifier } from "./components/HeaderApprovalNotifier";
-import { HeaderDownloadCenter } from "./components/HeaderDownloadCenter";
 import { TaskStatusNotifier } from "./components/TaskStatusNotifier";
 import { LanorangeApprovals } from "./components/LanorangeApprovals";
 import { LanorangePriceExports } from "./components/LanorangePriceExports";
@@ -215,6 +213,7 @@ export default function App() {
   }, [isDrawerMode]);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         setCmdkOpen(prev => !prev);
@@ -300,18 +299,16 @@ export default function App() {
   const taskSnapshotRef = useRef<Map<string, string> | null>(null);
   const seenTaskAlertKeysRef = useRef<Set<string>>(new Set());
   const [payrollResumeVersion, setPayrollResumeVersion] = useState(0);
-  const [pageAnimFlip, setPageAnimFlip] = useState(false);
   const mainScrollRef = useRef<HTMLElement | null>(null);
   const lastRouteSigRef = useRef('');
   const currentRouteSig = `${workspaceView}|${taskKind}|${downloadPlatform}|${activeReportId}|${payrollSubView}`;
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!lastRouteSigRef.current) {
       lastRouteSigRef.current = currentRouteSig;
       return;
     }
     if (lastRouteSigRef.current !== currentRouteSig) {
       lastRouteSigRef.current = currentRouteSig;
-      setPageAnimFlip(v => !v);
       if (mainScrollRef.current) {
         mainScrollRef.current.scrollTop = 0;
       }
@@ -399,17 +396,6 @@ export default function App() {
       };
     });
   }, [workspaceView, taskKind, payrollSubView]);
-
-  // Pre-warm heavy secondary modules during idle time after initial paint so first tab switch is 0ms instant
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setMountedPanels(prev => {
-        if (prev.batches && prev.deductions && prev.templates && prev.approval) return prev;
-        return { batches: true, deductions: true, templates: true, approval: true };
-      });
-    }, 650);
-    return () => window.clearTimeout(timer);
-  }, []);
   const openTaskCenterFromCurrent = (options?: { focusId?: string; highlightId?: string }) => {
     const returnTarget = buildTaskReturnTarget({
       workspaceView,
@@ -1459,7 +1445,7 @@ export default function App() {
             );
           })()}
           <main ref={mainScrollRef} className="wb-main wbx-main">
-            <div className={`wbx-page ${pageAnimFlip ? 'wbx-page-enter-a' : 'wbx-page-enter-b'}`}>
+            <div className="wbx-page">
             {missingCityTeams.length > 0 && (
               <section className="mb-4 rounded-xl border border-amber-300 bg-amber-50/95 p-4 shadow-xs" role="alert" aria-label="未匹配城市团队警告">
                 <div className="flex items-center justify-between mb-2">
@@ -1534,9 +1520,9 @@ export default function App() {
 
             {(mountedPanels.approval || workspaceView === 'approval') && (
               <div
+                className="wbx-route-stage"
                 hidden={workspaceView !== 'approval'}
                 aria-hidden={workspaceView !== 'approval' || undefined}
-                style={workspaceView !== 'approval' ? { display: 'none' } : undefined}
               >
                 <LanorangeApprovals
                   active={workspaceView === 'approval'}
@@ -1549,22 +1535,20 @@ export default function App() {
               </div>
             )}
             {workspaceView === 'price-export' && (
-              <LanorangePriceExports
-                focusId={priceRecordId}
-                apiFetch={fetchWithAuth}
-                workspaceId={workspaceId}
-                onActiveCount={setApprovalActiveCount}
-                onSwitchView={view => navigateWorkspace(view)}
-              />
+              <div className="wbx-route-stage">
+                <LanorangePriceExports
+                  focusId={priceRecordId}
+                  apiFetch={fetchWithAuth}
+                  workspaceId={workspaceId}
+                  onActiveCount={setApprovalActiveCount}
+                  onSwitchView={view => navigateWorkspace(view)}
+                />
+              </div>
             )}
             <section
+              className="wbx-route-stage"
               hidden={workspaceView === 'approval' || workspaceView === 'price-export' || (workspaceView !== 'history' && taskKind === 'payroll')}
               aria-hidden={workspaceView === 'approval' || workspaceView === 'price-export' || (workspaceView !== 'history' && taskKind === 'payroll') || undefined}
-              style={
-                workspaceView === 'approval' || workspaceView === 'price-export' || (workspaceView !== 'history' && taskKind === 'payroll')
-                  ? { display: 'none' }
-                  : undefined
-              }
               aria-label="任务下载"
             >
               <FengshenDownloadCenter
@@ -1621,16 +1605,16 @@ export default function App() {
               />
             </section>
             <section
+              className="wbx-route-stage"
               hidden={workspaceView !== 'create' || taskKind !== 'payroll'}
               aria-hidden={workspaceView !== 'create' || taskKind !== 'payroll' || undefined}
-              style={workspaceView !== 'create' || taskKind !== 'payroll' ? { display: 'none' } : undefined}
               aria-label="兼职薪资核算"
             >
               {(mountedPanels.batches || payrollSubView === 'batches') && (
                 <div
+                  className="wbx-route-stage"
                   hidden={payrollSubView !== 'batches'}
                   aria-hidden={payrollSubView !== 'batches' || undefined}
-                  style={payrollSubView !== 'batches' ? { display: 'none' } : undefined}
                 >
                   <CorePage
                     active={workspaceView === 'create' && taskKind === 'payroll' && payrollSubView === 'batches'}
@@ -1674,9 +1658,9 @@ export default function App() {
 
               {(mountedPanels.deductions || payrollSubView === 'deductions') && (
                 <div
+                  className="wbx-route-stage"
                   hidden={payrollSubView !== 'deductions'}
                   aria-hidden={payrollSubView !== 'deductions' || undefined}
-                  style={payrollSubView !== 'deductions' ? { display: 'none' } : undefined}
                 >
                   <StationDeductionManager
                     inline
@@ -1690,9 +1674,9 @@ export default function App() {
 
               {(mountedPanels.templates || payrollSubView === 'templates') && (
                 <div
+                  className="wbx-route-stage"
                   hidden={payrollSubView !== 'templates'}
                   aria-hidden={payrollSubView !== 'templates' || undefined}
-                  style={payrollSubView !== 'templates' ? { display: 'none' } : undefined}
                 >
                   <SystemTemplatesPanel
                     onNavigatePayroll={() => setPayrollSubView('batches')}

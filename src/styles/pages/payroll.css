@@ -353,7 +353,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  flex: 1 1 auto;
+  flex: 1 1 260px;
   min-width: 0;
   overflow: hidden;
 }
@@ -393,7 +393,10 @@
   color: #0f172a;
   line-height: 1.35;
   white-space: nowrap;
-  flex-shrink: 0;
+  min-width: 0;
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .wbx-payroll__upload-text p {
@@ -403,6 +406,7 @@
   color: #64748b;
   line-height: 1.35;
   white-space: nowrap;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -454,6 +458,8 @@
   border-radius: 10px;
   box-shadow: var(--wbx-shadow-xs);
   overflow: hidden;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .pq-queue-heading {
@@ -692,6 +698,22 @@
   color: #475569;
 }
 
+@media (max-width: 1240px) {
+  .wbx-payroll__upload-main {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+
+  .wbx-payroll__upload-text {
+    flex-wrap: wrap;
+    gap: 2px 8px;
+  }
+
+  .wbx-payroll__upload-actions {
+    flex-wrap: wrap;
+  }
+}
+
 @media (max-width: 1180px) {
   .wbx-payroll__top-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -830,9 +852,7 @@
   flex-direction: column;
   border: 1px solid rgba(24, 25, 28, 0.055);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.94);
-  backdrop-filter: var(--wbx-blur-card);
-  -webkit-backdrop-filter: var(--wbx-blur-card);
+  background: #ffffff;
   box-shadow: var(--wbx-shadow-sm);
   overflow: hidden;
   min-width: 0;
@@ -2384,10 +2404,22 @@
 
 .wbx-payroll__scroll {
   max-height: 560px;
+  max-width: 100%;
+  min-width: 0;
   overflow-y: auto;
   overflow-x: auto;
   border: 0;
   border-radius: 0;
+}
+
+.wbx-payroll__scroll .wbx-skeleton-rows,
+.wbx-payroll__scroll .pq-empty {
+  min-height: 248px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 20px;
 }
 
 .wbx-payroll__table {
@@ -2919,6 +2951,8 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 10px 16px;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 10px 18px;
   background: #f8fafc;
   border-top: 1px solid #e2e8f0;
@@ -4129,9 +4163,8 @@
   padding: 10px 16px;
   border-radius: 12px;
   border: 1px solid #bae6fd;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(8px);
-  box-shadow: 0 10px 26px -10px rgba(15, 23, 42, 0.22), 0 0 0 1px rgba(2, 106, 162, 0.08);
+  background: #ffffff;
+  box-shadow: 0 10px 26px -10px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(2, 106, 162, 0.08);
 }
 
 .wbx-ded-sticky-bar__info {

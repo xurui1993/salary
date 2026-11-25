@@ -59,10 +59,7 @@ import {
   useDemoDataVisibility,
   usePlatformAuthSnapshot,
 } from '../lib/demoMode';
-import {
-  buildDemoTaskCenterRecords,
-  queryDemoTaskCenter,
-} from '../lib/showcaseDemoData';
+import { queryDemoTaskCenter } from '../lib/showcaseDemoData';
 import { DemoDataChip } from './DemoDataChip';
 import type { TaskReturnTarget } from '../lib/taskWorkflow';
 import { buildTaskListFingerprint, computeAdaptivePollDelay } from '../lib/perfUtils';
@@ -186,17 +183,7 @@ export function DownloadRecords({
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [syncMs, setSyncMs] = useState(() => Date.now());
   const [hasLiveServerData, setHasLiveServerData] = useState(false);
-  const [demoRecords, setDemoRecords] = useState<Task[]>(() =>
-    buildDemoTaskCenterRecords().map(item => ({
-      ...item,
-      member_ids: [item.id],
-      attempts: [{ id: item.id, status: item.status }],
-      action_run_id: item.id,
-      output: item.files.length ? `D:\\薪酬结算输出\\任务归档\\${item.id}` : '',
-      files: (item.files || []).map(f => ({ ...f, available: true })),
-      source_files: (item.source_files || []).map(f => ({ ...f, available: true })),
-    })) as unknown as Task[],
-  );
+  const [demoRecords, setDemoRecords] = useState<Task[]>([]);
   const [demoArchivedIds, setDemoArchivedIds] = useState<Set<string>>(() => new Set());
 
   const auth = usePlatformAuthSnapshot();

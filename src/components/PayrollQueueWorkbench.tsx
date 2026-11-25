@@ -65,7 +65,6 @@ import {
   useDemoDataVisibility,
   usePlatformAuthSnapshot,
 } from '../lib/demoMode';
-import { buildDemoPayrollTasks } from '../lib/showcaseDemoData';
 import { DemoDataChip } from './DemoDataChip';
 
 type Props = Pick<
@@ -605,7 +604,7 @@ export function FlashPayrollWorkbench({
   const [sortKey, setSortKey] = useState<PayrollSortKey>('default');
   const [queuePage, setQueuePage] = useState(1);
   const [queuePageSize, setQueuePageSize] = useState(20);
-  const [demoTasks, setDemoTasks] = useState<PayrollQueueTask[]>(() => buildDemoPayrollTasks());
+  const [demoTasks, setDemoTasks] = useState<PayrollQueueTask[]>([]);
   const [demoArchivedIds, setDemoArchivedIds] = useState<Set<string>>(() => new Set());
 
   const auth = usePlatformAuthSnapshot();

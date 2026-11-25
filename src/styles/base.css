@@ -59,28 +59,28 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
  */
 @keyframes wbx-spin { to { transform: rotate(1turn); } }
 @keyframes wbx-shimmer { 0% { opacity: 0.55; } 50% { opacity: 1; } 100% { opacity: 0.55; } }
-@keyframes wbx-page-enter-a {
-  from { opacity: 0.82; transform: translate3d(0, 3px, 0); }
-  to { opacity: 1; transform: none; }
-}
-@keyframes wbx-page-enter-b {
-  from { opacity: 0.82; transform: translate3d(0, 3px, 0); }
-  to { opacity: 1; transform: none; }
+@keyframes wbx-view-enter {
+  from { opacity: 0.86; }
+  to { opacity: 1; }
 }
 .wbx-spin { animation: wbx-spin var(--wbx-dur-spin) linear infinite; will-change: transform; }
-.wbx-page-enter-a {
-  animation: wbx-page-enter-a 130ms var(--wbx-ease);
+.wbx-route-stage {
+  min-width: 0;
 }
-.wbx-page-enter-b {
-  animation: wbx-page-enter-b 130ms var(--wbx-ease);
+.wbx-route-stage[hidden] {
+  display: none;
+}
+.wbx-route-stage:not([hidden]),
+.wbx-route-stage.is-entering {
+  animation: wbx-view-enter 170ms var(--wbx-ease);
 }
 
 /* 无障碍兜底：不写强制标记，靠双类特异性压过上面的单类声明 */
 @media (prefers-reduced-motion: reduce) {
   .wbx-spin.wbx-spin { animation-duration: 0.01ms; animation-iteration-count: 1; }
   .wbx-skeleton.wbx-skeleton { animation: none; }
-  .wbx-page-enter-a.wbx-page-enter-a,
-  .wbx-page-enter-b.wbx-page-enter-b { animation: none; }
+  .wbx-route-stage.wbx-route-stage,
+  .wbx-route-stage.is-entering.is-entering { animation: none; }
   html { scroll-behavior: auto; }
 }
 

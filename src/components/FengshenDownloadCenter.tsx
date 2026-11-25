@@ -3,7 +3,7 @@ import {CityStationCount} from './CityStationCount';
 import { recoverySummary } from '../lib/downloadCenterLogic';
 import { readDownloadResponse, saveDownloadBlob, downloadOutput, downloadErrorMessage } from '../lib/outputDownload';
 import { isBaize, isBenlai, isPayoutPlatform, isXiaoxiang, isRiderArchive, isGlobalDataset, datasetGroup,isMerchant,isMerchantSnapshot,toggleDownloadDataset } from '../lib/downloadCenterLogic';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AlertCircle, Calendar, CheckCircle2, CloudDownload, Download, FileSpreadsheet, KeyRound, Loader2, Plus, RefreshCw, Square, X, XCircle, Pencil, Trash2, AlertTriangle, UsersRound, Building2, History, ArrowUpRight, Compass, Layers, Radar } from 'lucide-react';
 import { DownloadAccountPanel } from './DownloadAccountPanel';
 import type { FengshenAuthStatus } from './FengshenLoginModal';
@@ -63,7 +63,6 @@ import {
   useDemoDataVisibility,
   usePlatformAuthSnapshot,
 } from '../lib/demoMode';
-import { buildDemoBindingPlatforms, buildDemoTaskCenterRecords } from '../lib/showcaseDemoData';
 
 interface DownloadOptions {
   generators?: ReportDefinition[];
@@ -320,9 +319,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const [optionVersion, setOptionVersion] = useState(0);
   const [cities, setCities] = useState<string[]>([]);
   const [bindingPlatforms, setBindingPlatforms] = useState<Record<string, BindingPlatform>>({});
-  const [demoBindingPlatforms, setDemoBindingPlatforms] = useState<Record<string, BindingPlatform>>(
-    () => buildDemoBindingPlatforms(),
-  );
+  const [demoBindingPlatforms, setDemoBindingPlatforms] = useState<Record<string, BindingPlatform>>({});
   const [bindingPlatformsBusy, setBindingPlatformsBusy] = useState(false);
   const authSnapshot = usePlatformAuthSnapshot();
   const { demoHidden } = useDemoDataVisibility();
@@ -538,7 +535,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const [uncertainCreate, setUncertainCreate] = useState(!!createAttempt.current);
   useEffect(() => { onFormLock?.(uncertainCreate || creating); }, [uncertainCreate, creating]);
   useEffect(() => { onViewChange?.(view); }, [view]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (previousKind.current === selectionScope || createAttempt.current) return;
     const previous = previousKind.current; previousKind.current = selectionScope;
     scopeSelections.current[previous] = {cities:[...cities],start,end,selectedMonths:[...selectedMonths],includeSeparation,excludeSeparation,allDates:xiaoxiangAllDates};
@@ -904,7 +901,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const archiveOnly: boolean = xiaoxiangOnly && activeDatasets.length > 0 && activeDatasets.every(isRiderArchive);
   const xiaoxiangDated: boolean = xiaoxiangOnly && !archiveOnly;
   const xiaoxiangAllDatesActive = xiaoxiangDated && xiaoxiangAllDates;
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!xiaoxiangDated && xiaoxiangAllDates) setXiaoxiangAllDates(false);
   }, [xiaoxiangDated, xiaoxiangAllDates]);
   const yesterday = new Date(shanghaiToday() + 'T00:00:00Z'); yesterday.setUTCDate(yesterday.getUTCDate() - 1);
@@ -972,7 +969,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     return {start:nextStart,end:nextEnd,blocked:range.blocked||nextStart>nextEnd};
   };
   const activeSelectedMonthsKey = activeSelectedMonths.join(',');
-  useEffect(()=>{
+  useLayoutEffect(()=>{
     if(!xiaoxiangOnly || xiaoxiangAllDatesActive)return;
     if(activeSelectedMonths.length > 0){
       const chunks = buildMultiMonthRunRanges(activeSelectedMonths, shanghaiToday(), { capAtYesterday: true, maxDaysPerRun: 31 });
@@ -1003,6 +1000,22 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       }
     }
   },[xiaoxiangOnly,xiaoxiangAllDatesActive,dailyDate,activeSelectedMonthsKey]);
+  const downloadWorkbenchRef = useRef<HTMLElement | null>(null);
+  const lastWorkbenchStageRef = useRef('');
+  useLayoutEffect(() => {
+    const sig = `${selectionScope}|${view}|${isGenerateMode ? '1' : '0'}`;
+    if (!lastWorkbenchStageRef.current) {
+      lastWorkbenchStageRef.current = sig;
+      return;
+    }
+    if (lastWorkbenchStageRef.current === sig) return;
+    lastWorkbenchStageRef.current = sig;
+    const el = downloadWorkbenchRef.current;
+    if (!el) return;
+    el.classList.remove('is-entering');
+    void el.offsetWidth;
+    el.classList.add('is-entering');
+  }, [selectionScope, view, isGenerateMode]);
   const merchantDateValid=merchantSnapshotOnly||(validDates&&start>=attendanceFirst&&end<=attendanceLast);
   const invalidBaizeMix = !platform && datasets.some(isPayoutPlatform) && !datasets.every(isPayoutPlatform);
   const invalidBenlaiMix = false;
@@ -1898,11 +1911,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     : `资料项已结束，正在生成多城市汇总${summaryMonth ? `（${summaryMonth}）` : ''}${summaryDetail?.total ? `：${summaryDetail.current || 0}/${summaryDetail.total} 个城市` : ''}${summaryDetail?.city ? ` · 正在合并 ${summaryDetail.city}` : ''}。`;
   const summary = selectedRun?.summary && typeof selectedRun.summary === 'object' ? selectedRun.summary : null;
 
-  const [demoTaskActiveCount, setDemoTaskActiveCount] = useState<number>(() =>
-    buildDemoTaskCenterRecords().filter(r =>
-      ['queued', 'running', 'cancelling', 'preparing', 'stopping'].includes(r.status),
-    ).length,
-  );
+  const [demoTaskActiveCount, setDemoTaskActiveCount] = useState<number>(0);
   useEffect(() => {
     const onDemoActiveCount = (event: Event) => {
       const next = Number((event as CustomEvent)?.detail);
@@ -2063,7 +2072,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
               )
             )}
             {view === 'create' && !isGenerateMode && <>
-            <section className={`${panel} wb-task-form wb-download-workbench`} aria-label="新建下载配置">
+            <section ref={downloadWorkbenchRef} className={`${panel} wb-task-form wb-download-workbench wbx-route-stage`} aria-label="新建下载配置">
           {optionsError && !options ? <div role="alert" className="flex flex-wrap items-center gap-3 p-5 text-sm text-rose-700"><AlertCircle size={17} />{optionsError}<button className={smallButton} onClick={() => optionsError.includes('请刷新工作台') || optionsError.includes('账号页面已更新') ? location.reload() : setOptionVersion(version => version + 1)}>重新加载</button></div>
             : !options ? <p role="status" className="flex items-center gap-2 p-6 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" />正在加载下载选项…</p>
             : <>
@@ -3534,8 +3543,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
           <div
             hidden={historyHidden}
             aria-hidden={historyHidden || undefined}
-            style={historyHidden ? { display: 'none' } : undefined}
-            className={recordModule ? `${panel} wb-task-form wb-stage-history-card` : undefined}
+            className={`wbx-route-stage${recordModule ? ` ${panel} wb-task-form wb-stage-history-card` : ''}`}
           >
             {recordModule && (
               <div className="wb-form-heading wb-stage-history-heading">

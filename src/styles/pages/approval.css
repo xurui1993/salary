@@ -104,7 +104,14 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+  min-height: 40px;
+  box-sizing: border-box;
   padding-bottom: 6px;
+}
+
+.wbx-ap-sync-btn {
+  min-width: 118px;
+  justify-content: center;
 }
 
 .wbx-ap-inline-meta {
@@ -182,9 +189,7 @@
   gap: 0;
   padding: 18px 22px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.93);
-  backdrop-filter: var(--wbx-blur-card);
-  -webkit-backdrop-filter: var(--wbx-blur-card);
+  background: #ffffff;
   border: 1px solid rgba(24, 25, 28, 0.055);
   box-shadow: var(--wbx-shadow-sm);
   min-width: 0;

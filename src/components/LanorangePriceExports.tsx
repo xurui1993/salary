@@ -4,7 +4,6 @@ import {WorkbenchDatePicker} from './WorkbenchDatePicker';
 import {platformAuthRequest,PlatformAuthError} from '../lib/platformAuthApi';
 import {RefreshCw, ArrowRightLeft, CalendarRange, Download, FileSpreadsheet, KeyRound, ChevronRight} from 'lucide-react';
 import {shouldUseDemoData,useDemoDataVisibility,usePlatformAuthSnapshot} from '../lib/demoMode';
-import {buildDemoPriceExportData} from '../lib/showcaseDemoData';
 import {DemoDataChip} from './DemoDataChip';
 
 type Query={month:string;city:string;station:string;date_from:string;date_to:string};
@@ -34,7 +33,7 @@ function exportStatusTone(status: string): string {
 export function LanorangePriceExports({apiFetch,workspaceId,lanorangeConnected,onActiveCount,onSwitchView,focusId}:{apiFetch:(url:string,init?:RequestInit)=>Promise<Response>;workspaceId:string;lanorangeConnected?:boolean;onActiveCount:(count:number)=>void;onSwitchView?:(view:'approval'|'price-export')=>void;focusId?:string}){
   const [query,setQuery]=useState<Query>(()=>({month:'2026-10',city:'',station:'',date_from:'',date_to:''}));
   const [history,setHistory]=useState<Export[]>([]),[job,setJob]=useState<Export|null>(null),[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[attempt,setAttempt]=useState<Attempt|null>(null);
-  const [demoHistory,setDemoHistory]=useState<Export[]>(()=>buildDemoPriceExportData().exports as unknown as Export[]);
+  const [demoHistory,setDemoHistory]=useState<Export[]>([]);
   const [demoJob,setDemoJob]=useState<Export|null>(null);
   const auth=usePlatformAuthSnapshot();
   const {demoHidden,toggleDemoHidden}=useDemoDataVisibility();
