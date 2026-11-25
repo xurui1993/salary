@@ -22,6 +22,7 @@ ROOT=Path(__file__).parent/'.local_downloads/lanorange_approvals.sqlite3'
 ACTIVE={'queued','running','stopping'}
 BLOCKED={'pending','submitting','uncertain','success'}
 MAX_SELECTED=200
+LOCK_WAIT_SECONDS=90
 LABELS={'pending':'等待提交','submitting':'正在提交','success':'已同意当前节点','failed':'提交被拒绝','changed':'内容或节点已变化','not_sent':'未提交','uncertain':'结果待核实'}
 router=APIRouter(prefix='/api/fengshen-downloads/lanorange-approvals')
 _manager=None
@@ -184,13 +185,27 @@ class ApprovalManager:
     def _stop(self,batch_id):
         with self.connection() as db:return bool(db.execute('SELECT stop FROM batches WHERE id=?',(batch_id,)).fetchone()['stop'])
 
+    def _acquire_collection(self,batch_id):
+        """Wait briefly for the shared collection lock; a background directory
+        scan otherwise turns a submission into an instant no-op."""
+        from parttime_source import COLLECTION_LOCK
+        if COLLECTION_LOCK.acquire(blocking=False):return True
+        with self.lock,self.connection() as db:
+            db.execute("UPDATE items SET message='等待资料采集结束，随后自动提交' WHERE batch_id=? AND status='pending'",(batch_id,))
+        deadline=time.monotonic()+LOCK_WAIT_SECONDS
+        while not self._stop(batch_id) and time.monotonic()<deadline:
+            if COLLECTION_LOCK.acquire(timeout=0.5):return True
+        return False
+
     def run(self,batch_id):
         from parttime_source import COLLECTION_LOCK
         from platform_auth_control import operation
         acquired=False;reason='批次已结束，后续条目未提交'
         try:
-            acquired=COLLECTION_LOCK.acquire(blocking=False)
-            if not acquired:raise ApprovalError('当前资料采集正在运行，本批尚未提交，请稍后重新预览','busy')
+            acquired=self._acquire_collection(batch_id)
+            if not acquired:
+                if self._stop(batch_id):raise ApprovalError('已停止后续审批，此条未提交','changed')
+                raise ApprovalError(f'资料采集已连续运行 {LOCK_WAIT_SECONDS} 秒，本批尚未提交，请稍后重新预览','busy')
             with operation('lanorange'),self.factory() as api:
                 with self.connection() as db:
                     batch=dict(db.execute('SELECT * FROM batches WHERE id=?',(batch_id,)).fetchone());items=db.execute("SELECT * FROM items WHERE batch_id=? AND status='pending' ORDER BY position",(batch_id,)).fetchall()

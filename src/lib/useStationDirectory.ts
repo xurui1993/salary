@@ -106,7 +106,8 @@ export function useStationDirectory(
           setError('');
           const isPendingSync = nextValue?.status === 'loading' || nextValue?.status === 'syncing';
           if (isPendingSync) {
-            timer = setTimeout(() => void read(true), 2500);
+            // 后台扫描由服务端继续，无需每次强制 refresh，避免反复重启全城扫描
+            timer = setTimeout(() => void read(false), 4000);
           }
         }
       } catch (problem) {

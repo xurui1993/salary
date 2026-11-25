@@ -102,6 +102,19 @@ class ApprovalTests(unittest.TestCase):
         self.assertEqual(result['counts'],{'success':2});self.assertEqual([p['taskId'] for p in self.world.writes],['t1','t2'])
         for p in self.world.writes:
             self.assertEqual(p['message'],'同意');self.assertEqual(p['variables'],{});self.assertEqual(p['messageType'],['1']);self.assertEqual(p['flowCopyList'],[{'userId':'copy1','userName':'原默认抄送'}]);self.assertNotIn('fileId',p)
+    def test_busy_collection_lock_is_waited_out_then_submitted(self):
+        import parttime_source
+        class BusyThenFree:
+            def __init__(self,failures):self.failures=failures
+            def acquire(self,*args,**kwargs):
+                if self.failures:self.failures-=1;return False
+                return True
+            def release(self):pass
+        stub=BusyThenFree(3)
+        with patch.object(parttime_source,'COLLECTION_LOCK',stub):
+            batch=self.start();self.manager.run(batch['id'])
+        self.assertEqual([p['taskId'] for p in self.world.writes],['t1','t2'])
+        self.assertEqual(self.manager.batch('space1',batch['id'])['status'],'completed')
     def test_duplicate_request_returns_same_batch_and_changed_preview_conflicts(self):
         preview=self.preview();first=self.start(preview);second=self.start(preview);self.assertEqual(first['id'],second['id'])
         with self.assertRaises(ApprovalError):self.start(self.preview())

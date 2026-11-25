@@ -101,6 +101,15 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
   const [attemptMissing,setAttemptMissing]=useState(false);
   const [activeViewTab,setActiveViewTab]=useState<'pending'|'results'>('pending');
   const [receiptStatusFilter,setReceiptStatusFilter]=useState<'all'|'success'|'issue'|'failed'|'uncertain'|'changed'|'not_sent'|'pending'>('all');
+  // 提交成功后界面会切到结果区；短暂锁定下载，避免连点/回车落在新出现的按钮上误触下载
+  const [downloadCooldown,setDownloadCooldown]=useState(false);
+  const cooldownTimer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
+  const holdDownloads=()=>{
+    if(cooldownTimer.current)clearTimeout(cooldownTimer.current);
+    setDownloadCooldown(true);
+    cooldownTimer.current=setTimeout(()=>setDownloadCooldown(false),1500);
+  };
+  useEffect(()=>()=>{if(cooldownTimer.current)clearTimeout(cooldownTimer.current);},[]);
   const [serverLoggedIn,setServerLoggedIn]=useState(false);
   const [demoRows,setDemoRows]=useState<Task[]>([]);
   const [demoHistory,setDemoHistory]=useState<Batch[]>([]);
@@ -312,7 +321,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
     setAttempt(current);setAttemptMissing(false);remember(attemptKey,current);
     try{
       const result=await request<Batch>('/batches',{...current,confirm:true},20000);
-      if(alive.current){setBatch(result);setPreview(null);setSelection({});setAttempt(null);remember(attemptKey,null);setReceiptStatusFilter('all');setActiveViewTab('results');setRefresh(x=>x+1);void readHistory();}
+      if(alive.current){setBatch(result);setPreview(null);setSelection({});setAttempt(null);remember(attemptKey,null);setReceiptStatusFilter('all');setActiveViewTab('results');holdDownloads();setRefresh(x=>x+1);void readHistory();}
     }catch(err){if(!(err instanceof PlatformAuthError && err.uncertain)){setAttempt(null);remember(attemptKey,null);}else throw new Error('本次审批批次尚未确认，请先查找本次提交；系统不会自动重复审批。');throw err;}
   });}
   async function submit(){
@@ -352,7 +361,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
     catch(err){if(err instanceof PlatformAuthError && err.status===404){setAttemptMissing(true);throw new Error('尚未找到本次批次。可用原提交标识重试，已存在的批次会直接返回。');}throw err;}
   });}
   async function downloadResult(){
-    if(!displayBatch)return;
+    if(!displayBatch || downloadCooldown)return;
     if(demoActive){
       const csv=buildDemoApprovalReceiptCsv(displayBatch);
       const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
@@ -968,7 +977,8 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
               <button
                 type="button"
                 className="wbx-btn wbx-btn--primary wbx-btn--sm"
-                disabled={!!command}
+                disabled={!!command || downloadCooldown}
+                title={downloadCooldown ? '刚提交完成，稍后可下载结果' : '手动下载审批结果 CSV'}
                 onClick={() => void downloadResult()}
               >
                 <Download size={13} />

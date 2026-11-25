@@ -67,6 +67,16 @@ export function cleanTaskTitle(rawTitle: string, platformName?: string, kindLabe
   return trimmed;
 }
 
+const INTERNAL_TASK_PREFIX = /^(?:approval|price-export|payroll_source|payroll|generate|download)[:_]/;
+
+/**
+ * 内部任务 ID 带类型前缀与长哈希；界面只显示与交付目录一致的 6 位短编号，完整值放悬停提示。
+ */
+export function displayTaskNumber(id: string): string {
+  const body = (id || '').trim().replace(INTERNAL_TASK_PREFIX, '');
+  return /^[0-9a-f]{8,}$/i.test(body) ? body.slice(0, 6).toUpperCase() : body;
+}
+
 export function platformTone(platformName: string): TaskPlatformTone {
   if (/风神/.test(platformName)) return 'fengshen';
   if (/灯塔|小象/.test(platformName)) return 'xiaoxiang';

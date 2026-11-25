@@ -7,6 +7,7 @@ import {
   canPermanentlyDeleteTask,
   cleanTaskTitle,
   computeDatePresetRange,
+  displayTaskNumber,
   computeTaskDiagnosticNote,
   formatCitiesCompact,
   formatCompactTimestamp,
@@ -21,6 +22,14 @@ import {
   summarizeTaskBatchSelection,
 } from '../src/lib/taskCenterDisplay';
 import { buildDemoTaskCenterRecords } from '../src/lib/showcaseDemoData';
+
+test('displayTaskNumber strips internal kind prefixes and shows the 6-char delivery code', () => {
+  assert.equal(displayTaskNumber('approval:789096cc07044f45aabbccddeeff0011'), '789096');
+  assert.equal(displayTaskNumber('price-export:0123abcd4567ef890123abcd4567ef89'), '0123AB');
+  assert.equal(displayTaskNumber('payroll_789096cc07044f45aabbccddeeff0011'), '789096');
+  assert.equal(displayTaskNumber('789096cc07044f45aabbccddeeff0011'), '789096');
+  assert.equal(displayTaskNumber(''), '');
+});
 
 test('cleanTaskTitle removes redundant leading platform and kind prefixes without altering plain titles', () => {
   assert.equal(

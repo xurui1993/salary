@@ -32,6 +32,7 @@ import {
   buildTaskTimelineSteps,
   canPermanentlyDeleteTask,
   cleanTaskTitle,
+  displayTaskNumber,
   formatCitiesCompact,
   formatCompactTimestamp,
   formatFileSize,
@@ -397,8 +398,8 @@ export function TaskDetailDrawer({
           </div>
           <div>
             <dt>任务编号</dt>
-            <dd className="tabular-nums" title={task.id}>
-              {task.id}
+            <dd className="tabular-nums" title={`完整编号：${task.id}`}>
+              {displayTaskNumber(task.id)}
             </dd>
           </div>
         </dl>

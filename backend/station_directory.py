@@ -58,6 +58,9 @@ def _scan(platform, version):
                     _publish(platform, version, failure)
                     if getattr(error, 'status_code', None) in (401, 403, 409):
                         raise
+                # Yield between city scans so a waiting approval/export can take
+                # the collection lock instead of starving behind the scan.
+                time.sleep(0.15)
         else:
             def counts(state):
                 for city in state['cities']:
