@@ -200,25 +200,33 @@ async function startServer() {
     process.on("SIGUSR2", cleanup);
   };
 
-  const runAsyncCmd = (cmd: string, args: string[]) =>
+  const runAsyncCmd = (cmd: string, args: string[], silent = false) =>
     new Promise<number>((resolve) => {
-      const child = spawn(cmd, args, { stdio: "inherit", shell: false, windowsHide: true });
+      const child = spawn(cmd, args, {
+        stdio: silent ? "ignore" : "inherit",
+        shell: false,
+        windowsHide: true,
+      });
       child.on("error", () => resolve(1));
       child.on("close", (code) => resolve(code ?? 1));
     });
 
   const setupAndStartBackend = async () => {
     try {
-      const checkCode = await runAsyncCmd(pythonCmd, ["-c", "import fastapi, uvicorn, pandas, polars"]);
+      const checkCode = await runAsyncCmd(
+        pythonCmd,
+        ["-c", "import fastapi, uvicorn, pandas, polars"],
+        true,
+      );
       if (checkCode !== 0) {
-        const pipCode = await runAsyncCmd(pythonCmd, ["-m", "pip", "--version"]);
+        const pipCode = await runAsyncCmd(pythonCmd, ["-m", "pip", "--version"], true);
         if (pipCode !== 0) {
           await runAsyncCmd(pythonCmd, ["-c", "import urllib.request; urllib.request.urlretrieve('https://bootstrap.pypa.io/get-pip.py', '/tmp/get-pip.py')"]);
           await runAsyncCmd(pythonCmd, ["/tmp/get-pip.py", "--break-system-packages"]);
         }
         await runAsyncCmd(pythonCmd, ["-m", "pip", "install", "-r", "backend/requirements.txt", "--break-system-packages", "-q"]);
       }
-      const pwCode = await runAsyncCmd(pythonCmd, ["-c", "import playwright"]);
+      const pwCode = await runAsyncCmd(pythonCmd, ["-c", "import playwright"], true);
       if (pwCode !== 0) {
         await runAsyncCmd(pythonCmd, ["-m", "pip", "install", "-r", "backend/requirements-crawler.txt", "--break-system-packages", "-q"]);
       }
