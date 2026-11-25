@@ -33,6 +33,7 @@ import { HeaderApprovalNotifier } from "./components/HeaderApprovalNotifier";
 import { TaskStatusNotifier } from "./components/TaskStatusNotifier";
 import { LanorangeApprovals } from "./components/LanorangeApprovals";
 import { LanorangePriceExports } from "./components/LanorangePriceExports";
+import { FilePickup } from "./components/FilePickup";
 import { StationDeductionManager } from "./components/StationDeductionManager";
 import {useStationDirectory,stationCountText} from './lib/useStationDirectory';
 import { SystemTemplatesPanel } from "./components/SystemTemplatesPanel";
@@ -242,7 +243,7 @@ export default function App() {
   const [deductionDefaultOnly, setDeductionDefaultOnly] = useState(false);
   const [deductionVersion, setDeductionVersion] = useState(0);
   const [payrollSubView, setPayrollSubView] = useState<PayrollSubView>('batches');
-  const [workspaceView, setWorkspaceView] = useState<'create' | 'history' | 'approval' | 'price-export'>('create');
+  const [workspaceView, setWorkspaceView] = useState<'create' | 'history' | 'approval' | 'price-export' | 'pickup'>('create');
   const [downloadPlatform,setDownloadPlatform]=useState<DownloadPlatform>(()=>{
     try{
       const saved=localStorage.getItem('workbench_download_platform');
@@ -320,7 +321,7 @@ export default function App() {
     writeAutoJumpPreference(next);
   };
   useEffect(() => { try { localStorage.setItem('workbench_task_kind', taskKind); } catch {} setActiveMenu(taskKind === 'payroll' ? 'core' : 'fengshen_downloads'); }, [taskKind]);
-  const navigateWorkspace = (view: 'create' | 'history' | 'approval' | 'price-export') => {
+  const navigateWorkspace = (view: 'create' | 'history' | 'approval' | 'price-export' | 'pickup') => {
     setWorkspaceView(view);
     if (view === 'create' || view === 'history') {
       setDownloadNavigation(previous => ({ view, version: previous.version + 1 }));
@@ -1557,15 +1558,15 @@ export default function App() {
             )}
             <section
               className="wbx-route-stage"
-              hidden={workspaceView === 'approval' || workspaceView === 'price-export' || (workspaceView !== 'history' && taskKind === 'payroll')}
-              aria-hidden={workspaceView === 'approval' || workspaceView === 'price-export' || (workspaceView !== 'history' && taskKind === 'payroll') || undefined}
+              hidden={workspaceView === 'approval' || workspaceView === 'price-export' || workspaceView === 'pickup' || (workspaceView !== 'history' && taskKind === 'payroll')}
+              aria-hidden={workspaceView === 'approval' || workspaceView === 'price-export' || workspaceView === 'pickup' || (workspaceView !== 'history' && taskKind === 'payroll') || undefined}
               aria-label="任务下载"
             >
               <FengshenDownloadCenter
                 apiFetch={fetchWithAuth}
                 workspaceId={workspaceId}
                 navigation={downloadNavigation}
-                isVisible={!(workspaceView === 'approval' || workspaceView === 'price-export' || (workspaceView !== 'history' && taskKind === 'payroll'))}
+                isVisible={!(workspaceView === 'approval' || workspaceView === 'price-export' || workspaceView === 'pickup' || (workspaceView !== 'history' && taskKind === 'payroll'))}
                 embedded
                 hideNavigation
                 taskKind={taskKind === 'generate' ? 'generate' : 'download'}
@@ -1614,6 +1615,11 @@ export default function App() {
                 onTaskSubmitted={handleTaskSubmitted}
               />
             </section>
+            {workspaceView === 'pickup' && (
+              <section className="wbx-route-stage" aria-label="文件领取">
+                <FilePickup apiFetch={fetchWithAuth} />
+              </section>
+            )}
             <section
               className="wbx-route-stage"
               hidden={workspaceView !== 'create' || taskKind !== 'payroll'}

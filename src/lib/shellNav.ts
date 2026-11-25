@@ -5,7 +5,7 @@ import { getPlatformStatusCluster } from './workbench';
 export type NavGroupId = 'collection' | 'reports' | 'payroll' | 'approval' | 'history';
 
 export interface ShellNavState {
-  workspaceView: 'create' | 'history' | 'approval' | 'price-export';
+  workspaceView: 'create' | 'history' | 'approval' | 'price-export' | 'pickup';
   taskKind: 'download' | 'generate' | 'payroll';
   downloadPlatform: DownloadPlatform;
   payrollSubView: PayrollSubView;
@@ -16,7 +16,7 @@ export type ShellCommandAction =
   | { type: 'platform'; platform: DownloadPlatform }
   | { type: 'report'; reportId: string }
   | { type: 'payroll'; subView: PayrollSubView }
-  | { type: 'workspace'; view: 'approval' | 'price-export' | 'history' }
+  | { type: 'workspace'; view: 'approval' | 'price-export' | 'history' | 'pickup' }
   | { type: 'open-dock' }
   | { type: 'open-logs' }
   | { type: 'toggle-sidebar' };
@@ -35,7 +35,8 @@ export type QuickTargetId =
   | 'payroll:templates'
   | 'workspace:approval'
   | 'workspace:price-export'
-  | 'workspace:history';
+  | 'workspace:history'
+  | 'workspace:pickup';
 
 export interface QuickTargetMeta {
   id: QuickTargetId;
@@ -221,6 +222,16 @@ export const QUICK_TARGETS: QuickTargetMeta[] = [
     accent: 'slate',
     action: { type: 'workspace', view: 'history' },
   },
+  {
+    id: 'workspace:pickup',
+    groupId: 'history',
+    label: '文件领取',
+    shortLabel: '领取',
+    moduleLabel: '全局交付',
+    hint: '本机成品与共享电脑文件领取',
+    accent: 'slate',
+    action: { type: 'workspace', view: 'pickup' },
+  },
 ];
 
 const QUICK_TARGET_MAP = new Map<QuickTargetId, QuickTargetMeta>(
@@ -232,7 +243,7 @@ export function getQuickTargetMeta(id: QuickTargetId): QuickTargetMeta | undefin
 }
 
 export function getActiveNavGroup(state: Pick<ShellNavState, 'workspaceView' | 'taskKind'>): NavGroupId {
-  if (state.workspaceView === 'history') return 'history';
+  if (state.workspaceView === 'history' || state.workspaceView === 'pickup') return 'history';
   if (state.workspaceView === 'approval' || state.workspaceView === 'price-export') return 'payroll';
   if (state.taskKind === 'payroll') return 'payroll';
   if (state.taskKind === 'generate') return 'reports';
@@ -246,7 +257,7 @@ export function getRailIndex(groupId: NavGroupId): number {
 
 export function getCurrentQuickTargetId(state: ShellNavState): QuickTargetId {
   const groupId = getActiveNavGroup(state);
-  if (groupId === 'history') return 'workspace:history';
+  if (groupId === 'history') return state.workspaceView === 'pickup' ? 'workspace:pickup' : 'workspace:history';
   if (state.workspaceView === 'approval' || state.workspaceView === 'price-export') {
     return 'workspace:approval';
   }
@@ -403,17 +414,25 @@ export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
     };
   }
 
+  const isPickup = state.workspaceView === 'pickup';
   return {
     groupId: 'history',
     moduleLabel: '全局交付',
-    viewLabel: '任务中心',
+    viewLabel: isPickup ? '文件领取' : '任务中心',
     siblings: [
       {
         id: 'history',
         label: '任务中心',
         hint: '全部历史任务与文件下载',
-        active: true,
+        active: !isPickup,
         action: { type: 'workspace', view: 'history' },
+      },
+      {
+        id: 'pickup',
+        label: '文件领取',
+        hint: '本机成品与共享电脑文件一键获取',
+        active: isPickup,
+        action: { type: 'workspace', view: 'pickup' },
       },
     ],
   };
@@ -519,6 +538,15 @@ export function buildShellCommands(
       keywords: ['history', 'task', 'rw', '任务', '记录', '下载', '归档'],
       active: state.workspaceView === 'history',
       action: { type: 'workspace', view: 'history' },
+    },
+    {
+      id: 'nav-pickup',
+      group: '全局调度',
+      label: '文件领取',
+      subtitle: '按任务领取本机成品，或浏览局域网共享电脑的文件',
+      keywords: ['pickup', 'lingqu', 'lq', '文件', '领取', '共享', '局域网', 'ip'],
+      active: state.workspaceView === 'pickup',
+      action: { type: 'workspace', view: 'pickup' },
     },
     {
       id: 'act-platform-dock',

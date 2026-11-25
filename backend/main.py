@@ -104,6 +104,8 @@ from payroll_queue import router as payroll_queue_router
 app.include_router(payroll_queue_router)
 from task_center import router as task_center_router
 app.include_router(task_center_router)
+from file_pickup import router as file_pickup_router
+app.include_router(file_pickup_router)
 
 
 class ConfigRequest(BaseModel):

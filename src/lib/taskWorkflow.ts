@@ -117,7 +117,7 @@ function getSafeLocalStorage(): StorageLike | null {
 }
 
 export function buildTaskReturnTarget(state: ShellNavState): TaskReturnTarget | null {
-  if (state.workspaceView === 'history') return null;
+  if (state.workspaceView === 'history' || state.workspaceView === 'pickup') return null;
 
   if (state.workspaceView === 'approval') {
     return {

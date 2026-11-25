@@ -6,6 +6,7 @@ import {
   FileSpreadsheet,
   FileWarning,
   FolderCheck,
+  FolderDown,
   FolderKanban,
   Layers,
   Radar,
@@ -28,7 +29,7 @@ import {
 } from '../lib/shellNav';
 
 export interface DualRailSidebarProps {
-  workspaceView: 'create' | 'history' | 'approval' | 'price-export';
+  workspaceView: 'create' | 'history' | 'approval' | 'price-export' | 'pickup';
   taskKind: 'download' | 'generate' | 'payroll';
   downloadPlatform: DownloadPlatform;
   activeReportId?: string;
@@ -179,6 +180,13 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
       icon: <FolderCheck size={15.5} />,
       active: workspaceView === 'history',
       action: { type: 'workspace', view: 'history' },
+    },
+    {
+      id: 'workspace:pickup',
+      label: '文件领取',
+      icon: <FolderDown size={15.5} />,
+      active: workspaceView === 'pickup',
+      action: { type: 'workspace', view: 'pickup' },
     },
   ];
 

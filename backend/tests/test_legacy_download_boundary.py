@@ -95,6 +95,10 @@ class LegacyBoundaryTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(len(calls), 1)
 
+    def test_file_pickup_validates_unc_and_relative_paths_itself(self):
+        status, _ = self.invoke(route="/api/workbench/file-pickup/sources/x/list", query="path=..", method="GET")
+        self.assertEqual(status, 200)
+
 
 if __name__ == "__main__":
     unittest.main()

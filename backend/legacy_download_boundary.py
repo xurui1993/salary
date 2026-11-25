@@ -74,8 +74,10 @@ class LegacyDownloadBoundary:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         route = scope.get("path", "")
+        # 文件领取只接受已登记的 UNC 共享与受限相对路径，自身已完成根目录约束。
         if any(route == prefix or route.startswith(prefix + "/") for prefix in
-               ("/api/fengshen-downloads", "/api/parttime/fengshen/auth")):
+               ("/api/fengshen-downloads", "/api/parttime/fengshen/auth",
+                "/api/workbench/file-pickup")):
             return await self.app(scope, receive, send)
         headers = {key.decode("latin-1").lower(): value.decode("latin-1") for key, value in scope.get("headers", [])}
         query = parse_qs(scope.get("query_string", b"").decode("utf-8", errors="replace"))

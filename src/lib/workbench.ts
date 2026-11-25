@@ -398,10 +398,11 @@ export function classifyTemplateCategory(filename: string): {
 }
 
 export function getWorkbenchBreadcrumb(
-  workspaceView: 'create' | 'history' | 'approval' | 'price-export',
+  workspaceView: 'create' | 'history' | 'approval' | 'price-export' | 'pickup',
   taskKind: 'download' | 'generate' | 'payroll',
 ): { section: string; title: string; subtitle: string } {
   if (workspaceView === 'approval' || workspaceView === 'price-export') return {section:'薪资核算',title:'价格审批',subtitle:'筛选本人价格提审，跨页勾选后预览并批量同意当前节点'};
+  if (workspaceView === 'pickup') return {section:'任务与归档',title:'文件领取',subtitle:'领取已完成任务的成品文件，或浏览局域网共享电脑文件'};
   if (workspaceView === 'history') {
     return {
       section: '任务与归档',
@@ -530,12 +531,21 @@ export interface HeaderModuleContext {
 }
 
 export function getPrimaryHeaderContext(options: {
-  workspaceView: 'create' | 'history' | 'approval' | 'price-export';
+  workspaceView: 'create' | 'history' | 'approval' | 'price-export' | 'pickup';
   taskKind: 'download' | 'generate' | 'payroll';
   downloadPlatform: 'fengshen' | 'lanorange' | 'payout' | 'xiaoxiang';
   payrollSubView?: PayrollSubView;
 }): HeaderModuleContext {
   const { workspaceView, taskKind, downloadPlatform, payrollSubView = 'batches' } = options;
+
+  if (workspaceView === 'pickup') {
+    return {
+      groupLabel: '任务记录',
+      title: '文件领取',
+      subtitle: '按任务领取本机成品，或浏览局域网共享电脑的成品文件',
+      iconKey: 'folder-check',
+    };
+  }
 
   if (workspaceView === 'approval' || workspaceView === 'price-export') {
     return {
@@ -605,11 +615,19 @@ export function getPrimaryHeaderContext(options: {
 }
 
 export function getHeaderModuleContext(
-  workspaceView: 'create' | 'history' | 'approval' | 'price-export',
+  workspaceView: 'create' | 'history' | 'approval' | 'price-export' | 'pickup',
   taskKind: 'download' | 'generate' | 'payroll',
   downloadPlatform: 'fengshen' | 'lanorange' | 'payout' | 'xiaoxiang',
   historyAll: boolean,
 ): HeaderModuleContext {
+  if (workspaceView === 'pickup') {
+    return {
+      groupLabel: '任务记录',
+      title: '文件领取',
+      subtitle: '按任务领取本机成品，或浏览局域网共享电脑的成品文件',
+      iconKey: 'folder-check',
+    };
+  }
   if (workspaceView === 'approval' || workspaceView === 'price-export') {
     return {
       groupLabel: '薪资核算',

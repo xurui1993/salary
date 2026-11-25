@@ -83,7 +83,18 @@ test('getBreadcrumbModel provides interactive sibling switchers for collection, 
     payrollSubView: 'batches',
   });
   assert.equal(history.viewLabel, '任务中心');
-  assert.equal(history.siblings.length, 1);
+  assert.equal(history.siblings.length, 2);
+  assert.equal(history.siblings.find(s => s.active)?.id, 'history');
+
+  const pickup = getBreadcrumbModel({
+    workspaceView: 'pickup',
+    taskKind: 'download',
+    downloadPlatform: 'fengshen',
+    payrollSubView: 'batches',
+  });
+  assert.equal(pickup.viewLabel, '文件领取');
+  assert.equal(pickup.siblings.find(s => s.active)?.id, 'pickup');
+  assert.equal(getCurrentQuickTargetId({ workspaceView: 'pickup', taskKind: 'download', downloadPlatform: 'fengshen', payrollSubView: 'batches' }), 'workspace:pickup');
 });
 
 test('buildShellCommands and filterShellCommands support Chinese, English, and pinyin initials', () => {
