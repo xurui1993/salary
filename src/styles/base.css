@@ -71,7 +71,8 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
   display: none;
 }
 .wbx-route-stage:not([hidden]),
-.wbx-route-stage.is-entering {
+.wbx-route-stage.is-entering,
+.wbx-subpane-enter {
   animation: wbx-view-enter 170ms var(--wbx-ease);
 }
 
@@ -80,7 +81,8 @@ button, input, select, textarea { font-family: inherit; color: inherit; }
   .wbx-spin.wbx-spin { animation-duration: 0.01ms; animation-iteration-count: 1; }
   .wbx-skeleton.wbx-skeleton { animation: none; }
   .wbx-route-stage.wbx-route-stage,
-  .wbx-route-stage.is-entering.is-entering { animation: none; }
+  .wbx-route-stage.is-entering.is-entering,
+  .wbx-subpane-enter.wbx-subpane-enter { animation: none; }
   html { scroll-behavior: auto; }
 }
 

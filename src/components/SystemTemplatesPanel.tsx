@@ -191,6 +191,26 @@ export function SystemTemplatesPanel({
     setFormError('');
   };
 
+  useEffect(() => {
+    if (!confirmTarget && modalMode === 'closed') return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (confirmTarget) {
+        if (!confirmSubmitting) {
+          event.stopPropagation();
+          setConfirmTarget(null);
+        }
+        return;
+      }
+      if (modalMode !== 'closed' && !formSubmitting) {
+        event.stopPropagation();
+        closeModal();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [confirmTarget, confirmSubmitting, modalMode, formSubmitting]);
+
   const handleFormSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     const isEdit = modalMode === 'edit';
@@ -540,6 +560,7 @@ export function SystemTemplatesPanel({
         )}
 
         {/* 4. 精致卡片阵列主体 */}
+        <div key={category} className="wbx-subpane-enter">
         {!visibleRows.length ? (
           <div className="wbx-tpl-empty-box">
             <div className="wbx-tpl-empty">
@@ -736,6 +757,7 @@ export function SystemTemplatesPanel({
             </div>
           );
         })()}
+        </div>
 
         {/* 5. 底部汇总状态栏 */}
         <div className="wbx-tpl-table-foot">

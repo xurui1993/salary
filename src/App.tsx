@@ -367,11 +367,13 @@ export default function App() {
     deductions: boolean;
     templates: boolean;
     approval: boolean;
+    priceExport: boolean;
   }>(() => ({
     batches: workspaceView === 'create' && taskKind === 'payroll' && payrollSubView === 'batches',
     deductions: workspaceView === 'create' && taskKind === 'payroll' && payrollSubView === 'deductions',
     templates: workspaceView === 'create' && taskKind === 'payroll' && payrollSubView === 'templates',
     approval: workspaceView === 'approval',
+    priceExport: workspaceView === 'price-export',
   }));
 
   useEffect(() => {
@@ -379,12 +381,14 @@ export default function App() {
     const wantDeductions = workspaceView === 'create' && taskKind === 'payroll' && payrollSubView === 'deductions';
     const wantTemplates = workspaceView === 'create' && taskKind === 'payroll' && payrollSubView === 'templates';
     const wantApproval = workspaceView === 'approval';
+    const wantPriceExport = workspaceView === 'price-export';
     setMountedPanels(prev => {
       if (
         ( !wantBatches || prev.batches ) &&
         ( !wantDeductions || prev.deductions ) &&
         ( !wantTemplates || prev.templates ) &&
-        ( !wantApproval || prev.approval )
+        ( !wantApproval || prev.approval ) &&
+        ( !wantPriceExport || prev.priceExport )
       ) {
         return prev;
       }
@@ -393,6 +397,7 @@ export default function App() {
         deductions: prev.deductions || wantDeductions,
         templates: prev.templates || wantTemplates,
         approval: prev.approval || wantApproval,
+        priceExport: prev.priceExport || wantPriceExport,
       };
     });
   }, [workspaceView, taskKind, payrollSubView]);
@@ -1534,9 +1539,14 @@ export default function App() {
                 />
               </div>
             )}
-            {workspaceView === 'price-export' && (
-              <div className="wbx-route-stage">
+            {(mountedPanels.priceExport || workspaceView === 'price-export') && (
+              <div
+                className="wbx-route-stage"
+                hidden={workspaceView !== 'price-export'}
+                aria-hidden={workspaceView !== 'price-export' || undefined}
+              >
                 <LanorangePriceExports
+                  active={workspaceView === 'price-export'}
                   focusId={priceRecordId}
                   apiFetch={fetchWithAuth}
                   workspaceId={workspaceId}

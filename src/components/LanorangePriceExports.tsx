@@ -30,7 +30,7 @@ function exportStatusTone(status: string): string {
   return 'wbx-pill--neutral';
 }
 
-export function LanorangePriceExports({apiFetch,workspaceId,lanorangeConnected,onActiveCount,onSwitchView,focusId}:{apiFetch:(url:string,init?:RequestInit)=>Promise<Response>;workspaceId:string;lanorangeConnected?:boolean;onActiveCount:(count:number)=>void;onSwitchView?:(view:'approval'|'price-export')=>void;focusId?:string}){
+export function LanorangePriceExports({apiFetch,workspaceId,lanorangeConnected,onActiveCount,onSwitchView,focusId,active:viewActive=true}:{apiFetch:(url:string,init?:RequestInit)=>Promise<Response>;workspaceId:string;lanorangeConnected?:boolean;onActiveCount:(count:number)=>void;onSwitchView?:(view:'approval'|'price-export')=>void;focusId?:string;active?:boolean}){
   const [query,setQuery]=useState<Query>(()=>({month:'2026-10',city:'',station:'',date_from:'',date_to:''}));
   const [history,setHistory]=useState<Export[]>([]),[job,setJob]=useState<Export|null>(null),[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[attempt,setAttempt]=useState<Attempt|null>(null);
   const [demoHistory,setDemoHistory]=useState<Export[]>([]);
@@ -41,25 +41,57 @@ export function LanorangePriceExports({apiFetch,workspaceId,lanorangeConnected,o
   const demoActive=shouldUseDemoData({isLoggedIn,hasLiveData:history.length>0,demoHidden});
   const displayHistory=demoActive?demoHistory:history;
   const displayJob=demoActive?(demoJob || demoHistory[0] || null):job;
-  const fetchRef=useRef(apiFetch),alive=useRef(true),inflight=useRef(false);fetchRef.current=apiFetch;
+  const fetchRef=useRef(apiFetch),alive=useRef(true),inflight=useRef(false),hasActiveRef=useRef(false);fetchRef.current=apiFetch;
   const key='lanorange-price-export-attempt:'+workspaceId;
   const request=<T,>(route:string,body?:object)=>platformAuthRequest<T>(fetchRef.current,BASE+route,body,30000);
   useEffect(()=>{
     if(!focusId)return;
     let disposed=false;
-    void request<Export>(`/exports/${encodeURIComponent(focusId)}`).then(value=>{if(!disposed){setJob(value);document.getElementById('price-record-result')?.scrollIntoView({block:'start'});}}).catch(err=>{if(!disposed)setError(err instanceof Error?err.message:'指定记录读取失败');});
+    void request<Export>(`/exports/${encodeURIComponent(focusId)}`).then(value=>{if(!disposed){setJob(value);if(viewActive)document.getElementById('price-record-result')?.scrollIntoView({block:'start'});}}).catch(err=>{if(!disposed)setError(err instanceof Error?err.message:'指定记录读取失败');});
     return()=>{disposed=true;};
-  },[focusId,workspaceId]);
+  },[focusId,workspaceId,viewActive]);
   function save(value:Attempt|null){setAttempt(value);try{if(value)sessionStorage.setItem(key,JSON.stringify(value));else sessionStorage.removeItem(key);}catch{}}
-  async function refresh(){try{const result=await request<{exports:Export[]}>('/exports');if(!alive.current)return;setHistory(result.exports);setJob(old=>result.exports.find(j=>j.id===old?.id)||old||result.exports[0]||null);onActiveCount(result.exports.filter(j=>ACTIVE.has(j.status)).length);}catch(err){if(alive.current)setError(err instanceof Error?err.message:'读取导出记录失败');}}
-  useEffect(()=>{alive.current=true;try{const old=JSON.parse(sessionStorage.getItem(key)||'null');if(old?.request_id&&old?.query){setAttempt(old);setQuery(old.query);}}catch{}void refresh();const timer=setInterval(()=>void refresh(),4000);return()=>{alive.current=false;clearInterval(timer);};},[workspaceId]);
+  async function refresh(force=false){
+    if(!force && document.visibilityState!=='visible')return;
+    try{
+      const result=await request<{exports:Export[]}>('/exports');
+      if(!alive.current)return;
+      hasActiveRef.current=result.exports.some(j=>ACTIVE.has(j.status));
+      setHistory(result.exports);
+      setJob(old=>result.exports.find(j=>j.id===old?.id)||old||result.exports[0]||null);
+      onActiveCount(result.exports.filter(j=>ACTIVE.has(j.status)).length);
+    }catch(err){if(alive.current)setError(err instanceof Error?err.message:'读取导出记录失败');}
+  }
+  useEffect(()=>{alive.current=true;return()=>{alive.current=false;};},[]);
+  useEffect(()=>{try{const old=JSON.parse(sessionStorage.getItem(key)||'null');if(old?.request_id&&old?.query){setAttempt(old);setQuery(old.query);}}catch{}},[key]);
+  useEffect(()=>{
+    if(!viewActive)return;
+    let disposed=false;
+    let timer:ReturnType<typeof setTimeout>|undefined;
+    const schedule=()=>{
+      if(disposed || document.visibilityState!=='visible')return;
+      const delay=hasActiveRef.current?4000:15000;
+      timer=setTimeout(()=>{
+        void refresh().finally(schedule);
+      },delay);
+    };
+    const onVisibility=()=>{
+      clearTimeout(timer);
+      if(document.visibilityState==='visible'){
+        void refresh(true).finally(schedule);
+      }
+    };
+    void refresh(true).finally(schedule);
+    document.addEventListener('visibilitychange',onVisibility);
+    return()=>{disposed=true;clearTimeout(timer);document.removeEventListener('visibilitychange',onVisibility);};
+  },[workspaceId,viewActive]);
 
   const prevLoggedInRef=useRef(isLoggedIn);
   useEffect(()=>{
     if(isLoggedIn && !prevLoggedInRef.current){
       setNotice('');
       setError('');
-      void refresh();
+      void refresh(true);
     }
     prevLoggedInRef.current=isLoggedIn;
   },[isLoggedIn]);
@@ -316,7 +348,7 @@ export function LanorangePriceExports({apiFetch,workspaceId,lanorangeConnected,o
             </div>
           </div>
           {displayJob.status==='partial' && <p className="wb-error mt-2">部分站点未导出，请按下方失败原因单独筛选处理；当前文件含已成功读取的数据和完整采集记录。</p>}
-          <details className="wb-receipts mt-2.5" key={displayJob.id} open={true}>
+          <details className="wb-receipts mt-2.5 wbx-subpane-enter" key={displayJob.id} open={true}>
             <summary>采集明细与版本（{displayJob.receipts.length} 条）</summary>
             <div className="wb-approval-table">
               <table>

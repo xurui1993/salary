@@ -867,7 +867,7 @@ export function StationDeductionManager({
             }}
           />
         ) : (
-          <>
+          <div key={currentPlatform} className="wbx-subpane-enter">
             {/* 紧凑搜索与筛选条（类目列筛选仅在进入城市全宽表格后展示） */}
             <div className="wbx-ded-filterbar" aria-label="城市站点筛选与操作控制">
               <div className="wbx-ded-filterbar__left">
@@ -1038,7 +1038,7 @@ export function StationDeductionManager({
                 </div>
               )}
             </div>
-          </>
+          </div>
         )}
       </section>
 

@@ -607,17 +607,21 @@
 }
 
 /* ─── 6. 统一的平静空态与精简三步流程条 ─────────────────────────────────── */
-.wbx-ap-empty {
+.wbx-ap-empty,
+.wbx-ap-loading {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 40px 20px 36px;
+  min-height: 196px;
+  box-sizing: border-box;
+  padding: 36px 20px;
   gap: 8px;
 }
 
 .wbx-ap-empty--compact {
+  min-height: 0;
   padding: 20px 4px 8px;
   align-items: stretch;
   text-align: left;

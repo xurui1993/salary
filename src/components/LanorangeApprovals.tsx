@@ -169,15 +169,22 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
     let disposed=false;
     let timer:ReturnType<typeof setTimeout>|undefined;
     const schedule=()=>{
-      if(disposed)return;
+      if(disposed || document.visibilityState!=='visible')return;
       const delay=hasActiveBatchRef.current?4000:15000;
       timer=setTimeout(async()=>{
         await readHistory();
         schedule();
       },delay);
     };
+    const onVisibility=()=>{
+      clearTimeout(timer);
+      if(document.visibilityState==='visible'){
+        void readHistory(true).finally(schedule);
+      }
+    };
     void readHistory(true).finally(schedule);
-    return()=>{disposed=true;clearTimeout(timer);};
+    document.addEventListener('visibilitychange',onVisibility);
+    return()=>{disposed=true;clearTimeout(timer);document.removeEventListener('visibilitychange',onVisibility);};
   },[workspaceId,viewActive]);
 
   // 真实蓝橙登录或会话变更时，立即切回后台实时待办并清除本地示例选择
@@ -508,7 +515,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
 
     {/* 主体视图 A：本人待办审批队列 */}
     {activeViewTab === 'pending' && (
-    <section className="wbx-ap-card wbx-approvals__pending">
+    <section className="wbx-ap-card wbx-approvals__pending wbx-subpane-enter">
       <div className="wbx-approval__head">
         <div className="wbx-approval__queue-title">
           <h3>本人待办审批列表</h3>
@@ -787,7 +794,10 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
           </div>
         </>
       ) : listBusy ? (
-        <p className="wbx-hint py-6 text-center" role="status">正在读取蓝橙本人待办…</p>
+        <div className="wbx-ap-loading" role="status">
+          <RefreshCw size={18} className="wbx-spin" aria-hidden="true" />
+          <span>正在读取蓝橙本人待办…</span>
+        </div>
       ) : scopeFiltered.length > 0 ? (
         <div className="pq-empty">
           <Search size={24} />
@@ -837,7 +847,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
 
     {/* 主体视图 B：独立置顶的审批结果回执面板 */}
     {activeViewTab === 'results' && (
-      <section className="wbx-ap-card wbx-approval__results-panel" id="price-record-result" aria-label="审批结果回执">
+      <section className="wbx-ap-card wbx-approval__results-panel wbx-subpane-enter" id="price-record-result" aria-label="审批结果回执">
         <div className="wbx-approval__head">
           <div className="wbx-approval__queue-title">
             <h3>

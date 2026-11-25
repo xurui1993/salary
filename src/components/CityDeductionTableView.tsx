@@ -214,7 +214,7 @@ export function CityDeductionTableView({
   };
 
   return (
-    <div className="wbx-ded-tableview" aria-label={`${summary.cityName} 扣款明细表格视图`}>
+    <div className="wbx-ded-tableview wbx-subpane-enter" aria-label={`${summary.cityName} 扣款明细表格视图`}>
       {/* 1. 城市表格顶栏：返回卡片墙 + 城市快切 + 进度摘要 + 站内过滤 */}
       <div className="wbx-ded-tableview__bar">
         <div className="wbx-ded-tableview__nav">
