@@ -92,8 +92,36 @@ def _refresh_quiet(key, request):
         pass
 
 
+def _ws_prefix(request=None) -> str:
+    from workspace_context import PRIMARY_WORKSPACE, current_workspace
+    if request is not None:
+        from download_routes import workspace_owner
+        try:
+            wid = workspace_owner(request)
+        except Exception:
+            wid = current_workspace()
+    else:
+        wid = current_workspace()
+    return '' if not wid or wid == PRIMARY_WORKSPACE else f'{wid}::'
+
+
+def _encode_hid(prefix: str, item_id: str) -> str:
+    return prefix + item_id
+
+
+def _decode_hid(prefix: str, stored_id: str) -> str | None:
+    if not prefix:
+        return None if '::' in stored_id else stored_id
+    return stored_id[len(prefix):] if stored_id.startswith(prefix) else None
+
+
 def collect(request):
-    key = (request.headers.get('x-workspace-id', ''), request.headers.get('x-download-account', ''))
+    from download_routes import workspace_owner
+    try:
+        wid = workspace_owner(request)
+    except Exception:
+        wid = request.headers.get('x-workspace-id', '')
+    key = (wid, request.headers.get('x-download-account', ''))
     now = time.monotonic()
     with LOCK:
         hit = _COLLECT_CACHE.get(key)
@@ -104,9 +132,9 @@ def collect(request):
         if start:
             _REFRESHING.add(key)
     if stale is not None and start:
+        from workspace_context import spawn_in_context
         # 页面轮询直接返回上一次结果，慢扫描在后台完成，避免列表反复等待。
-        threading.Thread(target=_refresh_quiet, args=(key, request), daemon=True,
-                         name='task-center-refresh').start()
+        spawn_in_context(_refresh_quiet, key, request, name='task-center-refresh').start()
         return stale
     return _refresh_cache(key, request)
 
@@ -201,23 +229,36 @@ def signature(record):
     return json.dumps([record['status'], sorted(record.get('member_ids', []))], ensure_ascii=False)
 
 
-def hidden_ids(records=None):
+def hidden_ids(records=None, request=None):
+    prefix = _ws_prefix(request)
     with database() as db:
         if records is not None:
-            pending = {row[0]: row[1:] for row in db.execute('SELECT id,created,members FROM pending_hide')}
+            raw_pending = db.execute('SELECT id,created,members FROM pending_hide').fetchall()
+            pending = {}
+            for stored_id, created, members in raw_pending:
+                item_id = _decode_hid(prefix, stored_id)
+                if item_id is not None:
+                    pending[item_id] = (stored_id, created, members)
             for record in records:
                 if record['id'] in pending and record['status'] not in ACTIVE:
-                    created, members = pending[record['id']]
+                    stored_id, created, members = pending[record['id']]
                     if not members or members == json.dumps(sorted(record.get('member_ids', []))):
-                        db.execute('INSERT OR REPLACE INTO hidden (id,created,signature) VALUES (?,?,?)', (record['id'], created, signature(record)))
-                    db.execute('DELETE FROM pending_hide WHERE id=?', (record['id'],))
-            hidden = dict(db.execute('SELECT id, signature FROM hidden'))
-            # A new attempt or changed outcome is new work and must not vanish
-            # just because an earlier version of the task was put away.
-            changed = [(r['id'],) for r in records if r['id'] in hidden and
-                       (r['status'] in ACTIVE or hidden[r['id']] and hidden[r['id']] != signature(r))]
+                        db.execute('INSERT OR REPLACE INTO hidden (id,created,signature) VALUES (?,?,?)', (_encode_hid(prefix, record['id']), created, signature(record)))
+                    db.execute('DELETE FROM pending_hide WHERE id=?', (stored_id,))
+            hidden = {}
+            for stored_id, sig in db.execute('SELECT id, signature FROM hidden').fetchall():
+                item_id = _decode_hid(prefix, stored_id)
+                if item_id is not None:
+                    hidden[item_id] = (stored_id, sig)
+            changed = [(hidden[r['id']][0],) for r in records if r['id'] in hidden and
+                       (r['status'] in ACTIVE or hidden[r['id']][1] and hidden[r['id']][1] != signature(r))]
             db.executemany('DELETE FROM hidden WHERE id=?', changed)
-        return {row[0] for row in db.execute('SELECT id FROM hidden')}
+        result = set()
+        for (stored_id,) in db.execute('SELECT id FROM hidden').fetchall():
+            item_id = _decode_hid(prefix, stored_id)
+            if item_id is not None:
+                result.add(item_id)
+        return result
 
 
 @router.get('')
@@ -226,7 +267,7 @@ def listing(request: Request, page: int = 1, page_size: int = 20):
     if page < 1 or page_size not in (20, 50, 100):
         raise HTTPException(400, '分页参数无效')
     records, warnings = collect(request)
-    rows, counts = select_records(records, hidden_ids(records), request.query_params)
+    rows, counts = select_records(records, hidden_ids(records, request), request.query_params)
     pages = max(1, (len(rows) + page_size - 1) // page_size)
     page = min(page, pages)
     focus = next((r for r in records if r['id'] == request.query_params.get('focus')), None)
@@ -242,7 +283,7 @@ def organize_preview(request: Request):
         raise HTTPException(503, '部分记录暂不可读，请恢复连接后整理')
     filters = dict(request.query_params)
     filters.update(status='success', archived='0')
-    rows, _ = select_records(records, hidden_ids(records), filters)
+    rows, _ = select_records(records, hidden_ids(records, request), filters)
     if len(rows) > 10000:
         raise HTTPException(400, '任务过多，请缩小创建日期范围后整理')
     return {'records': [{key:r.get(key) for key in ('id','kind','title','datasets')} for r in rows]}
@@ -252,6 +293,7 @@ def organize_preview(request: Request):
 def visibility(payload: dict, request: Request):
     validate_write_request(request)
     require_account(request)
+    prefix = _ws_prefix(request)
     ids = payload.get('ids')
     restore = payload.get('restore', False)
     if not isinstance(ids, list) or not ids or len(ids) > 10000 or any(not isinstance(key, str) for key in ids) or type(restore) is not bool:
@@ -269,12 +311,12 @@ def visibility(payload: dict, request: Request):
                 stop_record(record, request)
         with database() as db:
             if restore:
-                db.executemany('DELETE FROM hidden WHERE id=?', [(key,) for key in set(ids)])
-                db.executemany('DELETE FROM pending_hide WHERE id=?', [(key,) for key in set(ids)])
+                db.executemany('DELETE FROM hidden WHERE id=?', [(_encode_hid(prefix, key),) for key in set(ids)])
+                db.executemany('DELETE FROM pending_hide WHERE id=?', [(_encode_hid(prefix, key),) for key in set(ids)])
             else:
                 now = dt.datetime.now(dt.timezone.utc).isoformat()
-                db.executemany('INSERT OR REPLACE INTO hidden (id,created,signature) VALUES (?, ?, ?)', [(key, now, signature(by_id[key])) for key in set(ids) if by_id[key]['status'] not in ACTIVE])
-                db.executemany('INSERT OR REPLACE INTO pending_hide (id,created,members) VALUES (?,?,?)', [(r['id'], now, json.dumps(sorted(r.get('member_ids', [])))) for r in active])
+                db.executemany('INSERT OR REPLACE INTO hidden (id,created,signature) VALUES (?, ?, ?)', [(_encode_hid(prefix, key), now, signature(by_id[key])) for key in set(ids) if by_id[key]['status'] not in ACTIVE])
+                db.executemany('INSERT OR REPLACE INTO pending_hide (id,created,members) VALUES (?,?,?)', [(_encode_hid(prefix, r['id']), now, json.dumps(sorted(r.get('member_ids', [])))) for r in active])
         _invalidate_cache()
     return {'changed': len(set(ids))}
 
@@ -345,9 +387,10 @@ def delete_tasks(payload: dict, request: Request):
                 except DownloadRequestConflict as error:
                     raise HTTPException(409, str(error)) from None
                 manager.deliveries.purge(key, delete_files=delete_files)
+        prefix = _ws_prefix(request)
         with database() as db:
-            db.executemany('DELETE FROM hidden WHERE id=?', [(key,) for key in unique_ids])
-            db.executemany('DELETE FROM pending_hide WHERE id=?', [(key,) for key in unique_ids])
+            db.executemany('DELETE FROM hidden WHERE id=?', [(_encode_hid(prefix, key),) for key in unique_ids])
+            db.executemany('DELETE FROM pending_hide WHERE id=?', [(_encode_hid(prefix, key),) for key in unique_ids])
         _invalidate_cache()
     return {'deleted': len(unique_ids), 'ids': unique_ids, 'delete_files': delete_files}
 

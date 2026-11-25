@@ -81,6 +81,15 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Aegis Payroll Core API", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def _bind_request_workspace_context(request: Request, call_next):
+    from download_accounts import request_workspace_scope
+    with request_workspace_scope(request):
+        return await call_next(request)
+
+
 app.add_middleware(LegacyDownloadBoundary)
 
 # 配置跨域，方便本地前端(如 Vite)进行跨域调试
@@ -106,6 +115,9 @@ from task_center import router as task_center_router
 app.include_router(task_center_router)
 from file_pickup import router as file_pickup_router
 app.include_router(file_pickup_router)
+from workspace_auth_routes import auth_router as workspace_auth_router, admin_router as workspace_admin_router
+app.include_router(workspace_auth_router)
+app.include_router(workspace_admin_router)
 
 
 class ConfigRequest(BaseModel):
@@ -609,10 +621,20 @@ async def run_calculation(config: ConfigRequest, request: Request):
     """
     接收来自前端的运算指令
     """
-    wid = request.headers.get("x-workspace-id")
+    from download_accounts import optional_account, require_account, require_permission
+    from download_routes import workspace_owner
+    user = optional_account(request)
+    wid = user["effective_workspace"] if (user and user.get("id") != "shared") else request.headers.get("x-workspace-id")
     if config.action in ('download_rider_sources', 'download_shangyi_employees'):
         from fengshen_auth_routes import local_owner
         wid = local_owner(request)
+        require_permission(request, "collection")
+    elif config.action in ('remove_problem_orders', 'raise_price', 'summary_parttime'):
+        require_permission(request, "reports", "payroll", any_of=True)
+    else:
+        require_permission(request, "payroll")
+        if config.payrollSourceMode == "xiaoxiang":
+            require_permission(request, "xiaoxiang_use")
     if wid and config.sourcePath and wid not in config.sourcePath:
        # For security
        pass 
@@ -680,7 +702,12 @@ async def run_calculation(config: ConfigRequest, request: Request):
         await asyncio.to_thread(ensure_ready, required,
                                 deep_xiaoxiang=config.payrollSourceMode == 'xiaoxiang')
     from workbench import detached_events
-    return StreamingResponse(detached_events(event_generator()), media_type="text/event-stream")
+    from workspace_context import bind_workspace
+    async def _scoped_generator():
+        with bind_workspace(wid or "download_shared", user):
+            async for ev in event_generator():
+                yield ev
+    return StreamingResponse(detached_events(_scoped_generator()), media_type="text/event-stream")
 
 @app.post("/api/action_file")
 async def action_file(request: Request):

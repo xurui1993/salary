@@ -13,6 +13,12 @@ router = APIRouter(prefix="/api/parttime/fengshen/auth")
 
 
 def _workspace_owner(request):
+    from download_accounts import optional_account
+    if request.method != "GET" and request.headers.get("content-type", "").split(";", 1)[0] != "application/json":
+        raise HTTPException(415, "登录请求必须使用 JSON")
+    user = optional_account(request)
+    if user and user.get("id") != "shared" and user.get("effective_workspace"):
+        return user["effective_workspace"]
     try:
         owner = unquote(request.headers.get("x-workspace-id", ""), errors="strict")
     except (UnicodeError, ValueError):
@@ -21,8 +27,6 @@ def _workspace_owner(request):
         raise HTTPException(400, "缺少有效工作区标识")
     if owner.casefold().startswith("account_"):
         raise HTTPException(403, "下载账号须通过下载中心登录，不能使用工作区标识代替")
-    if request.method != "GET" and request.headers.get("content-type", "").split(";", 1)[0] != "application/json":
-        raise HTTPException(415, "登录请求必须使用 JSON")
     return owner
 
 
@@ -118,9 +122,9 @@ def status(request: Request):
 @router.post("/start")
 def start(request: Request):
     owner = auth_owner(request)
-    from platform_auth_control import operation, META
+    from platform_auth_control import operation, discard_meta
     with operation('fengshen'):
-        META.pop('fengshen', None)
+        discard_meta('fengshen')
         result = start_http_login(owner)
     if not result.get("busy"):
         result = {**result, "transport": "http"}

@@ -32,9 +32,19 @@ def normalized(platforms):
     return result
 
 
+def _current_path():
+    from workspace_context import is_isolated_workspace, current_workspace, workspace_data_root
+    if PATH != (ROOT / 'data' / 'binding_platforms.json'):
+        return PATH
+    wid = current_workspace()
+    if is_isolated_workspace(wid):
+        return workspace_data_root(wid, ROOT) / 'data' / 'binding_platforms.json'
+    return PATH
+
+
 def load():
     try:
-        payload = json.loads(PATH.read_text(encoding='utf-8'))
+        payload = json.loads(_current_path().read_text(encoding='utf-8'))
         values = payload.get('platforms') if isinstance(payload, dict) else payload
         return normalized(values)
     except (OSError, ValueError, TypeError):
@@ -43,7 +53,7 @@ def load():
 
 def save(platforms):
     value = normalized(platforms)
-    atomic_json(PATH, {'platforms': value})
+    atomic_json(_current_path(), {'platforms': value})
     return value
 
 

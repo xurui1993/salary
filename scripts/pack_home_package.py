@@ -19,7 +19,7 @@ ROOT_FILES = {'.env.example', '.gitignore', 'README.md', 'LICENSE', 'package.jso
               'server.ts', 'index.html', 'start.ps1', 'tsconfig.json', 'vite.config.ts'}
 SKIP_DIRS = {'node_modules', '.venv', 'venv', '.git', '__pycache__', '.pytest_cache',
              '.mypy_cache', '.cache', '.local_auth', '.local_downloads', 'personal-runtime',
-             'runtime', 'data', 'uploads', 'outputs', 'archive', 'coverage', 'config_history', 'dist'}
+             'runtime', 'data', 'workspaces', 'uploads', 'outputs', 'archive', 'coverage', 'config_history', 'dist'}
 PRIVATE_PREFIXES = ('.local_auth', '.local_downloads')
 PRIVATE_SUFFIXES = {'.pyc', '.log', '.dpapi', '.sqlite', '.sqlite3', '.db', '.storage',
                     '.part', '.pem', '.key', '.pfx', '.p12', '.bak', '.tmp'}

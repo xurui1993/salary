@@ -31,7 +31,7 @@ function contains(root: string, target: string): boolean {
 
 export function createLegacyBoundary(root = process.cwd(), extraRoots: string[] = []) {
   const project = canonical(root);
-  const business = ["data", "uploads", "outputs", "system_templates"].map(name => canonical(path.join(root, name)));
+  const business = ["data", "uploads", "outputs", "system_templates", "workspaces"].map(name => canonical(path.join(root, name)));
   const protectedRoots = () => {
     let historic: string[] = [];
     try {

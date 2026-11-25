@@ -290,6 +290,10 @@ export function SystemConnections({
       );
       updateStatus(source, current);
       if (current.state === 'ready') return;
+      if ((source === 'xiaoxiang' || source === 'benlai') && current.can_manage === false) {
+        recordError(source, new Error('该平台为全局共享连接，请联系管理员或授权维护人完成扫码登录'));
+        return;
+      }
       setDrawerOpen(false);
       if (source === 'fengshen') {
         onOpenFengshen();
@@ -614,11 +618,14 @@ export function SystemConnections({
                 {PLATFORM_DEFS.map(({ key, label, icon: Icon }) => {
                   const st = statuses[key] || (key === 'fengshen' && fengshenStatus) || {};
                   const ready = st.state === 'ready' && !st.offline;
+                  const isShared = key === 'xiaoxiang' || key === 'benlai';
+                  const canManagePlatform = !isShared || st.can_manage !== false;
                   const canLogout =
-                    !!st.saved ||
-                    !!st.busy ||
-                    ready ||
-                    ['starting', 'waiting_login'].includes(st.state || '');
+                    canManagePlatform &&
+                    (!!st.saved ||
+                      !!st.busy ||
+                      ready ||
+                      ['starting', 'waiting_login'].includes(st.state || ''));
                   const badge = getPlatformCardBadge(st, pendingActions[key]);
                   return (
                     <section key={key} className={`wb-platform-login-row is-${key}`}>
@@ -628,6 +635,15 @@ export function SystemConnections({
                             <Icon size={17} />
                           </span>
                           <h3 className="wb-platform-name">{label}</h3>
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                              isShared
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200/80'
+                                : 'bg-sky-50 text-sky-700 border border-sky-200/80'
+                            }`}
+                          >
+                            {isShared ? '全局共享' : '个人独立'}
+                          </span>
                         </div>
                         <div className="wb-platform-status-area">
                           <span className={`wb-status-badge is-${badge.tone}`}>
@@ -646,25 +662,33 @@ export function SystemConnections({
                           </span>
                         </div>
                         <div className="wb-platform-actions">
-                          {!ready && (
-                            <button
-                              type="button"
-                              className="wb-button wb-btn-login"
-                              disabled={!!pendingActions[key]}
-                              onClick={() => void handleStartLogin(key)}
-                            >
-                              {getActionLabel(key, st)}
-                            </button>
-                          )}
-                          {canLogout && (
-                            <button
-                              type="button"
-                              className="wb-button wb-btn-logout"
-                              disabled={!!pendingActions[key]}
-                              onClick={() => void handleLogout(key)}
-                            >
-                              退出
-                            </button>
+                          {canManagePlatform ? (
+                            <>
+                              {!ready && (
+                                <button
+                                  type="button"
+                                  className="wb-button wb-btn-login"
+                                  disabled={!!pendingActions[key]}
+                                  onClick={() => void handleStartLogin(key)}
+                                >
+                                  {getActionLabel(key, st)}
+                                </button>
+                              )}
+                              {canLogout && (
+                                <button
+                                  type="button"
+                                  className="wb-button wb-btn-logout"
+                                  disabled={!!pendingActions[key]}
+                                  onClick={() => void handleLogout(key)}
+                                >
+                                  退出
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-[11px] text-slate-400 select-none">
+                              管理员统一维护
+                            </span>
                           )}
                         </div>
                       </div>

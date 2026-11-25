@@ -5,7 +5,13 @@ import { createServer as createViteServer } from "vite";
 import { spawn } from "child_process";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import { createFengshenAuthProxy } from "./server/fengshenAuthProxy.ts";
-import { createDownloadProxy } from "./server/downloadProxy.ts";
+import { createDownloadProxy, protectProxyHeaders } from "./server/downloadProxy.ts";
+import {
+  createGatewaySessionMiddleware,
+  isWorkspacePathPermitted,
+  resolveCookieSession,
+  workspaceConfigPath,
+} from "./server/gatewayAuth.ts";
 import { acquireStartupLock, assertPortAvailable } from "./server/startupGuard.ts";
 import { createLegacyBoundary } from "./server/legacyDownloadBoundary.ts";
 import { deliveryDownloadAlias } from './server/deliveryDownloadAlias.ts';
@@ -159,6 +165,7 @@ async function startServer() {
   const legacyBoundary = createLegacyBoundary();
   app.use(deliveryDownloadAlias(process.env.FENGSHEN_DOWNLOAD_ROOT || path.resolve('outputs/fengshen_downloads')));
   app.use(legacyBoundary.guardRequest);
+  app.use(createGatewaySessionMiddleware(backendUrl, proxySecret));
   const legacyJson = () => [express.json(), legacyBoundary.guardBody];
   ensureConfigExists();
 
@@ -178,7 +185,13 @@ async function startServer() {
         stdio: "inherit",
         shell: false,
         windowsHide: true,
-        env: { ...process.env, NODE_EXECUTABLE: process.execPath, PYTHONIOENCODING: "utf-8", FENGSHEN_DOWNLOAD_PROXY_SECRET: proxySecret },
+        env: {
+          ...process.env,
+          NODE_EXECUTABLE: process.execPath,
+          PYTHONIOENCODING: "utf-8",
+          FENGSHEN_DOWNLOAD_PROXY_SECRET: proxySecret,
+          REQUIRE_AUTH_SESSION: localTestMode ? "0" : "1",
+        },
       },
     );
 
@@ -245,6 +258,9 @@ async function startServer() {
   }
 
   const getWorkspaceId = (req: any) => {
+    if (req.resolvedWorkspace) {
+      return String(req.resolvedWorkspace).replace(/[^a-zA-Z0-9_\-\u4e00-\u9fa5]/g, "");
+    }
     let wid = req.header("x-workspace-id");
     if (wid) {
       try { wid = decodeURIComponent(wid); } catch(e) {}
@@ -288,11 +304,12 @@ async function startServer() {
   });
 
   app.get("/api/default_paths", (req, res) => {
-    let configPath = path.resolve("data/config.json");
-    if (!fs.existsSync(configPath) && fs.existsSync(path.resolve("data/config.xlsx"))) {
+    const wid = getWorkspaceId(req);
+    let configPath = workspaceConfigPath(process.cwd(), wid);
+    if (!fs.existsSync(configPath) && wid === "download_shared" && fs.existsSync(path.resolve("data/config.xlsx"))) {
       configPath = path.resolve("data/config.xlsx");
     }
-    let dataPath = path.resolve("./uploads");
+    const dataPath = wid && wid !== "download_shared" ? path.resolve("./uploads", wid) : path.resolve("./uploads");
 
     res.json({
       configPath: configPath,
@@ -322,10 +339,11 @@ async function startServer() {
 
   app.post("/api/config_excel_data", legacyJson(), async (req: express.Request, res: express.Response) => {
     try {
+      const wid = getWorkspaceId(req);
       let { configPath } = req.body;
       
-      // 优先使用标准配置路径 data/config.json 避免错乱
-      const standardConfig = path.resolve("data/config.json");
+      // 优先使用当前工作空间的标准配置路径避免串数据
+      const standardConfig = workspaceConfigPath(process.cwd(), wid);
       if (fs.existsSync(standardConfig)) {
         configPath = standardConfig;
       } else if (configPath && !fs.existsSync(configPath) && configPath.endsWith("config.xlsx")) {
@@ -346,13 +364,16 @@ async function startServer() {
       }
 
       if (!configPath || !fs.existsSync(configPath)) {
-        if (fs.existsSync(path.resolve("data/config.json"))) {
-          configPath = path.resolve("data/config.json");
-        } else if (fs.existsSync(path.resolve("data/config.xlsx"))) {
+        if (fs.existsSync(standardConfig)) {
+          configPath = standardConfig;
+        } else if (wid === "download_shared" && fs.existsSync(path.resolve("data/config.xlsx"))) {
           configPath = path.resolve("data/config.xlsx");
         } else {
           return res.json({ success: false, error: "Config file not found", path: configPath });
         }
+      }
+      if (!isWorkspacePathPermitted(process.cwd(), wid, configPath)) {
+        return res.status(403).json({ success: false, error: "无权访问其他工作空间配置文件" });
       }
 
       const cities: Record<string, any> = {};
@@ -607,16 +628,22 @@ async function startServer() {
       if (!legacyBoundary.allowedPath(absolutePath, { recursive: true })) return legacyBoundary.reject(res);
 
       const wid = getWorkspaceId(req);
-      const isRootConfig = absolutePath === path.resolve("data/config.json") || absolutePath === path.resolve("data/config.xlsx");
-
       let finalPath = absolutePath;
-      if (!fs.existsSync(finalPath)) {
+      if (
+        qPath === "data/config.json" ||
+        qPath === "./data/config.json" ||
+        absolutePath === path.resolve("data/config.json") ||
+        absolutePath === path.resolve("data/config.xlsx")
+      ) {
+        finalPath = workspaceConfigPath(process.cwd(), wid);
+      } else if (!fs.existsSync(finalPath)) {
         if (qPath.endsWith("config.json") || qPath.endsWith("config.xlsx") || path.basename(qPath).toLowerCase().includes("config")) {
-          const fb1 = path.resolve("data/config.json");
-          const fb2 = path.resolve("data/config.xlsx");
+          const fb1 = workspaceConfigPath(process.cwd(), wid);
           if (fs.existsSync(fb1)) finalPath = fb1;
-          else if (fs.existsSync(fb2)) finalPath = fb2;
         }
+      }
+      if (!isWorkspacePathPermitted(process.cwd(), wid, finalPath)) {
+        return res.status(403).send("无权访问其他工作空间文件");
       }
 
       if (!fs.existsSync(finalPath)) {
@@ -658,16 +685,11 @@ async function startServer() {
         return res.json({ success: true });
       }
       
-      const configPaths = [
-        path.join(process.cwd(), "data", "config.json"),
-        path.join(process.cwd(), "data", "config.xlsx"),
-      ];
-      let targetPath = configPaths[0];
-      for (const p of configPaths) {
-        if (fs.existsSync(p)) {
-          targetPath = p;
-          break;
-        }
+      const wid = getWorkspaceId(req);
+      let targetPath = workspaceConfigPath(process.cwd(), wid);
+      if (!fs.existsSync(targetPath) && wid === "download_shared") {
+        const xlsxFallback = path.join(process.cwd(), "data", "config.xlsx");
+        if (fs.existsSync(xlsxFallback)) targetPath = xlsxFallback;
       }
       
       if (targetPath.endsWith(".json")) {
@@ -775,12 +797,11 @@ async function startServer() {
       }
 
       const wid = getWorkspaceId(req);
-      const isRootConfig = targetPath === path.resolve("data/config.json") || targetPath === path.resolve("data/config.xlsx");
-      if (
-        !isRootConfig &&
-        !targetPath.includes(`/${wid}/`) &&
-        !targetPath.includes(`\\${wid}\\`)
-      ) {
+      let resolvedTarget = path.resolve(targetPath);
+      if (resolvedTarget === path.resolve("data/config.json") || resolvedTarget === path.resolve("data/config.xlsx")) {
+        resolvedTarget = workspaceConfigPath(process.cwd(), wid);
+      }
+      if (!isWorkspacePathPermitted(process.cwd(), wid, resolvedTarget, { write: true })) {
         return res
           .status(403)
           .json({
@@ -789,8 +810,9 @@ async function startServer() {
           });
       }
 
-      fs.copyFileSync(req.file.path, targetPath);
-      res.json({ success: true, path: targetPath });
+      fs.mkdirSync(path.dirname(resolvedTarget), { recursive: true });
+      fs.copyFileSync(req.file.path, resolvedTarget);
+      res.json({ success: true, path: resolvedTarget });
     } catch (e) {
       res.status(500).json({ success: false, error: String(e) });
     }
@@ -1162,9 +1184,20 @@ async function startServer() {
 
   app.post("/api/files", legacyJson(), (req: express.Request, res: express.Response) => {
     try {
-      const qPath = req.body.path;
+      const wid = getWorkspaceId(req);
+      let qPath = req.body.path;
       if (!qPath) {
         return res.json({ files: [] });
+      }
+      if (wid && wid.startsWith("ws_")) {
+        if (qPath === "./uploads" || qPath === "uploads" || path.resolve(qPath) === path.resolve("uploads")) {
+          qPath = path.resolve("uploads", wid);
+        } else if (qPath === "./outputs" || qPath === "outputs" || path.resolve(qPath) === path.resolve("outputs")) {
+          qPath = path.resolve("outputs", wid);
+        }
+        if (!isWorkspacePathPermitted(process.cwd(), wid, qPath)) {
+          return res.json({ files: [] });
+        }
       }
       
       // Auto-create predefined default external directories if they don't exist
@@ -1255,8 +1288,12 @@ async function startServer() {
 
   app.post("/api/action_file", legacyJson(), (req: express.Request, res: express.Response) => {
     try {
+      const wid = getWorkspaceId(req);
       const { action, path: targetPath } = req.body;
       if (!targetPath) return res.json({ success: false, error: 'No path' });
+      if (!isWorkspacePathPermitted(process.cwd(), wid, targetPath, { write: true })) {
+        return res.status(403).json({ success: false, error: '无权修改其他工作空间目录' });
+      }
       
       if (action === 'delete') {
         if (fs.existsSync(targetPath)) {
@@ -1286,10 +1323,14 @@ async function startServer() {
       if (!req.file) {
         return res.status(400).json({ success: false, error: "No file uploaded" });
       }
+      const wid = getWorkspaceId(req);
       const targetPath = req.body.targetPath;
       if (targetPath && !legacyBoundary.allowedPath(targetPath, { write: true, recursive: true })) return legacyBoundary.reject(res);
       if (!targetPath) {
         return res.status(400).json({ success: false, error: "targetPath is required" });
+      }
+      if (!isWorkspacePathPermitted(process.cwd(), wid, targetPath, { write: true })) {
+        return res.status(403).json({ success: false, error: "无权上传至其他工作空间目录" });
       }
       const dir = path.dirname(targetPath);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -1375,7 +1416,21 @@ async function startServer() {
   // the generic proxy and be mistaken for loopback requests by the backend.
   app.use(createDownloadProxy(proxyOptions, proxySecret));
   app.use(createFengshenAuthProxy(proxyOptions, proxySecret));
-  app.use(createProxyMiddleware({ pathFilter: "/api", ...proxyOptions }));
+  app.use(
+    createProxyMiddleware({
+      pathFilter: "/api",
+      ...proxyOptions,
+      on: {
+        ...proxyOptions.on,
+        proxyReq: (proxyReq: any, req: any) => {
+          protectProxyHeaders(proxyReq, req, proxySecret);
+          if (req.resolvedWorkspace) {
+            proxyReq.setHeader("x-workspace-id", encodeURIComponent(req.resolvedWorkspace));
+          }
+        },
+      },
+    }),
+  );
 
   try {
     if (process.env.NODE_ENV !== "production") {
@@ -1444,13 +1499,24 @@ async function startServer() {
 
   io.on("connection", (socket) => {
     socket.on("join", async (data) => {
-      const { workspaceId, username, profile } = data;
+      const resolved = await resolveCookieSession(
+        socket.handshake.headers.cookie,
+        undefined,
+        backendUrl,
+        proxySecret,
+      );
+      if (resolved?.enforce && !resolved.authenticated) {
+        socket.disconnect(true);
+        return;
+      }
+      const { workspaceId, username, profile } = data || {};
+      const room = workspaceId || "lobby_shared";
 
-      // ID limit constraint Check
-      let safeUsername = (username || "匿名用户").substring(0, 15);
+      // Bind to authenticated display_name when available so users cannot spoof identities
+      let safeUsername = (resolved?.user?.display_name || username || "匿名用户").substring(0, 15);
 
-      socket.join(workspaceId);
-      socket.data.workspaceId = workspaceId;
+      socket.join(room);
+      socket.data.workspaceId = room;
       socket.data.username = safeUsername;
       socket.data.profile = profile;
 
@@ -1463,19 +1529,19 @@ async function startServer() {
       // basic anonymize for safety/style if desired, or keep raw.
       socket.data.ip = ip;
 
-      if (!chatHistory.has(workspaceId)) {
-        chatHistory.set(workspaceId, []);
+      if (!chatHistory.has(room)) {
+        chatHistory.set(room, []);
       }
-      socket.emit("history", chatHistory.get(workspaceId));
+      socket.emit("history", chatHistory.get(room));
 
       const sendPresence = async () => {
-        const sockets = await io.in(workspaceId).fetchSockets();
+        const sockets = await io.in(room).fetchSockets();
         const existingSockets = sockets.filter(
           (s) => s.data.username === safeUsername && s.id !== socket.id,
         );
 
         if (existingSockets.length === 0) {
-          io.to(workspaceId).emit("user_online", { username: safeUsername });
+          io.to(room).emit("user_online", { username: safeUsername });
         }
 
         const userMap = new Map();
@@ -1490,15 +1556,15 @@ async function startServer() {
             });
           }
         });
-        io.to(workspaceId).emit("presence", Array.from(userMap.values()));
+        io.to(room).emit("presence", Array.from(userMap.values()));
       };
       sendPresence();
     });
 
     socket.on("message", async (data) => {
-      const { workspaceId, username, text, imageUrl, fileUrl, fileName, profile } = data;
-
-      let safeUsername = (username || "匿名用户").substring(0, 15);
+      const { workspaceId, username, text, imageUrl, fileUrl, fileName, profile } = data || {};
+      const room = socket.data.workspaceId || workspaceId || "lobby_shared";
+      let safeUsername = (socket.data.username || username || "匿名用户").substring(0, 15);
       let ip =
         socket.handshake.headers["x-forwarded-for"] ||
         socket.handshake.address ||
@@ -1518,15 +1584,15 @@ async function startServer() {
         timestamp: new Date().toISOString(),
       };
       
-      if (!chatHistory.has(workspaceId)) {
-        chatHistory.set(workspaceId, []);
+      if (!chatHistory.has(room)) {
+        chatHistory.set(room, []);
       }
-      chatHistory.get(workspaceId).push(msg);
-      if (chatHistory.get(workspaceId).length > 200) {
-        chatHistory.get(workspaceId).shift();
+      chatHistory.get(room).push(msg);
+      if (chatHistory.get(room).length > 200) {
+        chatHistory.get(room).shift();
       }
 
-      io.to(workspaceId).emit("message", msg);
+      io.to(room).emit("message", msg);
     });
 
     socket.on("clear", () => {

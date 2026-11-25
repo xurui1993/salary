@@ -299,9 +299,17 @@ def _read_info_ids(path, log, cancelled):
 
 
 def _team_city_catalog():
-    """团队名称 -> 城市 映射（data/config.json）；缺失或损坏时退化为空映射。"""
+    """团队名称 -> 城市 映射（当前空间 config.json）；缺失或损坏时退化为空映射。"""
+    target = CONFIG_PATH
+    default_cfg = Path(__file__).resolve().parent.parent / 'data' / 'config.json'
+    if target == default_cfg:
+        try:
+            from workspace_context import workspace_config_path
+            target = workspace_config_path()
+        except Exception:
+            target = CONFIG_PATH
     try:
-        data = json.loads(CONFIG_PATH.read_text(encoding='utf-8'))
+        data = json.loads(target.read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return {}
     return {_text(item.get('团队名称')): _text(item.get('城市'))

@@ -215,7 +215,10 @@ class PayrollQueue:
                 if row:
                     task=json.loads(row['body']);task.update(status='preparing',current_action='正在准备本任务资料',_started_clock=time.time(),_finished_clock=None);self._write(db,task)
             if task:
-                try:asyncio.run(self._run(task))
+                from workspace_context import bind_workspace
+                try:
+                    with bind_workspace(task['wid']):
+                        asyncio.run(self._run(task))
                 except QueueStopped:self._update(task['id'],{'status':'cancelled','current_action':'已停止，资料和结果保留','finished_at':now(),'_finished_clock':time.time()})
                 except Exception as error:
                     if self._stopped(task['id']):
@@ -459,7 +462,11 @@ def list_tasks(request:Request,hidden:bool=False,detail_id:str=''):
 
 @router.post('')
 async def add_tasks(request:Request):
+    from download_accounts import require_permission
+    require_permission(request, 'payroll')
     wid,owner=identity(request);data=await payload(request)
+    if data.get('mode') == 'xiaoxiang':
+        require_permission(request, 'xiaoxiang_use')
     tasks=await asyncio.to_thread(call,get_queue().enqueue,wid,owner,data.get('source_path',''),data.get('mode','fengshen'),data.get('config',{}),data.get('request_id'))
     return {'tasks':tasks}
 

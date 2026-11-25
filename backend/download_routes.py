@@ -8,7 +8,7 @@ from urllib.parse import unquote
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
-from download_accounts import require_account, audit_event
+from download_accounts import check_user_permission, optional_account, require_account, audit_event
 from download_single_instance import DownloadInstanceBusy
 
 from download_jobs import (DownloadManagerClosed, DownloadNotFound, DownloadResumeError, DownloadRootError, DownloadArchiveError,
@@ -45,6 +45,12 @@ def payroll_delivery_download(request: Request, batch_id: str='', path: str=''):
 
 
 def workspace_owner(request):
+    try:
+        user = optional_account(request)
+        if user and user.get("id") != "shared" and user.get("effective_workspace"):
+            return user["effective_workspace"]
+    except HTTPException:
+        pass
     try:
         owner = unquote(request.headers.get("x-workspace-id", ""), errors="strict")
     except (UnicodeError, ValueError):
@@ -119,10 +125,16 @@ def _visible(run):
     return {**run, "files": [file for file in run.get("files", []) if not file.get("record_hidden")]}
 
 
+def _list_scope_owner(user):
+    if user.get("id") == "shared":
+        return None
+    return user["owner"]
+
+
 @router.get("/runs")
 def runs(request: Request):
     user = require_account(request)
-    owner = None if user["role"] == "admin" else user["owner"]
+    owner = _list_scope_owner(user)
     try:
         return {"runs": [_visible(run) for run in _call(lambda: get_manager().list_runs(owner))]}
     except HTTPException as exc:
@@ -137,7 +149,7 @@ def runs(request: Request):
 def records(request: Request):
     from download_records import list_records
     user = require_account(request)
-    owner = None if user['role'] == 'admin' else user['owner']
+    owner = _list_scope_owner(user)
     return {'records': _call(lambda: list_records(get_manager(), owner))}
 
 
@@ -161,6 +173,15 @@ async def create(request: Request):
     user = require_account(request)
     owner = user["owner"]
     payload = await _json(request)
+    if payload.get("task_kind") == "generate" or payload.get("generation_target"):
+        check_user_permission(user, "reports")
+    else:
+        check_user_permission(user, "collection")
+    datasets = payload.get("datasets") if isinstance(payload.get("datasets"), list) else []
+    if any(isinstance(ds, str) and (ds.startswith("xiaoxiang") or ds in ("rider_daily", "detail_orders", "detail_kesu", "detail_reviews", "rider_archive")) for ds in datasets):
+        check_user_permission(user, "xiaoxiang_use")
+    if any(isinstance(ds, str) and (ds.startswith("benlai") or ds == "payment_binding") for ds in datasets):
+        check_user_permission(user, "benlai_use")
     request_id = _request_id(payload)
     try:
         service = importlib.import_module("download_service")

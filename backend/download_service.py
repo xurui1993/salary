@@ -1373,13 +1373,15 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
             months = sorted({value['start'][:7] for value in requested if value['dataset'] == 'payment_binding'})
             materials_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='binding-materials')
             def prefetch_materials():
+                import contextvars
                 # 三个独立系统互不依赖，并行拉取；统一缓存一次供所有城市复用。
                 with ThreadPoolExecutor(max_workers=3, thread_name_prefix='binding-source-prefetch') as pool:
-                    employees = pool.submit(binding_sources.employees)
-                    proxies = pool.submit(lambda: {month: binding_sources.proxies(month) for month in months})
-                    benlai = pool.submit(binding_sources.benlai)
+                    employees = pool.submit(contextvars.copy_context().run, binding_sources.employees)
+                    proxies = pool.submit(contextvars.copy_context().run, lambda: {month: binding_sources.proxies(month) for month in months})
+                    benlai = pool.submit(contextvars.copy_context().run, binding_sources.benlai)
                     return employees.result(), proxies.result(), benlai.result()
-            materials_future = materials_pool.submit(prefetch_materials)
+            import contextvars
+            materials_future = materials_pool.submit(contextvars.copy_context().run, prefetch_materials)
         source_pool = None
         source_lanes = []
         if (fresh_binding and binding_count > 1

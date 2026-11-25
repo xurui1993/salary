@@ -56,6 +56,8 @@ export interface DualRailSidebarProps {
   onOpenCmdk?: () => void;
   onToggleLogs?: () => void;
   onOpenPlatformDock: () => void;
+  permissions?: Record<string, boolean>;
+  isAdmin?: boolean;
 }
 
 interface SidebarNavItem {
@@ -88,9 +90,12 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
   taskAttentionCount = 0,
   onExecuteAction,
   onCloseMobile,
+  permissions,
+  isAdmin = true,
 }: DualRailSidebarProps) {
   const activeGroup = getActiveNavGroup({ workspaceView, taskKind });
   const isCollapsedRail = Boolean(collapsed && !isDrawerMode);
+  const canUse = (key: string) => isAdmin || !permissions || permissions[key] !== false;
 
   const collectionItems: SidebarNavItem[] = [
     {
@@ -173,6 +178,15 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
     },
   ];
 
+  const visibleCollectionItems = canUse('collection')
+    ? collectionItems.filter(item => item.id !== 'platform:xiaoxiang' || canUse('xiaoxiang_use'))
+    : [];
+  const visibleReportItems = canUse('reports') ? reportItems : [];
+  const visiblePayrollItems = payrollItems.filter(item => {
+    if (item.id === 'workspace:approval') return canUse('approval');
+    return canUse('payroll');
+  });
+
   const deliveryItems: SidebarNavItem[] = [
     {
       id: 'workspace:history',
@@ -241,32 +255,38 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
 
       {/* 全展开三分栏核心业务导航：数据采集 / 业务报表 / 薪资核算 */}
       <nav className="wbx-flat-sidebar__nav" aria-label="业务功能导航">
-        <section className="wbx-snav-group" aria-label="数据采集">
-          <div className="wbx-snav-group__head">
-            <span className="wbx-snav-group__title">数据采集</span>
-          </div>
-          <div className="wbx-snav-group__list">
-            {collectionItems.map(renderNavItem)}
-          </div>
-        </section>
+        {visibleCollectionItems.length > 0 && (
+          <section className="wbx-snav-group" aria-label="数据采集">
+            <div className="wbx-snav-group__head">
+              <span className="wbx-snav-group__title">数据采集</span>
+            </div>
+            <div className="wbx-snav-group__list">
+              {visibleCollectionItems.map(renderNavItem)}
+            </div>
+          </section>
+        )}
 
-        <section className="wbx-snav-group" aria-label="业务报表">
-          <div className="wbx-snav-group__head">
-            <span className="wbx-snav-group__title">业务报表</span>
-          </div>
-          <div className="wbx-snav-group__list">
-            {reportItems.map(renderNavItem)}
-          </div>
-        </section>
+        {visibleReportItems.length > 0 && (
+          <section className="wbx-snav-group" aria-label="业务报表">
+            <div className="wbx-snav-group__head">
+              <span className="wbx-snav-group__title">业务报表</span>
+            </div>
+            <div className="wbx-snav-group__list">
+              {visibleReportItems.map(renderNavItem)}
+            </div>
+          </section>
+        )}
 
-        <section className="wbx-snav-group" aria-label="薪资核算">
-          <div className="wbx-snav-group__head">
-            <span className="wbx-snav-group__title">薪资核算</span>
-          </div>
-          <div className="wbx-snav-group__list">
-            {payrollItems.map(renderNavItem)}
-          </div>
-        </section>
+        {visiblePayrollItems.length > 0 && (
+          <section className="wbx-snav-group" aria-label="薪资核算">
+            <div className="wbx-snav-group__head">
+              <span className="wbx-snav-group__title">薪资核算</span>
+            </div>
+            <div className="wbx-snav-group__list">
+              {visiblePayrollItems.map(renderNavItem)}
+            </div>
+          </section>
+        )}
 
         <section className="wbx-snav-group wbx-snav-group--delivery" aria-label="任务与交付">
           <div className="wbx-snav-group__head">

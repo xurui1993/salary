@@ -10,14 +10,44 @@ import time
 import uuid
 
 from fastapi import APIRouter, HTTPException, Request
-from download_accounts import require_account, require_admin
+from download_accounts import (
+    can_manage_shared_auth,
+    require_account,
+    require_admin,
+    require_permission,
+    require_shared_auth_manage,
+)
 from fengshen_auth import BROKER
 import binding_source_auth as sources
 
 KEYS = ('fengshen', 'lanorange', 'baize', 'xiaoxiang', 'benlai')
-LOCKS = {key: threading.RLock() for key in KEYS}
+SHARED_SOURCES = frozenset({'xiaoxiang', 'benlai'})
+_LOCKS_GUARD = threading.Lock()
+LOCKS = {}
 META = {}
 router = APIRouter(prefix='/api/fengshen-downloads/platform-auth')
+
+
+def _scope_key(source: str) -> tuple[str, str]:
+    if source in SHARED_SOURCES:
+        return ('shared', source)
+    from workspace_context import current_workspace
+    return (current_workspace(), source)
+
+
+def _source_lock(source: str) -> threading.RLock:
+    key = _scope_key(source)
+    with _LOCKS_GUARD:
+        lock = LOCKS.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            LOCKS[key] = lock
+        return lock
+
+
+def discard_meta(source: str) -> None:
+    META.pop(_scope_key(source), None)
+    META.pop(source, None)
 
 
 def validate(source):
@@ -50,17 +80,31 @@ def version(source):
     return digest.hexdigest()
 
 
-def status(source):
+def status(source, user=None):
     validate(source)
-    base = BROKER.status('download_shared') if source == 'fengshen' else target(source).status() if source == 'xiaoxiang' else target(source).status(source)
+    from workspace_context import current_user, current_workspace
+    resolved_user = user or current_user()
+    wid = current_workspace()
+    base = BROKER.status(wid) if source == 'fengshen' else target(source).status() if source == 'xiaoxiang' else target(source).status(source)
     fingerprint = version(source)
-    meta = META.get(source, {})
+    meta = META.get(_scope_key(source)) or META.get(source, {})
     active = base.get('busy') or base.get('state') in ('starting', 'waiting_login', 'refreshing')
     if meta.get('session_version') == fingerprint and not active and meta.get('checked_at', '') >= base.get('checked_at', ''):
         base = {**base, **{k: v for k, v in meta.items() if k != '_clock'}}
     from auth_diagnostics import history
     from function_availability import snapshot
-    return {**base, 'capabilities': snapshot(source, fingerprint), 'diagnostics': history(source), 'source': source, 'session_version': fingerprint, 'saved': any(p.exists() for p in files(source))}
+    is_shared = source in SHARED_SOURCES
+    can_manage = can_manage_shared_auth(resolved_user) if (is_shared and resolved_user is not None) else True
+    return {
+        **base,
+        'capabilities': snapshot(source, fingerprint),
+        'diagnostics': history(source),
+        'source': source,
+        'session_version': fingerprint,
+        'saved': any(p.exists() for p in files(source)),
+        'shared': is_shared,
+        'can_manage': can_manage,
+    }
 
 
 def display_identity(data):
@@ -84,7 +128,7 @@ def display_identity(data):
 @contextmanager
 def operation(source):
     validate(source)
-    lock = LOCKS[source]
+    lock = _source_lock(source)
     if not lock.acquire(blocking=False): raise HTTPException(409, '此平台正在检测或切换，请稍候')
     try: yield
     finally: lock.release()
@@ -185,33 +229,41 @@ def check(source, force=False, deep=False):
         result['duration_ms'] = round((time.monotonic() - started) * 1000)
         from auth_diagnostics import record
         result['diagnostics_saved'] = record(source, result)
-        META[source] = result
+        META[_scope_key(source)] = result
         return status(source)
 
 
 @contextmanager
-def idle_guard():
+def idle_guard(source: str | None = None):
     """Hold the task creation lock and collection lock through local credential moves."""
     from parttime_source import COLLECTION_LOCK
     from download_jobs import get_manager, ACTIVE_STATUSES
     from workbench import RUNNERS
+    from workspace_context import current_workspace, is_isolated_workspace
+    wid = current_workspace()
+    scoped_personal = bool(source and source not in SHARED_SOURCES and is_isolated_workspace(wid))
     if not COLLECTION_LOCK.acquire(blocking=False): raise HTTPException(409, '资料采集正在进行，请任务结束后再切换账号')
     try:
         from lanorange_approvals import has_active
         from lanorange_price_export import has_active as prices_active
-        if has_active() or prices_active():raise HTTPException(409, '蓝橙价格审批或导出正在执行，请结束任务后再退出或切换平台账号')
+        scope_arg = wid if scoped_personal else None
+        if has_active(scope_arg) or prices_active(scope_arg):
+            raise HTTPException(409, '蓝橙价格审批或导出正在执行，请结束任务后再退出或切换平台账号')
         manager = get_manager()
         with manager._lock:
             with manager._connection() as db:
-                active = db.execute('SELECT 1 FROM download_runs WHERE status IN (?,?,?,?) LIMIT 1', tuple(sorted(ACTIVE_STATUSES))).fetchone()
-            if active or any(not task.done() for task in list(RUNNERS)):
+                if scoped_personal:
+                    active = db.execute('SELECT 1 FROM download_runs WHERE owner = ? AND status IN (?,?,?,?) LIMIT 1', (wid, *sorted(ACTIVE_STATUSES))).fetchone()
+                else:
+                    active = db.execute('SELECT 1 FROM download_runs WHERE status IN (?,?,?,?) LIMIT 1', tuple(sorted(ACTIVE_STATUSES))).fetchone()
+            if active or (not scoped_personal and any(not task.done() for task in list(RUNNERS))):
                 raise HTTPException(409, '当前有排队或运行中的任务，请结束后再退出或切换平台账号')
             yield
     finally: COLLECTION_LOCK.release()
 
 
 def disconnect(source, expected, *, guarded=False):
-    with operation(source), (nullcontext() if guarded else idle_guard()):
+    with operation(source), (nullcontext() if guarded else idle_guard(source)):
         if expected != version(source): raise HTTPException(409, '会话已更新，请重新检查后再确认退出')
         controller = BROKER if source == 'fengshen' else target(source)
         with controller.lock:
@@ -260,7 +312,7 @@ def disconnect(source, expected, *, guarded=False):
                     controller.resume_state = None
                     controller.stages = {'lighthouse': 'pending', 'board': 'pending'}
                     controller.board_reused = False
-            META.pop(source, None)
+            discard_meta(source)
             return status(source)
 
 
@@ -273,7 +325,7 @@ def auth_busy(source):
 
 
 def logout(source,expected,timeout=22):
-    with operation(source),idle_guard():
+    with operation(source),idle_guard(source):
         if expected!=version(source):raise HTTPException(409,'登录状态已变化，请重新点击退出')
         if source=='fengshen':
             with BROKER.lock:
@@ -288,14 +340,28 @@ def logout(source,expected,timeout=22):
         return disconnect(source,expected,guarded=True)
 
 
+def _require_platform_operator(request: Request, source: str):
+    validate(source)
+    if source == 'xiaoxiang':
+        return require_shared_auth_manage(request, '小象灯塔')
+    if source == 'benlai':
+        return require_shared_auth_manage(request, '本来人力')
+    return require_account(request)
+
+
 @router.post('/{source}/logout')
 async def do_logout(source:str,request:Request):
-    require_admin(request)
+    _require_platform_operator(request, source)
     data=await request.json()
     if not isinstance(data,dict) or data.get('confirm') is not True or not isinstance(data.get('session_version'),str):raise HTTPException(400,'退出请求无效')
     # Run the bounded wait off the ASGI event loop.
     from starlette.concurrency import run_in_threadpool
-    return await run_in_threadpool(logout,source,data['session_version'])
+    from workspace_context import current_workspace, bind_workspace
+    wid = current_workspace()
+    def _run():
+        with bind_workspace(wid):
+            return logout(source, data['session_version'])
+    return await run_in_threadpool(_run)
 
 
 @router.get('/baize/accounts')
@@ -307,19 +373,25 @@ def baize_accounts(request: Request):
 
 @router.get('/{source}')
 def get_status(source: str, request: Request):
-    require_account(request)
-    return status(source)
+    user = require_account(request)
+    return status(source, user=user)
 
 
 @router.post('/{source}/check')
 def do_check(source: str, request: Request, deep: bool = False):
-    require_admin(request)
+    validate(source)
+    if source == 'xiaoxiang':
+        require_permission(request, 'xiaoxiang_use', 'shared_auth_manage', any_of=True)
+    elif source == 'benlai':
+        require_permission(request, 'benlai_use', 'shared_auth_manage', any_of=True)
+    else:
+        require_account(request)
     return check(source, deep=deep)
 
 
 @router.post('/{source}/disconnect')
 async def do_disconnect(source: str, request: Request):
-    require_admin(request)
+    _require_platform_operator(request, source)
     data = await request.json()
     if not isinstance(data, dict) or data.get('confirm') is not True: raise HTTPException(400, '请明确确认退出此平台连接')
     return disconnect(source, data.get('session_version'))
@@ -327,8 +399,7 @@ async def do_disconnect(source: str, request: Request):
 
 @router.post('/{source}/cancel')
 def do_cancel(source: str, request: Request):
-    require_admin(request)
-    validate(source)
+    _require_platform_operator(request, source)
     if source == 'fengshen': raise HTTPException(409, '请在风神认证窗口内使用取消按钮；业务任务不会在此被取消')
     target(source).cancel(source)
     return status(source)

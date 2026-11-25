@@ -10,15 +10,23 @@ _workers = {}
 TTL = 300
 
 
+def _state_key(platform: str) -> tuple[str, str]:
+    if platform == 'xiaoxiang':
+        return ('shared', platform)
+    from workspace_context import current_workspace
+    return (current_workspace(), platform)
+
+
 def _version(platform):
     from platform_auth_control import version
     return version(platform)
 
 
 def _publish(platform, version, change):
+    key = _state_key(platform)
     with _lock:
-        if _states.get(platform, {}).get('session_version') == version and _version(platform) == version:
-            change(_states[platform])
+        if _states.get(key, {}).get('session_version') == version and _version(platform) == version:
+            change(_states[key])
 
 
 def _scan(platform, version):
@@ -44,7 +52,7 @@ def _scan(platform, version):
                     return
                 try:
                     with _lock:
-                        include = city['id'] in _states.get(platform, {}).get('separation_cities', [])
+                        include = city['id'] in _states.get(_state_key(platform), {}).get('separation_cities', [])
                     result = catalog(platform, city['id'], include_separation=True) if include else catalog(platform, city['id'])
                     def success(state):
                         if result.get('account_scope'): state['account_scope'] = result['account_scope']
@@ -79,7 +87,7 @@ def _scan(platform, version):
         _publish(platform, version, failed)
     finally:
         with _lock:
-            _workers.pop(platform, None)
+            _workers.pop(_state_key(platform), None)
 
 
 def snapshot(platform, refresh=False):
@@ -87,20 +95,22 @@ def snapshot(platform, refresh=False):
         from fastapi import HTTPException
         raise HTTPException(400, '平台无效')
     version = _version(platform)
+    key = _state_key(platform)
     with _lock:
-        state = _states.get(platform)
+        state = _states.get(key)
         changed = state is None or state['session_version'] != version
         if changed:
             state = {'platform': platform, 'session_version': version, 'cities': [], 'stations': [],
                      'status': 'loading', 'message': '', 'fetched_at': '', '_started': 0}
-            _states[platform] = state
+            _states[key] = state
         expired = time.monotonic() - state['_started'] > TTL or (state.get('_retry_at') is not None and time.monotonic() >= state['_retry_at'])
-        if platform not in _workers and (changed or refresh or expired or state['_started'] == 0 or (state['status']=='loading' and any(c['status']=='pending' for c in state['cities']))):
+        if key not in _workers and (changed or refresh or expired or state['_started'] == 0 or (state['status']=='loading' and any(c['status']=='pending' for c in state['cities']))):
+            from workspace_context import spawn_in_context
             # Keep previous visible data during a same-account refresh, mark it as refreshing.
             state.update(status='loading', message='', _started=time.monotonic())
             state.pop('_retry_at', None)
-            worker = threading.Thread(target=_scan, args=(platform, version), daemon=True, name='station-directory-' + platform)
-            _workers[platform] = worker
+            worker = spawn_in_context(_scan, platform, version, name='station-directory-' + platform)
+            _workers[key] = worker
             worker.start()
         return copy.deepcopy({k: v for k, v in state.items() if not k.startswith('_')})
 
@@ -130,7 +140,7 @@ def wait_xiaoxiang_directory(timeout=None):
     deadline = time.monotonic() + (XIAOXIANG_TASK_WAIT_SECONDS if timeout is None else timeout)
     data = snapshot('xiaoxiang')
     with _lock:
-        worker = _workers.get('xiaoxiang')
+        worker = _workers.get(_state_key('xiaoxiang'))
     if not worker and data.get('status') != 'ready':
         data = snapshot('xiaoxiang', refresh=True)
     last_refresh = time.monotonic()
@@ -144,7 +154,7 @@ def wait_xiaoxiang_directory(timeout=None):
         data = snapshot('xiaoxiang')
         if data.get('status') == 'unavailable':
             with _lock:
-                worker = _workers.get('xiaoxiang')
+                worker = _workers.get(_state_key('xiaoxiang'))
             if not worker and time.monotonic() - last_refresh >= XIAOXIANG_RETRY_SECONDS:
                 last_refresh = time.monotonic()
                 data = snapshot('xiaoxiang', refresh=True)
@@ -156,8 +166,9 @@ def current_city_directory(platform, city, refresh=False):
     from deduction_stations import catalog
     from parttime_source import SourceError
     version = _version(platform)
+    key = _state_key(platform)
     with _lock:
-        state = _states.get(platform)
+        state = _states.get(key)
         if state and state['session_version'] == version:
             chosen = [c for c in state['cities'] if c['id'] == city or c['name'] == city]
             if not refresh and len(chosen) == 1 and chosen[0]['status'] == 'ready' and state['status'] != 'unavailable':
@@ -189,10 +200,10 @@ def current_city_directory(platform, city, refresh=False):
     with _lock:
         if _version(platform) != version:
             raise SourceError('平台账号已变化，请重新读取本次城市')
-        state = _states.get(platform)
+        state = _states.get(key)
         if not state or state['session_version'] != version:
             state = {'platform':platform,'session_version':version,'cities':[],'stations':[], 'status':'loading','message':'','fetched_at':'','_started':time.monotonic()}
-            _states[platform] = state
+            _states[key] = state
         previous = {c['id']:c for c in state['cities']}
         state['cities'] = [{**c,'station_count':previous.get(c['id'],{}).get('station_count'),'status':previous.get(c['id'],{}).get('status','pending')} for c in result['cities']]
         state['stations'] = [s for s in state['stations'] if s['city_id'] != code] + result['stations']
@@ -213,8 +224,9 @@ def sync_separation(city):
     if len(choices) != 1:
         raise HTTPException(409, '无法唯一匹配后台城市')
     code = choices[0]['id']
+    key = _state_key('fengshen')
     with _lock:
-        state = _states.get('fengshen')
+        state = _states.get(key)
         if not state or state['session_version'] != version or _version('fengshen') != version:
             raise HTTPException(409, '目录会话已变化，请重新同步')
         state.setdefault('separation_cities', [])

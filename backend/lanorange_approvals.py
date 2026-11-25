@@ -14,7 +14,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
-from download_accounts import require_account
+from download_accounts import require_account, require_permission
 from download_routes import workspace_owner
 from lanorange_approval_client import OfficialApprovalClient, ApprovalError, SubmissionUncertain, public_task, eligible, digest, identifier
 
@@ -172,7 +172,11 @@ class ApprovalManager:
                         db.execute('INSERT OR REPLACE INTO claims VALUES (?,?,?,?)',(row['actor'],task_id,batch_id,'pending'))
                     db.execute('INSERT INTO items(batch_id,position,task_id,status,message,snapshot) VALUES (?,?,?,?,?,?)',(batch_id,position,task_id,state,item.get('reason','等待提交'),json.dumps(item['snapshot'],ensure_ascii=False)))
         if not old and background:
-            worker=threading.Thread(target=self.run,args=(batch_id,),daemon=True,name='lanorange-price-approval')
+            from workspace_context import bind_workspace
+            def _worker_entry():
+                with bind_workspace(scope):
+                    self.run(batch_id)
+            worker=threading.Thread(target=_worker_entry,daemon=True,name='lanorange-price-approval')
             with self.lock:self.workers[batch_id]=worker
             worker.start()
         return self.batch(scope,batch_id)
@@ -326,9 +330,14 @@ def get_manager():
         return _manager
 
 
-def has_active():
-    if _manager is not None:return _manager.active()
-    return get_manager().active() if ROOT.exists() else False
+def has_active(scope_id=None):
+    mgr = _manager if _manager is not None else (get_manager() if ROOT.exists() else None)
+    if mgr is None:
+        return False
+    if scope_id:
+        with mgr.connection() as db:
+            return bool(db.execute("SELECT 1 FROM batches WHERE scope=? AND status IN ('queued','running','stopping') LIMIT 1", (scope_id,)).fetchone())
+    return mgr.active()
 
 
 def shutdown():
@@ -347,7 +356,7 @@ def call(fn):
 
 
 def scope(request):
-    require_account(request)
+    require_permission(request, 'approval')
     return workspace_owner(request)
 
 

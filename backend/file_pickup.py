@@ -100,12 +100,28 @@ def _probe(path):
         return False
 
 
+def _config_file() -> Path:
+    if CONFIG != (ROOT / 'file_pickup_sources.json'):
+        return CONFIG
+    try:
+        from workspace_context import current_workspace, is_isolated_workspace
+        wid = current_workspace()
+        if is_isolated_workspace(wid):
+            target = ROOT / 'workspaces' / wid / 'file_pickup_sources.json'
+            target.parent.mkdir(parents=True, exist_ok=True)
+            return target
+    except Exception:
+        pass
+    return CONFIG
+
+
 def _load():
+    cfg = _config_file()
     with LOCK:
-        if not CONFIG.is_file():
+        if not cfg.is_file():
             return []
         try:
-            value = json.loads(CONFIG.read_text('utf-8'))
+            value = json.loads(cfg.read_text('utf-8'))
         except (OSError, ValueError):
             return []
     rows = value.get('sources') if isinstance(value, dict) else None
@@ -122,11 +138,12 @@ def _load():
 
 
 def _save(rows):
+    cfg = _config_file()
     with LOCK:
-        ROOT.mkdir(parents=True, exist_ok=True)
-        temp = CONFIG.with_suffix('.json.tmp')
+        cfg.parent.mkdir(parents=True, exist_ok=True)
+        temp = cfg.with_suffix('.json.tmp')
         temp.write_text(json.dumps({'sources': rows}, ensure_ascii=False, indent=2), 'utf-8')
-        os.replace(temp, CONFIG)
+        os.replace(temp, cfg)
 
 
 def _source(key):

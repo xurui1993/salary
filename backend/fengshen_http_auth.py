@@ -426,11 +426,12 @@ def standalone_http_login(owner, cancelled, entered):
 
 
 def start_http_login(owner):
+    from workspace_context import spawn_in_context
     with START_LOCK:
         if BROKER.active:
             return BROKER.status(owner)
         cancelled, entered = threading.Event(), threading.Event()
-        threading.Thread(target=standalone_http_login, args=(owner, cancelled, entered),
-                         name="fengshen-http-login", daemon=True).start()
+        spawn_in_context(standalone_http_login, owner, cancelled, entered,
+                         name="fengshen-http-login").start()
         entered.wait(3)
         return BROKER.status(owner)

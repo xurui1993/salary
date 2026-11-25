@@ -1919,7 +1919,11 @@ class DownloadManager:
         try:
             with self._lock:
                 cancelled = self._events.get(run_id, threading.Event())
-            with pipeline_scope(PipelineTurn(self._local_gate, handoff, cancelled)):
+            with self._lock, self._connection() as connection:
+                owner_row = connection.execute("SELECT owner FROM download_runs WHERE id = ?", (run_id,)).fetchone()
+            run_owner = owner_row["owner"] if owner_row else None
+            from workspace_context import bind_workspace
+            with bind_workspace(run_owner), pipeline_scope(PipelineTurn(self._local_gate, handoff, cancelled)):
                 self._execute(run_id)
         except Exception as exc:
             self._fail_processing_turn(run_id, exc)

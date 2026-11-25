@@ -743,9 +743,10 @@ def claim_calculation(wid, key, owner, deduction_version='', root=None):
                 raise SourceError('资料或扣款配置在校验期间发生变化，请刷新后重新确认')
             from workbench import deduction_snapshot
             from deduction_confirmation import require_confirmation
+            from workspace_context import workspace_data_root
             relaxed=current.get('input_policy')=='readable_delivery_v1'
             if not relaxed: require_confirmation(current, deduction_version)
-            selected = {**current['deductions'],'frozen':True} if relaxed else deduction_snapshot(current)
+            selected = {**current['deductions'],'frozen':True} if relaxed else deduction_snapshot(current, workspace_data_root(wid, root))
             if deduction_version and selected['version'] != deduction_version:
                 raise SourceError('扣款配置已变化，请重新查看配置并确认后再核算')
             current['deductions'] = selected
@@ -946,13 +947,15 @@ async def _run_payroll(config, request, folder, state, cancelled, *, context=Non
             yield tasks.create_finish_event('paused','等待处理资料，尚未执行核算')
         return
     checkpoint(cancelled)
+    from workspace_context import workspace_data_root
+    ws_root = workspace_data_root(wid, ROOT)
     if not automatic and mode == 'fengshen' and state.get('deduction_intent') and (state.get('deduction_confirmation') or {}).get('stage') != 'final':
         from deduction_confirmation import finalize_intent, platform_for
         from station_directory import ready_directory
         try:
             def finalize():
                 data = ready_directory(platform_for(state), state['deduction_intent'].get('city_id') or state['plan']['city'])
-                finalize_intent(folder, state, ROOT, data)
+                finalize_intent(folder, state, ws_root, data)
             await asyncio.to_thread(finalize)
             state.pop('pause_reason', None)
             save(folder, state)
@@ -970,7 +973,7 @@ async def _run_payroll(config, request, folder, state, cancelled, *, context=Non
         def capture():
             if relaxed:
                 from payroll_readable_policy import capture_rules as capture_available_rules
-                capture_available_rules(folder,state,ROOT)
+                capture_available_rules(folder,state,ws_root)
             else:
                 retained = state.get('deductions', {}).get('frozen') or (bool(state.get('deduction_confirmation')) and state['deduction_confirmation'].get('stage', 'final') == 'final')
                 if retained:
@@ -979,7 +982,7 @@ async def _run_payroll(config, request, folder, state, cancelled, *, context=Non
                     data = wait_xiaoxiang_directory()
                 else:
                     data = ready_directory(platform_for(state), state['plan']['city'])
-                capture_rules(folder, state, ROOT, data)
+                capture_rules(folder, state, ws_root, data)
             state.pop('pause_reason', None)
             save(folder, state)
         await asyncio.to_thread(capture)

@@ -10,7 +10,7 @@ from contextlib import contextmanager
 
 from fastapi import APIRouter,HTTPException,Request
 from fastapi.responses import FileResponse
-from download_accounts import require_account
+from download_accounts import require_account, require_permission
 from download_routes import workspace_owner
 from lanorange_approval_client import OfficialApprovalClient,ApprovalError,digest,identifier,MAX_RIDERS
 from lanorange_approvals import current_version,call
@@ -159,7 +159,11 @@ class PriceExports:
             if self.active():raise ApprovalError('已有每日价格导出在执行，请完成后再创建','busy')
             key=uuid.uuid4().hex;db.execute('INSERT INTO exports(id,scope,request_id,query,status,created,message) VALUES(?,?,?,?,?,?,?)',(key,scope,payload['request_id'],json.dumps(filters,ensure_ascii=False),'queued',time.time(),'等待采集'))
         if background:
-            thread=threading.Thread(target=self.run,args=(key,),daemon=True,name='lanorange-price-export');self.workers[key]=thread;thread.start()
+            from workspace_context import bind_workspace
+            def _export_worker():
+                with bind_workspace(scope):
+                    self.run(key)
+            thread=threading.Thread(target=_export_worker,daemon=True,name='lanorange-price-export');self.workers[key]=thread;thread.start()
         return self.get(scope,key)
     def update(self,key,**fields):
         with self.lock,self.db() as db:db.execute('UPDATE exports SET '+','.join(name+'=?' for name in fields)+' WHERE id=?',(*fields.values(),key))
@@ -179,10 +183,13 @@ class PriceExports:
                 self.update(key,status='running',actor=actor,total=len(work),message='正在读取最新版本和每日价格')
                 stop=lambda:self.stopped(key)
                 with WorkbookStream(partial,json.dumps({'蓝橙账号':api.actor_label,'筛选':filters},ensure_ascii=False)) as book,ThreadPoolExecutor(max_workers=3,thread_name_prefix='price-read') as pool:
+                    import contextvars
                     waiting=deque();source=iter(work)
                     def submit_one():
                         item=next(source,None)
-                        if item is not None:waiting.append(pool.submit(read_station,self.factory,item,filters,actor,version,self.version_fn,status,settle,stop))
+                        if item is not None:
+                            ctx=contextvars.copy_context()
+                            waiting.append(pool.submit(ctx.run,read_station,self.factory,item,filters,actor,version,self.version_fn,status,settle,stop))
                     for _ in range(3):submit_one()
                     while waiting:
                         receipt,snapshot=waiting.popleft().result();receipts.append(receipt)
@@ -243,11 +250,18 @@ def manager():
     with _lock:
         if _manager is None:_manager=PriceExports()
         return _manager
-def has_active():return _manager.active() if _manager is not None else manager().active() if (ROOT/'exports.sqlite3').exists() else False
+def has_active(scope_id=None):
+    mgr = _manager if _manager is not None else (manager() if (ROOT/'exports.sqlite3').exists() else None)
+    if mgr is None:
+        return False
+    if scope_id:
+        with mgr.db() as db:
+            return bool(db.execute("SELECT 1 FROM exports WHERE scope=? AND status IN ('queued','running','stopping') LIMIT 1", (scope_id,)).fetchone())
+    return mgr.active()
 def shutdown():
     if _manager is not None:
         with _manager.db() as db:db.execute("UPDATE exports SET stop=1 WHERE status IN ('queued','running','stopping')")
-def owner(request):require_account(request);return workspace_owner(request)
+def owner(request):require_permission(request, 'approval');return workspace_owner(request)
 
 
 @router.post('/exports')

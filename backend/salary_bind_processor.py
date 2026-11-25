@@ -934,14 +934,22 @@ async def run_salary_bind_gen(source_path, target_path=None, base_path=None, ded
             
             config_mapping = {}
             config_file = None
-            for fname in ["config.json", "config.xlsx", "配置.json", "配置.xlsx"]:
-                for base_p in [os.path.join(project_root_dir, "data"), os.path.join(project_root_dir, "app", "data")]:
-                    p = os.path.join(base_p, fname)
-                    if os.path.exists(p):
-                        config_file = p
+            try:
+                from workspace_context import workspace_config_path
+                ws_cfg = str(workspace_config_path())
+                if os.path.exists(ws_cfg):
+                    config_file = ws_cfg
+            except Exception:
+                pass
+            if not config_file:
+                for fname in ["config.json", "config.xlsx", "配置.json", "配置.xlsx"]:
+                    for base_p in [os.path.join(project_root_dir, "data"), os.path.join(project_root_dir, "app", "data")]:
+                        p = os.path.join(base_p, fname)
+                        if os.path.exists(p):
+                            config_file = p
+                            break
+                    if config_file:
                         break
-                if config_file:
-                    break
 
                     
             if config_file:

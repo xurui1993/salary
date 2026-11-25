@@ -8,7 +8,9 @@ export function isDownloadProxyPath(pathname: string): boolean {
     const decoded = decodeURIComponent(pathname.split("?", 1)[0]);
     return decoded === PREFIX || decoded.startsWith(PREFIX + "/")
       || decoded === '/api/run' || decoded.startsWith('/api/parttime/')
-      || decoded === '/api/workbench' || decoded.startsWith('/api/workbench/');
+      || decoded === '/api/workbench' || decoded.startsWith('/api/workbench/')
+      || decoded === '/api/auth' || decoded.startsWith('/api/auth/')
+      || decoded === '/api/admin' || decoded.startsWith('/api/admin/');
   } catch {
     // Preserve browser Host for malformed paths instead of trusting loopback.
     return true;

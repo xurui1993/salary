@@ -18,7 +18,7 @@ from urllib.parse import unquote, urlparse, urljoin
 import requests
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
-from download_accounts import require_admin, require_account
+from download_accounts import can_manage_shared_auth, require_admin, require_account, require_shared_auth_manage
 from fengshen_auth import dpapi
 from fengshen_bill import BillCollectionError
 
@@ -38,7 +38,9 @@ SOURCES = {
                'identity_codes': (0,), 'token': 'fengxin-saas'},
 }
 DINGTALK_CONFIRM_LABELS = ('同意', '确认登录', '确认授权', '继续登录')
-ROOT = Path(__file__).parent / '.local_auth'
+_DEFAULT_AUTH_ROOT = Path(__file__).parent / '.local_auth'
+ROOT = _DEFAULT_AUTH_ROOT
+SHARED_SOURCES = frozenset({'benlai'})
 STATE_LIMIT = 256 * 1024
 KEEPALIVE_SECONDS = 300
 CONSENT_TOGGLE = """(e,want)=>{
@@ -60,16 +62,23 @@ def _configured_keepalive():
 KEEPALIVE_SECONDS = _configured_keepalive()
 
 
+def _source_root(source: str) -> Path:
+    if ROOT != _DEFAULT_AUTH_ROOT or source in SHARED_SOURCES:
+        return ROOT
+    from workspace_context import workspace_auth_dir
+    return workspace_auth_dir()
+
+
 def session_path(source):
     if source not in SOURCES:
         raise BillCollectionError('外部资料来源无效')
-    return ROOT / (source + '.dpapi')
+    return _source_root(source) / (source + '.dpapi')
 
 
 def state_path(source):
     if source not in SOURCES:
         raise BillCollectionError('外部资料来源无效')
-    return ROOT / (source + '.storage')
+    return _source_root(source) / (source + '.storage')
 
 
 def _write_encrypted(path, payload):
@@ -316,7 +325,7 @@ def save_token(source, token):
 def credentials_path(source):
     if source not in ('baize', 'benlai'):
         raise BillCollectionError('此来源不支持保存登录凭据')
-    return ROOT / (source + '.credentials.dpapi')
+    return _source_root(source) / (source + '.credentials.dpapi')
 
 
 def load_credentials(source):
@@ -526,7 +535,8 @@ def _probe_identity(source, session, timeout=None, attempts=2):
 
 
 class SourceAuth:
-    def __init__(self):
+    def __init__(self, wid: str | None = None):
+        self._wid = wid
         self.lock = threading.RLock()
         self.states = {}
         self.inputs = {}
@@ -960,7 +970,10 @@ class SourceAuth:
         if source=='lanorange':
             from lanorange_approvals import has_active
             from lanorange_price_export import has_active as prices_active
-            if has_active() or prices_active():raise HTTPException(409,'蓝橙价格审批或导出正在执行，请结束任务后再登录或切换账号')
+            from workspace_context import current_workspace
+            scope_id = self._wid or current_workspace()
+            if has_active(scope_id) or prices_active(scope_id):
+                raise HTTPException(409,'当前空间有蓝橙价格审批或导出正在执行，请结束任务后再登录或切换账号')
         with self.lock:
             if (self.workers.get(source) and self.workers[source].is_alive()) or self.states.get(source, {}).get('state') in ('starting', 'waiting_login', 'refreshing'):
                 return self.status(source)
@@ -981,7 +994,8 @@ class SourceAuth:
             self.transitions.pop(source, None)
             self.retry_forms.pop(source, None)
             self.states.setdefault(source, {}).pop('image_qr', None)
-            worker = threading.Thread(target=self._login, args=(source,), daemon=True)
+            from workspace_context import spawn_in_context
+            worker = spawn_in_context(self._login, source, name=f'source-auth-{source}')
             self.workers[source] = worker
             worker.start()
             return self.status(source)
@@ -1201,13 +1215,25 @@ class SourceAuth:
             self._keepalive.start()
 
     def _keepalive_loop(self):
+        from workspace_context import bind_workspace
         while True:
             for source in SOURCES:
                 try:
-                    self.keepalive(source)
+                    with bind_workspace(self._wid):
+                        self.keepalive(source)
                 except Exception as exc:
                     _log.warning('来源会话保活失败 source=%s error=%s: %s',
                                  source, type(exc).__name__, _safe_detail(exc))
+            for wid, ws_auth in list(_WORKSPACE_AUTHS.items()):
+                for source in SOURCES:
+                    if source in SHARED_SOURCES:
+                        continue
+                    try:
+                        with bind_workspace(wid):
+                            ws_auth.keepalive(source)
+                    except Exception as exc:
+                        _log.warning('空间来源会话保活失败 wid=%s source=%s error=%s: %s',
+                                     wid, source, type(exc).__name__, _safe_detail(exc))
             time.sleep(KEEPALIVE_SECONDS)
 
     @staticmethod
@@ -1337,7 +1363,8 @@ class SourceAuth:
                 stored = None
             from auth_browser_guard import guarded_playwright
             from auth_browser_runtime import launch_edge
-            with guarded_playwright(cancelled, lambda value: self._release_update(source, value), lambda guard: self.guards.__setitem__(source, guard)) as pw:
+            from workspace_context import acquire_login_browser_slot
+            with acquire_login_browser_slot(), guarded_playwright(cancelled, lambda value: self._release_update(source, value), lambda guard: self.guards.__setitem__(source, guard)) as pw:
                 browser = launch_edge(pw, headless=True)
                 options = {'viewport': viewport,'locale':'zh-CN','timezone_id':'Asia/Shanghai'}
                 if stored is not None:
@@ -1488,41 +1515,143 @@ class SourceAuth:
                 except Exception: pass
 
 
-AUTH = SourceAuth()
+_PRIMARY_AUTH = SourceAuth()
+_WORKSPACE_AUTHS: dict[str, SourceAuth] = {}
+_AUTHS_LOCK = threading.RLock()
+
+
+def get_source_auth(source: str | None = None, wid: str | None = None) -> SourceAuth:
+    if source in SHARED_SOURCES:
+        return _PRIMARY_AUTH
+    from workspace_context import current_workspace, is_isolated_workspace
+    resolved = wid or current_workspace()
+    if not is_isolated_workspace(resolved):
+        return _PRIMARY_AUTH
+    with _AUTHS_LOCK:
+        inst = _WORKSPACE_AUTHS.get(resolved)
+        if inst is None:
+            inst = SourceAuth(wid=resolved)
+            _WORKSPACE_AUTHS[resolved] = inst
+        return inst
+
+
+class _WorkspaceSourceAuthProxy:
+    """Routes per-source auth calls to global shared instance (benlai) or workspace instance (lanorange/baize)."""
+
+    def _inst(self, source: str | None = None) -> SourceAuth:
+        return get_source_auth(source)
+
+    @property
+    def lock(self):
+        return self._inst().lock
+
+    @property
+    def states(self):
+        return self._inst().states
+
+    @property
+    def desktop(self):
+        return self._inst().desktop
+
+    @property
+    def workers(self):
+        return self._inst().workers
+
+    @property
+    def epochs(self):
+        return self._inst().epochs
+
+    @property
+    def form_bindings(self):
+        return self._inst().form_bindings
+
+    @property
+    def inputs(self):
+        return self._inst().inputs
+
+    @property
+    def pending_credentials(self):
+        return self._inst().pending_credentials
+
+    @property
+    def credential_prompt(self):
+        return self._inst().credential_prompt
+
+    def status(self, source):
+        return get_source_auth(source).status(source)
+
+    def start(self, source):
+        return get_source_auth(source).start(source)
+
+    def cancel(self, source):
+        return get_source_auth(source).cancel(source)
+
+    def interact(self, source, command):
+        return get_source_auth(source).interact(source, command)
+
+    def refresh(self, source):
+        return get_source_auth(source).refresh(source)
+
+    def recover(self, source):
+        return get_source_auth(source).recover(source)
+
+    def confirm_credentials(self, source, save):
+        return get_source_auth(source).confirm_credentials(source, save)
+
+    def keepalive(self, source):
+        return get_source_auth(source).keepalive(source)
+
+    def start_keepalive(self):
+        return _PRIMARY_AUTH.start_keepalive()
+
+
+AUTH = _WorkspaceSourceAuthProxy()
 router = APIRouter(prefix='/api/fengshen-downloads/source-auth')
+
+
+def _require_source_operator(request: Request, source: str):
+    if source == 'xiaoxiang':
+        return require_shared_auth_manage(request, '小象灯塔')
+    if source in SHARED_SOURCES:
+        return require_shared_auth_manage(request, SOURCES[source]['label'])
+    return require_account(request)
 
 
 @router.get('/{source}')
 def status(source: str, request: Request):
-    require_account(request)
+    user = require_account(request)
+    is_shared = source == 'xiaoxiang' or source in SHARED_SOURCES
+    can_manage = can_manage_shared_auth(user) if is_shared else True
     if source == 'xiaoxiang':
         from xiaoxiang_source_auth import AUTH as xiang
-        return xiang.status()
+        return {**xiang.status(), 'shared': True, 'can_manage': can_manage}
     if source not in SOURCES: raise HTTPException(404, '资料来源不存在')
-    return AUTH.status(source)
+    return {**get_source_auth(source).status(source), 'shared': is_shared, 'can_manage': can_manage}
 
 
 @router.post('/{source}/start')
 def start(source: str, request: Request):
-    require_admin(request)
-    from platform_auth_control import operation, META
+    _require_source_operator(request, source)
+    from platform_auth_control import operation, discard_meta
     with operation(source):
-        META.pop(source, None)
+        discard_meta(source)
         if source == 'xiaoxiang':
             from xiaoxiang_source_auth import AUTH as xiang
             return xiang.start()
         if source not in SOURCES: raise HTTPException(404, '资料来源不存在')
-        return AUTH.start(source)
+        return get_source_auth(source).start(source)
 
 
 @router.get('/{source}/qr')
 @router.get('/{source}/frame')
 def qr(source: str, request: Request):
-    require_admin(request)
-    target = AUTH
+    _require_source_operator(request, source)
     if source == 'xiaoxiang':
         from xiaoxiang_source_auth import AUTH as target
-    elif source not in SOURCES: raise HTTPException(404, '资料来源不存在')
+    elif source in SOURCES:
+        target = get_source_auth(source)
+    else:
+        raise HTTPException(404, '资料来源不存在')
     with target.lock:
         state = target.states.get(source, {})
         if source in ('lanorange','xiaoxiang') and (state.get('state')!='waiting_login' or state.get('cancelling') or not request.query_params.get('session_id') or request.query_params['session_id']!=state.get('session_id')):
@@ -1544,11 +1673,13 @@ def qr(source: str, request: Request):
 
 @router.post('/{source}/interact')
 async def interact(source: str, request: Request):
-    require_admin(request)
-    target = AUTH
+    _require_source_operator(request, source)
     if source == 'xiaoxiang':
         from xiaoxiang_source_auth import AUTH as target
-    elif source not in SOURCES: raise HTTPException(404, '资料来源不存在')
+    elif source in SOURCES:
+        target = get_source_auth(source)
+    else:
+        raise HTTPException(404, '资料来源不存在')
     body = bytearray()
     async for chunk in request.stream():
         if len(body) + len(chunk) > 32768:
@@ -1563,7 +1694,7 @@ async def interact(source: str, request: Request):
 
 @router.post('/{source}/credentials')
 async def credentials(source: str, request: Request):
-    require_admin(request)
+    _require_source_operator(request, source)
     if source not in ('baize', 'benlai'):
         raise HTTPException(404, '此来源不支持保存登录凭据')
     try:
@@ -1572,4 +1703,4 @@ async def credentials(source: str, request: Request):
         raise HTTPException(400, '凭据操作格式无效') from None
     if not isinstance(data, dict) or data.get('action') not in ('save', 'skip'):
         raise HTTPException(400, '凭据操作无效')
-    return AUTH.confirm_credentials(source, data['action'] == 'save')
+    return get_source_auth(source).confirm_credentials(source, data['action'] == 'save')

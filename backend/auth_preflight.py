@@ -51,8 +51,10 @@ def probe(platforms, deep_xiaoxiang=False):
             return {'source': source, 'label': LABELS[source], 'state': 'unknown',
                     'ready': False, 'message': '登录态检查未完成，请检查网络后重试'}
 
+    import contextvars
     with ThreadPoolExecutor(max_workers=4) as pool:
-        return list(pool.map(inspect, sorted(platforms)))
+        futures = [pool.submit(contextvars.copy_context().run, inspect, src) for src in sorted(platforms)]
+        return [f.result() for f in futures]
 
 
 def ensure_ready(platforms, deep_xiaoxiang=False):

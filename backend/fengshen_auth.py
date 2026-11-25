@@ -71,8 +71,19 @@ def dpapi(data, decrypt=False, entropy=b"aegis-fengshen-session-v1"):
 
 class SessionVault:
     def __init__(self, path=None, crypt=dpapi):
-        self.path = Path(path) if path else Path(__file__).with_name(".local_auth") / "fengshen.dpapi"
+        self._explicit_path = Path(path) if path else None
         self.crypt = crypt
+
+    @property
+    def path(self):
+        if self._explicit_path is not None:
+            return self._explicit_path
+        from workspace_context import workspace_auth_dir
+        return workspace_auth_dir() / "fengshen.dpapi"
+
+    @path.setter
+    def path(self, value):
+        self._explicit_path = Path(value) if value else None
 
     def load(self):
         if not self.path.exists():
@@ -243,7 +254,35 @@ class AuthBroker:
             self.update("signed_out", "本机会话已清除")
 
 
-BROKER = AuthBroker()
+_PRIMARY_BROKER = AuthBroker(SessionVault(Path(__file__).with_name(".local_auth") / "fengshen.dpapi"))
+_WORKSPACE_BROKERS = {}
+_BROKERS_LOCK = threading.RLock()
+
+
+def get_broker(wid=None) -> AuthBroker:
+    from workspace_context import current_workspace, is_isolated_workspace, workspace_auth_dir
+    resolved = wid or current_workspace()
+    if not is_isolated_workspace(resolved):
+        return _PRIMARY_BROKER
+    with _BROKERS_LOCK:
+        broker = _WORKSPACE_BROKERS.get(resolved)
+        if broker is None:
+            broker = AuthBroker(SessionVault(workspace_auth_dir(resolved) / "fengshen.dpapi"))
+            _WORKSPACE_BROKERS[resolved] = broker
+        return broker
+
+
+class _WorkspaceBrokerProxy:
+    """Transparently routes BROKER operations to the current workspace's AuthBroker."""
+
+    def __getattr__(self, name):
+        return getattr(get_broker(), name)
+
+    def __setattr__(self, name, value):
+        setattr(get_broker(), name, value)
+
+
+BROKER = _WorkspaceBrokerProxy()
 
 
 class BrowserAuth:
@@ -591,12 +630,13 @@ START_LOCK = threading.Lock()
 
 
 def start_login(owner):
+    from workspace_context import spawn_in_context
     with START_LOCK:
         if BROKER.active:
             return BROKER.status(owner)
         cancelled = threading.Event()
         entered = threading.Event()
-        thread = threading.Thread(target=standalone_login, args=(owner, cancelled, entered), name="fengshen-login", daemon=True)
+        thread = spawn_in_context(standalone_login, owner, cancelled, entered, name="fengshen-login")
         thread.start()
         entered.wait(3)
         return BROKER.status(owner)

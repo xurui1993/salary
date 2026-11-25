@@ -71,6 +71,17 @@ import {
   type TaskStatusAlert,
 } from './lib/taskWorkflow';
 import { arePlatformStatusMapsEqual } from './lib/perfUtils';
+import { AuthPortal } from './components/AuthPortal';
+import { AccountManagementDrawer } from './components/AccountManagementDrawer';
+import { HeaderAccountBar, WorkspaceInspectBanner } from './components/HeaderAccountBar';
+import {
+  fetchWorkspaceSession,
+  hasModulePermission,
+  logoutWorkspaceAccount,
+  switchInspectWorkspace,
+  syncStoredWorkspaceId,
+  type WorkspaceSessionState,
+} from './lib/workspaceAuth';
 
 const showDesktopNotification = (title: string, body: string) => {
   if (!("Notification" in window)) {
@@ -89,6 +100,88 @@ const showDesktopNotification = (title: string, body: string) => {
 };
 
 export default function App() {
+  const [session, setSession] = useState<WorkspaceSessionState | null>(null);
+  const [loadingSession, setLoadingSession] = useState(true);
+
+  const refreshSession = async () => {
+    try {
+      const next = await fetchWorkspaceSession();
+      setSession(next);
+    } catch {
+      // keep previous or null on transient startup delay
+    } finally {
+      setLoadingSession(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshSession();
+  }, []);
+
+  // Poll pending approvals lightly when logged in as admin
+  useEffect(() => {
+    if (!session?.authenticated || session.user?.role !== 'admin') return;
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void refreshSession();
+      }
+    }, 25000);
+    return () => clearInterval(timer);
+  }, [session?.authenticated, session?.user?.role]);
+
+  if (loadingSession && !session) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F6F7F8] text-slate-600 text-xs">
+        正在连接工作空间服务…
+      </div>
+    );
+  }
+
+  if (!session || !session.authenticated || !session.user) {
+    return (
+      <AuthPortal
+        session={
+          session || {
+            initialized: false,
+            authenticated: false,
+            host_machine: true,
+            local_loopback: true,
+            bootstrap_allowed: true,
+            user: null,
+            role_templates: {},
+            permission_keys: [],
+            permission_labels: {} as any,
+            workspaces: [],
+            pending_count: 0,
+          }
+        }
+        onAuthenticated={next => setSession(next)}
+        onRefreshSession={refreshSession}
+      />
+    );
+  }
+
+  return (
+    <AuthenticatedWorkbench
+      key={session.user.effective_workspace}
+      session={session}
+      onSessionUpdate={setSession}
+      onRefreshSession={refreshSession}
+    />
+  );
+}
+
+function AuthenticatedWorkbench({
+  session,
+  onSessionUpdate,
+  onRefreshSession,
+}: {
+  session: WorkspaceSessionState;
+  onSessionUpdate: React.Dispatch<React.SetStateAction<WorkspaceSessionState | null>>;
+  onRefreshSession: () => Promise<void>;
+}) {
+  const currentUser = session.user!;
+  const [adminDrawerOpen, setAdminDrawerOpen] = useState(false);
   const theme = THEMES[0];
 
   const [missingCityTeams, setMissingCityTeams] = useState<string[]>([]);
@@ -155,16 +248,26 @@ export default function App() {
     try { localStorage.setItem('app_theme', 'light'); } catch {}
   }, []);
 
-  const [workspaceId] = useState(() => {
-    const shared = 'download_shared';
-    try { localStorage.setItem('app_workspace_id', shared); } catch {}
-    return shared;
-  });
+  const workspaceId = currentUser.effective_workspace || 'download_shared';
+  useEffect(() => {
+    syncStoredWorkspaceId(workspaceId);
+  }, [workspaceId]);
 
-  const fetchWithAuth = (url: string, options: RequestInit = {}) => {
+  const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
     const headers = new Headers(options.headers || {});
     headers.set("x-workspace-id", encodeURIComponent(workspaceId));
-    return fetchWithPreflight(url, { ...options, headers }, (requestUrl, requestOptions) => fetch(requestUrl, requestOptions));
+    if (currentUser.inspecting) {
+      headers.set("x-inspect-workspace", encodeURIComponent(workspaceId));
+    }
+    const response = await fetchWithPreflight(
+      url,
+      { ...options, credentials: "same-origin", headers },
+      (requestUrl, requestOptions) => fetch(requestUrl, requestOptions),
+    );
+    if (response.status === 401) {
+      void onRefreshSession();
+    }
+    return response;
   };
 
   const [activeMenu, setActiveMenu] = useState(new URLSearchParams(window.location.search).has('batch') ? 'core' : 'fengshen_downloads');
@@ -266,7 +369,16 @@ export default function App() {
   const [approvalActiveCount,setApprovalActiveCount]=useState(0);
   const [approvalPendingCount,setApprovalPendingCount]=useState(0);
   const [priceRecordId,setPriceRecordId]=useState<string|undefined>();
+  const canApproval = hasModulePermission(currentUser, 'approval');
+  const canCollection = hasModulePermission(currentUser, 'collection');
+  const canReports = hasModulePermission(currentUser, 'reports');
+  const canPayroll = hasModulePermission(currentUser, 'payroll');
+
   useEffect(()=>{
+    if (!canApproval) {
+      setApprovalActiveCount(0);
+      return;
+    }
     let disposed=false;const controller=new AbortController();
     const read=()=>{
       if (document.visibilityState !== 'visible') return;
@@ -287,8 +399,30 @@ export default function App() {
     const timer=setInterval(read,12000);
     document.addEventListener('visibilitychange', onVisibility);
     return()=>{disposed=true;controller.abort();clearInterval(timer);document.removeEventListener('visibilitychange', onVisibility);};
-  },[workspaceId]);
-  const [taskKind, setTaskKind] = useState<TaskKind>(() => initialTaskKind());
+  },[workspaceId, canApproval]);
+  const [taskKind, setTaskKind] = useState<TaskKind>(() => {
+    const initial = initialTaskKind();
+    if (initial === 'payroll' && !canPayroll) {
+      if (canCollection) return 'download';
+      if (canReports) return 'generate';
+    }
+    if (initial === 'download' && !canCollection) {
+      if (canReports) return 'generate';
+      if (canPayroll) return 'payroll';
+    }
+    if (initial === 'generate' && !canReports) {
+      if (canCollection) return 'download';
+      if (canPayroll) return 'payroll';
+    }
+    return initial;
+  });
+  useEffect(() => {
+    if (!canCollection && !canReports && !canPayroll && canApproval && workspaceView === 'create') {
+      setWorkspaceView('approval');
+    } else if (!canCollection && !canReports && !canPayroll && !canApproval && workspaceView === 'create') {
+      setWorkspaceView('history');
+    }
+  }, [canCollection, canReports, canPayroll, canApproval]);
   const [taskFormLocked, setTaskFormLocked] = useState(false);
   const [activeDownloadCount, setActiveDownloadCount] = useState(0);
   const [taskAttentionCount, setTaskAttentionCount] = useState(0);
@@ -1368,6 +1502,8 @@ export default function App() {
           onToggleCollapse={toggleSidebarCollapsed}
           onCloseMobile={() => setMobileNavOpen(false)}
           onOpenPlatformDock={() => setDockOpen(true)}
+          permissions={currentUser.permissions}
+          isAdmin={currentUser.role === 'admin'}
         />
         <div className="wb-viewport wbx-workspace">
           {(() => {
@@ -1419,18 +1555,20 @@ export default function App() {
                 <div
                   className="wb-header-actions wbx-header__tools"
                   role="group"
-                  aria-label="全局审批待办通知与平台授权"
+                  aria-label="全局审批待办通知、平台授权与空间账户"
                 >
-                  <HeaderApprovalNotifier
-                    apiFetch={fetchWithAuth}
-                    workspaceId={workspaceId}
-                    isApprovalViewActive={workspaceView === 'approval'}
-                    onNavigateApproval={() => navigateWorkspace('approval')}
-                    onOpenLanorangeAuth={() => setDockOpen(true)}
-                    onPendingCountChange={setApprovalPendingCount}
-                    onShowToast={showToast}
-                    onDesktopNotify={showDesktopNotification}
-                  />
+                  {canApproval && (
+                    <HeaderApprovalNotifier
+                      apiFetch={fetchWithAuth}
+                      workspaceId={workspaceId}
+                      isApprovalViewActive={workspaceView === 'approval'}
+                      onNavigateApproval={() => navigateWorkspace('approval')}
+                      onOpenLanorangeAuth={() => setDockOpen(true)}
+                      onPendingCountChange={setApprovalPendingCount}
+                      onShowToast={showToast}
+                      onDesktopNotify={showDesktopNotification}
+                    />
+                  )}
 
                   <PlatformDock
                     open={dockOpen}
@@ -1446,12 +1584,47 @@ export default function App() {
                       onOpenChange={setDockOpen}
                     />
                   </PlatformDock>
+
+                  <HeaderAccountBar
+                    user={currentUser}
+                    workspaces={session.workspaces}
+                    pendingCount={session.pending_count}
+                    onSwitchWorkspace={async targetWid => {
+                      try {
+                        const updated = await switchInspectWorkspace(targetWid);
+                        onSessionUpdate(updated);
+                        showToast(
+                          targetWid
+                            ? `已切换至巡检空间：${updated.user?.inspect_target?.display_name || targetWid}`
+                            : '已返回管理员主空间',
+                          'info',
+                        );
+                      } catch (err) {
+                        showToast(err instanceof Error ? err.message : '切换空间失败', 'error');
+                      }
+                    }}
+                    onOpenAdminAccounts={() => setAdminDrawerOpen(true)}
+                    onLogout={async () => {
+                      await logoutWorkspaceAccount();
+                      await onRefreshSession();
+                    }}
+                    onToast={(msg, type) => showToast(msg, type || 'info')}
+                  />
                 </div>
               </header>
             );
           })()}
           <main ref={mainScrollRef} className="wb-main wbx-main">
             <div className="wbx-page">
+            <WorkspaceInspectBanner
+              user={currentUser}
+              onExitInspect={() => {
+                void switchInspectWorkspace('').then(updated => {
+                  onSessionUpdate(updated);
+                  showToast('已退出巡检，返回管理员主空间', 'info');
+                });
+              }}
+            />
             {missingCityTeams.length > 0 && (
               <section className="mb-4 rounded-xl border border-amber-300 bg-amber-50/95 p-4 shadow-xs" role="alert" aria-label="未匹配城市团队警告">
                 <div className="flex items-center justify-between mb-2">
@@ -1772,6 +1945,31 @@ export default function App() {
           }
         }}
       />
+
+      {currentUser.role === 'admin' && (
+        <AccountManagementDrawer
+          open={adminDrawerOpen}
+          currentUserId={currentUser.id}
+          onClose={() => setAdminDrawerOpen(false)}
+          onInspectWorkspace={targetWid => {
+            void switchInspectWorkspace(targetWid).then(updated => {
+              onSessionUpdate(updated);
+              showToast(
+                targetWid
+                  ? `已进入巡检空间：${updated.user?.inspect_target?.display_name || targetWid}`
+                  : '已返回管理员主空间',
+                'info',
+              );
+            });
+          }}
+          onAccountsChanged={(nextPending, nextWorkspaces) => {
+            onSessionUpdate(prev =>
+              prev ? { ...prev, pending_count: nextPending, workspaces: nextWorkspaces } : prev,
+            );
+          }}
+          onToast={(msg, type) => showToast(msg, type || 'info')}
+        />
+      )}
 
       {toastMsg && (
         <div className="fixed top-5 right-5 z-[9999] pointer-events-none transition-all animate-in fade-in slide-in-from-top-2">

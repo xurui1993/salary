@@ -64,8 +64,13 @@ def version(rows):
     return hashlib.sha256(json.dumps(rows, ensure_ascii=False, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
 
+def _ws_root(root=None, wid=None):
+    from workspace_context import workspace_data_root
+    return workspace_data_root(wid, root or ROOT)
+
+
 def read_defaults(root=None):
-    path = Path(root or ROOT) / 'data' / 'config.json'
+    path = Path(_ws_root(root)) / 'data' / 'config.json'
     try:
         rows = validate_rows(json.loads(path.read_text(encoding='utf-8-sig')))
     except (OSError, ValueError) as exc:
@@ -96,9 +101,9 @@ async def get_binding_platforms(request: Request):
 
 @router.put('/binding-platforms')
 async def put_binding_platforms(request: Request):
-    from download_accounts import require_admin
+    from download_accounts import require_permission
     from binding_platforms import save
-    require_admin(request)
+    require_permission(request, 'reports', 'collection', any_of=True)
     payload = await request.json()
     if not isinstance(payload, dict) or set(payload) != {'platforms'}:
         raise HTTPException(400, '绑定平台配置格式无效')
@@ -109,9 +114,15 @@ async def put_binding_platforms(request: Request):
 
 
 @router.get('/deductions')
-def get_defaults():
+def get_defaults(request: Request = None):
+    if request is not None:
+        from download_accounts import require_account
+        user = require_account(request)
+        ws_root = _ws_root(wid=user['effective_workspace'])
+    else:
+        ws_root = _ws_root()
     try:
-        return read_defaults()
+        return read_defaults(ws_root)
     except SourceError as exc:
         raise HTTPException(400, str(exc)) from None
 
@@ -149,22 +160,24 @@ async def deduction_profiles(platform: str, request: Request):
     from download_accounts import require_account
     from station_directory import snapshot
     from deduction_confirmation import station_drafts
-    require_account(request)
+    user = require_account(request)
+    ws_root = _ws_root(wid=user['effective_workspace'])
     try:
-        return await asyncio.to_thread(station_drafts, platform, ROOT, snapshot(platform))
+        return await asyncio.to_thread(station_drafts, platform, ws_root, snapshot(platform))
     except SourceError as error:
         raise HTTPException(400, str(error)) from None
 
 
 @router.put('/deduction-profiles/{platform}')
 async def update_deduction_profiles(platform: str, request: Request):
-    from download_accounts import require_admin
+    from download_accounts import require_permission
     from station_directory import ready_directory
     from deduction_confirmation import save_profile
-    require_admin(request)
+    user = require_permission(request, 'payroll')
+    ws_root = _ws_root(wid=user['effective_workspace'])
     payload = await request.json()
     try:
-        return await asyncio.to_thread(save_profile, platform, ROOT, payload, ready_directory(platform))
+        return await asyncio.to_thread(save_profile, platform, ws_root, payload, ready_directory(platform))
     except SourceError as error:
         raise HTTPException(409, str(error)) from None
 
@@ -174,23 +187,25 @@ async def preview_problem_rules(platform: str, request: Request):
     from download_accounts import require_account
     from station_directory import ready_directory
     from deduction_confirmation import preview_problem_rules as preview
-    require_account(request)
+    user = require_account(request)
+    ws_root = _ws_root(wid=user['effective_workspace'])
     payload = await request.json()
     try:
-        return await asyncio.to_thread(preview, platform, ROOT, payload, ready_directory(platform))
+        return await asyncio.to_thread(preview, platform, ws_root, payload, ready_directory(platform))
     except SourceError as error:
         raise HTTPException(409, str(error)) from None
 
 
 @router.put('/deduction-profiles/{platform}/problem-rules')
 async def update_problem_rules(platform: str, request: Request):
-    from download_accounts import require_admin
+    from download_accounts import require_permission
     from station_directory import ready_directory
     from deduction_confirmation import save_problem_rules
-    require_admin(request)
+    user = require_permission(request, 'payroll')
+    ws_root = _ws_root(wid=user['effective_workspace'])
     payload = await request.json()
     try:
-        return await asyncio.to_thread(save_problem_rules, platform, ROOT, payload, ready_directory(platform))
+        return await asyncio.to_thread(save_problem_rules, platform, ws_root, payload, ready_directory(platform))
     except SourceError as error:
         raise HTTPException(409, str(error)) from None
 
@@ -202,9 +217,11 @@ async def deduction_review(key: str, request: Request, city_id: str = '', refres
     from station_directory import ready_directory
     from deduction_confirmation import preflight, platform_for
     require_account(request)
+    wid = workspace(request)
+    ws_root = _ws_root(wid=wid)
     def read():
-        with batch_lock(directory(workspace(request), key)):
-            folder, state = load(workspace(request), key, account(request))
+        with batch_lock(directory(wid, key)):
+            folder, state = load(wid, key, account(request))
             if state.get('include_separation'):
                 from station_directory import sync_separation
                 current = ready_directory('fengshen', city_id or state['plan']['city'])
@@ -212,7 +229,7 @@ async def deduction_review(key: str, request: Request, city_id: str = '', refres
                 if not choices or choices[0]['id'] not in current.get('separation_cities', []):
                     sync_separation(state['plan']['city'])
             data = ready_directory(platform_for(state), city_id or state['plan']['city'], refresh=True) if refresh else ready_directory(platform_for(state), city_id or state['plan']['city'])
-            return preflight(folder, state, ROOT, data, city_id)
+            return preflight(folder, state, ws_root, data, city_id)
     try:
         return await asyncio.to_thread(read)
     except SourceError as error:
@@ -221,10 +238,10 @@ async def deduction_review(key: str, request: Request, city_id: str = '', refres
 
 @router.post('/batches/{key}/separation')
 async def enable_separation(key: str, request: Request):
-    from download_accounts import require_admin
+    from download_accounts import require_permission
     from payroll_inputs import load, save, workspace, account, batch_lock, directory, public
     from station_directory import sync_separation
-    require_admin(request)
+    require_permission(request, 'payroll')
     payload = await request.json()
     if payload != {'enabled': True}:
         raise HTTPException(400, '取分离关联参数无效')
@@ -251,22 +268,24 @@ async def enable_separation(key: str, request: Request):
 
 @router.post('/batches/{key}/station-links')
 async def link_batch_stations(key: str, request: Request):
-    from download_accounts import require_admin
+    from download_accounts import require_permission
     from payroll_inputs import load, save, workspace, account, directory, batch_lock
     from station_directory import ready_directory
     from deduction_confirmation import preflight, platform_for
     from station_associations import LOCK as ASSOCIATION_LOCK, save as save_associations
-    require_admin(request)
+    require_permission(request, 'payroll')
     payload = await request.json()
     if not isinstance(payload, dict) or payload.get('confirmed') is not True or not isinstance(payload.get('links'), dict) or not payload['links']:
         raise HTTPException(400, '请明确确认本次站点关联')
+    wid = workspace(request)
+    ws_root = _ws_root(wid=wid)
     def write():
-        with batch_lock(directory(workspace(request), key)), ASSOCIATION_LOCK:
-            folder, state = load(workspace(request), key, account(request))
+        with batch_lock(directory(wid, key)), ASSOCIATION_LOCK:
+            folder, state = load(wid, key, account(request))
             if state['status'] not in ('ready','awaiting_confirmation','pending_download') or state.get('deductions', {}).get('frozen'):
                 raise SourceError('本批次当前不可更改站点关联')
             data = ready_directory(platform_for(state), payload.get('city_id') or state['plan']['city'])
-            reviewed = preflight(folder, state, ROOT, data, payload.get('city_id', ''))
+            reviewed = preflight(folder, state, ws_root, data, payload.get('city_id', ''))
             if payload.get('review_version') != reviewed['review_version']:
                 raise SourceError('目录或资料已变化，请重新读取后关联')
             allowed = {r['name']: set(r['candidates']) for r in reviewed['association_rows']}
@@ -277,19 +296,19 @@ async def link_batch_stations(key: str, request: Request):
                 if target: links[name] = target
                 else: links.pop(name, None)
             candidate = {**state, 'station_links': links}
-            result = preflight(folder, candidate, ROOT, data, payload.get('city_id', ''))
+            result = preflight(folder, candidate, ws_root, data, payload.get('city_id', ''))
             rejected = {r['name'] for r in result['unresolved']}
             if any(target and name in rejected for name, target in payload['links'].items()):
                 raise SourceError('关联与申请编号或当前目录不一致，未保存，请重新核对')
             if payload.get('save_associations') is True:
                 choices = {entry['key']: entry for entry in reviewed['station_choices']}
-                save_associations(ROOT, platform_for(state), data, {name:choices[target] for name,target in payload['links'].items() if target}, reviewed['association_version'])
+                save_associations(ws_root, platform_for(state), data, {name:choices[target] for name,target in payload['links'].items() if target}, reviewed['association_version'])
             state['station_links'] = links
             state.pop('deduction_confirmation', None)
             state.pop('deduction_intent', None)
             state.setdefault('audit', []).append({'action':'confirm_station_links','links':payload['links'],'saved_for_reuse':payload.get('save_associations') is True,'directory_version':data['session_version'],'at':datetime.now().isoformat()})
             save(folder, state)
-            return preflight(folder, state, ROOT, data, payload.get('city_id', ''))
+            return preflight(folder, state, ws_root, data, payload.get('city_id', ''))
     try:
         return await asyncio.to_thread(write)
     except SourceError as error:
@@ -298,23 +317,22 @@ async def link_batch_stations(key: str, request: Request):
 
 @router.post('/batches/{key}/deduction-review')
 async def confirm_deduction_review(key: str, request: Request):
-    from download_accounts import require_account, require_admin
+    from download_accounts import require_permission
     from payroll_inputs import load, save, workspace, account, directory, batch_lock, public, LOCK
     from station_directory import ready_directory
     from deduction_confirmation import confirm, platform_for
-    require_account(request)
-    require_admin(request)
+    require_permission(request, 'payroll')
     payload = await request.json()
     if not isinstance(payload, dict):
         raise HTTPException(400, '扣款确认参数无效')
-    if payload.get('save_defaults') is True:
-        require_admin(request)
+    wid = workspace(request)
+    ws_root = _ws_root(wid=wid)
     def write():
-        with batch_lock(directory(workspace(request), key)), LOCK:
-            folder, state = load(workspace(request), key, account(request))
+        with batch_lock(directory(wid, key)), LOCK:
+            folder, state = load(wid, key, account(request))
             if state['status'] not in ('ready', 'awaiting_confirmation', 'pending_download') or state.get('deductions', {}).get('frozen'):
                 raise SourceError('本批次不可再修改，请核对当前状态')
-            deduction, receipt = confirm(folder, state, ROOT, ready_directory(platform_for(state), payload.get('city_id') or state['plan']['city']), payload)
+            deduction, receipt = confirm(folder, state, ws_root, ready_directory(platform_for(state), payload.get('city_id') or state['plan']['city']), payload)
             state.update(deductions=deduction, deduction_confirmation=receipt)
             if receipt['stage'] == 'intent':
                 state['deduction_intent'] = receipt
@@ -329,21 +347,24 @@ async def confirm_deduction_review(key: str, request: Request):
 
 @router.put('/deductions')
 async def save_defaults(request: Request):
-    from download_accounts import require_admin
-    require_admin(request)
+    from download_accounts import require_permission
+    user = require_permission(request, 'payroll')
+    ws_root = _ws_root(wid=user['effective_workspace'])
     payload = await request.json()
     try:
         if not isinstance(payload, dict):
             raise SourceError('配置参数无效')
         rows = validate_rows(payload.get('rows'))
         with SETTINGS_LOCK:
-            current = read_defaults()
+            current = read_defaults(ws_root)
             if payload.get('version') != current['version']:
                 raise HTTPException(409, '默认配置已被其他页面修改，请重新打开后再保存')
-            path = Path(ROOT) / 'data' / 'config.json'
-            backup = path.parent / 'config_history' / (datetime.now().strftime('%Y%m%d_%H%M%S_%f') + '.json')
-            backup.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, backup)
+            path = Path(ws_root) / 'data' / 'config.json'
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if path.is_file():
+                backup = path.parent / 'config_history' / (datetime.now().strftime('%Y%m%d_%H%M%S_%f') + '.json')
+                backup.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(path, backup)
             atomic_json(path, rows)
         return {'rows': rows, 'version': version(rows)}
     except SourceError as exc:
@@ -396,7 +417,7 @@ def task_records(request: Request):
             known_jobs.update(state.get('jobs', []))
         except (OSError, ValueError, KeyError, TypeError):
             continue
-    downloads = list_records(get_manager(), None if user['role'] == 'admin' else user['owner'])
+    downloads = list_records(get_manager(), None if user.get('id') == 'shared' else user['owner'])
     visible = [record for record in downloads
                if not known_jobs.intersection(record['member_ids'])
                and (record.get('parent_workspace'), record.get('parent_batch_id')) not in known_batches]
@@ -413,28 +434,30 @@ def task_records(request: Request):
 @router.get('/batches/{key}/deductions')
 def get_batch_deductions(key: str, request: Request):
     from payroll_inputs import load, workspace, account
+    wid = workspace(request)
     try:
-        _, state = load(workspace(request), key, account(request))
-        return state.get('deductions') or {**read_defaults(), 'scope': 'default', 'frozen': False}
+        _, state = load(wid, key, account(request))
+        return state.get('deductions') or {**read_defaults(_ws_root(wid=wid)), 'scope': 'default', 'frozen': False}
     except SourceError as exc:
         raise HTTPException(400, str(exc)) from None
 
 
 @router.put('/batches/{key}/deductions')
 async def save_batch_deductions(key: str, request: Request):
-    from download_accounts import require_admin
-    require_admin(request)
+    from download_accounts import require_permission
+    require_permission(request, 'payroll')
     from payroll_inputs import LOCK, load, save, workspace, account
+    wid = workspace(request)
     payload = await request.json()
     try:
         if not isinstance(payload, dict):
             raise SourceError('配置参数无效')
         rows = validate_rows(payload.get('rows'))
         with LOCK:
-            folder, state = load(workspace(request), key, account(request))
+            folder, state = load(wid, key, account(request))
             if state['status'] in ('calculating', 'calculated') or state.get('deductions', {}).get('frozen'):
                 raise HTTPException(409, '本次核算已采用固定配置，请新建批次调整')
-            current = state.get('deductions') or read_defaults()
+            current = state.get('deductions') or read_defaults(_ws_root(wid=wid))
             if payload.get('version') != current['version']:
                 raise HTTPException(409, '扣款配置已变化，请重新打开后再保存')
             data = {'rows': rows, 'version': version(rows), 'scope': 'batch', 'frozen': False}
@@ -487,10 +510,10 @@ def get_reusable(key: str, request: Request):
 
 @router.post('/batches/{key}/reuse')
 async def reuse(key: str, request: Request):
-    from download_accounts import require_admin
+    from download_accounts import require_permission
     from payroll_inputs import LOCK, load, save, workspace, account, stage, validate_upload, readiness, public
     from download_jobs import get_manager
-    require_admin(request)
+    require_permission(request, 'payroll')
     payload = await request.json()
     if not isinstance(payload, dict):
         raise HTTPException(400, '资料参数无效')

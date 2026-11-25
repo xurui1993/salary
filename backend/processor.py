@@ -515,7 +515,15 @@ def process_rider_data(city, selected_option, source_folder, base_path, log_call
             
 
 
-            # 2. 如果没有，再检查应用根目录的默认模板
+            # 2. 如果没有，优先检查当前工作空间配置，再检查应用根目录默认模板
+            if not config_wb_path:
+                try:
+                    from workspace_context import workspace_config_path
+                    ws_cfg = str(workspace_config_path())
+                    if os.path.exists(ws_cfg):
+                        config_wb_path = ws_cfg
+                except Exception:
+                    pass
             if not config_wb_path:
                 for fname in ["data/config.json", "../data/config.json", "data/config.xlsx", "../data/config.xlsx"]:
                     p = os.path.join(os.getcwd(), fname)
