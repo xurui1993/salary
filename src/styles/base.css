@@ -6,38 +6,40 @@
  * 既满足 V19（新层 important 计数 = 0），又能覆盖普通声明。
  */
 
-html {
-  scrollbar-gutter: stable;
-}
+@layer base {
+  html {
+    scrollbar-gutter: stable;
+  }
 
-html, body {
-  margin: 0; padding: 0;
-  background-color: var(--wbx-bg);
-  color: var(--wbx-text);
-  font-family: var(--wbx-font); font-size: var(--wbx-fs-body); line-height: var(--wbx-lh);
-  letter-spacing: 0.005em;
-  -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility;
-}
-body {
-  min-height: 100dvh;
-  overflow-x: hidden;
-  background-color: #EAF0F7;
-  background-image:
-    radial-gradient(1080px 580px at 8% 0%, rgba(0, 174, 236, 0.16), transparent 64%),
-    radial-gradient(960px 540px at 92% 4%, rgba(56, 189, 248, 0.13), transparent 62%),
-    radial-gradient(900px 520px at 78% 96%, rgba(14, 165, 233, 0.10), transparent 68%),
-    radial-gradient(760px 460px at 18% 92%, rgba(99, 102, 241, 0.06), transparent 66%),
-    linear-gradient(155deg, #E7F0F9 0%, #F1F5FA 48%, #E9F2FA 100%);
-  background-repeat: no-repeat;
-}
-#root { min-height: 100dvh; isolation: isolate; position: relative; z-index: 1; }
+  html, body {
+    margin: 0; padding: 0;
+    background-color: var(--wbx-bg);
+    color: var(--wbx-text);
+    font-family: var(--wbx-font); font-size: var(--wbx-fs-body); line-height: var(--wbx-lh);
+    letter-spacing: 0.005em;
+    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility;
+  }
+  body {
+    min-height: 100dvh;
+    overflow-x: hidden;
+    background-color: #EAF0F7;
+    background-image:
+      radial-gradient(1080px 580px at 8% 0%, rgba(0, 174, 236, 0.16), transparent 64%),
+      radial-gradient(960px 540px at 92% 4%, rgba(56, 189, 248, 0.13), transparent 62%),
+      radial-gradient(900px 520px at 78% 96%, rgba(14, 165, 233, 0.10), transparent 68%),
+      radial-gradient(760px 460px at 18% 92%, rgba(99, 102, 241, 0.06), transparent 66%),
+      linear-gradient(155deg, #E7F0F9 0%, #F1F5FA 48%, #E9F2FA 100%);
+    background-repeat: no-repeat;
+  }
+  #root { min-height: 100dvh; isolation: isolate; position: relative; z-index: 1; }
 
-h1, h2, h3, h4, h5, h6 { margin: 0; color: var(--wbx-text); font-weight: var(--wbx-fw-section); line-height: 1.35; letter-spacing: -0.01em; }
-p { margin: 0; }
-button, input, select, textarea { font-family: inherit; color: inherit; }
+  h1, h2, h3, h4, h5, h6 { margin: 0; color: var(--wbx-text); font-weight: var(--wbx-fw-section); line-height: 1.35; letter-spacing: -0.01em; }
+  p { margin: 0; }
+  button, input, select, textarea { font-family: inherit; }
 
-/* 统一焦点环：只在键盘可达时出现，不干扰鼠标点击 */
-:focus-visible { outline: 2px solid var(--wbx-primary); outline-offset: 2px; box-shadow: var(--wbx-focus); }
+  /* 统一焦点环：只在键盘可达时出现，不干扰鼠标点击，且允许组件工具类精准定制 */
+  :focus-visible:not([data-custom-focus="true"]) { outline: 2px solid var(--wbx-primary); outline-offset: 2px; }
+}
 
 /* 文本选区 */
 ::selection { background: var(--wbx-primary-soft); color: var(--wbx-primary-hover); }

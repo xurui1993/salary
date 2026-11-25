@@ -5,12 +5,7 @@ import {toneClass, normalizeTone} from '../lib/statusSemantics';
 import {RefreshCw, ArrowRightLeft, KeyRound, Search, CheckCircle2, ClipboardList, Download, RotateCcw} from 'lucide-react';
 import {platformAuthRequest,PlatformAuthError} from '../lib/platformAuthApi';
 import {filterApprovalTasks,type ApprovalEligibilityFilter} from '../lib/workbenchFilters';
-import {shouldUseDemoData,useDemoDataVisibility,usePlatformAuthSnapshot} from '../lib/demoMode';
-import {
-  buildDemoApprovalPriceTable,
-  buildDemoApprovalReceiptCsv,
-} from '../lib/showcaseDemoData';
-import {DemoDataChip} from './DemoDataChip';
+import {usePlatformAuthSnapshot} from '../lib/demoMode';
 import {formatPayrollDateTime,payrollPeriodRange} from '../lib/payrollQueue';
 import {buildApprovalBatchesFingerprint} from '../lib/perfUtils';
 
@@ -111,23 +106,14 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
   };
   useEffect(()=>()=>{if(cooldownTimer.current)clearTimeout(cooldownTimer.current);},[]);
   const [serverLoggedIn,setServerLoggedIn]=useState(false);
-  const [demoRows,setDemoRows]=useState<Task[]>([]);
-  const [demoHistory,setDemoHistory]=useState<Batch[]>([]);
-  const [demoBatch,setDemoBatch]=useState<Batch|null>(null);
 
   const auth=usePlatformAuthSnapshot();
-  const {demoHidden,toggleDemoHidden}=useDemoDataVisibility();
   const isLanorangeLoggedIn=serverLoggedIn || auth.isLoggedIn('lanorange');
   const hasLiveData=allRows.length>0||history.length>0;
-  const demoActive=shouldUseDemoData({
-    isLoggedIn:isLanorangeLoggedIn,
-    hasLiveData,
-    demoHidden,
-  });
 
-  const displayRows=demoActive?demoRows:allRows;
-  const displayHistory=demoActive?demoHistory:history;
-  const displayBatch=demoActive?(demoBatch || demoHistory[0] || null):batch;
+  const displayRows=allRows;
+  const displayHistory=history;
+  const displayBatch=batch;
 
   const listSequence=useRef(0),inflight=useRef(false),versionRef=useRef(''),batchRef=useRef<Batch|null>(null),alive=useRef(true);
   batchRef.current=displayBatch;
@@ -287,31 +273,9 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
     if(Object.keys(next).length>200){setError('每批最多选择200条，请分批处理。');return;}setSelection(next);
   }
   async function showDetail(task:Task){
-    if(demoActive){
-      setDetail({task,price:buildDemoApprovalPriceTable(task as any)});
-      return;
-    }
     await perform('detail',async()=>setDetail(await request<{task:Task;price:Price}>(`/pending/${encodeURIComponent(task.id)}?session_version=${encodeURIComponent(sessionVersion)}`)));
   }
   async function makePreview(){
-    if(demoActive){
-      const previewItems=selected.map(task=>({
-        eligible:!task.reason,
-        reason:task.reason||'',
-        task,
-        price:buildDemoApprovalPriceTable(task as any),
-      }));
-      setPreview({
-        id:`DEMO-PREV-${Date.now()}`,
-        actor_label:'林雅琪（示例审批人）',
-        expires_at:Math.floor(Date.now()/1000)+600,
-        eligible_count:previewItems.filter(i=>i.eligible).length,
-        opinion:'同意（示例模式本地模拟）',
-        filters:query,
-        items:previewItems,
-      });
-      return;
-    }
     await perform('preview',async()=>{
       const value=await request<Preview>('/previews',{selected:selected.map(t=>({id:t.id,revision:t.revision})),filters:query,session_version:sessionVersion},180000);
       if(alive.current)setPreview(value);
@@ -326,34 +290,6 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
   });}
   async function submit(){
     if(!preview)return;
-    if(demoActive){
-      const eligibleTasks=preview.items.filter(i=>i.eligible).map(i=>i.task);
-      const createdBatch:Batch={
-        id:`DEMO-BATCH-${Date.now().toString().slice(-6)}`,
-        actor_label:'林雅琪（示例审批人）',
-        status:'completed',
-        created:Math.floor(Date.now()/1000),
-        counts:{success:eligibleTasks.length,failed:0,uncertain:0,changed:0,not_sent:0,pending:0},
-        items:eligibleTasks.map(task=>({
-          task,
-          status:'success',
-          status_label:'已同意',
-          message:'示例模式：已本地模拟审批通过（不会真实提交蓝橙）',
-        })),
-      };
-      const approvedIds=new Set(eligibleTasks.map(t=>t.id));
-      const nextDemoRows=demoRows.filter(r=>!approvedIds.has(r.id));
-      setDemoRows(nextDemoRows);
-      setDemoHistory(prev=>[createdBatch,...prev]);
-      setDemoBatch(createdBatch);
-      setPreview(null);
-      setSelection({});
-      setReceiptStatusFilter('all');
-      setActiveViewTab('results');
-      setNotice(`示例模式：已模拟批量同意 ${eligibleTasks.length} 条价格提审单，真实登录蓝橙后将对接正式审批流程。`);
-      window.dispatchEvent(new CustomEvent('workbench:lanorange-approvals-updated', { detail: { demo: true, rows: nextDemoRows } }));
-      return;
-    }
     await sendAttempt(attempt?.preview_id===preview.id?attempt:{preview_id:preview.id,request_id:crypto.randomUUID()});
   }
   async function findAttempt(){if(!attempt)return;await perform('find',async()=>{
@@ -362,17 +298,6 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
   });}
   async function downloadResult(){
     if(!displayBatch || downloadCooldown)return;
-    if(demoActive){
-      const csv=buildDemoApprovalReceiptCsv(displayBatch);
-      const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
-      const link=document.createElement('a');
-      link.href=url;
-      link.download=`蓝橙价格审批结果_${displayBatch.id.slice(0,12)}_示例.csv`;
-      link.click();
-      setTimeout(()=>URL.revokeObjectURL(url),1000);
-      setNotice('示例模式：已导出当前回执批次 CSV 文件。');
-      return;
-    }
     await perform('export',async()=>{
       const response=await fetchRef.current(`${BASE}/batches/${displayBatch.id}/result.csv`);if(!response.ok)throw new Error('结果下载失败，请稍后重试');
       const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=url;link.download=`蓝橙价格审批结果_${displayBatch.id.slice(0,8)}.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -383,7 +308,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
     window.dispatchEvent(new CustomEvent('workbench:connections', { detail: 'lanorange' }));
   };
 
-  const displayError = demoActive ? '' : error;
+  const displayError = error;
   const isAuthBlocked = Boolean(displayError && displayError.includes('登录') && displayRows.length === 0);
 
   return <div className="wb-approvals wbx-approval">
@@ -437,17 +362,6 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
             最近批次：{batchLabels[displayBatch.status] || displayBatch.status}（{displayBatch.counts.success || 0}/{displayBatch.items.length}）→
           </button>
         )}
-        <DemoDataChip
-          demoActive={demoActive}
-          canShowDemo={!isLanorangeLoggedIn && !hasLiveData && demoHidden}
-          onToggle={() => {
-            setSelection({});
-            setPreview(null);
-            setDetail(null);
-            setPage(1);
-            toggleDemoHidden();
-          }}
-        />
         {(() => {
           const needsLogin = !isLanorangeLoggedIn && (!hasLiveData || Boolean(error && error.includes('登录')));
           return (
@@ -886,8 +800,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
                   onChange={e => {
                     const found = displayHistory.find(b => b.id === e.target.value) || null;
                     setReceiptStatusFilter('all');
-                    if (demoActive) setDemoBatch(found);
-                    else setBatch(found);
+                    setBatch(found);
                   }}
                 >
                   {displayBatch && !displayHistory.some(b => b.id === displayBatch.id) && (
@@ -908,10 +821,6 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
               className="wbx-btn wbx-btn--sm"
               disabled={!!command}
               onClick={() => {
-                if (demoActive) {
-                  setNotice('当前为示例回执数据，真实登录蓝橙后可同步后台实时回执。');
-                  return;
-                }
                 void readHistory();
               }}
             >
@@ -924,10 +833,6 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
                 className="wbx-btn wbx-btn--sm wbx-btn--danger"
                 disabled={!!command || displayBatch.status === 'stopping'}
                 onClick={() => {
-                  if (demoActive) {
-                    setNotice('示例模式：已模拟停止后续审批。');
-                    return;
-                  }
                   void perform('stop', async () => {
                     setBatch(await request<Batch>(`/batches/${displayBatch.id}/stop`, { confirm: true }));
                     void readHistory();
@@ -943,26 +848,6 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
                 className="wbx-btn wbx-btn--sm"
                 disabled={!!command}
                 onClick={() => {
-                  if (demoActive) {
-                    const updated: Batch = {
-                      ...displayBatch,
-                      status: 'completed',
-                      counts: {
-                        ...displayBatch.counts,
-                        success: (displayBatch.counts.success || 0) + (displayBatch.counts.uncertain || 0),
-                        uncertain: 0,
-                      },
-                      items: displayBatch.items.map(it =>
-                        it.status === 'uncertain'
-                          ? { ...it, status: 'success', status_label: '已同意', message: '示例复核完成：蓝橙端已确认通过' }
-                          : it,
-                      ),
-                    };
-                    setDemoHistory(prev => prev.map(b => (b.id === updated.id ? updated : b)));
-                    setDemoBatch(updated);
-                    setNotice('示例模式：已完成待核实项模拟复核。');
-                    return;
-                  }
                   void perform('recheck', async () => {
                     setBatch(await request<Batch>(`/batches/${displayBatch.id}/recheck`, {}, 120000));
                     void readHistory();

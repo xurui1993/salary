@@ -2,10 +2,10 @@ import type { DownloadPlatform } from './downloadModules';
 import type { PayrollSubView, PlatformDotTone, PlatformStatusMap } from './workbench';
 import { getPlatformStatusCluster } from './workbench';
 
-export type NavGroupId = 'collection' | 'reports' | 'payroll' | 'approval' | 'history';
+export type NavGroupId = 'collection' | 'reports' | 'payroll' | 'approval' | 'history' | 'admin';
 
 export interface ShellNavState {
-  workspaceView: 'create' | 'history' | 'approval' | 'price-export' | 'pickup';
+  workspaceView: 'create' | 'history' | 'approval' | 'price-export' | 'pickup' | 'accounts';
   taskKind: 'download' | 'generate' | 'payroll';
   downloadPlatform: DownloadPlatform;
   payrollSubView: PayrollSubView;
@@ -16,7 +16,7 @@ export type ShellCommandAction =
   | { type: 'platform'; platform: DownloadPlatform }
   | { type: 'report'; reportId: string }
   | { type: 'payroll'; subView: PayrollSubView }
-  | { type: 'workspace'; view: 'approval' | 'price-export' | 'history' | 'pickup' }
+  | { type: 'workspace'; view: 'approval' | 'price-export' | 'history' | 'pickup' | 'accounts' }
   | { type: 'open-dock' }
   | { type: 'open-logs' }
   | { type: 'toggle-sidebar' };
@@ -36,7 +36,8 @@ export type QuickTargetId =
   | 'workspace:approval'
   | 'workspace:price-export'
   | 'workspace:history'
-  | 'workspace:pickup';
+  | 'workspace:pickup'
+  | 'workspace:accounts';
 
 export interface QuickTargetMeta {
   id: QuickTargetId;
@@ -66,7 +67,7 @@ export interface BreadcrumbModel {
 
 export interface ShellCommandItem {
   id: string;
-  group: '数据采集' | '业务报表' | '薪资核算' | '价格审批' | '全局调度';
+  group: '数据采集' | '业务报表' | '薪资核算' | '价格审批' | '全局调度' | '系统管理';
   label: string;
   subtitle: string;
   keywords: string[];
@@ -232,6 +233,16 @@ export const QUICK_TARGETS: QuickTargetMeta[] = [
     accent: 'slate',
     action: { type: 'workspace', view: 'pickup' },
   },
+  {
+    id: 'workspace:accounts',
+    groupId: 'admin',
+    label: '账户与权限',
+    shortLabel: '权限',
+    moduleLabel: '系统管理',
+    hint: '成员审批、独立空间与安全审计',
+    accent: 'sapphire',
+    action: { type: 'workspace', view: 'accounts' },
+  },
 ];
 
 const QUICK_TARGET_MAP = new Map<QuickTargetId, QuickTargetMeta>(
@@ -243,6 +254,7 @@ export function getQuickTargetMeta(id: QuickTargetId): QuickTargetMeta | undefin
 }
 
 export function getActiveNavGroup(state: Pick<ShellNavState, 'workspaceView' | 'taskKind'>): NavGroupId {
+  if (state.workspaceView === 'accounts') return 'admin';
   if (state.workspaceView === 'history' || state.workspaceView === 'pickup') return 'history';
   if (state.workspaceView === 'approval' || state.workspaceView === 'price-export') return 'payroll';
   if (state.taskKind === 'payroll') return 'payroll';
@@ -257,6 +269,7 @@ export function getRailIndex(groupId: NavGroupId): number {
 
 export function getCurrentQuickTargetId(state: ShellNavState): QuickTargetId {
   const groupId = getActiveNavGroup(state);
+  if (groupId === 'admin') return 'workspace:accounts';
   if (groupId === 'history') return state.workspaceView === 'pickup' ? 'workspace:pickup' : 'workspace:history';
   if (state.workspaceView === 'approval' || state.workspaceView === 'price-export') {
     return 'workspace:approval';
@@ -414,6 +427,23 @@ export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
     };
   }
 
+  if (groupId === 'admin') {
+    return {
+      groupId: 'admin',
+      moduleLabel: '系统管理',
+      viewLabel: '账户与权限',
+      siblings: [
+        {
+          id: 'accounts',
+          label: '账户与权限',
+          hint: '成员注册审批、独立空间隔离与安全审计日志',
+          active: true,
+          action: { type: 'workspace', view: 'accounts' },
+        },
+      ],
+    };
+  }
+
   const isPickup = state.workspaceView === 'pickup';
   return {
     groupId: 'history',
@@ -440,88 +470,114 @@ export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
 
 export function buildShellCommands(
   state: ShellNavState,
-  options: { sidebarCollapsed?: boolean } = {},
+  options: {
+    sidebarCollapsed?: boolean;
+    isAdmin?: boolean;
+    permissions?: Record<string, boolean>;
+  } = {},
 ): ShellCommandItem[] {
   const groupId = getActiveNavGroup(state);
   const isCollection = groupId === 'collection';
   const isReports = groupId === 'reports';
   const activeReportId = state.reportId || SPECIAL_REPORT_SUBMODULES[0].id;
   const isPayroll = groupId === 'payroll' && state.workspaceView === 'create';
+  const hasPermissionFilter = Boolean(options.permissions) && !options.isAdmin;
+  const canUse = (key: string) =>
+    !hasPermissionFilter || options.permissions?.[key] !== false;
 
-  return [
-    {
-      id: 'nav-fengshen',
-      group: '数据采集',
-      label: '风神数据',
-      subtitle: '配送费、违规扣款、UB账单、风控运单与考勤源表采集',
-      keywords: ['fengshen', 'fs', '风神', '闪购', '配送费', '扣款', '考勤'],
-      active: isCollection && state.downloadPlatform === 'fengshen',
-      action: { type: 'platform', platform: 'fengshen' },
-    },
-    {
-      id: 'nav-lanorange',
-      group: '数据采集',
-      label: '蓝橙数据',
-      subtitle: '骑手档案、兼职价格、离职报备与请假全量采集',
-      keywords: ['lanorange', 'lc', '蓝橙', '雷神', '离职', '请假', '骑手档案'],
-      active: isCollection && state.downloadPlatform === 'lanorange',
-      action: { type: 'platform', platform: 'lanorange' },
-    },
-    {
-      id: 'nav-payout',
-      group: '数据采集',
-      label: '发薪平台（白泽商翼 + 本来人力）',
-      subtitle: '商翼员工总表与本来人力灵工档案实时直采',
-      keywords: ['payout', 'fx', 'baize', 'shangyi', 'benlai', '发薪', '白泽', '商翼', '本来'],
-      active: isCollection && state.downloadPlatform === 'payout',
-      action: { type: 'platform', platform: 'payout' },
-    },
-    {
-      id: 'nav-xiaoxiang',
-      group: '数据采集',
-      label: '小象灯塔',
-      subtitle: '商配送日维度骑手分析、档案与订单客诉明细',
-      keywords: ['xiaoxiang', 'xx', 'dengta', 'dt', '小象', '灯塔', '美团'],
-      active: isCollection && state.downloadPlatform === 'xiaoxiang',
-      action: { type: 'platform', platform: 'xiaoxiang' },
-    },
-    ...SPECIAL_REPORT_SUBMODULES.map(report => ({
-      id: `nav-report-${report.id}`,
-      group: '业务报表' as const,
-      label: report.label,
-      subtitle: report.subtitle,
-      keywords: report.keywords,
-      active: isReports && activeReportId === report.id,
-      action: { type: 'report' as const, reportId: report.id },
-    })),
-    {
-      id: 'nav-payroll-batches',
-      group: '薪资核算',
-      label: '兼职核算',
-      subtitle: '上传兼职薪资申请表，自动齐套资料并执行核算',
-      keywords: ['payroll', 'xz', 'hs', '薪资', '核算', '兼职', '工资'],
-      active: isPayroll && state.payrollSubView === 'batches',
-      action: { type: 'payroll', subView: 'batches' },
-    },
-    {
-      id: 'nav-payroll-deductions',
-      group: '薪资核算',
-      label: '扣款配置',
-      subtitle: '按城市与团队维护站点默认扣款金额及关键词',
-      keywords: ['deduction', 'kk', '扣款', '站点', '规则', '配置'],
-      active: isPayroll && state.payrollSubView === 'deductions',
-      action: { type: 'payroll', subView: 'deductions' },
-    },
-    {
-      id: 'nav-payroll-templates',
-      group: '薪资核算',
-      label: '标准模板中心',
-      subtitle: '下载与管理淘宝闪购、美团小象标准 Excel 模板',
-      keywords: ['template', 'mb', '模板', 'excel', '下载'],
-      active: isPayroll && state.payrollSubView === 'templates',
-      action: { type: 'payroll', subView: 'templates' },
-    },
-    {
+  const commands: ShellCommandItem[] = [];
+
+  if (canUse('collection')) {
+    commands.push(
+      {
+        id: 'nav-fengshen',
+        group: '数据采集',
+        label: '风神数据',
+        subtitle: '配送费、违规扣款、UB账单、风控运单与考勤源表采集',
+        keywords: ['fengshen', 'fs', '风神', '闪购', '配送费', '扣款', '考勤'],
+        active: isCollection && state.downloadPlatform === 'fengshen',
+        action: { type: 'platform', platform: 'fengshen' },
+      },
+      {
+        id: 'nav-lanorange',
+        group: '数据采集',
+        label: '蓝橙数据',
+        subtitle: '骑手档案、兼职价格、离职报备与请假全量采集',
+        keywords: ['lanorange', 'lc', '蓝橙', '雷神', '离职', '请假', '骑手档案'],
+        active: isCollection && state.downloadPlatform === 'lanorange',
+        action: { type: 'platform', platform: 'lanorange' },
+      },
+      {
+        id: 'nav-payout',
+        group: '数据采集',
+        label: '发薪平台（白泽商翼 + 本来人力）',
+        subtitle: '商翼员工总表与本来人力灵工档案实时直采',
+        keywords: ['payout', 'fx', 'baize', 'shangyi', 'benlai', '发薪', '白泽', '商翼', '本来'],
+        active: isCollection && state.downloadPlatform === 'payout',
+        action: { type: 'platform', platform: 'payout' },
+      },
+    );
+    if (canUse('xiaoxiang_use')) {
+      commands.push({
+        id: 'nav-xiaoxiang',
+        group: '数据采集',
+        label: '小象灯塔',
+        subtitle: '商配送日维度骑手分析、档案与订单客诉明细',
+        keywords: ['xiaoxiang', 'xx', 'dengta', 'dt', '小象', '灯塔', '美团'],
+        active: isCollection && state.downloadPlatform === 'xiaoxiang',
+        action: { type: 'platform', platform: 'xiaoxiang' },
+      });
+    }
+  }
+
+  if (canUse('reports')) {
+    commands.push(
+      ...SPECIAL_REPORT_SUBMODULES.map(report => ({
+        id: `nav-report-${report.id}`,
+        group: '业务报表' as const,
+        label: report.label,
+        subtitle: report.subtitle,
+        keywords: report.keywords,
+        active: isReports && activeReportId === report.id,
+        action: { type: 'report' as const, reportId: report.id },
+      })),
+    );
+  }
+
+  if (canUse('payroll')) {
+    commands.push(
+      {
+        id: 'nav-payroll-batches',
+        group: '薪资核算',
+        label: '兼职核算',
+        subtitle: '上传兼职薪资申请表，自动齐套资料并执行核算',
+        keywords: ['payroll', 'xz', 'hs', '薪资', '核算', '兼职', '工资'],
+        active: isPayroll && state.payrollSubView === 'batches',
+        action: { type: 'payroll', subView: 'batches' },
+      },
+      {
+        id: 'nav-payroll-deductions',
+        group: '薪资核算',
+        label: '扣款配置',
+        subtitle: '按城市与团队维护站点默认扣款金额及关键词',
+        keywords: ['deduction', 'kk', '扣款', '站点', '规则', '配置'],
+        active: isPayroll && state.payrollSubView === 'deductions',
+        action: { type: 'payroll', subView: 'deductions' },
+      },
+      {
+        id: 'nav-payroll-templates',
+        group: '薪资核算',
+        label: '标准模板中心',
+        subtitle: '下载与管理淘宝闪购、美团小象标准 Excel 模板',
+        keywords: ['template', 'mb', '模板', 'excel', '下载'],
+        active: isPayroll && state.payrollSubView === 'templates',
+        action: { type: 'payroll', subView: 'templates' },
+      },
+    );
+  }
+
+  if (canUse('approval')) {
+    commands.push({
       id: 'nav-approval',
       group: '薪资核算',
       label: '价格审批',
@@ -529,7 +585,10 @@ export function buildShellCommands(
       keywords: ['approval', 'sp', '审批', '价格', '蓝橙'],
       active: state.workspaceView === 'approval',
       action: { type: 'workspace', view: 'approval' },
-    },
+    });
+  }
+
+  commands.push(
     {
       id: 'nav-history',
       group: '全局调度',
@@ -548,6 +607,21 @@ export function buildShellCommands(
       active: state.workspaceView === 'pickup',
       action: { type: 'workspace', view: 'pickup' },
     },
+  );
+
+  if (options.isAdmin) {
+    commands.push({
+      id: 'nav-accounts',
+      group: '系统管理',
+      label: '账户与权限',
+      subtitle: '审批同事注册申请、配置模块权限与查看安全审计日志',
+      keywords: ['account', 'admin', 'perm', 'audit', 'zh', 'qx', '账户', '权限', '审批', '审计'],
+      active: state.workspaceView === 'accounts',
+      action: { type: 'workspace', view: 'accounts' },
+    });
+  }
+
+  commands.push(
     {
       id: 'act-platform-dock',
       group: '全局调度',
@@ -577,7 +651,9 @@ export function buildShellCommands(
       active: false,
       action: { type: 'toggle-sidebar' },
     },
-  ];
+  );
+
+  return commands;
 }
 
 export function filterShellCommands(commands: ShellCommandItem[], rawQuery: string): ShellCommandItem[] {

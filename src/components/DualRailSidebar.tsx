@@ -10,6 +10,7 @@ import {
   FolderKanban,
   Layers,
   Radar,
+  ShieldCheck,
   SlidersHorizontal,
   UserSearch,
   UsersRound,
@@ -29,7 +30,7 @@ import {
 } from '../lib/shellNav';
 
 export interface DualRailSidebarProps {
-  workspaceView: 'create' | 'history' | 'approval' | 'price-export' | 'pickup';
+  workspaceView: 'create' | 'history' | 'approval' | 'price-export' | 'pickup' | 'accounts';
   taskKind: 'download' | 'generate' | 'payroll';
   downloadPlatform: DownloadPlatform;
   activeReportId?: string;
@@ -58,6 +59,7 @@ export interface DualRailSidebarProps {
   onOpenPlatformDock: () => void;
   permissions?: Record<string, boolean>;
   isAdmin?: boolean;
+  pendingAccountCount?: number;
 }
 
 interface SidebarNavItem {
@@ -92,6 +94,7 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
   onCloseMobile,
   permissions,
   isAdmin = true,
+  pendingAccountCount = 0,
 }: DualRailSidebarProps) {
   const activeGroup = getActiveNavGroup({ workspaceView, taskKind });
   const isCollapsedRail = Boolean(collapsed && !isDrawerMode);
@@ -204,6 +207,20 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
     },
   ];
 
+  const adminItems: SidebarNavItem[] = isAdmin
+    ? [
+        {
+          id: 'workspace:accounts',
+          label: '账户与权限',
+          icon: <ShieldCheck size={15.5} />,
+          active: workspaceView === 'accounts',
+          action: { type: 'workspace', view: 'accounts' },
+          badgeText: pendingAccountCount > 0 ? String(pendingAccountCount) : undefined,
+          badgeTone: pendingAccountCount > 0 ? 'warn' : undefined,
+        },
+      ]
+    : [];
+
   const renderNavItem = (item: SidebarNavItem) => (
     <button
       key={item.id}
@@ -296,6 +313,17 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
             {deliveryItems.map(renderNavItem)}
           </div>
         </section>
+
+        {adminItems.length > 0 && (
+          <section className="wbx-snav-group" aria-label="系统管理">
+            <div className="wbx-snav-group__head">
+              <span className="wbx-snav-group__title">系统管理</span>
+            </div>
+            <div className="wbx-snav-group__list">
+              {adminItems.map(renderNavItem)}
+            </div>
+          </section>
+        )}
       </nav>
 
       {/* 底部引擎资源状态条 */}

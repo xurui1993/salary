@@ -33,21 +33,67 @@ auth_router = APIRouter(prefix="/api/auth")
 admin_router = APIRouter(prefix="/api/admin/accounts")
 
 
+def _is_secure_iframe_context(request: Request) -> bool:
+    if request.url.scheme == "https":
+        return True
+    peer = request.client.host if request.client else ""
+    provided = request.headers.get("x-download-proxy-secret", "")
+    expected = os.environ.get("FENGSHEN_DOWNLOAD_PROXY_SECRET", "")
+    return (
+        bool(expected)
+        and _loopback(peer)
+        and bool(provided)
+        and hmac.compare_digest(provided, expected)
+        and request.headers.get("x-download-proxy-https") == "1"
+    )
+
+
+def _append_partitioned_cookie(response: Response, key: str) -> None:
+    prefix = f"{key}=".encode("latin-1")
+    updated = []
+    for name, value in response.raw_headers:
+        if name.lower() == b"set-cookie" and value.startswith(prefix) and b"; partitioned" not in value.lower():
+            value = value + b"; Partitioned"
+        updated.append((name, value))
+    response.raw_headers[:] = updated
+
+
 def _set_session_cookie(response: Response, request: Request, token: str) -> None:
-    secure = request.url.scheme == "https"
+    if _is_secure_iframe_context(request):
+        response.set_cookie(
+            key=COOKIE_NAME,
+            value=token,
+            max_age=SESSION_SECONDS,
+            httponly=True,
+            samesite="none",
+            secure=True,
+            path="/",
+        )
+        _append_partitioned_cookie(response, COOKIE_NAME)
+        return
     response.set_cookie(
         key=COOKIE_NAME,
         value=token,
         max_age=SESSION_SECONDS,
         httponly=True,
         samesite="lax",
-        secure=secure,
+        secure=False,
         path="/",
     )
 
 
-def _clear_session_cookie(response: Response) -> None:
-    response.delete_cookie(key=COOKIE_NAME, path="/", samesite="lax")
+def _clear_session_cookie(response: Response, request: Request) -> None:
+    if _is_secure_iframe_context(request):
+        response.delete_cookie(
+            key=COOKIE_NAME,
+            path="/",
+            samesite="none",
+            secure=True,
+            httponly=True,
+        )
+        _append_partitioned_cookie(response, COOKIE_NAME)
+        return
+    response.delete_cookie(key=COOKIE_NAME, path="/", samesite="lax", httponly=True)
 
 
 async def _read_json(request: Request) -> dict:
@@ -59,6 +105,11 @@ async def _read_json(request: Request) -> dict:
     if not isinstance(payload, dict):
         raise HTTPException(400, "请求内容必须是 JSON 对象")
     return payload
+
+
+def _self_registration_enabled() -> bool:
+    raw = os.environ.get("ALLOW_SELF_REGISTRATION", "1").strip().lower()
+    return raw not in ("0", "false", "off", "no")
 
 
 def _session_payload(request: Request, user: dict | None) -> dict:
@@ -73,6 +124,7 @@ def _session_payload(request: Request, user: dict | None) -> dict:
         "host_machine": host_client,
         "local_loopback": local_loopback,
         "bootstrap_allowed": (not initialized) and host_client,
+        "self_registration_enabled": _self_registration_enabled(),
         "user": public_user(user) if (user and user.get("id") != "shared") else None,
         "role_templates": ROLE_TEMPLATES,
         "permission_keys": list(PERMISSION_KEYS),
@@ -147,18 +199,21 @@ async def bootstrap_admin(request: Request, response: Response):
 @auth_router.post("/register")
 async def register(request: Request):
     payload = await _read_json(request)
+    if not _self_registration_enabled():
+        raise HTTPException(403, "系统已关闭公开注册，请联系系统管理员在后台创建账号")
     store = get_account_store()
     user = store.register_user(
         payload.get("username", ""),
         payload.get("password", ""),
         display_name=payload.get("display_name", ""),
         note=payload.get("note", ""),
+        address=client_address(request),
     )
     audit_event(user, "account.register", detail="registered")
     return {
         "ok": True,
         "status": "pending",
-        "message": "注册申请已提交！请等待主机管理员审批并分配权限，审批通过后即可登录进入您的专属独立工作空间。",
+        "message": "注册申请已提交，请等待系统管理员审批并分配权限后即可登录使用。",
         "username": user["username"],
     }
 
@@ -187,7 +242,7 @@ async def logout(request: Request, response: Response):
         store.logout(token)
         if user:
             audit_event(user, "account.logout", detail="success")
-    _clear_session_cookie(response)
+    _clear_session_cookie(response, request)
     return {"ok": True}
 
 
@@ -320,8 +375,14 @@ async def admin_reset_password(user_id: str, request: Request):
     payload = await _read_json(request)
     admin = require_admin(request)
     store = get_account_store()
+    target = next((u for u in store.users() if u["id"] == user_id), None)
     store.reset_password(user_id, payload.get("new_password", ""))
-    audit_event(admin, "account.password.reset", detail="success")
+    audit_event(
+        admin,
+        "account.password.reset",
+        run_id=(target["workspace_id"] if target else ""),
+        detail="success",
+    )
     return {"ok": True, "message": "已重置该成员登录密码并使其旧登录会话失效"}
 
 

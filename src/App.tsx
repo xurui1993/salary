@@ -71,8 +71,12 @@ import {
   type TaskStatusAlert,
 } from './lib/taskWorkflow';
 import { arePlatformStatusMapsEqual } from './lib/perfUtils';
-import { AuthPortal } from './components/AuthPortal';
-import { AccountManagementDrawer } from './components/AccountManagementDrawer';
+import { AuthLoadingSplash, AuthPortal } from './components/AuthPortal';
+import {
+  AccountManagementPage,
+  NoModuleAccessNotice,
+  type AccountConsoleTab,
+} from './components/AccountManagementPage';
 import { HeaderAccountBar, WorkspaceInspectBanner } from './components/HeaderAccountBar';
 import {
   fetchWorkspaceSession,
@@ -130,11 +134,7 @@ export default function App() {
   }, [session?.authenticated, session?.user?.role]);
 
   if (loadingSession && !session) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#F6F7F8] text-slate-600 text-xs">
-        正在连接工作空间服务…
-      </div>
-    );
+    return <AuthLoadingSplash />;
   }
 
   if (!session || !session.authenticated || !session.user) {
@@ -181,7 +181,10 @@ function AuthenticatedWorkbench({
   onRefreshSession: () => Promise<void>;
 }) {
   const currentUser = session.user!;
-  const [adminDrawerOpen, setAdminDrawerOpen] = useState(false);
+  const [accountsTabReq, setAccountsTabReq] = useState<{
+    tab: AccountConsoleTab | null;
+    version: number;
+  }>({ tab: null, version: 0 });
   const theme = THEMES[0];
 
   const [missingCityTeams, setMissingCityTeams] = useState<string[]>([]);
@@ -346,7 +349,7 @@ function AuthenticatedWorkbench({
   const [deductionDefaultOnly, setDeductionDefaultOnly] = useState(false);
   const [deductionVersion, setDeductionVersion] = useState(0);
   const [payrollSubView, setPayrollSubView] = useState<PayrollSubView>('batches');
-  const [workspaceView, setWorkspaceView] = useState<'create' | 'history' | 'approval' | 'price-export' | 'pickup'>('create');
+  const [workspaceView, setWorkspaceView] = useState<'create' | 'history' | 'approval' | 'price-export' | 'pickup' | 'accounts'>('create');
   const [downloadPlatform,setDownloadPlatform]=useState<DownloadPlatform>(()=>{
     try{
       const saved=localStorage.getItem('workbench_download_platform');
@@ -455,7 +458,11 @@ function AuthenticatedWorkbench({
     writeAutoJumpPreference(next);
   };
   useEffect(() => { try { localStorage.setItem('workbench_task_kind', taskKind); } catch {} setActiveMenu(taskKind === 'payroll' ? 'core' : 'fengshen_downloads'); }, [taskKind]);
-  const navigateWorkspace = (view: 'create' | 'history' | 'approval' | 'price-export' | 'pickup') => {
+  const navigateWorkspace = (view: 'create' | 'history' | 'approval' | 'price-export' | 'pickup' | 'accounts') => {
+    if (view === 'accounts' && currentUser.role !== 'admin') {
+      showToast('仅系统管理员可访问账户与权限管理', 'error');
+      return;
+    }
     setWorkspaceView(view);
     if (view === 'create' || view === 'history') {
       setDownloadNavigation(previous => ({ view, version: previous.version + 1 }));
@@ -940,10 +947,9 @@ function AuthenticatedWorkbench({
 
   const handleTaskRecordsPolled = (
     records: TaskNotificationRecord[],
-    summary: { activeCount: number; attentionCount: number; readyCount: number; isDemo: boolean },
+    summary: { activeCount: number; attentionCount: number; readyCount: number },
   ) => {
     setTaskAttentionCount(summary.attentionCount);
-    if (summary.isDemo) return;
     const { alerts, nextSnapshot } = detectTaskNotifications(
       taskSnapshotRef.current,
       records,
@@ -1504,6 +1510,7 @@ function AuthenticatedWorkbench({
           onOpenPlatformDock={() => setDockOpen(true)}
           permissions={currentUser.permissions}
           isAdmin={currentUser.role === 'admin'}
+          pendingAccountCount={session.pending_count}
         />
         <div className="wb-viewport wbx-workspace">
           {(() => {
@@ -1588,7 +1595,6 @@ function AuthenticatedWorkbench({
                   <HeaderAccountBar
                     user={currentUser}
                     workspaces={session.workspaces}
-                    pendingCount={session.pending_count}
                     onSwitchWorkspace={async targetWid => {
                       try {
                         const updated = await switchInspectWorkspace(targetWid);
@@ -1603,7 +1609,6 @@ function AuthenticatedWorkbench({
                         showToast(err instanceof Error ? err.message : '切换空间失败', 'error');
                       }
                     }}
-                    onOpenAdminAccounts={() => setAdminDrawerOpen(true)}
                     onLogout={async () => {
                       await logoutWorkspaceAccount();
                       await onRefreshSession();
@@ -1618,6 +1623,22 @@ function AuthenticatedWorkbench({
             <div className="wbx-page">
             <WorkspaceInspectBanner
               user={currentUser}
+              workspaces={session.workspaces}
+              onSwitchWorkspace={targetWid => {
+                void switchInspectWorkspace(targetWid)
+                  .then(updated => {
+                    onSessionUpdate(updated);
+                    showToast(
+                      targetWid
+                        ? `已切换至巡检空间：${updated.user?.inspect_target?.display_name || targetWid}`
+                        : '已返回管理员主空间',
+                      'info',
+                    );
+                  })
+                  .catch(err => {
+                    showToast(err instanceof Error ? err.message : '切换空间失败', 'error');
+                  });
+              }}
               onExitInspect={() => {
                 void switchInspectWorkspace('').then(updated => {
                   onSessionUpdate(updated);
@@ -1731,15 +1752,45 @@ function AuthenticatedWorkbench({
             )}
             <section
               className="wbx-route-stage"
-              hidden={workspaceView === 'approval' || workspaceView === 'price-export' || workspaceView === 'pickup' || (workspaceView !== 'history' && taskKind === 'payroll')}
-              aria-hidden={workspaceView === 'approval' || workspaceView === 'price-export' || workspaceView === 'pickup' || (workspaceView !== 'history' && taskKind === 'payroll') || undefined}
+              hidden={
+                workspaceView === 'approval' ||
+                workspaceView === 'price-export' ||
+                workspaceView === 'pickup' ||
+                workspaceView === 'accounts' ||
+                (workspaceView === 'create' &&
+                  ((taskKind === 'download' && !canCollection) ||
+                    (taskKind === 'generate' && !canReports))) ||
+                (workspaceView !== 'history' && taskKind === 'payroll')
+              }
+              aria-hidden={
+                workspaceView === 'approval' ||
+                workspaceView === 'price-export' ||
+                workspaceView === 'pickup' ||
+                workspaceView === 'accounts' ||
+                (workspaceView === 'create' &&
+                  ((taskKind === 'download' && !canCollection) ||
+                    (taskKind === 'generate' && !canReports))) ||
+                (workspaceView !== 'history' && taskKind === 'payroll') ||
+                undefined
+              }
               aria-label="任务下载"
             >
               <FengshenDownloadCenter
                 apiFetch={fetchWithAuth}
                 workspaceId={workspaceId}
                 navigation={downloadNavigation}
-                isVisible={!(workspaceView === 'approval' || workspaceView === 'price-export' || workspaceView === 'pickup' || (workspaceView !== 'history' && taskKind === 'payroll'))}
+                isVisible={
+                  !(
+                    workspaceView === 'approval' ||
+                    workspaceView === 'price-export' ||
+                    workspaceView === 'pickup' ||
+                    workspaceView === 'accounts' ||
+                    (workspaceView === 'create' &&
+                      ((taskKind === 'download' && !canCollection) ||
+                        (taskKind === 'generate' && !canReports))) ||
+                    (workspaceView !== 'history' && taskKind === 'payroll')
+                  )
+                }
                 embedded
                 hideNavigation
                 taskKind={taskKind === 'generate' ? 'generate' : 'download'}
@@ -1793,10 +1844,37 @@ function AuthenticatedWorkbench({
                 <FilePickup apiFetch={fetchWithAuth} />
               </section>
             )}
+            {workspaceView === 'accounts' && currentUser.role === 'admin' && (
+              <section className="wbx-route-stage" aria-label="账户与模块权限管理">
+                <AccountManagementPage
+                  currentUserId={currentUser.id}
+                  requestedTab={accountsTabReq.tab}
+                  requestedTabVersion={accountsTabReq.version}
+                  onAccountsChanged={(nextPending, nextWorkspaces) => {
+                    onSessionUpdate(prev =>
+                      prev ? { ...prev, pending_count: nextPending, workspaces: nextWorkspaces } : prev,
+                    );
+                  }}
+                  onToast={(msg, type) => showToast(msg, type || 'info')}
+                />
+              </section>
+            )}
+            {workspaceView === 'create' &&
+              ((taskKind === 'download' && !canCollection) ||
+                (taskKind === 'generate' && !canReports) ||
+                (taskKind === 'payroll' && !canPayroll)) && (
+                <section className="wbx-route-stage" aria-label="模块权限引导">
+                  <NoModuleAccessNotice
+                    displayName={currentUser.display_name}
+                    onOpenHistory={() => navigateWorkspace('history')}
+                    onOpenPickup={() => navigateWorkspace('pickup')}
+                  />
+                </section>
+              )}
             <section
               className="wbx-route-stage"
-              hidden={workspaceView !== 'create' || taskKind !== 'payroll'}
-              aria-hidden={workspaceView !== 'create' || taskKind !== 'payroll' || undefined}
+              hidden={workspaceView !== 'create' || taskKind !== 'payroll' || !canPayroll}
+              aria-hidden={workspaceView !== 'create' || taskKind !== 'payroll' || !canPayroll || undefined}
               aria-label="兼职薪资核算"
             >
               {(mountedPanels.batches || payrollSubView === 'batches') && (
@@ -1911,7 +1989,11 @@ function AuthenticatedWorkbench({
             payrollSubView,
             reportId: activeReportId,
           },
-          { sidebarCollapsed: sidebarIsCollapsed },
+          {
+            sidebarCollapsed: sidebarIsCollapsed,
+            isAdmin: currentUser.role === 'admin',
+            permissions: currentUser.permissions,
+          },
         )}
         onClose={() => setCmdkOpen(false)}
         onExecute={executeShellAction}
@@ -1945,31 +2027,6 @@ function AuthenticatedWorkbench({
           }
         }}
       />
-
-      {currentUser.role === 'admin' && (
-        <AccountManagementDrawer
-          open={adminDrawerOpen}
-          currentUserId={currentUser.id}
-          onClose={() => setAdminDrawerOpen(false)}
-          onInspectWorkspace={targetWid => {
-            void switchInspectWorkspace(targetWid).then(updated => {
-              onSessionUpdate(updated);
-              showToast(
-                targetWid
-                  ? `已进入巡检空间：${updated.user?.inspect_target?.display_name || targetWid}`
-                  : '已返回管理员主空间',
-                'info',
-              );
-            });
-          }}
-          onAccountsChanged={(nextPending, nextWorkspaces) => {
-            onSessionUpdate(prev =>
-              prev ? { ...prev, pending_count: nextPending, workspaces: nextWorkspaces } : prev,
-            );
-          }}
-          onToast={(msg, type) => showToast(msg, type || 'info')}
-        />
-      )}
 
       {toastMsg && (
         <div className="fixed top-5 right-5 z-[9999] pointer-events-none transition-all animate-in fade-in slide-in-from-top-2">

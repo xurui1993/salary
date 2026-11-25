@@ -16,12 +16,6 @@ import { readDownloadResponse, saveDownloadBlob, downloadErrorMessage } from '..
 import { taskGuidance } from '../lib/taskGuidance';
 import { datasetGroup, type DownloadFetch } from '../lib/downloadCenterLogic';
 import {
-  shouldUseDemoData,
-  useDemoDataVisibility,
-  usePlatformAuthSnapshot,
-} from '../lib/demoMode';
-import { buildDemoTaskCenterRecords } from '../lib/showcaseDemoData';
-import {
   computeTaskHeaderCounts,
   type TaskNotificationRecord,
 } from '../lib/taskWorkflow';
@@ -159,7 +153,7 @@ export function HeaderDownloadCenter({
   onShowToast?: (message: string, type?: 'info' | 'success' | 'error') => void;
   onRecordsPolled?: (
     records: TaskNotificationRecord[],
-    summary: { activeCount: number; attentionCount: number; readyCount: number; isDemo: boolean },
+    summary: { activeCount: number; attentionCount: number; readyCount: number },
   ) => void;
 }) {
   const apiRef = useRef(apiFetch);
@@ -167,13 +161,9 @@ export function HeaderDownloadCenter({
   const onRecordsPolledRef = useRef(onRecordsPolled);
   onRecordsPolledRef.current = onRecordsPolled;
 
-  const auth = usePlatformAuthSnapshot();
-  const { demoHidden } = useDemoDataVisibility();
-
   const [open, setOpen] = useState(false);
   const [serverRecords, setServerRecords] = useState<HeaderTaskRecord[]>([]);
   const [serverCounts, setServerCounts] = useState<Record<string, number>>({});
-  const [hasLiveServerData, setHasLiveServerData] = useState(false);
   const [loading, setLoading] = useState(false);
   const [downloadingId, setDownloadingId] = useState('');
   const [openingDirId, setOpeningDirId] = useState('');
@@ -182,44 +172,7 @@ export function HeaderDownloadCenter({
   const [tab, setTab] = useState<'all' | 'active' | 'done'>('all');
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const demoActive = shouldUseDemoData({
-    isLoggedIn: auth.anyLoggedIn,
-    hasLiveData: hasLiveServerData,
-    demoHidden,
-  });
-
-  const demoRecords = useMemo<HeaderTaskRecord[]>(() => {
-    if (!demoActive) return [];
-    return buildDemoTaskCenterRecords().map(item => ({
-      id: item.id,
-      kind: item.kind,
-      title: item.title,
-      price_id: item.price_id,
-      cities: item.cities || [],
-      datasets: item.datasets || [],
-      start: item.start || '',
-      end: item.end || '',
-      status: item.status,
-      created_at: item.created_at || new Date().toISOString(),
-      files: (item.files || []).map(f => ({
-        id: f.id,
-        run_id: item.id,
-        name: f.name,
-        city: f.city || '',
-        bytes: f.bytes || 0,
-        available: true,
-      })),
-      available_files: (item.files || []).length,
-      failed_items: item.failed_items || 0,
-      completed_items: item.completed_items || 0,
-      total_items: item.total_items || 0,
-      action_run_id: item.id,
-      summary_issue: false,
-      error: item.error,
-    }));
-  }, [demoActive]);
-
-  const records = demoActive ? demoRecords : serverRecords;
+  const records = serverRecords;
 
   const navigateToTaskCenter = () => {
     if (onOpenTaskCenter) onOpenTaskCenter();
@@ -249,14 +202,12 @@ export function HeaderDownloadCenter({
       const nextFingerprint = buildTaskListFingerprint(fetched, fetchedCounts, live ? '1' : '0');
       if (nextFingerprint !== lastFingerprintRef.current) {
         lastFingerprintRef.current = nextFingerprint;
-        setHasLiveServerData(live);
         setServerRecords(fetched);
         setServerCounts(fetchedCounts);
         onRecordsPolledRef.current?.(fetched, {
           activeCount: nextActiveCount,
           attentionCount: Math.max(derived.attentionCount, fetchedCounts.attention || 0),
           readyCount: Math.max(derived.readyCount, fetchedCounts.success || 0),
-          isDemo: false,
         });
       }
       setError(prev => (prev ? '' : prev));
@@ -266,15 +217,6 @@ export function HeaderDownloadCenter({
       if (!silent) setLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (!demoActive) return;
-    const summary = computeTaskHeaderCounts(demoRecords);
-    onRecordsPolledRef.current?.([], {
-      ...summary,
-      isDemo: true,
-    });
-  }, [demoActive, demoRecords]);
 
   useEffect(() => {
     void loadRecentTasks(true);
@@ -361,12 +303,6 @@ export function HeaderDownloadCenter({
 
   const openResultDirectory = async (r: HeaderTaskRecord) => {
     if (openingDirId) return;
-    if (demoActive) {
-      const msg = `示例模式：结果目录 ~/SalaryWorkbench/outputs/${r.id}`;
-      setNotice(msg);
-      onShowToast?.(msg, 'info');
-      return;
-    }
     setOpeningDirId(r.id);
     setError('');
     setNotice('');
@@ -405,12 +341,6 @@ export function HeaderDownloadCenter({
 
   const triggerDownload = async (r: HeaderTaskRecord, file?: HeaderTaskFile) => {
     if (downloadingId) return;
-    if (demoActive) {
-      const msg = `示例模式：已模拟下载「${recordTitle(r)}」成果文件`;
-      setNotice(msg);
-      onShowToast?.(msg, 'info');
-      return;
-    }
     setDownloadingId(file ? `${r.id}:${file.id}` : r.id);
     setError('');
     setNotice('');
@@ -466,15 +396,12 @@ export function HeaderDownloadCenter({
   };
 
   const summaryCounts = useMemo(() => computeTaskHeaderCounts(records), [records]);
-  const liveActiveCount = demoActive
-    ? Math.max(activeCount + (runningTask ? 1 : 0), summaryCounts.activeCount)
-    : Math.max(activeCount + (runningTask ? 1 : 0), serverCounts.active || summaryCounts.activeCount);
-  const attentionCount = demoActive
-    ? summaryCounts.attentionCount
-    : Math.max(serverCounts.attention || 0, summaryCounts.attentionCount);
-  const readyCount = demoActive
-    ? summaryCounts.readyCount
-    : Math.max(serverCounts.success || 0, summaryCounts.readyCount);
+  const liveActiveCount = Math.max(
+    activeCount + (runningTask ? 1 : 0),
+    serverCounts.active || summaryCounts.activeCount,
+  );
+  const attentionCount = Math.max(serverCounts.attention || 0, summaryCounts.attentionCount);
+  const readyCount = Math.max(serverCounts.success || 0, summaryCounts.readyCount);
 
   const filteredRecords = records
     .filter(r => {
@@ -527,7 +454,6 @@ export function HeaderDownloadCenter({
                 进行中 {liveActiveCount}
                 {attentionCount > 0 ? ` · 待处理 ${attentionCount}` : ''}
                 {` · 已完成 ${readyCount}`}
-                {demoActive ? ' · 示例' : ''}
               </span>
             </div>
             <div className="wbx-popover__actions">

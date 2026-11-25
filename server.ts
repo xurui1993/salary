@@ -108,7 +108,26 @@ async function startServer() {
         }
       });
   });
-  app.use(cors());
+  const extraAllowedOrigins = new Set(
+    String(process.env.ALLOWED_ORIGINS || "")
+      .split(",")
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const LAN_ORIGIN_RE =
+    /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|ais-(?:dev|pre)-[a-z0-9-]+-\d+\.[a-z0-9-]+\.run\.app)(?::\d+)?$/i;
+  const corsOriginValidator = (
+    origin: string | undefined,
+    callback: (err: Error | null, allow?: boolean) => void,
+  ) => {
+    if (!origin) return callback(null, true);
+    const normalized = origin.trim().toLowerCase();
+    if (LAN_ORIGIN_RE.test(normalized) || extraAllowedOrigins.has(normalized)) {
+      return callback(null, true);
+    }
+    return callback(null, false);
+  };
+  app.use(cors({ origin: corsOriginValidator, credentials: true }));
   const localTestMode = process.env.LOCAL_TEST_MODE === "1";
   const PORT = Number(process.env.APP_PORT || (process.env.PORT === "8080" ? 3000 : process.env.PORT) || 3000);
   const backendPort = Number(process.env.BACKEND_PORT || 8009);
@@ -1493,7 +1512,9 @@ async function startServer() {
     }
   }
 
-  const io = new SocketIOServer(server, { cors: { origin: "*" } });
+  const io = new SocketIOServer(server, {
+    cors: { origin: corsOriginValidator, credentials: true },
+  });
 
   const chatHistory = new Map();
 

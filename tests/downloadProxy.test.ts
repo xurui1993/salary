@@ -1,2 +1,98 @@
-// @ts-nocheck
-var __defProp=Object.defineProperty;var __name=(target,value)=>__defProp(target,"name",{value,configurable:true});import assert from"node:assert/strict";import http from"node:http";import test from"node:test";import express from"express";import{createProxyMiddleware}from"http-proxy-middleware";import{createDownloadProxy,isDownloadProxyPath}from"../server/downloadProxy.ts";test("download route filter includes once-encoded paths and fails malformed paths closed",()=>{for(const path of["/api/run","/api/parttime/preparations/abc/resolve","/api/parttime/plan","/api/fengshen-downloads","/api/fengshen-downloads/account/status","/api/fengshen-downloads%2Faccount%2Fbootstrap","/%61pi/fengshen-downloads/runs","/api/%ZZ"]){assert.equal(isDownloadProxyPath(path),true,path)}for(const path of["/api/fengshen-downloads-other","/api/ordinary?next=/api/fengshen-downloads","/api/fengshen-download%2573/runs"])assert.equal(isDownloadProxyPath(path),false,path)});async function listen(server){await new Promise((resolve,reject)=>{server.once("error",reject);server.listen(0,"127.0.0.1",resolve)});return server.address().port}__name(listen,"listen");async function close(server){server.closeAllConnections();await new Promise((resolve,reject)=>server.close(error=>error?reject(error):resolve()))}__name(close,"close");test("download proxy preserves host/cookie/body and replaces spoofed client identity",async t=>{const backend=http.createServer(async(req,res)=>{let body="";for await(const chunk of req)body+=chunk.toString();res.setHeader("Content-Type","application/json");res.end(JSON.stringify({headers:req.headers,body}))});const backendPort=await listen(backend);t.after(()=>close(backend));const app=express();const options={target:`http://127.0.0.1:${backendPort}`,changeOrigin:true};app.use(createDownloadProxy(options,"synthetic-shared-secret"));app.use(createProxyMiddleware({pathFilter:"/api",...options}));const frontend=http.createServer(app);const frontendPort=await listen(frontend);t.after(()=>close(frontend));for(const path of["/api/fengshen-downloads/account/bootstrap","/api/fengshen-downloads%2Faccount%2Fbootstrap"]){const result=await new Promise((resolve,reject)=>{const body=JSON.stringify({username:"synthetic",password:"only-in-synthetic-test"});const outgoing=http.request({host:"127.0.0.1",port:frontendPort,path,method:"POST",headers:{Host:"192.168.1.8:3000",Origin:"http://192.168.1.8:3000",Cookie:"fengshen_download_session=synthetic-cookie","Content-Type":"application/json","Content-Length":Buffer.byteLength(body),"X-Download-Proxy-Secret":"forged","X-Download-Client-Address":"192.0.2.99",Forwarded:"for=127.0.0.1","X-Forwarded-For":"127.0.0.1","X-Forwarded-Proto":"https"}},response=>{let value="";response.on("data",chunk=>{value+=chunk});response.on("end",()=>resolve(JSON.parse(value)))});outgoing.once("error",reject);outgoing.end(body)});assert.equal(result.headers.host,"192.168.1.8:3000");assert.equal(result.headers.origin,"http://192.168.1.8:3000");assert.equal(result.headers.cookie,"fengshen_download_session=synthetic-cookie");assert.equal(result.headers["x-download-proxy-secret"],"synthetic-shared-secret");assert.equal(result.headers["x-download-client-address"],"127.0.0.1");assert.equal(result.headers.forwarded,void 0);assert.equal(result.headers["x-forwarded-for"],void 0);assert.equal(result.headers["x-forwarded-proto"],void 0);assert.equal(JSON.parse(result.body).username,"synthetic")}});
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import type { ClientRequest, IncomingMessage } from 'node:http';
+import { protectProxyHeaders } from '../server/downloadProxy';
+
+function createMockProxyReq(initial: Record<string, string> = {}) {
+  const headers = new Map<string, string>(
+    Object.entries(initial).map(([k, v]) => [k.toLowerCase(), v]),
+  );
+  return {
+    getHeaderNames: () => Array.from(headers.keys()),
+    removeHeader: (name: string) => {
+      headers.delete(name.toLowerCase());
+    },
+    setHeader: (name: string, value: string) => {
+      headers.set(name.toLowerCase(), String(value));
+    },
+    getHeader: (name: string) => headers.get(name.toLowerCase()),
+  };
+}
+
+function createMockReq(headers: Record<string, string>, remoteAddress: string): IncomingMessage {
+  return {
+    headers,
+    socket: { remoteAddress },
+  } as unknown as IncomingMessage;
+}
+
+test('protectProxyHeaders trusts loopback X-Forwarded-Host for matching AI Studio preview Origin', () => {
+  const host = 'ais-dev-upgtlexm4iul47roppfdbz-435988664994.us-east1.run.app';
+  const proxyReq = createMockProxyReq({
+    host: 'localhost:3000',
+    origin: `https://${host}`,
+    'x-forwarded-host': host,
+    'x-forwarded-proto': 'https',
+  });
+  const req = createMockReq(
+    {
+      host: 'localhost:3000',
+      origin: `https://${host}`,
+      'x-forwarded-host': host,
+      'x-forwarded-proto': 'https',
+    },
+    '127.0.0.1',
+  );
+
+  protectProxyHeaders(proxyReq as unknown as ClientRequest, req, 'secret-123');
+
+  assert.equal(proxyReq.getHeader('host'), 'localhost:3000');
+  assert.equal(proxyReq.getHeader('origin'), 'http://localhost:3000');
+  assert.equal(proxyReq.getHeader('x-download-proxy-https'), '1');
+  assert.equal(proxyReq.getHeader('x-download-proxy-secret'), 'secret-123');
+  assert.equal(proxyReq.getHeader('x-forwarded-host'), undefined);
+});
+
+test('protectProxyHeaders does NOT rewrite cross-site Origin even behind AI Studio preview proxy', () => {
+  const host = 'ais-dev-upgtlexm4iul47roppfdbz-435988664994.us-east1.run.app';
+  const proxyReq = createMockProxyReq({
+    host: 'localhost:3000',
+    origin: 'https://evil.example',
+    'x-forwarded-host': host,
+  });
+  const req = createMockReq(
+    {
+      host: 'localhost:3000',
+      origin: 'https://evil.example',
+      'x-forwarded-host': host,
+    },
+    '::ffff:127.0.0.1',
+  );
+
+  protectProxyHeaders(proxyReq as unknown as ClientRequest, req, 'secret-123');
+
+  assert.equal(proxyReq.getHeader('origin'), 'https://evil.example');
+});
+
+test('protectProxyHeaders ignores spoofed X-Forwarded-Host from non-loopback LAN clients', () => {
+  const host = 'ais-dev-upgtlexm4iul47roppfdbz-435988664994.us-east1.run.app';
+  const proxyReq = createMockProxyReq({
+    host: '192.168.1.10:3000',
+    origin: `https://${host}`,
+    'x-forwarded-host': host,
+  });
+  const req = createMockReq(
+    {
+      host: '192.168.1.10:3000',
+      origin: `https://${host}`,
+      'x-forwarded-host': host,
+    },
+    '192.168.1.50',
+  );
+
+  protectProxyHeaders(proxyReq as unknown as ClientRequest, req, 'secret-123');
+
+  assert.equal(proxyReq.getHeader('host'), '192.168.1.10:3000');
+  assert.equal(proxyReq.getHeader('origin'), `https://${host}`);
+  assert.equal(proxyReq.getHeader('x-download-proxy-https'), undefined);
+});

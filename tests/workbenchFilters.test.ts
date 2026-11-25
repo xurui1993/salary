@@ -7,7 +7,6 @@ import {
   filterTaskCenterRecords,
   type TaskCenterFilterRecord,
 } from '../src/lib/workbenchFilters';
-import { buildDemoTaskCenterRecords } from '../src/lib/showcaseDemoData';
 
 const payroll = [
   { id: 'a', status: 'queued', mode: 'advance', template_name: '模板A', batch_id: 'b1', approval_code: '', current_action: '', plan: { city: '上海' } },
@@ -75,14 +74,6 @@ test('task center status tabs are mutually exclusive and sum to all', () => {
   assert.deepEqual(filterTaskCenterRecords(records, { status: 'stopped' }).items.map(r => r.id), ['r4']);
   assert.deepEqual(filterTaskCenterRecords(records, { system: 'xiaoxiang' }).items.map(r => r.id), ['r2']);
   assert.deepEqual(filterTaskCenterRecords(records, { q: '订单' }).items.map(r => r.id), ['r2']);
-
-  // Verify the 30-record demo dataset also partitions cleanly with zero overlap
-  const demo = buildDemoTaskCenterRecords();
-  const demoRes = filterTaskCenterRecords(demo as TaskCenterFilterRecord[], {});
-  assert.equal(
-    demoRes.counts.active + demoRes.counts.attention + demoRes.counts.success + demoRes.counts.stopped,
-    demoRes.counts.all,
-  );
 });
 
 test('approval filters separate eligible and blocked rows', () => {

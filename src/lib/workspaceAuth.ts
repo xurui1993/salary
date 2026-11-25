@@ -55,6 +55,7 @@ export interface WorkspaceSessionState {
   host_machine: boolean;
   local_loopback: boolean;
   bootstrap_allowed: boolean;
+  self_registration_enabled?: boolean;
   user: WorkspaceUser | null;
   role_templates: Record<string, RoleTemplateDef>;
   permission_keys: PermissionKey[];
@@ -125,15 +126,6 @@ export async function bootstrapHostAdmin(payload: {
   const state = await authJson<WorkspaceSessionState>('/api/auth/bootstrap', 'POST', payload);
   if (state.user) syncStoredWorkspaceId(state.user.effective_workspace);
   return state;
-}
-
-export async function registerWorkspaceAccount(payload: {
-  username: string;
-  display_name: string;
-  password: string;
-  note?: string;
-}): Promise<{ ok: boolean; status: string; message: string; username: string }> {
-  return authJson('/api/auth/register', 'POST', payload);
 }
 
 export async function loginWorkspaceAccount(payload: {
@@ -250,4 +242,18 @@ export async function adminSyncDefaultConfig(
     'POST',
     {},
   );
+}
+
+export interface AuditEvent {
+  id: number;
+  time: number;
+  user_id: string;
+  username: string;
+  action: string;
+  run_id: string;
+  detail: string;
+}
+
+export async function fetchAdminAuditLogs(): Promise<{ events: AuditEvent[] }> {
+  return authJson('/api/admin/accounts/audit');
 }

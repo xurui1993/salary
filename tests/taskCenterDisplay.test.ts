@@ -21,7 +21,6 @@ import {
   sortTaskDisplayRecords,
   summarizeTaskBatchSelection,
 } from '../src/lib/taskCenterDisplay';
-import { buildDemoTaskCenterRecords } from '../src/lib/showcaseDemoData';
 
 test('displayTaskNumber strips internal kind prefixes and shows the 6-char delivery code', () => {
   assert.equal(displayTaskNumber('approval:789096cc07044f45aabbccddeeff0011'), '789096');
@@ -275,22 +274,32 @@ test('computeTaskDiagnosticNote surfaces alerts only for abnormal tasks and buil
     'warn',
   );
 
-  const demo = buildDemoTaskCenterRecords();
-  assert.equal(demo.length, 30);
-  const problemDemo = demo.find(item => item.id === 'TC-20261121-007');
-  assert.ok(problemDemo);
-  assert.equal(problemDemo.kind, 'generate');
-  assert.deepEqual(problemDemo.datasets, ['problem']);
-  for (const item of demo) {
-    const steps = buildTaskTimelineSteps(
-      {
-        ...item,
-        files: item.files.map(f => ({ ...f, run_id: item.id, city: f.city || '全量', available: true })),
-        available_files: item.files.length,
-      },
-      '风神',
-    );
-    assert.ok(steps.length >= 2, `demo task ${item.id} should synthesize at least 2 timeline steps`);
+  const sampleTasks = [
+    {
+      id: 'T-001',
+      kind: 'generate',
+      status: 'success',
+      datasets: ['problem'],
+      cities: ['上海'],
+      created_at: '2026-11-21T10:00:00+08:00',
+      finished_at: '2026-11-21T10:01:30+08:00',
+      files: [{ id: 'f1', run_id: 'T-001', name: '问题单汇总.xlsx', city: '上海', bytes: 1024, available: true }],
+      available_files: 1,
+    },
+    {
+      id: 'T-002',
+      kind: 'download',
+      status: 'running',
+      datasets: ['delivery_fee'],
+      cities: ['广州'],
+      created_at: '2026-11-21T11:00:00+08:00',
+      files: [],
+      available_files: 0,
+    },
+  ];
+  for (const item of sampleTasks) {
+    const steps = buildTaskTimelineSteps(item as any, '风神');
+    assert.ok(steps.length >= 2, `task ${item.id} should synthesize at least 2 timeline steps`);
   }
 });
 

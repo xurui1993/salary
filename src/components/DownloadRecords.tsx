@@ -54,13 +54,7 @@ import {
   type TaskCenterSortKey,
   type TaskDatePreset,
 } from '../lib/taskCenterDisplay';
-import {
-  shouldUseDemoData,
-  useDemoDataVisibility,
-  usePlatformAuthSnapshot,
-} from '../lib/demoMode';
-import { queryDemoTaskCenter } from '../lib/showcaseDemoData';
-import { DemoDataChip } from './DemoDataChip';
+import { usePlatformAuthSnapshot } from '../lib/demoMode';
 import type { TaskReturnTarget } from '../lib/taskWorkflow';
 import { buildTaskListFingerprint, computeAdaptivePollDelay } from '../lib/perfUtils';
 interface File {
@@ -182,17 +176,7 @@ export function DownloadRecords({
   } | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [syncMs, setSyncMs] = useState(() => Date.now());
-  const [hasLiveServerData, setHasLiveServerData] = useState(false);
-  const [demoRecords, setDemoRecords] = useState<Task[]>([]);
-  const [demoArchivedIds, setDemoArchivedIds] = useState<Set<string>>(() => new Set());
-
   const auth = usePlatformAuthSnapshot();
-  const { demoHidden, toggleDemoHidden } = useDemoDataVisibility();
-  const demoActive = shouldUseDemoData({
-    isLoggedIn: auth.anyLoggedIn,
-    hasLiveData: hasLiveServerData,
-    demoHidden,
-  });
 
   const dateMenuRef = useRef<HTMLDivElement | null>(null);
   const busyRef = useRef(false);
@@ -279,7 +263,6 @@ export function DownloadRecords({
         );
         if (nextFingerprint !== pollFingerprintRef.current) {
           pollFingerprintRef.current = nextFingerprint;
-          setHasLiveServerData(serverHasLive);
           setRecords(previous =>
             selectedRef.current.length
               ? previous.map(r => incoming.find((next: Task) => next.id === r.id) || r)
@@ -353,64 +336,21 @@ export function DownloadRecords({
     prevLoggedInRef.current = auth.anyLoggedIn;
   }, [auth.anyLoggedIn]);
 
-  const demoQueryResult = useMemo(() => {
-    if (!demoActive) return null;
-    const pool = demoRecords.filter(r =>
-      archived ? demoArchivedIds.has(r.id) : !demoArchivedIds.has(r.id),
-    );
-    const result = queryDemoTaskCenter(pool as any, {
-      status: status || 'all',
-      q: query,
-      system,
-      kind,
-      from,
-      to,
-      page,
-      pageSize,
-    });
-    const totalPages = Math.max(1, Math.ceil(result.total / pageSize));
-    const safePage = Math.min(Math.max(1, page), totalPages);
-    return {
-      ...result,
-      page: safePage,
-      pages: totalPages,
-      items: result.items as unknown as Task[],
-      counts: {
-        ...result.counts,
-        archived: demoArchivedIds.size,
-      },
-    };
-  }, [demoActive, demoRecords, demoArchivedIds, archived, status, query, system, kind, from, to, page, pageSize]);
-
   const effectiveRecords = useMemo(
-    () => sortTaskDisplayRecords(demoQueryResult ? demoQueryResult.items : records, sortKey),
-    [demoQueryResult, records, sortKey],
+    () => sortTaskDisplayRecords(records, sortKey),
+    [records, sortKey],
   );
-  const effectiveTotal = demoQueryResult ? demoQueryResult.total : total;
-  const effectivePages = demoQueryResult ? demoQueryResult.pages : pages;
-  const effectivePage = demoQueryResult ? demoQueryResult.page : page;
-  const effectiveCounts = demoQueryResult ? demoQueryResult.counts : counts;
+  const effectiveTotal = total;
+  const effectivePages = pages;
+  const effectivePage = page;
+  const effectiveCounts = counts;
 
-  useEffect(() => {
-    if (!demoActive) return;
-    const activeCount = demoRecords.filter(
-      r =>
-        !demoArchivedIds.has(r.id) &&
-        ['queued', 'running', 'cancelling', 'preparing', 'stopping'].includes(r.status),
-    ).length;
-    window.dispatchEvent(new CustomEvent('workbench:demo-active-count', { detail: activeCount }));
-  }, [demoActive, demoRecords, demoArchivedIds]);
-
-  // 同步抽屉内展示的任务对象（确保示例停止/刷新状态实时更新）
+  // 同步抽屉内展示的任务对象
   const activeFocused = useMemo(() => {
     if (!focused) return null;
     const inPage = effectiveRecords.find(r => r.id === focused.id);
-    if (inPage) return inPage;
-    if (demoActive) {
-      return demoRecords.find(r => r.id === focused.id) || focused;
-    }
-    return focused;
-  }, [focused, effectiveRecords, demoActive, demoRecords]);
+    return inPage || focused;
+  }, [focused, effectiveRecords]);
 
   const hasActiveTasks = useMemo(
     () => effectiveRecords.some(r => ACTIVE.has(r.status)) || (activeFocused ? ACTIVE.has(activeFocused.status) : false),
@@ -517,21 +457,6 @@ export function DownloadRecords({
 
   const download = (r: Task, file?: File, sources = false) =>
     act(async () => {
-      if (demoActive) {
-        const sampleName = file?.name || `${cleanTaskTitle(rawTitle(r), platform(r), kindLabel(r.kind))}_示例预览.txt`;
-        const content = [
-          `任务示例文件预览（未登录演示模式）`,
-          `任务名称：${rawTitle(r)}`,
-          `来源平台：${platform(r)} · ${kindLabel(r.kind)}`,
-          `覆盖城市：${(r.cities || []).join('、') || '全量范围'}`,
-          `业务周期：${r.start || '—'} ~ ${r.end || '—'}`,
-          `状态：${r.status}`,
-          `说明：完成真实平台登录后，点击下载将直接拉取后台真实成品文件。`,
-        ].join('\n');
-        saveDownloadBlob(new Blob([`\uFEFF${content}`], { type: 'text/plain;charset=utf-8' }), sampleName);
-        pushToast(`示例模式：已生成预览文件「${sampleName}」`, 'info');
-        return;
-      }
       let url: string;
       let filename: string;
       if (r.kind === 'approval') {
@@ -568,22 +493,6 @@ export function DownloadRecords({
 
   const stopTask = (r: Task) =>
     void act(async () => {
-      if (demoActive) {
-        setDemoRecords(prev =>
-          prev.map(item =>
-            item.id === r.id
-              ? {
-                  ...item,
-                  status: 'cancelled',
-                  current_action: '已在本地示例预览中停止',
-                  finished_at: Date.now() / 1000,
-                }
-              : item,
-          ),
-        );
-        pushToast('示例模式：已停止该示例任务（仅本地预览）。', 'info');
-        return;
-      }
       await request(`${API}/stop`, { id: r.id });
       setVersion(v => v + 1);
       pushToast('已请求停止，确认停止前任务保留在列表。', 'info');
@@ -594,23 +503,6 @@ export function DownloadRecords({
       if (!ids.length) return;
       const targetSet = new Set(ids);
       const targets = effectiveRecords.filter(r => targetSet.has(r.id));
-      if (demoActive) {
-        setDemoRecords(prev =>
-          prev.map(item =>
-            targetSet.has(item.id)
-              ? {
-                  ...item,
-                  status: 'cancelled',
-                  current_action: '已在本地示例预览中批量停止',
-                  finished_at: Date.now() / 1000,
-                }
-              : item,
-          ),
-        );
-        setSelected([]);
-        pushToast(`示例模式：已停止 ${targets.length} 项示例任务（仅本地预览）。`, 'info');
-        return;
-      }
       for (const item of targets) {
         await request(`${API}/stop`, { id: item.id });
       }
@@ -638,18 +530,6 @@ export function DownloadRecords({
 
   const showDirectory = (r?: Task) =>
     act(async () => {
-      if (demoActive) {
-        setDirectory({
-          path: r
-            ? `~/SalaryWorkbench/outputs/${r.id}`
-            : '~/SalaryWorkbench/outputs',
-          exists: true,
-          can_open: false,
-          record_id: r?.id,
-        });
-        pushToast('示例模式：已展示模拟生成目录路径（真实登录后可直接打开本地目录）。', 'info');
-        return;
-      }
       const response = await request(`${API}/directory${r ? `?record_id=${encodeURIComponent(r.id)}` : ''}`);
       const info = await response.json();
       if (info.exists && info.can_open) {
@@ -662,25 +542,6 @@ export function DownloadRecords({
 
   const changeVisibility = (rows: Task[]) =>
     act(async () => {
-      if (demoActive) {
-        setDemoArchivedIds(prev => {
-          const next = new Set(prev);
-          for (const row of rows) {
-            if (archived) next.delete(row.id);
-            else next.add(row.id);
-          }
-          return next;
-        });
-        setConfirm(null);
-        setSelected([]);
-        setFocused(null);
-        pushToast(
-          archived
-            ? `示例模式：已恢复 ${rows.length} 条示例任务。`
-            : `示例模式：已移出 ${rows.length} 条示例任务，可在「已移出」恢复。`,
-        );
-        return;
-      }
       await request(`${API}/visibility`, { ids: rows.map(r => r.id), restore: archived, stop_first: true });
       setConfirm(null);
       setSelected([]);
@@ -709,21 +570,6 @@ export function DownloadRecords({
   const permanentDelete = (rows: Task[]) =>
     act(async () => {
       const targetIds = new Set(rows.map(r => r.id));
-      if (demoActive) {
-        setDemoRecords(prev => prev.filter(r => !targetIds.has(r.id)));
-        setDemoArchivedIds(prev => {
-          const next = new Set(prev);
-          for (const id of targetIds) next.delete(id);
-          return next;
-        });
-        if (focused && targetIds.has(focused.id)) setFocused(null);
-        setDeleteTargets(null);
-        setSelected(prev => prev.filter(id => !targetIds.has(id)));
-        pushToast(
-          `示例模式：已彻底删除 ${rows.length} 条示例任务${deleteFiles ? '（含模拟结果目录）' : '（保留本地文件）'}。`,
-        );
-        return;
-      }
       await request(`${API}/delete`, {
         ids: rows.map(r => r.id),
         delete_files: deleteFiles,
@@ -778,14 +624,6 @@ export function DownloadRecords({
           </div>
 
         <div className="wbx-tc-topbar__right">
-          <DemoDataChip
-            demoActive={demoActive}
-            canShowDemo={!auth.anyLoggedIn && !hasLiveServerData && demoHidden}
-            onToggle={() => {
-              reset();
-              toggleDemoHidden();
-            }}
-          />
           {!archived && (
             <button
               type="button"
@@ -793,14 +631,6 @@ export function DownloadRecords({
               disabled={busy}
               onClick={() =>
                 void act(async () => {
-                  if (demoActive) {
-                    const completedDemo = demoRecords.filter(
-                      r => !demoArchivedIds.has(r.id) && r.status === 'success',
-                    );
-                    if (completedDemo.length) setConfirm(completedDemo);
-                    else pushToast('当前示例范围内没有可整理的已完成任务。', 'info');
-                    return;
-                  }
                   const params = new URLSearchParams({
                     q: query,
                     system,

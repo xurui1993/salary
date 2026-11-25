@@ -3,8 +3,7 @@ import {LanorangePriceFilters} from './LanorangePriceFilters';
 import {WorkbenchDatePicker} from './WorkbenchDatePicker';
 import {platformAuthRequest,PlatformAuthError} from '../lib/platformAuthApi';
 import {RefreshCw, ArrowRightLeft, CalendarRange, Download, FileSpreadsheet, KeyRound, ChevronRight} from 'lucide-react';
-import {shouldUseDemoData,useDemoDataVisibility,usePlatformAuthSnapshot} from '../lib/demoMode';
-import {DemoDataChip} from './DemoDataChip';
+import {usePlatformAuthSnapshot} from '../lib/demoMode';
 
 type Query={month:string;city:string;station:string;date_from:string;date_to:string};
 type Export={id:string;request_id:string;status:string;created:number;message:string;completed:number;total:number;rows:number;query:Query;receipts:{city:string;station:string;period:string;version:string;status:string;row_count:number;result:string;message:string}[]};
@@ -33,14 +32,10 @@ function exportStatusTone(status: string): string {
 export function LanorangePriceExports({apiFetch,workspaceId,lanorangeConnected,onActiveCount,onSwitchView,focusId,active:viewActive=true}:{apiFetch:(url:string,init?:RequestInit)=>Promise<Response>;workspaceId:string;lanorangeConnected?:boolean;onActiveCount:(count:number)=>void;onSwitchView?:(view:'approval'|'price-export')=>void;focusId?:string;active?:boolean}){
   const [query,setQuery]=useState<Query>(()=>({month:'2026-10',city:'',station:'',date_from:'',date_to:''}));
   const [history,setHistory]=useState<Export[]>([]),[job,setJob]=useState<Export|null>(null),[busy,setBusy]=useState(''),[error,setError]=useState(''),[notice,setNotice]=useState(''),[attempt,setAttempt]=useState<Attempt|null>(null);
-  const [demoHistory,setDemoHistory]=useState<Export[]>([]);
-  const [demoJob,setDemoJob]=useState<Export|null>(null);
   const auth=usePlatformAuthSnapshot();
-  const {demoHidden,toggleDemoHidden}=useDemoDataVisibility();
   const isLoggedIn=Boolean(lanorangeConnected || auth.isLoggedIn('lanorange'));
-  const demoActive=shouldUseDemoData({isLoggedIn,hasLiveData:history.length>0,demoHidden});
-  const displayHistory=demoActive?demoHistory:history;
-  const displayJob=demoActive?(demoJob || demoHistory[0] || null):job;
+  const displayHistory=history;
+  const displayJob=job;
   const fetchRef=useRef(apiFetch),alive=useRef(true),inflight=useRef(false),hasActiveRef=useRef(false);fetchRef.current=apiFetch;
   const key='lanorange-price-export-attempt:'+workspaceId;
   const request=<T,>(route:string,body?:object)=>platformAuthRequest<T>(fetchRef.current,BASE+route,body,30000);
@@ -97,13 +92,13 @@ export function LanorangePriceExports({apiFetch,workspaceId,lanorangeConnected,o
   },[isLoggedIn]);
 
   async function perform(kind:string,fn:()=>Promise<void>){if(inflight.current)return;inflight.current=true;setBusy(kind);setError('');setNotice('');try{await fn();}catch(err){if(alive.current)setError(err instanceof Error?err.message:'操作未完成');}finally{inflight.current=false;if(alive.current)setBusy('');}}
-  async function start(event:React.FormEvent){event.preventDefault();if(demoActive){const created:Export={id:`DEMO-PE-${Date.now().toString().slice(-6)}`,request_id:`demo-${Date.now()}`,status:'completed',created:Math.floor(Date.now()/1000),message:`示例模式：已模拟导出 ${query.month}${query.city?` · ${query.city}`:' 全部城市'} 待审每日价格`,completed:4,total:4,rows:468,query:{...query},receipts:(demoHistory[0]?.receipts||[]).slice(0,4)};setDemoHistory(prev=>[created,...prev]);setDemoJob(created);setNotice('示例模式：已生成本地模拟导出回执，真实登录蓝橙后将拉取正式价格表。');return;}await perform('start',async()=>{
+  async function start(event:React.FormEvent){event.preventDefault();await perform('start',async()=>{
     const current=attempt || {request_id:crypto.randomUUID(),query:{...query}};save(current);
     try{const value=await request<Export>('/exports',current);save(null);setJob(value);void refresh();}
     catch(err){if(err instanceof PlatformAuthError && err.uncertain)throw Error('本次导出提交尚未确认，请先查找本次导出；系统不会自动重发。');save(null);throw err;}
   });}
   async function find(){await perform('find',async()=>{const result=await request<{exports:Export[]}>('/exports');const found=result.exports.find(j=>j.request_id===attempt?.request_id);if(!found)throw Error('尚未找到本次提交，可使用原标识再次发起导出；不会创建重复任务。');setHistory(result.exports);setJob(found);save(null);});}
-  async function download(){if(!displayJob)return;if(demoActive){const csv=['城市,站点,周期,版本,状态,行数,结果,说明',...(displayJob.receipts||[]).map(r=>`${r.city},${r.station},${r.period},${r.version},${r.status},${r.row_count},${r.result},${r.message}`)].join('\r\n');const url=URL.createObjectURL(new Blob([`\uFEFF${csv}`],{type:'text/csv;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download=`${displayJob.query.month}_蓝橙待审每日价格_示例.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);setNotice('示例模式：已导出当前回执汇总表。');return;}await perform('download',async()=>{
+  async function download(){if(!displayJob)return;await perform('download',async()=>{
     const response=await fetchRef.current(BASE+`/exports/${displayJob.id}/result.xlsx`);if(!response.ok){const value=await response.json();throw Error(value.detail||'文件未就绪或校验失败');}const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=url;link.download=`${displayJob.query.month}_蓝橙待审每日价格${displayJob.status==='partial'?'_部分':''}.xlsx`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   });}
   const activeCount=displayHistory.filter(j=>ACTIVE.has(j.status)).length;
@@ -133,11 +128,6 @@ export function LanorangePriceExports({apiFetch,workspaceId,lanorangeConnected,o
       </div>
 
       <div className="wbx-ap-topbar__right">
-        <DemoDataChip
-          demoActive={demoActive}
-          canShowDemo={!isLoggedIn && history.length === 0 && demoHidden}
-          onToggle={toggleDemoHidden}
-        />
         <button
           type="button"
           className="wbx-btn wbx-btn--sm"
@@ -229,7 +219,7 @@ export function LanorangePriceExports({apiFetch,workspaceId,lanorangeConnected,o
         </div>
       )}
 
-      {!demoActive && error && (
+      {error && (
         <div className={`wbx-ap-notice mt-3 ${error.includes('登录') ? 'is-auth' : 'is-danger'}`} role="alert">
           <div className="wbx-ap-notice__body">
             <KeyRound size={15} className="wbx-ap-notice__icon" aria-hidden="true" />
@@ -274,8 +264,7 @@ export function LanorangePriceExports({apiFetch,workspaceId,lanorangeConnected,o
                 value={displayJob?.id || ''}
                 onChange={e => {
                   const next = displayHistory.find(j => j.id === e.target.value) || null;
-                  if (demoActive) setDemoJob(next);
-                  else setJob(next);
+                  setJob(next);
                 }}
               >
                 {displayJob && !displayHistory.some(j => j.id === displayJob.id) && (

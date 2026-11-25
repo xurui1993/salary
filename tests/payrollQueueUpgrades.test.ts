@@ -9,7 +9,6 @@ import {
   summarizePayrollTasks,
   type PayrollQueueTask,
 } from '../src/lib/payrollQueue';
-import { buildDemoPayrollTasks } from '../src/lib/showcaseDemoData';
 
 test('payrollQueueStatus labels error clearly and payrollQueueRunning includes queued for cancellation', () => {
   assert.equal(payrollQueueStatus('error').label, '核算失败');
@@ -112,11 +111,4 @@ test('summarizePayrollTasks, sortPayrollTasks, and detectDuplicateUploadNames wo
     detectDuplicateUploadNames(['上海-预支.xlsx', '北京-新批次.xlsx', '深圳-全额.xlsx', '广州-预支.xlsx'], tasks),
     ['上海-预支.xlsx', '深圳-全额.xlsx'],
   );
-
-  const demo = buildDemoPayrollTasks();
-  assert.equal(demo.length, 30);
-  const demoSummary = summarizePayrollTasks(demo);
-  assert.equal(demoSummary.count, 30);
-  assert.ok(demoSummary.amount > 0);
-  assert.ok(demoSummary.reviewAlertCount >= 1, 'demo payroll tasks should expose review alerts');
 });

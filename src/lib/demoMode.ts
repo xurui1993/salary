@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export type PlatformKey = 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang' | 'benlai';
 
@@ -18,15 +18,6 @@ export interface PlatformAuthLike {
 }
 
 export type PlatformAuthMap = Partial<Record<string, PlatformAuthLike | null | undefined>>;
-
-export interface DemoDataDecisionInput {
-  /** Whether the relevant platform (or any platform) has a real authenticated session */
-  isLoggedIn: boolean;
-  /** Whether real backend data is already present (live records always win over demo) */
-  hasLiveData: boolean;
-  /** Whether the user explicitly toggled demo data off while logged out */
-  demoHidden: boolean;
-}
 
 /**
  * Determine whether a single platform status represents a real authenticated session.
@@ -70,30 +61,7 @@ export function isSpecificPlatformAuthenticated(
   return isPlatformAuthenticated(platformStatuses?.[platform]);
 }
 
-/**
- * Pure decision rule for whether frontend showcase/demo data should be displayed.
- *
- * Core guarantee:
- * - As soon as a real login succeeds (`isLoggedIn === true`), returns `false`
- *   so the view switches immediately and exclusively to real backend data.
- * - If real backend records already exist (`hasLiveData === true`), returns `false`
- *   so live data is never hidden or mixed with demo records.
- * - While unauthenticated with no live records, respects the user's hide/show toggle.
- */
-export function shouldUseDemoData(input: DemoDataDecisionInput): boolean {
-  if (input.isLoggedIn) return false;
-  if (input.hasLiveData) return false;
-  if (input.demoHidden) return false;
-  return true;
-}
-
-// ---------------------------------------------------------------------------
-// Global reactive snapshot (bridges SystemConnections, FengshenLoginModal & views)
-// ---------------------------------------------------------------------------
-
-const DEMO_HIDDEN_STORAGE_KEY = 'workbench_demo_data_hidden';
-const DEMO_VISIBILITY_EVENT = 'workbench:demo-visibility-changed';
-const DEMO_AUTH_SYNC_EVENT = 'workbench:demo-auth-sync';
+const AUTH_SYNC_EVENT = 'workbench:platform-auth-sync';
 
 interface GlobalAuthStore {
   statuses: PlatformAuthMap;
@@ -114,7 +82,7 @@ function ensureGlobalAuthListener(): void {
     const detail = (event as CustomEvent).detail;
     if (detail && typeof detail === 'object') {
       globalAuthStore.statuses = detail as PlatformAuthMap;
-      window.dispatchEvent(new CustomEvent(DEMO_AUTH_SYNC_EVENT));
+      window.dispatchEvent(new CustomEvent(AUTH_SYNC_EVENT));
     }
   });
 }
@@ -134,7 +102,7 @@ export function syncGlobalPlatformAuth(
     globalAuthStore.fengshen = fengshenAuthStatus;
   }
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent(DEMO_AUTH_SYNC_EVENT));
+    window.dispatchEvent(new CustomEvent(AUTH_SYNC_EVENT));
   }
 }
 
@@ -163,50 +131,14 @@ export function usePlatformAuthSnapshot() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const onChange = () => setTick(v => v + 1);
-    window.addEventListener(DEMO_AUTH_SYNC_EVENT, onChange);
+    window.addEventListener(AUTH_SYNC_EVENT, onChange);
     window.addEventListener('workbench:platform-statuses', onChange);
     return () => {
-      window.removeEventListener(DEMO_AUTH_SYNC_EVENT, onChange);
+      window.removeEventListener(AUTH_SYNC_EVENT, onChange);
       window.removeEventListener('workbench:platform-statuses', onChange);
     };
   }, []);
 
   void tick;
   return getGlobalPlatformAuthSnapshot();
-}
-
-export function readDemoHiddenPreference(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    return sessionStorage.getItem(DEMO_HIDDEN_STORAGE_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-export function writeDemoHiddenPreference(hidden: boolean): void {
-  if (typeof window === 'undefined') return;
-  try {
-    if (hidden) sessionStorage.setItem(DEMO_HIDDEN_STORAGE_KEY, '1');
-    else sessionStorage.removeItem(DEMO_HIDDEN_STORAGE_KEY);
-  } catch {
-    // Ignore storage quota / sandbox restrictions
-  }
-  window.dispatchEvent(new CustomEvent(DEMO_VISIBILITY_EVENT, { detail: { hidden } }));
-}
-
-export function useDemoDataVisibility(): {
-  demoHidden: boolean;
-  setDemoHidden: (hidden: boolean) => void;
-  toggleDemoHidden: () => void;
-} {
-  const setDemoHidden = useCallback((_hidden: boolean) => {
-    // 示例数据已全局关闭，界面全部绑定真实数据
-  }, []);
-
-  const toggleDemoHidden = useCallback(() => {
-    // 示例数据已全局关闭，界面全部绑定真实数据
-  }, []);
-
-  return { demoHidden: true, setDemoHidden, toggleDemoHidden };
 }

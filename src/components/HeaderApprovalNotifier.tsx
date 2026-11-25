@@ -9,11 +9,7 @@ import {
   X,
 } from 'lucide-react';
 import { platformAuthRequest } from '../lib/platformAuthApi';
-import {
-  shouldUseDemoData,
-  useDemoDataVisibility,
-  usePlatformAuthSnapshot,
-} from '../lib/demoMode';
+import { usePlatformAuthSnapshot } from '../lib/demoMode';
 
 export interface ApprovalPendingTaskItem {
   id: string;
@@ -85,18 +81,11 @@ export function HeaderApprovalNotifier({
   const [loggedIn, setLoggedIn] = useState(false);
   const [actorLabel, setActorLabel] = useState('');
   const [rows, setRows] = useState<ApprovalPendingTaskItem[]>([]);
-  const [demoRows, setDemoRows] = useState<ApprovalPendingTaskItem[]>([]);
   const [unreadIds, setUnreadIds] = useState<string[]>([]);
   const [lastCheckedAt, setLastCheckedAt] = useState<string>('');
 
   const auth = usePlatformAuthSnapshot();
-  const { demoHidden } = useDemoDataVisibility();
   const isLanorangeLoggedIn = loggedIn || auth.isLoggedIn('lanorange');
-  const demoActive = shouldUseDemoData({
-    isLoggedIn: isLanorangeLoggedIn,
-    hasLiveData: rows.length > 0,
-    demoHidden,
-  });
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const fetchRef = useRef(apiFetch);
@@ -249,13 +238,9 @@ export function HeaderApprovalNotifier({
   useEffect(() => {
     const onUpdated = (event: Event) => {
       const detail = (event as CustomEvent).detail as
-        | { rows?: ApprovalPendingTaskItem[]; actor_label?: string; loggedOut?: boolean; demo?: boolean }
+        | { rows?: ApprovalPendingTaskItem[]; actor_label?: string; loggedOut?: boolean }
         | undefined;
       if (!detail) return;
-      if (detail.demo && Array.isArray(detail.rows)) {
-        setDemoRows(detail.rows);
-        return;
-      }
       if (detail.loggedOut) {
         snapshotEpochRef.current += 1;
         setLoggedIn(false);
@@ -292,13 +277,12 @@ export function HeaderApprovalNotifier({
     };
   }, [open]);
 
-  const displayRows = demoActive ? demoRows : rows;
+  const displayRows = rows;
   const pendingCount = displayRows.length;
   const eligibleCount = displayRows.filter(item => !item.reason).length;
   const unreadCount = isLanorangeLoggedIn ? unreadIds.length : 0;
   const hasUnread = unreadCount > 0;
 
-  // 统一将顶部待办与侧边栏审批徽标与当前展示列表保持一致（演示态展示示例数，真实登录后只展示后台数）
   useEffect(() => {
     onPendingCountChangeRef.current?.(pendingCount);
   }, [pendingCount]);
@@ -327,9 +311,7 @@ export function HeaderApprovalNotifier({
         title={
           isLanorangeLoggedIn
             ? `价格审批：当前待审批 ${pendingCount} 条（可同意 ${eligibleCount} 条）`
-            : demoActive
-              ? `价格审批示例待办 ${pendingCount} 条（登录蓝橙后自动切换真实数据）`
-              : '价格审批通知（未登录蓝橙账号）'
+            : '价格审批通知（未登录蓝橙账号）'
         }
         onClick={handleToggleOpen}
       >
@@ -375,16 +357,13 @@ export function HeaderApprovalNotifier({
                 >
                   待审 {pendingCount}
                 </span>
-                {demoActive && <span className="wbx-demo-badge">示例</span>}
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
                 {isLanorangeLoggedIn
                   ? `${actorLabel ? `账号：${actorLabel} · ` : ''}可同意 ${eligibleCount} 条${
                       lastCheckedAt ? ` · 更新于 ${lastCheckedAt}` : ''
                     }`
-                  : demoActive
-                    ? `演示数据 · 可同意 ${eligibleCount} 条 · 登录蓝橙后自动切换实时待办`
-                    : '连接蓝橙账号后自动实时巡检并推送新增待审提醒'}
+                  : '连接蓝橙账号后自动实时巡检并推送新增待审提醒'}
               </p>
             </div>
 
@@ -411,7 +390,7 @@ export function HeaderApprovalNotifier({
           </div>
 
           <div className="wbx-approval-popover__body">
-            {!isLanorangeLoggedIn && !demoActive ? (
+            {!isLanorangeLoggedIn ? (
               <div className="wbx-approval-popover__empty">
                 <span className="wbx-approval-popover__empty-icon">
                   <KeyRound size={18} />
@@ -494,19 +473,6 @@ export function HeaderApprovalNotifier({
           </div>
 
           <div className="wbx-approval-popover__foot flex items-center gap-2">
-            {demoActive && (
-              <button
-                type="button"
-                className="wbx-btn wbx-btn--sm shrink-0"
-                onClick={() => {
-                  setOpen(false);
-                  onOpenLanorangeAuth();
-                }}
-              >
-                <KeyRound size={12.5} aria-hidden="true" />
-                <span>登录蓝橙</span>
-              </button>
-            )}
             <button
               type="button"
               className="wbx-btn wbx-btn--primary wbx-btn--sm w-full justify-center"

@@ -22,8 +22,8 @@ import {
   getHeaderModuleContext,
   getPlatformStatusCluster,
   computeDownloadCapsuleState,
-  getDefaultSeedNotifications,
   filterNotificationTasks,
+  type NotificationTaskItem,
   toggleNotificationFilterTab,
   getStageHeaderMeta,
   getPlatformCardBadge,
@@ -297,8 +297,69 @@ test('Scheme B header context and multi-platform status cluster map module group
   );
 });
 
+const SAMPLE_NOTIFICATIONS: NotificationTaskItem[] = [
+  {
+    id: 'n_fengshen_active',
+    title: '风神采集中 · 宁波等3城',
+    scopeText: '宁波、杭州、上海 · 配送费、违规扣款',
+    periodText: '2026-09-01 ~ 2026-09-30',
+    systemTag: '风神',
+    kind: 'download',
+    status: 'running',
+    progress: 65,
+    phaseText: '正在导出并合并城市账单分片',
+    availableFiles: 0,
+    platformKey: 'fengshen',
+    createdAt: '刚刚',
+  },
+  {
+    id: 'n_fengshen_ready',
+    title: '闪购月度核算包 · 深圳、广州',
+    scopeText: '深圳、广州 · 配送费 + 月度UB账单 + 骑手绑定',
+    periodText: '2026-09-01 ~ 2026-09-30',
+    systemTag: '风神',
+    kind: 'download',
+    status: 'completed',
+    progress: 100,
+    phaseText: '已完成校验与归档',
+    availableFiles: 2,
+    claimed: false,
+    platformKey: 'fengshen',
+    createdAt: '10 分钟前',
+  },
+  {
+    id: 'n_shangyi_ready',
+    title: '商翼员工资料（全量）',
+    scopeText: '全部城市 · 商翼系统全量员工原始档案',
+    periodText: '全量快照',
+    systemTag: '商翼',
+    kind: 'download',
+    status: 'completed',
+    progress: 100,
+    phaseText: '已完成全量导出',
+    availableFiles: 1,
+    claimed: false,
+    platformKey: 'baize',
+    createdAt: '25 分钟前',
+  },
+  {
+    id: 'n_lanorange_failed',
+    title: '蓝橙骑手档案 · 导出异常',
+    scopeText: '全部站点 · 蓝橙全量骑手原始档案',
+    periodText: '全量快照',
+    systemTag: '蓝橙',
+    kind: 'download',
+    status: 'failed',
+    availableFiles: 0,
+    claimed: false,
+    platformKey: 'lanorange',
+    createdAt: '30 分钟前',
+    phaseText: '导出请求超时，请在任务中心重试或检查配置',
+  },
+];
+
 test('Scheme 1 download notification capsule computes running, blocked, completed, and idle states', () => {
-  const seed = getDefaultSeedNotifications();
+  const seed = SAMPLE_NOTIFICATIONS;
   const runningState = computeDownloadCapsuleState(seed);
   assert.equal(runningState.mode, 'running');
   assert.equal(runningState.tone, 'active');
@@ -335,19 +396,19 @@ test('Scheme 1 download notification capsule computes running, blocked, complete
 });
 
 test('notification popover header pills switch between downloading, completed, failed, and all tasks', () => {
-  const seed = getDefaultSeedNotifications();
+  const seed = SAMPLE_NOTIFICATIONS;
   assert.equal(filterNotificationTasks(seed, 'all').length, 4);
   assert.deepEqual(
     filterNotificationTasks(seed, 'downloading').map(item => item.id),
-    ['seed_fengshen_active'],
+    ['n_fengshen_active'],
   );
   assert.deepEqual(
     filterNotificationTasks(seed, 'completed').map(item => item.id),
-    ['seed_fengshen_ready', 'seed_shangyi_ready'],
+    ['n_fengshen_ready', 'n_shangyi_ready'],
   );
   assert.deepEqual(
     filterNotificationTasks(seed, 'failed').map(item => item.id),
-    ['seed_lanorange_failed'],
+    ['n_lanorange_failed'],
   );
 
   assert.equal(toggleNotificationFilterTab('all', 'downloading'), 'downloading');

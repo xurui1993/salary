@@ -92,10 +92,23 @@ async def _bind_request_workspace_context(request: Request, call_next):
 
 app.add_middleware(LegacyDownloadBoundary)
 
-# 配置跨域，方便本地前端(如 Vite)进行跨域调试
+# 仅放行本机与私有局域网来源（以及显式配置的 ALLOWED_ORIGINS），避免通配符凭据跨域
+_EXTRA_CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_EXTRA_CORS_ORIGINS,
+    allow_origin_regex=(
+        r"^https?://("
+        r"localhost|127\.0\.0\.1|\[::1\]|"
+        r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+        r"172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|"
+        r"192\.168\.\d{1,3}\.\d{1,3}"
+        r")(:\d+)?$"
+    ),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

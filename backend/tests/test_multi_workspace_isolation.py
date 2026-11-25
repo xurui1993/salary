@@ -116,7 +116,7 @@ class MultiWorkspaceIsolationTests(unittest.TestCase):
         self.assertEqual(boot["user"]["workspace_id"], "download_shared")
         admin_token = self.store.new_session(boot["user"]["id"])
 
-        # 3. Colleague self-registers -> pending status, cannot log in before approval
+        # 3. Public self-registration is enabled by default (creates pending account awaiting admin approval)
         reg_req = make_request(
             "POST",
             "/api/auth/register",
@@ -125,6 +125,17 @@ class MultiWorkspaceIsolationTests(unittest.TestCase):
         reg = asyncio.run(auth_routes.register(reg_req))
         self.assertEqual(reg["status"], "pending")
         self.assertEqual(self.store.pending_count(), 1)
+
+        # Explicitly disabling via ALLOW_SELF_REGISTRATION=0 blocks new public registrations with 403
+        with patch.dict(os.environ, {"ALLOW_SELF_REGISTRATION": "0"}):
+            blocked_reg_req = make_request(
+                "POST",
+                "/api/auth/register",
+                body={"username": "wangwu", "display_name": "王五", "password": "wangwuPassword123"},
+            )
+            with self.assertRaises(HTTPException) as reg_err:
+                asyncio.run(auth_routes.register(blocked_reg_req))
+            self.assertEqual(reg_err.exception.status_code, 403)
 
         login_pending_req = make_request(
             "POST",
@@ -262,6 +273,100 @@ class MultiWorkspaceIsolationTests(unittest.TestCase):
                 adm_st = pac.get_status(shared_src, adm_req)
             self.assertTrue(adm_st["shared"])
             self.assertTrue(adm_st["can_manage"])
+
+    def test_iframe_cookie_requires_authenticated_proxy_https_header(self):
+        with patch.dict(os.environ, {"FENGSHEN_DOWNLOAD_PROXY_SECRET": "test-proxy-secret"}):
+            # Forged header without valid proxy secret -> stays plain HTTP SameSite=Lax
+            forged_req = make_request(
+                "POST",
+                "/api/auth/login",
+                host="localhost:3000",
+                client="127.0.0.1",
+                headers={"x-download-proxy-https": "1"},
+            )
+            forged_res = Response()
+            auth_routes._set_session_cookie(forged_res, forged_req, "tok-1")
+            forged_cookie = forged_res.headers.get("set-cookie", "").lower()
+            self.assertIn("samesite=lax", forged_cookie)
+            self.assertNotIn("partitioned", forged_cookie)
+
+            # Valid loopback proxy secret + x-download-proxy-https: 1 -> Secure + SameSite=None + Partitioned
+            trusted_req = make_request(
+                "POST",
+                "/api/auth/login",
+                host="localhost:3000",
+                client="127.0.0.1",
+                headers={
+                    "x-download-proxy-secret": "test-proxy-secret",
+                    "x-download-client-address": "127.0.0.1",
+                    "x-download-proxy-https": "1",
+                },
+            )
+            trusted_res = Response()
+            auth_routes._set_session_cookie(trusted_res, trusted_req, "tok-2")
+            trusted_cookie = trusted_res.headers.get("set-cookie", "").lower()
+            self.assertIn("samesite=none", trusted_cookie)
+            self.assertIn("secure", trusted_cookie)
+            self.assertIn("httponly", trusted_cookie)
+            self.assertIn("partitioned", trusted_cookie)
+
+            clear_res = Response()
+            auth_routes._clear_session_cookie(clear_res, trusted_req)
+            clear_cookie = clear_res.headers.get("set-cookie", "").lower()
+            self.assertIn("samesite=none", clear_cookie)
+            self.assertIn("secure", clear_cookie)
+            self.assertIn("partitioned", clear_cookie)
+
+    def test_public_registration_rate_limit_and_lan_pending_approval(self):
+        # Remote LAN client cannot initialize host admin (403)
+        remote_boot_req = make_request(
+            "POST",
+            "/api/auth/bootstrap",
+            host="192.168.1.10:3000",
+            client="192.168.1.55",
+            body={"username": "host_admin", "display_name": "主机管理员", "password": "StrongAdminPassword1!"},
+        )
+        with self.assertRaises(HTTPException) as remote_boot_err:
+            asyncio.run(auth_routes.bootstrap_admin(remote_boot_req, Response()))
+        self.assertEqual(remote_boot_err.exception.status_code, 403)
+
+        # Host machine (loopback) can initialize host admin
+        boot_req = make_request(
+            "POST",
+            "/api/auth/bootstrap",
+            host="127.0.0.1:3000",
+            client="127.0.0.1",
+            body={"username": "host_admin", "display_name": "主机管理员", "password": "StrongAdminPassword1!"},
+        )
+        boot = asyncio.run(auth_routes.bootstrap_admin(boot_req, Response()))
+        self.assertTrue(boot["self_registration_enabled"])
+        self.assertTrue(self.store.initialized())
+
+        # LAN client can submit public registration and receives pending status; rate limit enforces ceiling
+        with patch.dict(os.environ, {"REGISTER_RATE_LIMIT": "2"}):
+            for idx in range(2):
+                lan_req = make_request(
+                    "POST",
+                    "/api/auth/register",
+                    host="192.168.1.10:3000",
+                    client="192.168.1.55",
+                    body={"username": f"lan_user_{idx}", "display_name": f"局域网成员{idx}", "password": "LanUser123456"},
+                )
+                res = asyncio.run(auth_routes.register(lan_req))
+                self.assertEqual(res["status"], "pending")
+
+            # 3rd registration from same LAN IP within window hits 429 rate limit
+            throttled_req = make_request(
+                "POST",
+                "/api/auth/register",
+                host="192.168.1.10:3000",
+                client="192.168.1.55",
+                body={"username": "lan_user_2", "display_name": "局域网成员2", "password": "LanUser123456"},
+            )
+            with self.assertRaises(HTTPException) as limit_err:
+                asyncio.run(auth_routes.register(throttled_req))
+            self.assertEqual(limit_err.exception.status_code, 429)
+            self.assertEqual(self.store.pending_count(), 2)
 
 
 if __name__ == "__main__":

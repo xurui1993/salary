@@ -34,13 +34,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import {
-  shouldUseDemoData,
-  useDemoDataVisibility,
-  usePlatformAuthSnapshot,
-} from '../lib/demoMode';
-import { buildDemoDeductionData } from '../lib/showcaseDemoData';
-import { DemoDataChip } from './DemoDataChip';
+import { usePlatformAuthSnapshot } from '../lib/demoMode';
 
 function readErrorMessage(err: unknown, networkFallback: string): string {
   const raw = err instanceof Error ? err.message : typeof err === 'string' ? err : '';
@@ -99,24 +93,9 @@ export function StationDeductionManager({
   const directory = useStationDirectory(currentPlatform, apiFetch);
 
   const auth = usePlatformAuthSnapshot();
-  const { demoHidden, toggleDemoHidden } = useDemoDataVisibility();
-
-  const [demoStore, setDemoStore] = useState<
-    Record<'fengshen' | 'xiaoxiang', ReturnType<typeof buildDemoDeductionData>>
-  >(() => ({
-    fengshen: { platform: 'fengshen', profile: { version: 0 }, columns: [], entries: [], cities: [] } as unknown as ReturnType<typeof buildDemoDeductionData>,
-    xiaoxiang: { platform: 'xiaoxiang', profile: { version: 0 }, columns: [], entries: [], cities: [] } as unknown as ReturnType<typeof buildDemoDeductionData>,
-  }));
-
   const isPlatformLoggedIn = auth.isLoggedIn(currentPlatform);
-  const hasLiveData = entries.length > 0 || cities.length > 0;
-  const demoActive = shouldUseDemoData({
-    isLoggedIn: isPlatformLoggedIn,
-    hasLiveData,
-    demoHidden,
-  });
 
-  // 真实登录后立即重置演示态并重新拉取该平台后台扣款配置
+  // 真实登录后重新拉取该平台后台扣款配置
   const prevPlatformLoggedInRef = useRef(isPlatformLoggedIn);
   useEffect(() => {
     if (isPlatformLoggedIn && !prevPlatformLoggedInRef.current) {
@@ -167,47 +146,21 @@ export function StationDeductionManager({
     return () => controller.abort();
   }, [currentPlatform, directory.data?.stations?.length, directory.data?.fetched_at, directory.data?.status, reloadKey, dirty]);
 
-  const currentDemo = demoStore[currentPlatform];
-  const displayProfile = demoActive
-    ? {
-        platform: currentPlatform,
-        version: currentDemo.profile.version,
-        columns: currentDemo.columns,
-        entries: currentDemo.entries,
-        cities: currentDemo.cities,
-        demo: true,
-      }
-    : profile;
-  const displayEntries = demoActive ? currentDemo.entries : entries;
-  const displayCities = demoActive ? currentDemo.cities : cities;
+  const displayProfile = profile;
+  const displayEntries = entries;
+  const displayCities = cities;
 
   const setActiveEntries = (updater: any[] | ((prev: any[]) => any[])) => {
-    if (demoActive) {
-      setDemoStore(prev => {
-        const cur = prev[currentPlatform];
-        const nextEntries = typeof updater === 'function' ? updater(cur.entries) : updater;
-        return { ...prev, [currentPlatform]: { ...cur, entries: nextEntries } };
-      });
-      return;
-    }
     setEntries(updater as any);
   };
 
   const setActiveCities = (updater: any[] | ((prev: any[]) => any[])) => {
-    if (demoActive) {
-      setDemoStore(prev => {
-        const cur = prev[currentPlatform];
-        const nextCities = typeof updater === 'function' ? updater(cur.cities) : updater;
-        return { ...prev, [currentPlatform]: { ...cur, cities: nextCities } };
-      });
-      return;
-    }
     setCities(updater as any);
   };
 
   const effectiveDirectoryCities = useMemo(
-    () => (demoActive ? currentDemo.directoryCities : directory.data?.cities || []),
-    [demoActive, currentDemo.directoryCities, directory.data?.cities],
+    () => directory.data?.cities || [],
+    [directory.data?.cities],
   );
 
   const activeColumns: string[] = useMemo(
@@ -263,12 +216,12 @@ export function StationDeductionManager({
     if (!displayCities.length && !displayEntries.length) return;
     const firstCityId = displayCities[0]?.station?.city_id || displayEntries[0]?.station?.city_id || '';
     if (!firstCityId) return;
-    const signature = `${currentPlatform}:${demoActive ? 'demo' : 'live'}:${firstCityId}:${displayEntries.length > 0 ? '1' : '0'}`;
+    const signature = `${currentPlatform}:live:${firstCityId}:${displayEntries.length > 0 ? '1' : '0'}`;
     if (initializedExpandRef.current !== signature) {
       initializedExpandRef.current = signature;
       setActiveCityId(null);
     }
-  }, [displayCities, displayEntries, currentPlatform, demoActive]);
+  }, [displayCities, displayEntries, currentPlatform]);
 
   const pendingCount = displayEntries.filter(item => !item.configured).length;
   const configuredCount = displayEntries.length - pendingCount;
@@ -327,40 +280,11 @@ export function StationDeductionManager({
     setProblemPreview(null);
     setUndoEntries(null);
     setError('');
-    if (demoActive) {
-      setDemoStore(prev => ({ ...prev, [currentPlatform]: buildDemoDeductionData(currentPlatform) }));
-      setNotice('示例模式：已还原为初始示例扣款配置。');
-      return;
-    }
     setNotice('已放弃未保存的修改，恢复为上次保存的扣款配置。');
     setReloadKey(val => val + 1);
   };
 
   async function handleSave() {
-    if (demoActive) {
-      setDemoStore(prev => {
-        const cur = prev[currentPlatform];
-        return {
-          ...prev,
-          [currentPlatform]: {
-            ...cur,
-            profile: {
-              ...cur.profile,
-              version: `${cur.profile.version}-saved`,
-            },
-            cities: cur.cities.map(c => ({ ...c, edited: false })),
-            entries: cur.entries.map(e => ({ ...e, edited: false })),
-          },
-        };
-      });
-      setDirty(false);
-      setProblemDirty(false);
-      setPendingProblemRows(null);
-      setProblemPreview(null);
-      setUndoEntries(null);
-      setNotice('示例模式：修改已保存在本地预览，登录真实平台后可同步至后台。');
-      return;
-    }
     if (!profile) return;
     setSaving(true);
     setError('');
@@ -545,7 +469,7 @@ export function StationDeductionManager({
           `关键词规则：识别城市 ${kwResult.matchedCityRules} 条、站点 ${kwResult.matchedStationRules} 条（新增 ${kwResult.diff.addedCount} / 变更 ${kwResult.diff.updatedCount} / 移除 ${kwResult.diff.removedCount}）`,
         );
 
-        if (!demoActive && itemRows.length === 0) {
+        if (itemRows.length === 0) {
           const res = await apiFetch(`/api/workbench/deduction-profiles/${currentPlatform}/problem-rules/preview`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -601,14 +525,12 @@ export function StationDeductionManager({
     else onClose?.();
   };
 
-  const errorMessage = demoActive
-    ? ''
-    : String(
-        error ||
-          (directory.error ? readErrorMessage(directory.error, '扣款配置读取失败，请检查后台连接后重试') : '') ||
-          directory.data?.message ||
-          '',
-      );
+  const errorMessage = String(
+    error ||
+      (directory.error ? readErrorMessage(directory.error, '扣款配置读取失败，请检查后台连接后重试') : '') ||
+      directory.data?.message ||
+      '',
+  );
 
   const visibleProblemRules = useMemo(() => {
     const visibleCityIds = activeCityGroup
@@ -676,15 +598,6 @@ export function StationDeductionManager({
         </div>
 
         <div className="wbx-ded-topbar__right">
-          <DemoDataChip
-            demoActive={demoActive}
-            canShowDemo={!isPlatformLoggedIn && !hasLiveData && demoHidden}
-            onToggle={() => {
-              setActiveCityId(null);
-              setSelectedStations(new Set());
-              toggleDemoHidden();
-            }}
-          />
           <button
             type="button"
             className="wbx-btn wbx-btn--sm"
@@ -1181,7 +1094,7 @@ export function StationDeductionManager({
           </button>
           <button
             className="wb-primary"
-            disabled={saving || !dirty || (!demoActive && directory.data?.status !== 'ready')}
+            disabled={saving || !dirty || directory.data?.status !== 'ready'}
             onClick={() => void handleSave()}
           >
             {saving ? '保存中…' : '保存后续默认扣款'}
@@ -1220,7 +1133,7 @@ export function StationDeductionManager({
             <button
               type="button"
               className="wbx-btn wbx-btn--primary wbx-btn--sm"
-              disabled={saving || (!demoActive && directory.data?.status !== 'ready')}
+              disabled={saving || directory.data?.status !== 'ready'}
               onClick={() => void handleSave()}
             >
               {saving ? '保存中…' : '保存后续默认扣款'}

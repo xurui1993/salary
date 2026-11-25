@@ -36,6 +36,7 @@ SESSION_SECONDS = 24 * 60 * 60
 PASSWORD_ITERATIONS = 600_000
 LOGIN_WINDOW = 15 * 60
 LOGIN_LIMIT = 5
+REGISTER_WINDOW = 15 * 60
 _PRIVATE_V4 = tuple(ipaddress.ip_network(value) for value in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
 _PRIVATE_V6 = ipaddress.ip_network("fc00::/7")
 _singleton = None
@@ -455,8 +456,16 @@ class AccountStore:
         initialize_workspace_storage(wid)
         return _row_to_user(row)
 
-    def register_user(self, username: str, password: str, *, display_name: str = "", note: str = "") -> dict:
-        """Colleague self-registration: creates a pending account awaiting admin approval."""
+    def register_user(
+        self,
+        username: str,
+        password: str,
+        *,
+        display_name: str = "",
+        note: str = "",
+        address: str = "",
+    ) -> dict:
+        """Public colleague registration: creates a pending account awaiting admin approval."""
         if not self.initialized():
             raise HTTPException(409, "系统尚未初始化主机管理员，请先由管理员在本机完成初始化")
         username, key, password = _credentials(username, password)
@@ -465,21 +474,66 @@ class AccountStore:
         encoded = _password_hash(password)
         default_perms = normalize_permissions("member", "payroll_specialist")
         now = time.time()
+        try:
+            register_limit = max(1, int(os.environ.get("REGISTER_RATE_LIMIT", "10")))
+        except ValueError:
+            register_limit = 10
+        try:
+            pending_cap = max(1, int(os.environ.get("PENDING_QUEUE_LIMIT", "100")))
+        except ValueError:
+            pending_cap = 100
+        addr_bucket = (
+            hashlib.sha256(("register:" + address.strip()).encode()).hexdigest()
+            if address and address.strip()
+            else ""
+        )
         with self._lock, self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            if addr_bucket:
+                limit_row = connection.execute(
+                    "SELECT * FROM login_limits WHERE key = ?",
+                    (addr_bucket,),
+                ).fetchone()
+                if (
+                    limit_row
+                    and now - limit_row["started_at"] < REGISTER_WINDOW
+                    and limit_row["failures"] >= register_limit
+                ):
+                    raise HTTPException(
+                        429,
+                        "当前网络注册请求过于频繁，请15分钟后再试",
+                        headers={"Retry-After": str(REGISTER_WINDOW)},
+                    )
             existing = connection.execute("SELECT * FROM accounts WHERE username_key = ?", (key,)).fetchone()
             if existing is not None:
                 if existing["status"] == "pending":
                     raise HTTPException(409, "该用户名已提交过注册申请，正在等待管理员审批")
                 if existing["status"] == "rejected":
+                    pending_total = int(
+                        connection.execute("SELECT COUNT(*) FROM accounts WHERE status = 'pending'").fetchone()[0]
+                    )
+                    if pending_total >= pending_cap:
+                        raise HTTPException(429, "当前待审批申请队列已满，请联系系统管理员处理后再提交")
                     connection.execute(
                         "UPDATE accounts SET username = ?, password_hash = ?, display_name = ?, note = ?, "
                         "status = 'pending', enabled = 0, updated_at = ? WHERE id = ?",
                         (username, encoded, clean_display, clean_note, now, existing["id"]),
                     )
+                    if addr_bucket:
+                        connection.execute(
+                            "INSERT INTO login_limits VALUES (?, ?, 1) ON CONFLICT(key) DO UPDATE SET "
+                            "failures = CASE WHEN ? - started_at >= ? THEN 1 ELSE failures + 1 END, "
+                            "started_at = CASE WHEN ? - started_at >= ? THEN ? ELSE started_at END",
+                            (addr_bucket, now, now, REGISTER_WINDOW, now, REGISTER_WINDOW, now),
+                        )
                     row = connection.execute("SELECT * FROM accounts WHERE id = ?", (existing["id"],)).fetchone()
                     return _row_to_user(row)
                 raise HTTPException(409, "该用户名已被使用，请更换其他用户名")
+            pending_total = int(
+                connection.execute("SELECT COUNT(*) FROM accounts WHERE status = 'pending'").fetchone()[0]
+            )
+            if pending_total >= pending_cap:
+                raise HTTPException(429, "当前待审批申请队列已满，请联系系统管理员处理后再提交")
             user_id = uuid.uuid4().hex
             wid = f"ws_{user_id[:12]}"
             connection.execute(
@@ -488,6 +542,13 @@ class AccountStore:
                 "VALUES (?, ?, ?, ?, 'member', 0, ?, ?, 'pending', ?, 'payroll_specialist', ?, ?, ?)",
                 (user_id, username, key, encoded, now, clean_display, wid, json.dumps(default_perms, ensure_ascii=False), clean_note, now),
             )
+            if addr_bucket:
+                connection.execute(
+                    "INSERT INTO login_limits VALUES (?, ?, 1) ON CONFLICT(key) DO UPDATE SET "
+                    "failures = CASE WHEN ? - started_at >= ? THEN 1 ELSE failures + 1 END, "
+                    "started_at = CASE WHEN ? - started_at >= ? THEN ? ELSE started_at END",
+                    (addr_bucket, now, now, REGISTER_WINDOW, now, REGISTER_WINDOW, now),
+                )
             row = connection.execute("SELECT * FROM accounts WHERE id = ?", (user_id,)).fetchone()
         return _row_to_user(row)
 
