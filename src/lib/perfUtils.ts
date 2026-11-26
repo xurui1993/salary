@@ -100,8 +100,32 @@ export function areSystemStatsVisuallyEqual(
 }
 
 /**
+ * Timestamps and countdown fields that tick on every poll without carrying any new
+ * UI-relevant state. They are ignored so polling can skip redundant renders.
+ */
+const VOLATILE_STATUS_KEYS = new Set([
+  'checked_at',
+  'verified_at',
+  'updated_at',
+  'phase_started_at',
+  'sms_retry_after',
+  'retry_after',
+  '_clock',
+]);
+
+function platformStatusSignature(value: unknown): string {
+  return JSON.stringify(value, (key, item) =>
+    VOLATILE_STATUS_KEYS.has(key) ? undefined : item,
+  );
+}
+
+/**
  * Compare two single-platform status snapshots so background polling in SystemConnections
  * skips state updates and CustomEvent broadcasts when nothing changed.
+ *
+ * The comparison must cover every field the login UI consumes (QR version, input
+ * completion, form/field state, feedback…): comparing only coarse badge fields makes the
+ * embedded login panel freeze on its first snapshot while `waiting_login`.
  */
 export function isPlatformStatusRecordEqual(
   prev: Record<string, any> | undefined | null,
@@ -109,15 +133,7 @@ export function isPlatformStatusRecordEqual(
 ): boolean {
   if (prev === next) return true;
   if (!prev || !next) return false;
-  return (
-    (prev.state ?? '') === (next.state ?? '') &&
-    Boolean(prev.saved) === Boolean(next.saved) &&
-    Boolean(prev.offline) === Boolean(next.offline) &&
-    (prev.session_version ?? '') === (next.session_version ?? '') &&
-    (prev.account_label ?? '') === (next.account_label ?? '') &&
-    (prev.message ?? '') === (next.message ?? '') &&
-    (prev.updated_at ?? '') === (next.updated_at ?? '')
-  );
+  return platformStatusSignature(prev) === platformStatusSignature(next);
 }
 
 /**
