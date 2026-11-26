@@ -19,6 +19,7 @@ from download_accounts import (
 )
 from fengshen_auth import BROKER
 import binding_source_auth as sources
+import platform_account_pool as pool
 
 KEYS = ('fengshen', 'lanorange', 'lanorange_mdr', 'baize', 'xiaoxiang', 'benlai')
 SHARED_SOURCES = frozenset({'xiaoxiang', 'benlai'})
@@ -95,16 +96,31 @@ def status(source, user=None):
     from function_availability import snapshot
     is_shared = source in SHARED_SOURCES
     can_manage = can_manage_shared_auth(resolved_user) if (is_shared and resolved_user is not None) else True
-    return {
+    src_files = files(source)
+    payload = {
         **base,
         'capabilities': snapshot(source, fingerprint),
         'diagnostics': history(source),
         'source': source,
         'session_version': fingerprint,
-        'saved': any(p.exists() for p in files(source)),
+        'saved': any(p.exists() for p in src_files),
         'shared': is_shared,
         'can_manage': can_manage,
     }
+    accounts, active_account_id, pending_new_account = pool.sync_pool_with_status(
+        source, src_files, payload
+    )
+    if payload.get('saved') and active_account_id:
+        active_acct = next((a for a in accounts if a.get('slot_id') == active_account_id), None)
+        if active_acct:
+            if not payload.get('account_label') and active_acct.get('account_label'):
+                payload['account_label'] = active_acct['account_label']
+            if not payload.get('organization') and active_acct.get('organization'):
+                payload['organization'] = active_acct['organization']
+    payload['accounts'] = accounts
+    payload['active_account_id'] = active_account_id
+    payload['pending_new_account'] = pending_new_account
+    return payload
 
 
 def display_identity(data):
@@ -179,7 +195,7 @@ def check(source, force=False, deep=False):
         before = status(source)
         if before.get('busy') or before['state'] in ('starting', 'waiting_login', 'refreshing'):
             raise HTTPException(409, '认证正在进行，请先完成或取消认证')
-        meta = META.get(source, {})
+        meta = META.get(_scope_key(source)) or META.get(source, {})
         if not force and (not deep or meta.get('verification_level') == 'deep') and meta.get('session_version') == before['session_version'] and time.monotonic()-meta.get('_clock', 0) < 20:
             return before
         started = time.monotonic()
@@ -312,8 +328,61 @@ def disconnect(source, expected, *, guarded=False):
                     controller.resume_state = None
                     controller.stages = {'lighthouse': 'pending', 'board': 'pending'}
                     controller.board_reused = False
+            pool.remove_active_slot_on_disconnect(source, files(source))
             discard_meta(source)
             return status(source)
+
+
+def _apply_slot_to_controller(source: str, slot: dict) -> None:
+    controller = BROKER if source == 'fengshen' else target(source)
+    slot_state = slot.get('state') if slot.get('state') in ('ready', 'partial', 'saved') else 'saved'
+    label = (slot.get('alias') or slot.get('account_label') or '').strip()
+    slot_msg = f'已切换至账户「{label}」' if label else '已切换至所选平台账户'
+    with controller.lock:
+        if source == 'fengshen':
+            BROKER.saved_digest = None
+            BROKER.update(slot_state, slot_msg)
+        else:
+            controller.epochs[source] = controller.epochs.get(source, 0) + 1
+            controller.states[source] = {
+                'state': slot_state,
+                'message': slot_msg,
+                'account_label': slot.get('account_label') or '',
+                'organization': slot.get('organization') or '',
+            }
+    fp = version(source)
+    now_iso = datetime.now(timezone.utc).isoformat()
+    META[_scope_key(source)] = {
+        'session_version': fp,
+        'state': slot_state,
+        'message': slot_msg,
+        'account_label': slot.get('account_label') or '',
+        'organization': slot.get('organization') or '',
+        'checked_at': now_iso,
+        'verified_at': now_iso,
+        '_clock': time.monotonic(),
+    }
+
+
+def _reset_controller_for_new_account(source: str) -> None:
+    controller = BROKER if source == 'fengshen' else target(source)
+    msg = '现有账户已保留至账户列表，请登录新账户'
+    with controller.lock:
+        if source == 'fengshen':
+            BROKER.saved_digest = None
+            BROKER.update('signed_out', msg)
+        else:
+            controller.epochs[source] = controller.epochs.get(source, 0) + 1
+            controller.states[source] = {'state': 'signed_out', 'message': msg}
+            for store in (controller.desktop, controller.form_bindings, controller.inputs):
+                store.pop(source, None)
+            getattr(controller, 'pending_credentials', {}).pop(source, None)
+            getattr(controller, 'credential_prompt', {}).pop(source, None)
+            if source == 'xiaoxiang':
+                controller.resume_state = None
+                controller.stages = {'lighthouse': 'pending', 'board': 'pending'}
+                controller.board_reused = False
+    discard_meta(source)
 
 
 def auth_busy(source):
@@ -364,11 +433,77 @@ async def do_logout(source:str,request:Request):
     return await run_in_threadpool(_run)
 
 
+@router.post('/{source}/accounts/prepare-add')
+def do_prepare_add_account(source: str, request: Request):
+    user = _require_platform_operator(request, source)
+    with operation(source), idle_guard(source):
+        if auth_busy(source):
+            raise HTTPException(409, '当前有正在进行的登录认证，请先完成或取消')
+        current = status(source, user=user)
+        pool.prepare_add_account(source, files(source), current)
+        _reset_controller_for_new_account(source)
+        return status(source, user=user)
+
+
+@router.post('/{source}/accounts/{slot_id}/activate')
+def do_activate_account(source: str, slot_id: str, request: Request):
+    user = _require_platform_operator(request, source)
+    with operation(source), idle_guard(source):
+        if auth_busy(source):
+            raise HTTPException(409, '当前有正在进行的登录认证，请先完成或取消后再切换账户')
+        current = status(source, user=user)
+        slot = pool.activate_slot(source, files(source), slot_id, current)
+        _apply_slot_to_controller(source, slot)
+        return status(source, user=user)
+
+
+@router.post('/{source}/accounts/{slot_id}/alias')
+@router.patch('/{source}/accounts/{slot_id}')
+async def do_update_account_alias(source: str, slot_id: str, request: Request):
+    user = _require_platform_operator(request, source)
+    data = await request.json()
+    if not isinstance(data, dict):
+        raise HTTPException(400, '请求格式无效')
+    alias = str(data.get('alias') or '').strip()
+    with operation(source):
+        pool.update_slot_alias(source, files(source), slot_id, alias)
+        return status(source, user=user)
+
+
+@router.post('/{source}/accounts/{slot_id}/remove')
+def do_remove_account(source: str, slot_id: str, request: Request):
+    user = _require_platform_operator(request, source)
+    with operation(source), idle_guard(source):
+        if auth_busy(source):
+            raise HTTPException(409, '当前有正在进行的登录认证，请先完成或取消后再移除账户')
+        current = status(source, user=user)
+        if current.get('saved'):
+            pool.sync_pool_with_status(source, files(source), current)
+        was_active, next_slot_id = pool.remove_slot(source, files(source), slot_id)
+        if was_active:
+            if next_slot_id:
+                slot = pool.activate_slot(source, files(source), next_slot_id, {'saved': False})
+                _apply_slot_to_controller(source, slot)
+            elif any(p.exists() for p in files(source)):
+                disconnect(source, version(source), guarded=True)
+        return status(source, user=user)
+
+
 @router.get('/baize/accounts')
 def baize_accounts(request: Request):
     require_account(request)
     from baize_accounts import snapshot
-    return snapshot()
+    data = snapshot()
+    if isinstance(data, dict) and data.get('state') == 'ready':
+        pool.enrich_active_slot_identity(
+            'baize',
+            files('baize'),
+            account_label=str(data.get('account_label') or ''),
+            organization=str(data.get('organization') or ''),
+            account_type=str(data.get('account_type') or ''),
+            region_text=str(data.get('region_text') or ''),
+        )
+    return data
 
 
 @router.get('/{source}')

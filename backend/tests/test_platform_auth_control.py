@@ -154,5 +154,56 @@ class PlatformControlTests(unittest.TestCase):
         fake.identity.assert_called_once()
         fake.close.assert_called_once()
 
+    def test_multi_account_pool_concurrent_login_switch_alias_and_remove(self):
+        import platform_account_pool as pool
+        with patch.object(control, 'probe', return_value={'account_label': '闪购账号A', 'organization': '杭州商翼'}):
+            st1 = control.check('baize')
+        self.assertEqual(len(st1['accounts']), 1)
+        slot1_id = st1['active_account_id']
+        self.assertEqual(st1['accounts'][0]['account_label'], '闪购账号A')
+        self.assertTrue(st1['accounts'][0]['is_active'])
+
+        # Prepare adding a 2nd account: active files are cleared while Account A stays in pool
+        pool.prepare_add_account('baize', control.files('baize'), st1)
+        control._reset_controller_for_new_account('baize')
+        st_pending = control.status('baize')
+        self.assertFalse(st_pending['saved'])
+        self.assertEqual(len(st_pending['accounts']), 1)
+        self.assertFalse(st_pending['accounts'][0]['is_active'])
+
+        # Log into Account B
+        self.session.write_bytes(b'synthetic-encrypted-token-account-B')
+        self.storage.write_bytes(b'synthetic-encrypted-state-account-B')
+        with patch.object(control, 'probe', return_value={'account_label': '小象账号B', 'organization': '上海商翼'}):
+            st2 = control.check('baize', force=True)
+        self.assertEqual(len(st2['accounts']), 2)
+        slot2_id = st2['active_account_id']
+        self.assertNotEqual(slot1_id, slot2_id)
+
+        # Switch back to Account A in 1 click without re-login
+        slot1_data = pool.activate_slot('baize', control.files('baize'), slot1_id, st2)
+        control._apply_slot_to_controller('baize', slot1_data)
+        st_switched = control.status('baize')
+        self.assertEqual(st_switched['active_account_id'], slot1_id)
+        self.assertEqual(self.session.read_bytes(), b'synthetic-encrypted-token')
+        self.assertEqual(st_switched['account_label'], '闪购账号A')
+
+        # Set custom alias on Account A
+        pool.update_slot_alias('baize', control.files('baize'), slot1_id, '华东闪购主号')
+        st_aliased = control.status('baize')
+        acct1 = next(a for a in st_aliased['accounts'] if a['slot_id'] == slot1_id)
+        self.assertEqual(acct1['alias'], '华东闪购主号')
+
+        # Remove active Account A -> automatically recommends next slot (Account B)
+        was_active, next_slot_id = pool.remove_slot('baize', control.files('baize'), slot1_id)
+        self.assertTrue(was_active)
+        self.assertEqual(next_slot_id, slot2_id)
+        slot2_data = pool.activate_slot('baize', control.files('baize'), next_slot_id, {'saved': False})
+        control._apply_slot_to_controller('baize', slot2_data)
+        st_after_remove = control.status('baize')
+        self.assertEqual(len(st_after_remove['accounts']), 1)
+        self.assertEqual(st_after_remove['active_account_id'], slot2_id)
+        self.assertEqual(self.session.read_bytes(), b'synthetic-encrypted-token-account-B')
+
 
 if __name__ == '__main__': unittest.main()

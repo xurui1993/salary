@@ -5749,3 +5749,595 @@
 @media (max-width: 760px) {
   .issue-rule-condition { grid-template-columns: 1fr; }
 }
+
+/* ==========================================================================
+   统一平台登录验证弹窗 (UnifiedPlatformAuthModal & SourceLoginPanel)
+   ========================================================================== */
+.wbx-unified-auth-modal {
+  max-width: 468px;
+  max-height: min(92vh, 740px);
+}
+
+.wbx-unified-auth-modal .wbx-fs-modal__badge.is-lanorange {
+  background: linear-gradient(145deg, #f59e0b 0%, #d97706 100%);
+  box-shadow:
+    0 8px 18px -5px rgba(217, 119, 6, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.wbx-unified-auth-modal .wbx-fs-modal__badge.is-lanorange_mdr {
+  background: linear-gradient(145deg, #06b6d4 0%, #0284c7 100%);
+  box-shadow:
+    0 8px 18px -5px rgba(2, 132, 199, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.wbx-unified-auth-modal .wbx-fs-modal__badge.is-baize {
+  background: linear-gradient(145deg, #10b981 0%, #059669 100%);
+  box-shadow:
+    0 8px 18px -5px rgba(5, 150, 105, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.wbx-unified-auth-modal .wbx-fs-modal__badge.is-benlai {
+  background: linear-gradient(145deg, #3b82f6 0%, #1d4ed8 100%);
+  box-shadow:
+    0 8px 18px -5px rgba(29, 78, 216, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.wbx-unified-auth-modal .wbx-fs-modal__badge.is-xiaoxiang {
+  background: linear-gradient(145deg, #8b5cf6 0%, #6d28d9 100%);
+  box-shadow:
+    0 8px 18px -5px rgba(109, 40, 217, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.wbx-unified-auth-modal .wbx-auth-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 0;
+  margin: 0;
+}
+
+/* Override legacy wb-auth-field / wb-internal-login-form rules inside unified modal */
+.wbx-unified-auth-modal .wb-internal-login-form.wbx-fs-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+}
+
+.wbx-unified-auth-modal .wb-auth-field.wbx-fs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+  font-size: 13px;
+  color: #18191c;
+}
+
+.wbx-unified-auth-modal .wb-auth-input-row.wbx-fs-input-row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.wbx-unified-auth-modal .wbx-fs-input-wrap input.wbx-fs-input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #18191c;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: none;
+  outline: none;
+}
+
+.wbx-unified-auth-modal .wbx-fs-input-wrap input.wbx-fs-input::placeholder {
+  color: #9499a0;
+  font-weight: 400;
+}
+
+.wbx-auth-pwd-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #9499a0;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.wbx-auth-pwd-toggle:hover {
+  background: rgba(0, 174, 236, 0.1);
+  color: #0082bd;
+}
+
+/* Inline math captcha row */
+.wbx-auth-captcha-inline {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.wbx-auth-captcha-img-box {
+  height: 46px;
+  min-width: 96px;
+  max-width: 122px;
+  padding: 3px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.09);
+  background: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-shadow: 0 2px 6px -2px rgba(15, 23, 42, 0.06);
+}
+
+.wbx-auth-captcha-img-box img {
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+  display: block;
+}
+
+.wbx-unified-auth-modal .wb-button.wbx-fs-code-btn.is-captcha-refresh {
+  min-width: auto;
+  padding: 0 11px;
+  font-size: 12px;
+  gap: 5px;
+  border-radius: 12px;
+}
+
+.wbx-unified-auth-modal .wb-auth-math.wbx-auth-math-caption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: -2px;
+  padding: 0 2px;
+  background: transparent;
+  border: 0;
+}
+
+.wbx-unified-auth-modal .wb-auth-math.wbx-auth-math-caption .wb-muted {
+  font-size: 11.5px;
+  color: #64748b;
+  margin: 0;
+}
+
+/* Unified submit & secondary buttons inside modal */
+.wbx-unified-auth-modal .wb-primary.wbx-fs-submit-btn {
+  width: 100%;
+  height: 44px;
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 13px;
+  border: 1px solid rgba(0, 150, 214, 0.42);
+  background: linear-gradient(135deg, #00b8f5 0%, #0095d9 100%);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow:
+    0 10px 22px -7px rgba(0, 174, 236, 0.46),
+    inset 0 1px 0 rgba(255, 255, 255, 0.42);
+}
+
+.wbx-unified-auth-modal .wb-primary.wbx-fs-submit-btn.is-compact {
+  width: auto;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 14px;
+  font-size: 12.5px;
+  border-radius: 10px;
+}
+
+.wbx-unified-auth-modal .wb-button.wbx-fs-code-btn {
+  height: 46px;
+  min-height: 46px;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 174, 236, 0.28);
+  background: linear-gradient(180deg, rgba(240, 249, 255, 0.96) 0%, rgba(224, 242, 254, 0.85) 100%);
+  color: #0082bd;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.wbx-unified-auth-modal .wb-button.wbx-fs-code-btn.is-compact {
+  height: 36px;
+  min-height: 36px;
+  min-width: auto;
+  padding: 0 14px;
+  font-size: 12.5px;
+  border-radius: 10px;
+}
+
+/* QR Code Precision Stage */
+.wbx-unified-auth-modal .wb-dingtalk-qr.wbx-auth-qr-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 13px;
+  padding: 16px 16px 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.065);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(244, 249, 255, 0.86) 100%);
+  box-shadow: inset 0 1px 0 #ffffff;
+  text-align: center;
+}
+
+.wbx-auth-qr-card__top {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wbx-auth-qr-card__app-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: rgba(0, 174, 236, 0.1);
+  color: #007eb8;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.wbx-auth-qr-card__state-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.wbx-auth-qr-card__state-pill.is-loading {
+  background: rgba(241, 245, 249, 0.92);
+  color: #64748b;
+}
+
+.wbx-auth-qr-card__state-pill.is-ready {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
+}
+
+.wbx-auth-qr-card__state-pill.is-expired {
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
+}
+
+.wbx-unified-auth-modal .wb-dingtalk-qr-image.wbx-auth-qr-frame {
+  position: relative;
+  width: 216px;
+  height: 216px;
+  padding: 10px;
+  margin: 2px auto 0;
+  border-radius: 18px;
+  border: 1px solid rgba(0, 174, 236, 0.18);
+  background: #ffffff;
+  box-shadow:
+    0 12px 28px -12px rgba(15, 23, 42, 0.14),
+    0 0 0 4px rgba(0, 174, 236, 0.04);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.wbx-auth-qr-frame.is-expired {
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.wbx-auth-qr-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  border-radius: 8px;
+}
+
+.wbx-auth-qr-corner {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-color: rgba(0, 174, 236, 0.55);
+  border-style: solid;
+  pointer-events: none;
+}
+
+.wbx-auth-qr-corner.is-tl {
+  top: 8px;
+  left: 8px;
+  border-width: 2.5px 0 0 2.5px;
+  border-top-left-radius: 6px;
+}
+
+.wbx-auth-qr-corner.is-tr {
+  top: 8px;
+  right: 8px;
+  border-width: 2.5px 2.5px 0 0;
+  border-top-right-radius: 6px;
+}
+
+.wbx-auth-qr-corner.is-bl {
+  bottom: 8px;
+  left: 8px;
+  border-width: 0 0 2.5px 2.5px;
+  border-bottom-left-radius: 6px;
+}
+
+.wbx-auth-qr-corner.is-br {
+  bottom: 8px;
+  right: 8px;
+  border-width: 0 2.5px 2.5px 0;
+  border-bottom-right-radius: 6px;
+}
+
+.wbx-auth-qr-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 6px 4px;
+  width: 100%;
+}
+
+.wbx-auth-qr-placeholder__icon-wrap {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(0, 174, 236, 0.1) 0%, rgba(56, 189, 248, 0.05) 100%);
+  border: 1px solid rgba(0, 174, 236, 0.14);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #0098d9;
+}
+
+.wbx-auth-qr-placeholder__spinner {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  padding: 2px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #00aeec;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12);
+}
+
+.wbx-auth-qr-placeholder__text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #64748b;
+  max-width: 184px;
+  word-break: keep-all;
+}
+
+.wbx-auth-qr-card > p.wb-muted {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #475569;
+  max-width: 340px;
+}
+
+.wbx-auth-qr-steps {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 10px;
+  background: rgba(241, 245, 249, 0.72);
+  border: 1px solid rgba(15, 23, 42, 0.04);
+  font-size: 11px;
+  color: #64748b;
+}
+
+.wbx-auth-qr-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.wbx-auth-qr-step b {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 999px;
+  background: rgba(0, 174, 236, 0.14);
+  color: #007eb8;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.wbx-auth-qr-step-sep {
+  color: #cbd5e1;
+}
+
+.wbx-auth-qr-actions {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.wbx-auth-qr-actions .wb-button.wbx-fs-code-btn {
+  height: 38px;
+  min-height: 38px;
+  padding: 0 18px;
+  border-radius: 11px;
+  font-size: 12.5px;
+}
+
+/* Credential Save Prompt Card */
+.wbx-unified-auth-modal .wb-auth-credential-prompt.wbx-auth-cred-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 174, 236, 0.22);
+  background: linear-gradient(135deg, rgba(240, 249, 255, 0.92) 0%, rgba(255, 255, 255, 0.96) 100%);
+  box-shadow: 0 4px 12px -6px rgba(0, 174, 236, 0.18);
+}
+
+.wbx-auth-cred-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.wbx-auth-cred-card__icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: rgba(0, 174, 236, 0.12);
+  color: #0082bd;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.wbx-auth-cred-card__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #18191c;
+}
+
+.wbx-auth-cred-card__desc {
+  margin: 3px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #64748b;
+}
+
+.wbx-auth-cred-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Starting / Loading / Progress / Consent cards */
+.wbx-auth-starting-card,
+.wbx-auth-empty-form,
+.wbx-auth-progress-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  background: rgba(248, 250, 252, 0.88);
+}
+
+.wbx-auth-progress-card {
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wbx-auth-progress-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wbx-auth-starting-card__title,
+.wbx-auth-progress-card .wb-auth-progress-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #18191c;
+}
+
+.wbx-auth-starting-card__text p.wb-muted,
+.wbx-auth-empty-form p.wb-muted {
+  margin: 3px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #64748b;
+}
+
+.wbx-auth-consent-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  background: rgba(248, 250, 252, 0.82);
+  font-size: 12px;
+  line-height: 1.5;
+  color: #475569;
+  cursor: pointer;
+}
+
+.wbx-auth-consent-card input[type="checkbox"] {
+  margin-top: 2px;
+  accent-color: #00aeec;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.wbx-auth-submitted-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 13px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 174, 236, 0.2);
+  background: rgba(240, 249, 255, 0.78);
+  font-size: 12.5px;
+  color: #0f172a;
+}
+
+@keyframes wbx-fs-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.wbx-fs-spin {
+  animation: wbx-fs-spin 900ms linear infinite;
+}
+

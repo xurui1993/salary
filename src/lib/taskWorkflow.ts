@@ -117,7 +117,15 @@ function getSafeLocalStorage(): StorageLike | null {
 }
 
 export function buildTaskReturnTarget(state: ShellNavState): TaskReturnTarget | null {
-  if (state.workspaceView === 'history' || state.workspaceView === 'pickup' || state.workspaceView === 'accounts') return null;
+  if (
+    state.workspaceView === 'history' ||
+    state.workspaceView === 'pickup' ||
+    state.workspaceView === 'accounts' ||
+    state.workspaceView === 'platform-auth' ||
+    state.workspaceView === 'display-adaptation'
+  ) {
+    return null;
+  }
 
   if (state.workspaceView === 'approval') {
     return {

@@ -19,7 +19,7 @@ export interface PlatformRegistryEntry {
   scope: PlatformAuthScope;
   scopeLabel: string;
   authMethodLabel: string;
-  accent: 'sky' | 'amber' | 'emerald' | 'violet' | 'indigo';
+  accent: 'sky' | 'amber' | 'emerald' | 'violet' | 'indigo' | 'cyan';
   usedByModules: string[];
   description: string;
   probeDefs: PlatformCapabilityProbeDef[];
@@ -31,6 +31,33 @@ export interface PlatformCapabilityProbeStatus {
   description: string;
   tone: 'ready' | 'warn' | 'idle';
   statusText: string;
+}
+
+export interface PlatformAccountPoolRawItem {
+  slot_id: string;
+  account_label?: string;
+  alias?: string;
+  organization?: string;
+  account_type?: string;
+  region_text?: string;
+  state?: string;
+  is_active?: boolean;
+  credential_saved?: boolean;
+  session_version?: string;
+  updated_at?: string;
+}
+
+export interface PlatformAccountSlotViewModel {
+  slotId: string;
+  displayTitle: string;
+  accountLabel: string;
+  alias: string;
+  subtitle: string;
+  badgeText: string;
+  tone: 'ready' | 'warn' | 'idle';
+  isActive: boolean;
+  credentialSaved: boolean;
+  sessionVersion: string;
 }
 
 export interface PlatformRawAuthStatus {
@@ -51,12 +78,16 @@ export interface PlatformRawAuthStatus {
   message?: string;
   capabilities?: Record<string, { verified?: boolean; message?: string } | undefined>;
   stages?: Record<string, string | undefined>;
+  accounts?: PlatformAccountPoolRawItem[];
+  active_account_id?: string | null;
+  pending_new_account?: boolean;
 }
 
 export interface BaizeAccountMeta {
   account_type?: 'shanggou' | 'xiaoxiang' | string;
   region_text?: string;
   account_label?: string;
+  organization?: string;
 }
 
 export interface PlatformAuthCardViewModel {
@@ -77,6 +108,9 @@ export interface PlatformAuthCardViewModel {
   credentialStatusText: string;
   capabilitySummary: string;
   probes: PlatformCapabilityProbeStatus[];
+  accounts: PlatformAccountSlotViewModel[];
+  activeAccountId: string | null;
+  pendingNewAccount: boolean;
   errorText: string;
 }
 
@@ -89,6 +123,7 @@ export interface PlatformAuthOverviewSummary {
   sharedReadyCount: number;
   attentionCount: number;
   idleCount: number;
+  totalLoggedAccountsCount: number;
 }
 
 export const PLATFORM_AUTH_REGISTRY: PlatformRegistryEntry[] = [
@@ -98,32 +133,49 @@ export const PLATFORM_AUTH_REGISTRY: PlatformRegistryEntry[] = [
     shortName: '风神',
     businessLine: '淘宝闪购自有系统',
     scope: 'personal',
-    scopeLabel: '个人独立通道',
-    authMethodLabel: '独立窗口 / 账号密码直连',
+    scopeLabel: '个人独立',
+    authMethodLabel: '账号密码 / 验证码直连',
     accent: 'sky',
-    usedByModules: ['风神数据采集', '支付绑定', '异常跟进', '问题单', '兼职薪资核算'],
+    usedByModules: ['风神数据', '支付绑定', '异常跟进', '问题单', '兼职核算'],
     description: '配送费、违规扣款、月度 UB 账单、骑手收薪绑定与考勤源表核心通道。',
     probeDefs: [
-      { id: 'session', label: '主站登录会话', description: '风神系统基础登录凭证与会话状态' },
-      { id: 'cities', label: '城市权限目录', description: '当前账号可访问的城市范围授权校验' },
-      { id: 'stations', label: '站点与账单拉取', description: '站点列表读取与结算账单导出接口验证' },
+      { id: 'session', label: '主站会话', description: '风神系统基础登录凭证与会话状态' },
+      { id: 'cities', label: '城市目录', description: '当前账号可访问的城市范围授权校验' },
+      { id: 'stations', label: '账单导出', description: '站点列表读取与结算账单导出接口验证' },
     ],
   },
   {
     key: 'lanorange',
     displayName: systemLabel('lanorange'),
     shortName: '蓝橙',
-    businessLine: '原雷神人事与审批系统',
+    businessLine: '原雷神人事审批系统',
     scope: 'personal',
-    scopeLabel: '个人独立通道',
-    authMethodLabel: '手机钉钉扫码认证',
+    scopeLabel: '个人独立',
+    authMethodLabel: '钉钉扫码认证',
     accent: 'amber',
-    usedByModules: ['蓝橙数据采集', '异常名单', '支付绑定', '价格审批'],
+    usedByModules: ['蓝橙数据', '异常名单', '支付绑定', '价格审批'],
     description: '骑手人事档案、兼职价格表、离职报备、请假记录及价格审批流转核心通道。',
     probeDefs: [
-      { id: 'session', label: '钉钉扫码会话', description: '蓝橙后台钉钉扫码绑定与令牌有效性' },
-      { id: 'archive', label: '人事与价格档案', description: '全城骑手档案、离职请假及兼职价格读取权限' },
-      { id: 'approval', label: '价格审批协同', description: '本人待审单据同步与跨页批量审批接口' },
+      { id: 'session', label: '钉钉会话', description: '蓝橙后台钉钉扫码绑定与令牌有效性' },
+      { id: 'archive', label: '人事档案', description: '全城骑手档案、离职请假及兼职价格读取权限' },
+      { id: 'approval', label: '价格审批', description: '本人待审单据同步与跨页批量审批接口' },
+    ],
+  },
+  {
+    key: 'lanorange_mdr',
+    displayName: systemLabel('lanorange_mdr'),
+    shortName: '新蓝橙',
+    businessLine: '新蓝橙人事管理系统',
+    scope: 'personal',
+    scopeLabel: '个人独立',
+    authMethodLabel: '钉钉扫码 / 账号认证',
+    accent: 'cyan',
+    usedByModules: ['新蓝橙数据', '骑手档案', '兼全职变更', '佣金代领'],
+    description: '新蓝橙系统骑手档案、离职请假、兼全职变更、佣金代领与兼职价格档案采集通道。',
+    probeDefs: [
+      { id: 'session', label: '系统会话', description: '新蓝橙后台登录凭证与会话有效性' },
+      { id: 'archive', label: '骑手档案', description: '新蓝橙骑手人事、离职请假与变更记录导出' },
+      { id: 'price', label: '价格与佣金', description: '兼职价格档案与佣金代领数据拉取权限' },
     ],
   },
   {
@@ -132,15 +184,15 @@ export const PLATFORM_AUTH_REGISTRY: PlatformRegistryEntry[] = [
     shortName: '商翼',
     businessLine: '白泽商翼人力发薪系统',
     scope: 'personal',
-    scopeLabel: '个人独立通道',
+    scopeLabel: '个人独立',
     authMethodLabel: '企业账号 + 算式验证码',
     accent: 'emerald',
-    usedByModules: ['发薪平台采集', '支付绑定', '兼职薪资核算'],
-    description: '白泽商翼全量员工档案实时采集，自动识别闪购或小象业务账户归属。',
+    usedByModules: ['发薪平台', '支付绑定', '兼职核算'],
+    description: '白泽商翼全量员工档案实时采集，支持同时登录闪购与小象多套企业账户并秒级切换。',
     probeDefs: [
-      { id: 'session', label: '企业账号会话', description: '白泽商翼企业账号登录与算式认证状态' },
-      { id: 'account_type', label: '业务线归属识别', description: '自动探测闪购业务账户或小象业务账户及区域' },
-      { id: 'export', label: '员工总表直采', description: '商翼全量员工原表导出与收薪绑定匹配' },
+      { id: 'session', label: '企业会话', description: '白泽商翼企业账号登录与算式认证状态' },
+      { id: 'account_type', label: '业务归属', description: '自动探测闪购业务账户或小象业务账户及区域' },
+      { id: 'export', label: '员工直采', description: '商翼全量员工原表导出与收薪绑定匹配' },
     ],
   },
   {
@@ -149,15 +201,15 @@ export const PLATFORM_AUTH_REGISTRY: PlatformRegistryEntry[] = [
     shortName: '灯塔',
     businessLine: '美团小象灯塔与知了看板',
     scope: 'shared',
-    scopeLabel: '全局共享通道',
-    authMethodLabel: '美团 App + 大象双阶段扫码',
+    scopeLabel: '全局共享',
+    authMethodLabel: '美团 + 大象双阶段扫码',
     accent: 'violet',
-    usedByModules: ['小象灯塔采集', '小象兼职薪资核算', '站点扣款配置'],
+    usedByModules: ['小象灯塔', '兼职核算', '扣款配置'],
     description: '全局共享采集通道，一次授权全员可用；覆盖灯塔站点目录与知了日维度分析看板。',
     probeDefs: [
-      { id: 'lighthouse', label: '美团灯塔主站', description: '美团 App 扫码认证与灯塔基础会话状态' },
-      { id: 'stations', label: '站点目录查询', description: '灯塔配送站点目录与城市归属校验' },
-      { id: 'board', label: '知了数据看板', description: '大象扫码连接知了看板与日维度骑手分析权限' },
+      { id: 'lighthouse', label: '灯塔主站', description: '美团 App 扫码认证与灯塔基础会话状态' },
+      { id: 'stations', label: '站点目录', description: '灯塔配送站点目录与城市归属校验' },
+      { id: 'board', label: '知了看板', description: '大象扫码连接知了看板与日维度骑手分析权限' },
     ],
   },
   {
@@ -166,15 +218,15 @@ export const PLATFORM_AUTH_REGISTRY: PlatformRegistryEntry[] = [
     shortName: '本来',
     businessLine: '本来人力灵工发薪商户端',
     scope: 'shared',
-    scopeLabel: '全局共享通道',
-    authMethodLabel: '手机号 + 短信动态验证码',
+    scopeLabel: '全局共享',
+    authMethodLabel: '手机号 + 短信验证码',
     accent: 'indigo',
-    usedByModules: ['发薪平台采集', '支付绑定', '异常跟进'],
+    usedByModules: ['发薪平台', '支付绑定', '异常跟进'],
     description: '全局共享发薪档案通道，实时拉取企业全量灵工签约档案与签约城市归属。',
     probeDefs: [
-      { id: 'session', label: '商户端登录会话', description: '本来人力商户端手机号与短信验证码登录态' },
-      { id: 'roster', label: '灵工签约名册', description: '企业全量灵工档案与签约状态拉取校验' },
-      { id: 'city_bind', label: '签约城市映射', description: '发薪平台绑定判定所需的签约城市字段读取' },
+      { id: 'session', label: '商户会话', description: '本来人力商户端手机号与短信验证码登录态' },
+      { id: 'roster', label: '灵工名册', description: '企业全量灵工档案与签约状态拉取校验' },
+      { id: 'city_bind', label: '城市映射', description: '发薪平台绑定判定所需的签约城市字段读取' },
     ],
   },
 ];
@@ -322,6 +374,120 @@ export function buildPlatformCapabilityProbes(
   });
 }
 
+function buildPlatformAccountSlots(options: {
+  entry: PlatformRegistryEntry;
+  raw: PlatformRawAuthStatus;
+  baizeAccount?: BaizeAccountMeta | null;
+  isReady: boolean;
+  hasSavedAccount: boolean;
+}): PlatformAccountSlotViewModel[] {
+  const { entry, raw, baizeAccount, isReady, hasSavedAccount } = options;
+  const rawAccounts = Array.isArray(raw.accounts) ? raw.accounts : [];
+
+  if (rawAccounts.length > 0) {
+    return rawAccounts.map((item, idx) => {
+      const isActive = Boolean(item.is_active);
+      const alias = (item.alias || '').trim();
+      const rawLabel = (
+        item.account_label ||
+        (isActive ? raw.account_label || baizeAccount?.account_label : '') ||
+        ''
+      ).trim();
+      const accountLabel = rawLabel || `${entry.shortName}账户 #${idx + 1}`;
+      const displayTitle = alias || accountLabel;
+
+      const acctType =
+        item.account_type || (isActive && entry.key === 'baize' ? baizeAccount?.account_type : '');
+      const typeLabel =
+        acctType === 'shanggou'
+          ? '闪购业务账户'
+          : acctType === 'xiaoxiang'
+            ? '小象业务账户'
+            : '';
+      const org = (
+        item.organization ||
+        (isActive ? raw.organization || baizeAccount?.organization : '') ||
+        ''
+      ).trim();
+      const region = (
+        item.region_text ||
+        (isActive && entry.key === 'baize' ? baizeAccount?.region_text : '') ||
+        ''
+      ).trim();
+
+      const subParts: string[] = [];
+      if (alias && rawLabel && alias !== rawLabel) subParts.push(rawLabel);
+      if (typeLabel) subParts.push(typeLabel);
+      if (org) subParts.push(org);
+      if (region && !org.includes(region)) subParts.push(region);
+      if (subParts.length === 0) {
+        if (item.credential_saved || (isActive && raw.credential_saved)) {
+          subParts.push('已存本机加密凭据');
+        } else {
+          subParts.push(isActive ? '当前生效会话' : '本机驻留会话 · 可秒级切换');
+        }
+      }
+
+      const slotState = isActive ? raw.state || item.state : item.state;
+      const slotReady = isActive ? isReady : slotState === 'ready' || slotState === 'saved';
+      const tone: 'ready' | 'warn' | 'idle' = isActive
+        ? isReady
+          ? 'ready'
+          : 'warn'
+        : slotReady
+          ? 'ready'
+          : 'warn';
+      const badgeText = isActive ? (isReady ? '当前使用' : '待验证') : '已驻留';
+
+      return {
+        slotId: item.slot_id,
+        displayTitle,
+        accountLabel,
+        alias,
+        subtitle: subParts.join(' · '),
+        badgeText,
+        tone,
+        isActive,
+        credentialSaved: Boolean(item.credential_saved || (isActive && raw.credential_saved)),
+        sessionVersion: item.session_version || (isActive ? raw.session_version || '' : ''),
+      };
+    });
+  }
+
+  if (!hasSavedAccount) {
+    return [];
+  }
+
+  // Fallback when backend or unit test fixture provides a single active session without `accounts` array
+  const fallbackLabel =
+    (raw.account_label || (entry.key === 'baize' ? baizeAccount?.account_label : '') || '').trim() ||
+    (isReady ? '已授权平台账户' : '本机已存会话账户');
+  const subParts: string[] = [];
+  if (entry.key === 'baize' && baizeAccount?.account_type) {
+    subParts.push(baizeAccount.account_type === 'shanggou' ? '闪购业务账户' : '小象业务账户');
+  }
+  if (raw.organization) subParts.push(raw.organization.trim());
+  if (entry.key === 'baize' && baizeAccount?.region_text) subParts.push(baizeAccount.region_text);
+  if (subParts.length === 0) {
+    subParts.push(raw.credential_saved ? '已存本机加密凭据' : '当前生效会话');
+  }
+
+  return [
+    {
+      slotId: raw.active_account_id || 'active_default',
+      displayTitle: fallbackLabel,
+      accountLabel: fallbackLabel,
+      alias: '',
+      subtitle: subParts.join(' · '),
+      badgeText: isReady ? '当前使用' : '待验证',
+      tone: isReady ? 'ready' : 'warn',
+      isActive: true,
+      credentialSaved: Boolean(raw.credential_saved),
+      sessionVersion: raw.session_version || '',
+    },
+  ];
+}
+
 export function buildPlatformAuthCardViewModels(options: {
   statuses: Record<string, PlatformRawAuthStatus | undefined>;
   fengshenFallback?: PlatformRawAuthStatus | null;
@@ -366,19 +532,33 @@ export function buildPlatformAuthCardViewModels(options: {
       ? Boolean(isAdmin || canManageSharedAuth) && raw.can_manage !== false
       : true;
 
-    const hasSessionOrSaved =
+    const hasSavedAccount =
       Boolean(raw.saved) ||
-      Boolean(raw.busy) ||
       isReady ||
-      ['starting', 'waiting_login', 'saved', 'partial'].includes(raw.state || '');
+      ['saved', 'partial'].includes(raw.state || '');
 
-    const canLogout = canManage && hasSessionOrSaved;
+    const hasSessionOrSaved =
+      hasSavedAccount ||
+      Boolean(raw.busy) ||
+      ['starting', 'waiting_login'].includes(raw.state || '');
+
+    const accounts = buildPlatformAccountSlots({
+      entry,
+      raw,
+      baizeAccount,
+      isReady,
+      hasSavedAccount,
+    });
+
+    const canLogout = canManage && (hasSessionOrSaved || accounts.length > 0);
     const canSwitchAccount =
-      canManage && (isReady || Boolean(raw.saved) || ['saved', 'partial'].includes(raw.state || ''));
+      canManage && (isReady || Boolean(raw.saved) || ['saved', 'partial'].includes(raw.state || '') || accounts.length > 0);
     const canDeepCheck = Boolean(raw.saved || isReady) && !raw.offline;
 
+    const activeSlot = accounts.find(a => a.isActive) || accounts[0];
     const accountTitle =
       (raw.account_label || '').trim() ||
+      (activeSlot ? activeSlot.displayTitle : '') ||
       (isReady ? '已授权平台账户' : hasSessionOrSaved ? '本机已存会话账户' : '暂未绑定平台账号');
     const accountOrganization = (raw.organization || '').trim();
 
@@ -419,6 +599,9 @@ export function buildPlatformAuthCardViewModels(options: {
       credentialStatusText,
       capabilitySummary,
       probes,
+      accounts,
+      activeAccountId: raw.active_account_id || (activeSlot?.isActive ? activeSlot.slotId : null),
+      pendingNewAccount: Boolean(raw.pending_new_account),
       errorText,
     };
   });
@@ -433,6 +616,7 @@ export function summarizePlatformAuthOverview(
   const sharedCards = cards.filter(c => c.entry.scope === 'shared');
   const attentionCount = cards.filter(c => c.needsAttention || c.isBusy).length;
   const idleCount = cards.filter(c => c.isIdle).length;
+  const totalLoggedAccountsCount = cards.reduce((sum, c) => sum + c.accounts.length, 0);
 
   return {
     totalCount,
@@ -443,6 +627,7 @@ export function summarizePlatformAuthOverview(
     sharedReadyCount: sharedCards.filter(c => c.isReady).length,
     attentionCount,
     idleCount,
+    totalLoggedAccountsCount,
   };
 }
 
@@ -473,6 +658,13 @@ export function filterPlatformAuthCards(
     }
     if (!q) return true;
 
+    const accountTokens = card.accounts.flatMap(a => [
+      a.displayTitle,
+      a.accountLabel,
+      a.alias,
+      a.subtitle,
+    ]);
+
     const haystack = [
       card.entry.key,
       card.entry.displayName,
@@ -486,6 +678,7 @@ export function filterPlatformAuthCards(
       card.accountOrganization,
       card.accountSubtypeLabel,
       card.badge.label,
+      ...accountTokens,
     ]
       .filter(Boolean)
       .join(' ')

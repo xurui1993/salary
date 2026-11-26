@@ -1,2 +1,921 @@
-// @ts-nocheck
-var __defProp=Object.defineProperty;var __name=(target,value)=>__defProp(target,"name",{value,configurable:true});import{Fragment,jsx,jsxs}from"react/jsx-runtime";import{useEffect,useRef,useState}from"react";import{platformAuthRequest,PlatformAuthError}from"../lib/platformAuthApi";import{OfficialVerification}from"./OfficialVerification";import{reconcileAuthDraft}from"../lib/authInputDraft";function fieldLabel(field){return{phone:"\u624B\u673A\u53F7\u7801",password:"\u5BC6\u7801",sms_code:"\u77ED\u4FE1\u9A8C\u8BC1\u7801",voice_code:"\u8BED\u97F3\u9A8C\u8BC1\u7801",math:"\u7B97\u5F0F\u7B54\u6848"}[field.role||""]||(field.type==="checkbox"?field.label:/[\u4e00-\u9fff]/.test(field.label)?field.label.replace(/^请输入|^请填写/,"").slice(0,24):"\u8D26\u53F7")}__name(fieldLabel,"fieldLabel");function SourceLoginPanel({source,sessionId,apiFetch,desktop={}}){const fetchRef=useRef(apiFetch);fetchRef.current=apiFetch;const[values,setValues]=useState({});const[busy,setBusy]=useState(false),[uncertain,setUncertain]=useState(false),[error,setError]=useState("");const[lastCommand,setLastCommand]=useState(0),[lastSms,setLastSms]=useState(0),[seconds,setSeconds]=useState(0);const[qr,setQr]=useState({key:"",url:"",error:""});const[qrRetry,setQrRetry]=useState(0);const deadline=useRef(0),inflight=useRef(false),issuer=useRef(void 0);const fields=desktop.fields||[],controls=desktop.controls||[];const previousDraft=useRef(void 0);const fieldShape=JSON.stringify(desktop.fields?.map(({id,type,role})=>({id,type,role})));const sms=controls.find(c=>c.kind==="sms"),submit=controls.find(c=>c.kind==="submit");const captcha=desktop.math_captcha;const consentField=fields.find(f=>f.role==="consent"),voiceField=fields.find(f=>f.role==="voice_code");const boardQr=source==="xiaoxiang"&&!!desktop.has_qr&&desktop.qr_stage==="board";const lighthouseQr=source==="xiaoxiang"&&!!desktop.has_qr&&!boardQr;const qrMode=source==="lanorange"||boardQr||lighthouseQr;const transitioning=!!desktop.transitioning;const submitted=desktop.submitted||null;const[editingAccount,setEditingAccount]=useState(false);const retry=!!desktop.retry&&!transitioning&&!editingAccount;const mathFields=fields.filter(f=>f.role==="math");const shownFields=retry?fields.filter(f=>["password","math"].includes(f.role||"")):fields;const qrKey=qrMode&&desktop.has_qr&&desktop.qr_version?sessionId+":"+desktop.qr_version:"";const refresh=controls.find(c=>c.kind==="qr_refresh");useEffect(()=>{setValues({});setError("");setUncertain(false);setLastCommand(0);setLastSms(0);setEditingAccount(false)},[source,sessionId]);useEffect(()=>{if(desktop.fields===void 0)return;const next={source,sessionId,fields:desktop.fields,captchaId:desktop.math_captcha?.id};const previous=previousDraft.current;setValues(values2=>reconcileAuthDraft(values2,previous,next));previousDraft.current=next},[source,sessionId,fieldShape,desktop.math_captcha?.id]);useEffect(()=>{if(issuer.current!==sms?.issuer){deadline.current=0;issuer.current=sms?.issuer}deadline.current=Math.max(deadline.current,Date.now()+1e3*Math.max(desktop.sms_retry_after||0,sms?.retry_after||0))},[desktop.sms_retry_after,sms?.retry_after,sms?.issuer]);useEffect(()=>{const tick=__name(()=>setSeconds(Math.max(0,Math.ceil((deadline.current-Date.now())/1e3))),"tick");tick();const timer=setInterval(tick,500);return()=>clearInterval(timer)},[]);const endpoint=`/api/fengshen-downloads/source-auth/${source}`;useEffect(()=>{if(!qrKey){setQr({key:"",url:"",error:""});return}let disposed=false,objectUrl="";const controller=new AbortController;const timer=setTimeout(()=>controller.abort(),1e4);void(async()=>{try{const response=await fetchRef.current(`${endpoint}/qr?session_id=${encodeURIComponent(sessionId)}&v=${encodeURIComponent(desktop.qr_version||"")}`,{cache:"no-store",signal:controller.signal});if(!response.ok||!response.headers.get("content-type")?.startsWith("image/png"))throw new Error("\u4E8C\u7EF4\u7801\u6682\u672A\u5C31\u7EEA\uFF0C\u6B63\u5728\u7B49\u5F85\u66F4\u65B0\u3002");const blob=await response.blob();if(!blob.size||blob.size>512*1024)throw new Error("\u4E8C\u7EF4\u7801\u6682\u4E0D\u53EF\u7528\uFF0C\u8BF7\u91CD\u65B0\u8BFB\u53D6\u3002");if(!disposed){objectUrl=URL.createObjectURL(blob);setQr({key:qrKey,url:objectUrl,error:""})}}catch{if(!disposed)setQr({key:qrKey,url:"",error:"\u4E8C\u7EF4\u7801\u8BFB\u53D6\u672A\u5B8C\u6210\uFF0C\u8BF7\u91CD\u65B0\u8BFB\u53D6\u3002"})}finally{clearTimeout(timer)}})();return()=>{disposed=true;clearTimeout(timer);controller.abort();if(objectUrl)URL.revokeObjectURL(objectUrl)}},[endpoint,sessionId,qrKey,qrRetry]);const pending=!!lastCommand&&(desktop.input_completed||0)<lastCommand;const initialValue=__name(f=>f.role==="math"&&captcha?.state==="solved"?captcha.answer??"":void 0,"initialValue");const inputValues=__name(()=>fields.flatMap(f=>{const text=values[f.id]??initialValue(f);return text!==void 0?[{id:f.id,text}]:[]}),"inputValues");async function send(control,inspect=false){if(inflight.current||pending)return;inflight.current=true;setBusy(true);setError("");try{if(uncertain){const current=await platformAuthRequest(fetchRef.current,endpoint,void 0,1e4);if(current.input_pending){setError("\u4E0A\u6B21\u64CD\u4F5C\u4ECD\u5728\u5904\u7406\u4E2D\uFF0C\u8BF7\u7A0D\u5019\u3002");return}setUncertain(false);setError("\u72B6\u6001\u5DF2\u786E\u8BA4\uFF0C\u8BF7\u518D\u6B21\u70B9\u51FB\u6240\u9700\u64CD\u4F5C\u3002");return}const command=inspect?{action:"inspect"}:control?{action:"control",id:control.id,values:["captcha_refresh","qr_refresh"].includes(control.kind)?[]:inputValues()}:{action:"fill_fields",values:inputValues(),submit_id:submit?.id};const response=await platformAuthRequest(fetchRef.current,endpoint+"/interact",{...command,session_id:sessionId,form_id:desktop.form_id});setLastCommand(response.command_id||0);if(control?.kind==="sms"){setLastSms(response.command_id||0);deadline.current=Date.now()+6e4;setSeconds(60)}if(!control)setValues(previous=>Object.fromEntries(fields.filter(f=>!["password","sms_code","voice_code","math"].includes(f.role||"")&&f.type!=="password"&&previous[f.id]!==void 0).map(f=>[f.id,previous[f.id]])))}catch(err){if(err instanceof PlatformAuthError&&err.uncertain)setUncertain(true);setError(err instanceof Error?err.message:"\u64CD\u4F5C\u672A\u5B8C\u6210\uFF0C\u8BF7\u7A0D\u5019\u91CD\u8BD5\u3002")}finally{inflight.current=false;setBusy(false)}}__name(send,"send");const disabled=busy||pending||!!desktop.has_challenge;const mathReady=fields.filter(f=>f.role==="math").every(f=>!!(values[f.id]??(captcha?.state==="solved"?captcha.answer:""))?.trim());const phoneEntered=fields.some(f=>f.role==="phone"&&!!values[f.id]?.trim());const smsButton=sms&&jsx("button",{type:"button",className:"wb-button",disabled:disabled||seconds>0||sms.enabled===false&&!phoneEntered,onClick:()=>void send(sms),children:seconds?`${seconds}\u79D2\u540E\u53EF\u91CD\u53D1`:"\u83B7\u53D6\u9A8C\u8BC1\u7801"});if(transitioning)return jsxs("div",{className:"wb-auth-session",children:[jsx("div",{className:"wb-auth-progress",role:"status",children:[jsx("p",{className:"wb-auth-progress-title",children:submitted?.account?`企业账号 ${submitted.account} 已提交，正在验证并跳转…`:"已提交登录信息，正在验证并跳转…"}),jsx("p",{className:"wb-muted",children:"请稍候，不要重复点击；若长时间无响应，请按官方页面提示重新操作。"})]}),error&&jsx("p",{role:"alert",className:"wb-error",children:error})]});return jsxs("div",{className:"wb-auth-session",children:[desktop.official_feedback&&jsx("p",{role:"alert",className:desktop.official_feedback_kind==="sms_sent"?"wb-success":desktop.official_feedback_kind==="voice_required"?"wb-muted":"wb-error",children:desktop.official_feedback}),desktop.official_feedback_detail&&jsx("p",{className:"wb-muted",children:desktop.official_feedback_detail}),source==="xiaoxiang"&&desktop.window_visible===false&&jsx("p",{className:"wb-muted",children:boardQr?"\u8BA4\u8BC1\u5728\u540E\u53F0\u81EA\u52A8\u8FDB\u884C\uFF0C\u8BF7\u7528\u5927\u8C61\u626B\u63CF\u9762\u677F\u4E2D\u7684\u4E8C\u7EF4\u7801\u5B8C\u6210\u770B\u677F\u767B\u5F55\u3002":desktop.board_reused?"\u8BA4\u8BC1\u5728\u540E\u53F0\u81EA\u52A8\u8FDB\u884C\uFF1B\u672C\u673A\u4FDD\u7559\u77E5\u4E86\u770B\u677F\u767B\u5F55\u6001\uFF0C\u672C\u6B21\u53EA\u9700\u7528\u7F8E\u56E2App\u626B\u63CF\u9762\u677F\u4E2D\u7684\u4E8C\u7EF4\u7801\uFF0C\u5B8C\u6210\u540E\u81EA\u52A8\u8FDE\u63A5\u770B\u677F\u3002":"\u8BA4\u8BC1\u5728\u540E\u53F0\u81EA\u52A8\u8FDB\u884C\uFF0C\u8BF7\u7528\u7F8E\u56E2App\u626B\u63CF\u9762\u677F\u4E2D\u7684\u4E8C\u7EF4\u7801\uFF1B\u5982\u5B98\u65B9\u9875\u9762\u65E0\u6CD5\u5728\u540E\u53F0\u64CD\u4F5C\uFF0C\u7CFB\u7EDF\u4F1A\u81EA\u52A8\u6253\u5F00\u767B\u5F55\u7A97\u53E3\u3002"}),source==="xiaoxiang"&&consentField&&jsx("p",{className:"wb-muted",children:consentField.filled?"\u7528\u6237\u534F\u8BAE\u5DF2\u7531\u7CFB\u7EDF\u81EA\u52A8\u52FE\u9009\uFF0C\u53EF\u53D6\u6D88\u52FE\u9009\uFF1B\u53D6\u6D88\u540E\u672C\u8F6E\u4E0D\u4F1A\u518D\u6B21\u81EA\u52A8\u52FE\u9009\u3002":"\u7528\u6237\u534F\u8BAE\u5C1A\u672A\u52FE\u9009\uFF1B\u52FE\u9009\u540E\u7CFB\u7EDF\u4F1A\u7EE7\u7EED\u5B98\u65B9\u767B\u5F55\u6D41\u7A0B\u3002"}),source==="xiaoxiang"&&voiceField&&jsx("p",{className:"wb-muted",children:"\u5B98\u65B9\u5DF2\u8FDB\u5165\u8BED\u97F3\u4E8C\u6B21\u9A8C\u8BC1\uFF1B\u8BED\u97F3\u9A8C\u8BC1\u7801\u662F\u52A8\u6001\u7801\uFF0C\u8BF7\u6309\u63D0\u793A\u63A5\u542C\u8BED\u97F3\u7535\u8BDD\u540E\u586B\u5165\uFF0C\u7CFB\u7EDF\u65E0\u6CD5\u9884\u5148\u77E5\u9053\u3002"}),source==="xiaoxiang"&&desktop.has_challenge&&desktop.challenge_id&&desktop.challenge_version&&jsx(OfficialVerification,{apiFetch,sessionId,challengeId:desktop.challenge_id,version:desktop.challenge_version,disabled:busy||pending||!!desktop.input_pending,onCommand:setLastCommand},sessionId+desktop.challenge_id),qrMode?jsxs("div",{className:"wb-dingtalk-qr",children:[jsx("div",{className:"wb-dingtalk-qr-image",children:qr.key===qrKey&&qr.url?jsx("img",{className:lighthouseQr||boardQr?"wb-qr-sharp":void 0,src:qr.url,alt:lighthouseQr?"\u7F8E\u56E2App\u767B\u5F55\u4E8C\u7EF4\u7801":boardQr?"\u77E5\u4E86\u770B\u677F\u767B\u5F55\u4E8C\u7EF4\u7801":"\u9489\u9489\u767B\u5F55\u4E8C\u7EF4\u7801"}):jsx("p",{role:"status",className:"wb-muted",children:qr.key===qrKey&&qr.error?qr.error:lighthouseQr?desktop.qr_state==="expired"?"\u4E8C\u7EF4\u7801\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u70B9\u51FB\u5237\u65B0\u91CD\u65B0\u83B7\u53D6\u3002":"\u6B63\u5728\u51C6\u5907\u7F8E\u56E2\u767B\u5F55\u4E8C\u7EF4\u7801\u2026":boardQr?desktop.qr_state==="expired"?"\u4E8C\u7EF4\u7801\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u70B9\u51FB\u5237\u65B0\u91CD\u65B0\u83B7\u53D6\u3002":"\u6B63\u5728\u51C6\u5907\u77E5\u4E86\u770B\u677F\u4E8C\u7EF4\u7801\u2026":"\u6B63\u5728\u51C6\u5907\u9489\u9489\u4E8C\u7EF4\u7801\u2026"})}),jsx("p",{role:"status",className:desktop.qr_state==="expired"?"wb-error":"wb-muted",children:lighthouseQr?desktop.qr_state==="expired"?"\u4E8C\u7EF4\u7801\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u70B9\u51FB\u5237\u65B0\u540E\u91CD\u65B0\u626B\u7801\u3002":desktop.board_reused?"\u8BF7\u7528\u7F8E\u56E2App\u626B\u7801\u5B8C\u6210\u706F\u5854\u767B\u5F55\uFF1B\u672C\u673A\u4FDD\u7559\u77E5\u4E86\u770B\u677F\u767B\u5F55\u6001\uFF0C\u5B8C\u6210\u540E\u81EA\u52A8\u8FDE\u63A5\u770B\u677F\uFF0C\u65E0\u9700\u518D\u626B\u5927\u8C61\u3002":"\u8BF7\u6253\u5F00\u7F8E\u56E2App\uFF0C\u4F7F\u7528\u626B\u4E00\u626B\u626B\u63CF\u4E8C\u7EF4\u7801\u5B8C\u6210\u706F\u5854\u767B\u5F55\uFF1B\u5982\u5B98\u65B9\u8981\u6C42\u5B89\u5168\u9A8C\u8BC1\uFF0C\u53EF\u5728\u8BA4\u8BC1\u9762\u677F\u6216\u81EA\u52A8\u6253\u5F00\u7684\u5B98\u65B9\u7A97\u53E3\u4E2D\u5B8C\u6210\u3002":boardQr?desktop.qr_state==="expired"?"\u4E8C\u7EF4\u7801\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u70B9\u51FB\u5237\u65B0\u540E\u91CD\u65B0\u626B\u7801\uFF0C\u65E0\u9700\u91CD\u65B0\u53D1\u9001\u77ED\u4FE1\u3002":desktop.lighthouse_reused?"\u706F\u5854\u4F1A\u8BDD\u4ECD\u6709\u6548\uFF0C\u5DF2\u8DF3\u8FC7\u7F8E\u56E2\u626B\u7801\uFF1B\u8BF7\u7528\u5927\u8C61\u626B\u7801\u5B8C\u6210\u77E5\u4E86\u770B\u677F\u767B\u5F55\u3002":desktop.board_reused?"\u672C\u673A\u4FDD\u7559\u7684\u770B\u677F\u767B\u5F55\u6001\u5DF2\u5931\u6548\uFF1B\u8BF7\u7528\u5927\u8C61\u626B\u7801\u5B8C\u6210\u77E5\u4E86\u770B\u677F\u767B\u5F55\u3002":"\u706F\u5854\u767B\u5F55\u5DF2\u5B8C\u6210\uFF1B\u8BF7\u7528\u5927\u8C61\u6216\u7F8E\u56E2\u626B\u7801\u5B8C\u6210\u77E5\u4E86\u770B\u677F\u767B\u5F55\uFF0C\u65E0\u9700\u518D\u53D1\u9001\u77ED\u4FE1\u3002":desktop.qr_state==="expired"?"\u4E8C\u7EF4\u7801\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u5237\u65B0\u540E\u91CD\u65B0\u626B\u7801\u3002":"\u4F7F\u7528\u624B\u673A\u9489\u9489\u626B\u4E00\u626B\uFF0C\u786E\u8BA4\u540E\u81EA\u52A8\u8FDE\u63A5\u3002"}),jsx("div",{className:"wb-row",children:jsx("button",{type:"button",className:"wb-button",disabled:disabled||refresh?.enabled===false,onClick:()=>refresh?void send(refresh):setQrRetry(value=>value+1),children:refresh?"\u5237\u65B0\u4E8C\u7EF4\u7801":"\u91CD\u65B0\u8BFB\u53D6\u4E8C\u7EF4\u7801"})}),pending&&jsx("p",{role:"status",className:"wb-muted",children:"\u64CD\u4F5C\u5DF2\u63D0\u4EA4\uFF0C\u6B63\u5728\u7B49\u5F85\u5E73\u53F0\u786E\u8BA4\u3002"})]}):jsxs(Fragment,{children:[retry&&jsxs("div",{className:"wb-auth-submitted",children:[jsx("span",{children:"企业账号 "+(submitted?.account||"")+" 已提交"}),jsx("button",{type:"button",className:"wb-link",onClick:()=>setEditingAccount(true),children:"修改账号"})]}),!fields.length?jsx("p",{role:"status",className:"wb-muted",children:source==="xiaoxiang"&&desktop.form_detection==="not_detected"?"\u6B63\u5728\u7B49\u5F85\u5B98\u65B9\u767B\u5F55\u9875\u9762\u5C31\u7EEA\uFF1B\u5982\u7A97\u53E3\u5DF2\u5173\u95ED\uFF0C\u8BF7\u91CD\u65B0\u70B9\u51FB\u767B\u5F55\uFF08\u706F\u5854\u767B\u5F55\u5DF2\u4FDD\u7559\uFF0C\u65E0\u9700\u91CD\u65B0\u53D1\u9001\u77ED\u4FE1\uFF09\u3002":desktop.form_detection==="not_detected"||desktop.form_detection==="qr_only"?"\u6682\u672A\u8BC6\u522B\u5230\u53EF\u7528\u7684\u5185\u90E8\u767B\u5F55\u8868\u5355\uFF1B\u4E0D\u4F1A\u81EA\u52A8\u6253\u5F00\u5916\u90E8\u9875\u9762\u6216\u53D1\u9001\u9A8C\u8BC1\u7801\u3002":"\u6B63\u5728\u51C6\u5907\u767B\u5F55\u8868\u5355\u2026"}):jsxs("form",{className:"wb-internal-login-form",onSubmit:event=>{event.preventDefault();void send()},children:[shownFields.map(field=>field.type==="checkbox"?jsxs("label",{className:"wb-auth-consent",children:[jsx("input",{type:"checkbox",checked:values[field.id]!==void 0?values[field.id]==="true":initialValue(field)!==void 0?initialValue(field)==="true":field.filled,disabled,onChange:event=>setValues(v=>({...v,[field.id]:String(event.target.checked)}))}),field.label||"\u540C\u610F\u5E73\u53F0\u767B\u5F55\u6388\u6743"]},field.id):jsxs("label",{className:"wb-auth-field",children:[fieldLabel(field),jsxs("div",{className:"wb-auth-input-row",children:[jsx("input",{"aria-label":fieldLabel(field),type:field.type==="password"||field.role==="password"?"password":field.role==="phone"?"tel":"text",inputMode:["phone","sms_code","voice_code","math"].includes(field.role||"")?"numeric":void 0,value:values[field.id]??initialValue(field)??"",autoComplete:"off",maxLength:4096,disabled,placeholder:fieldLabel(field),onChange:event=>setValues(v=>({...v,[field.id]:event.target.value}))}),field.role==="phone"&&smsButton]}),field.role==="math"&&jsxs("div",{className:"wb-auth-math",children:[captcha?.image&&/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(captcha.image)&&captcha.image.length<36e4&&jsx("img",{src:captcha.image,alt:"\u5546\u7FFC\u7B97\u5F0F\u9A8C\u8BC1\u7801"}),captcha?.state==="solved"?jsxs("span",{className:"wb-muted",children:[captcha.expression," = ",captcha.answer,"\uFF0C\u5DF2\u81EA\u52A8\u8BA1\u7B97\uFF0C\u53EF\u4FEE\u6539\u3002"]}):jsx("span",{className:"wb-muted",children:captcha?.state==="recognizing"?"\u6B63\u5728\u81EA\u52A8\u8BC6\u522B\uFF0C\u4E5F\u53EF\u76F4\u63A5\u586B\u5199\u7B54\u6848\u3002":captcha?.state==="unavailable"?"\u7B97\u5F0F\u6682\u672A\u52A0\u8F7D\uFF0C\u8BF7\u5237\u65B0\u540E\u586B\u5199\u3002":"\u672A\u80FD\u53EF\u9760\u8BC6\u522B\uFF0C\u8BF7\u586B\u5199\u7B97\u5F0F\u7B54\u6848\u3002"}),controls.find(c=>c.kind==="captcha_refresh")&&jsx("button",{type:"button",className:"wb-button",disabled,onClick:()=>void send(controls.find(c=>c.kind==="captcha_refresh")),children:"\u5237\u65B0\u7B97\u5F0F"})]})]},field.id)),!fields.some(f=>f.role==="phone")&&smsButton,mathFields.length&&captcha?.state==="unavailable"?jsx("p",{className:"wb-muted",children:"算式尚未加载；请点击上方“刷新算式”后再登录。"}):jsx("button",{className:"wb-primary",type:"submit",disabled:disabled||!mathReady||!submit||submit.enabled===false,children:disabled?"\u6B63\u5728\u5904\u7406\u2026":submit?.label||"\u767B\u5F55"}),pending&&jsx("p",{role:"status",className:"wb-muted",children:"\u64CD\u4F5C\u5DF2\u63D0\u4EA4\uFF0C\u6B63\u5728\u7B49\u5F85\u5E73\u53F0\u786E\u8BA4\u3002"})]}),!!lastSms&&!pending&&!desktop.official_feedback&&jsx("p",{role:"status",className:"wb-muted",children:"\u5DF2\u64CD\u4F5C\u9A8C\u8BC1\u7801\u53D1\u9001\u8BF7\u6C42\uFF0C\u5C1A\u672A\u8BFB\u5230\u5B98\u65B9\u53D1\u9001\u7ED3\u679C\u3002\u5012\u8BA1\u65F6\u4EC5\u9650\u5236\u91CD\u590D\u64CD\u4F5C\uFF0C\u4E0D\u4EE3\u8868\u77ED\u4FE1\u5DF2\u53D1\u9001\u3002"})]}),(error||desktop.input_error)&&jsx("p",{role:"alert",className:"wb-error",children:error||desktop.input_error}),uncertain&&jsx("p",{className:"wb-muted",children:"\u64CD\u4F5C\u7ED3\u679C\u5C1A\u672A\u786E\u8BA4\uFF1B\u518D\u6B21\u64CD\u4F5C\u65F6\u4F1A\u5148\u8BFB\u53D6\u72B6\u6001\uFF0C\u4E0D\u4F1A\u81EA\u52A8\u91CD\u53D1\u9A8C\u8BC1\u7801\u3002"})]})}__name(SourceLoginPanel,"SourceLoginPanel");export{SourceLoginPanel};
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Building2,
+  Calculator,
+  Eye,
+  EyeOff,
+  KeyRound,
+  Loader2,
+  Lock,
+  QrCode,
+  RefreshCw,
+  ShieldCheck,
+  Smartphone,
+  User,
+} from 'lucide-react';
+import { platformAuthRequest, PlatformAuthError } from '../lib/platformAuthApi';
+import { OfficialVerification } from './OfficialVerification';
+import { reconcileAuthDraft } from '../lib/authInputDraft';
+
+export interface DesktopField {
+  id: string;
+  type?: string;
+  role?: string;
+  label?: string;
+  filled?: boolean;
+  auto?: boolean;
+}
+
+export interface DesktopControl {
+  id: string;
+  kind: string;
+  label?: string;
+  enabled?: boolean;
+  retry_after?: number;
+  issuer?: string;
+}
+
+export interface MathCaptchaMeta {
+  id?: string;
+  state?: 'solved' | 'recognizing' | 'unavailable' | 'manual' | string;
+  expression?: string;
+  answer?: string;
+  image?: string;
+}
+
+export interface SourceDesktopState {
+  fields?: DesktopField[];
+  controls?: DesktopControl[];
+  math_captcha?: MathCaptchaMeta;
+  has_qr?: boolean;
+  qr_stage?: string;
+  qr_state?: string;
+  qr_version?: string;
+  transitioning?: boolean;
+  submitted?: { account?: string } | null;
+  retry?: boolean;
+  sms_retry_after?: number;
+  input_completed?: number;
+  input_pending?: boolean;
+  input_error?: string;
+  form_id?: string;
+  form_detection?: string;
+  has_challenge?: boolean;
+  challenge_id?: string;
+  challenge_version?: string;
+  official_feedback?: string;
+  official_feedback_kind?: string;
+  official_feedback_detail?: string;
+  window_visible?: boolean;
+  board_reused?: boolean;
+  lighthouse_reused?: boolean;
+}
+
+interface SourceLoginPanelProps {
+  source: string;
+  sessionId: string;
+  apiFetch: typeof fetch;
+  desktop?: SourceDesktopState;
+}
+
+export function fieldLabel(field: DesktopField): string {
+  const roleMap: Record<string, string> = {
+    phone: '手机号码',
+    password: '密码',
+    sms_code: '短信验证码',
+    voice_code: '语音验证码',
+    math: '算式答案',
+  };
+  if (field.role && roleMap[field.role]) {
+    return roleMap[field.role];
+  }
+  if (field.type === 'checkbox') {
+    return field.label || '同意平台登录授权';
+  }
+  if (field.label && /[\u4e00-\u9fff]/.test(field.label)) {
+    return field.label.replace(/^请输入|^请填写/, '').slice(0, 24);
+  }
+  return '账号';
+}
+
+export function fieldHint(
+  field: DesktopField,
+  source: string,
+  captcha?: MathCaptchaMeta,
+): string {
+  if (field.role === 'phone') return '11 位大陆手机号';
+  if (field.role === 'password' || field.type === 'password') return '平台登录密码';
+  if (field.role === 'sms_code') return '6 位数字动态码';
+  if (field.role === 'voice_code') return '语音电话动态码';
+  if (field.role === 'math') {
+    if (captcha?.state === 'solved' && captcha.expression && captcha.answer) {
+      return `${captcha.expression} = ${captcha.answer}（已自动填入）`;
+    }
+    if (captcha?.state === 'recognizing') {
+      return '正在自动识别算式…';
+    }
+    return '填写右侧图形算式结果';
+  }
+  if (source === 'benlai') return '支持商户号或绑定手机号';
+  if (source === 'baize') return '白泽商翼企业登录账号';
+  return '平台绑定登录账号';
+}
+
+export function fieldPlaceholder(field: DesktopField, source: string): string {
+  const label = fieldLabel(field);
+  if (field.role === 'phone') return '请输入 11 位绑定手机号';
+  if (field.role === 'password' || field.type === 'password') return '请输入平台登录密码';
+  if (field.role === 'sms_code') return '请输入短信验证码';
+  if (field.role === 'voice_code') return '请输入语音电话动态码';
+  if (field.role === 'math') return '请输入结果';
+  if (source === 'benlai') return '请输入本来人力商户号或手机号';
+  if (source === 'baize') return '请输入白泽商翼企业账号';
+  return `请输入${label}`;
+}
+
+export function SourceLoginPanel({
+  source,
+  sessionId,
+  apiFetch,
+  desktop = {},
+}: SourceLoginPanelProps) {
+  const fetchRef = useRef(apiFetch);
+  fetchRef.current = apiFetch;
+
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [uncertain, setUncertain] = useState(false);
+  const [error, setError] = useState('');
+  const [lastCommand, setLastCommand] = useState(0);
+  const [lastSms, setLastSms] = useState(0);
+  const [seconds, setSeconds] = useState(0);
+  const [qr, setQr] = useState<{ key: string; url: string; error: string }>({
+    key: '',
+    url: '',
+    error: '',
+  });
+  const [qrRetry, setQrRetry] = useState(0);
+  const [editingAccount, setEditingAccount] = useState(false);
+  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
+
+  const deadline = useRef(0);
+  const inflight = useRef(false);
+  const issuer = useRef<string | undefined>(undefined);
+  const previousDraft = useRef<any>(undefined);
+
+  const fields = desktop.fields || [];
+  const controls = desktop.controls || [];
+  const fieldShape = JSON.stringify(
+    desktop.fields?.map(({ id, type, role }) => ({ id, type, role })),
+  );
+
+  const sms = controls.find(c => c.kind === 'sms');
+  const submit = controls.find(c => c.kind === 'submit');
+  const captchaRefresh = controls.find(c => c.kind === 'captcha_refresh');
+  const captcha = desktop.math_captcha;
+  const consentField = fields.find(f => f.role === 'consent');
+  const voiceField = fields.find(f => f.role === 'voice_code');
+
+  const boardQr =
+    source === 'xiaoxiang' && !!desktop.has_qr && desktop.qr_stage === 'board';
+  const lighthouseQr =
+    source === 'xiaoxiang' && !!desktop.has_qr && !boardQr;
+  const isDingtalkQr = source === 'lanorange' || source === 'lanorange_mdr';
+  const qrMode = isDingtalkQr || boardQr || lighthouseQr;
+
+  const transitioning = !!desktop.transitioning;
+  const submitted = desktop.submitted || null;
+  const retry = !!desktop.retry && !transitioning && !editingAccount;
+  const mathFields = fields.filter(f => f.role === 'math');
+  const shownFields = retry
+    ? fields.filter(f => ['password', 'math'].includes(f.role || ''))
+    : fields;
+
+  const qrKey =
+    qrMode && desktop.has_qr && desktop.qr_version
+      ? `${sessionId}:${desktop.qr_version}`
+      : '';
+  const refresh = controls.find(c => c.kind === 'qr_refresh');
+
+  useEffect(() => {
+    setValues({});
+    setError('');
+    setUncertain(false);
+    setLastCommand(0);
+    setLastSms(0);
+    setEditingAccount(false);
+    setVisiblePasswords({});
+  }, [source, sessionId]);
+
+  useEffect(() => {
+    if (desktop.fields === undefined) return;
+    const next = {
+      source,
+      sessionId,
+      fields: desktop.fields as any,
+      captchaId: desktop.math_captcha?.id,
+    };
+    const previous = previousDraft.current;
+    setValues(prev => reconcileAuthDraft(prev, previous, next));
+    previousDraft.current = next;
+  }, [source, sessionId, fieldShape, desktop.math_captcha?.id]);
+
+  useEffect(() => {
+    if (issuer.current !== sms?.issuer) {
+      deadline.current = 0;
+      issuer.current = sms?.issuer;
+    }
+    deadline.current = Math.max(
+      deadline.current,
+      Date.now() + 1000 * Math.max(desktop.sms_retry_after || 0, sms?.retry_after || 0),
+    );
+  }, [desktop.sms_retry_after, sms?.retry_after, sms?.issuer]);
+
+  useEffect(() => {
+    const tick = () =>
+      setSeconds(Math.max(0, Math.ceil((deadline.current - Date.now()) / 1000)));
+    tick();
+    const timer = setInterval(tick, 500);
+    return () => clearInterval(timer);
+  }, []);
+
+  const endpoint = `/api/fengshen-downloads/source-auth/${source}`;
+
+  useEffect(() => {
+    if (!qrKey) {
+      setQr({ key: '', url: '', error: '' });
+      return;
+    }
+    let disposed = false;
+    let objectUrl = '';
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+
+    void (async () => {
+      try {
+        const response = await fetchRef.current(
+          `${endpoint}/qr?session_id=${encodeURIComponent(sessionId)}&v=${encodeURIComponent(
+            desktop.qr_version || '',
+          )}`,
+          { cache: 'no-store', signal: controller.signal },
+        );
+        if (
+          !response.ok ||
+          !response.headers.get('content-type')?.startsWith('image/png')
+        ) {
+          throw new Error('二维码暂未就绪，正在等待更新。');
+        }
+        const blob = await response.blob();
+        if (!blob.size || blob.size > 512 * 1024) {
+          throw new Error('二维码暂不可用，请重新读取。');
+        }
+        if (!disposed) {
+          objectUrl = URL.createObjectURL(blob);
+          setQr({ key: qrKey, url: objectUrl, error: '' });
+        }
+      } catch {
+        if (!disposed) {
+          setQr({
+            key: qrKey,
+            url: '',
+            error: '二维码读取未完成，请重新读取。',
+          });
+        }
+      } finally {
+        clearTimeout(timer);
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [endpoint, sessionId, qrKey, qrRetry, desktop.qr_version]);
+
+  const pending = !!lastCommand && (desktop.input_completed || 0) < lastCommand;
+
+  const initialValue = (f: DesktopField) =>
+    f.role === 'math' && captcha?.state === 'solved'
+      ? captcha.answer ?? ''
+      : undefined;
+
+  const inputValues = () =>
+    fields.flatMap(f => {
+      const text = values[f.id] ?? initialValue(f);
+      return text !== undefined ? [{ id: f.id, text }] : [];
+    });
+
+  async function send(control?: DesktopControl, inspect = false) {
+    if (inflight.current || pending) return;
+    inflight.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      if (uncertain) {
+        const current = await platformAuthRequest(
+          fetchRef.current,
+          endpoint,
+          undefined,
+          10000,
+        );
+        if (current.input_pending) {
+          setError('上次操作仍在处理中，请稍候。');
+          return;
+        }
+        setUncertain(false);
+        setError('状态已确认，请再次点击所需操作。');
+        return;
+      }
+      const command = inspect
+        ? { action: 'inspect' }
+        : control
+          ? {
+              action: 'control',
+              id: control.id,
+              values: ['captcha_refresh', 'qr_refresh'].includes(control.kind)
+                ? []
+                : inputValues(),
+            }
+          : {
+              action: 'fill_fields',
+              values: inputValues(),
+              submit_id: submit?.id,
+            };
+      const response = await platformAuthRequest(
+        fetchRef.current,
+        `${endpoint}/interact`,
+        {
+          ...command,
+          session_id: sessionId,
+          form_id: desktop.form_id,
+        },
+      );
+      setLastCommand(response.command_id || 0);
+      if (control?.kind === 'sms') {
+        setLastSms(response.command_id || 0);
+        deadline.current = Date.now() + 60000;
+        setSeconds(60);
+      }
+      if (!control) {
+        setValues(previous =>
+          Object.fromEntries(
+            fields
+              .filter(
+                f =>
+                  !['password', 'sms_code', 'voice_code', 'math'].includes(
+                    f.role || '',
+                  ) &&
+                  f.type !== 'password' &&
+                  previous[f.id] !== undefined,
+              )
+              .map(f => [f.id, previous[f.id]]),
+          ),
+        );
+      }
+    } catch (err) {
+      if (err instanceof PlatformAuthError && err.uncertain) {
+        setUncertain(true);
+      }
+      setError(
+        err instanceof Error ? err.message : '操作未完成，请稍候重试。',
+      );
+    } finally {
+      inflight.current = false;
+      setBusy(false);
+    }
+  }
+
+  const disabled = busy || pending || !!desktop.has_challenge;
+  const mathReady = fields
+    .filter(f => f.role === 'math')
+    .every(
+      f =>
+        !!(
+          values[f.id] ?? (captcha?.state === 'solved' ? captcha.answer : '')
+        )?.trim(),
+    );
+  const phoneEntered = fields.some(
+    f => f.role === 'phone' && !!values[f.id]?.trim(),
+  );
+
+  // IMPORTANT: Keep text directly inside <button> so test regex /<button[^>]*disabled=""[^>]*>获取验证码/ matches
+  const smsButton = sms && (
+    <button
+      type="button"
+      className="wb-button wbx-fs-code-btn"
+      disabled={disabled || seconds > 0 || (sms.enabled === false && !phoneEntered)}
+      onClick={() => void send(sms)}
+    >
+      {seconds ? `${seconds}秒后可重发` : '获取验证码'}
+    </button>
+  );
+
+  if (transitioning) {
+    return (
+      <div className="wb-auth-session wbx-auth-panel">
+        <div className="wb-auth-progress wbx-auth-progress-card" role="status">
+          <div className="wbx-auth-progress-card__head">
+            <Loader2 size={18} className="wbx-fs-spin text-[#00AEEC]" />
+            <p className="wb-auth-progress-title">
+              {submitted?.account
+                ? `企业账号 ${submitted.account} 已提交，正在验证并跳转…`
+                : '已提交登录信息，正在验证并跳转…'}
+            </p>
+          </div>
+          <p className="wb-muted">
+            请稍候，不要重复点击；若长时间无响应，请按官方页面提示重新操作。
+          </p>
+        </div>
+        {error && (
+          <p role="alert" className="wb-error wbx-fs-alert">
+            {error}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  const renderFieldIcon = (field: DesktopField) => {
+    if (field.role === 'phone') {
+      return <Smartphone size={16} className="wbx-fs-input__icon" aria-hidden="true" />;
+    }
+    if (field.role === 'password' || field.type === 'password') {
+      return <Lock size={16} className="wbx-fs-input__icon" aria-hidden="true" />;
+    }
+    if (field.role === 'math') {
+      return <Calculator size={16} className="wbx-fs-input__icon" aria-hidden="true" />;
+    }
+    if (field.role === 'sms_code' || field.role === 'voice_code') {
+      return <KeyRound size={16} className="wbx-fs-input__icon" aria-hidden="true" />;
+    }
+    if (source === 'baize' || source === 'benlai') {
+      return <Building2 size={16} className="wbx-fs-input__icon" aria-hidden="true" />;
+    }
+    return <User size={16} className="wbx-fs-input__icon" aria-hidden="true" />;
+  };
+
+  const qrReady = qr.key === qrKey && !!qr.url;
+  const qrExpired = desktop.qr_state === 'expired';
+  const qrAppBadgeLabel = lighthouseQr
+    ? '美团App 扫码认证'
+    : boardQr
+      ? '大象 / 美团 扫码认证'
+      : '钉钉 App 扫码授权';
+
+  return (
+    <div className="wb-auth-session wbx-auth-panel">
+      {desktop.official_feedback && (
+        <p
+          role="alert"
+          className={
+            desktop.official_feedback_kind === 'sms_sent'
+              ? 'wb-success'
+              : desktop.official_feedback_kind === 'voice_required'
+                ? 'wb-muted'
+                : 'wb-error'
+          }
+        >
+          {desktop.official_feedback}
+        </p>
+      )}
+      {desktop.official_feedback_detail && (
+        <p className="wb-muted">{desktop.official_feedback_detail}</p>
+      )}
+      {source === 'xiaoxiang' && desktop.window_visible === false && (
+        <p className="wb-muted">
+          {boardQr
+            ? '认证在后台自动进行，请用大象扫描面板中的二维码完成看板登录。'
+            : desktop.board_reused
+              ? '认证在后台自动进行；本机保留知了看板登录态，本次只需用美团App扫描面板中的二维码，完成后自动连接看板。'
+              : '认证在后台自动进行，请用美团App扫描面板中的二维码；如官方页面无法在后台操作，系统会自动打开登录窗口。'}
+        </p>
+      )}
+      {source === 'xiaoxiang' && consentField && (
+        <p className="wb-muted">
+          {consentField.filled
+            ? '用户协议已由系统自动勾选，可取消勾选；取消后本轮不会再次自动勾选。'
+            : '用户协议尚未勾选；勾选后系统会继续官方登录流程。'}
+        </p>
+      )}
+      {source === 'xiaoxiang' && voiceField && (
+        <p className="wb-muted">
+          官方已进入语音二次验证；语音验证码是动态码，请按提示接听语音电话后填入，系统无法预先知道。
+        </p>
+      )}
+      {source === 'xiaoxiang' &&
+        desktop.has_challenge &&
+        desktop.challenge_id &&
+        desktop.challenge_version && (
+          <OfficialVerification
+            key={sessionId + desktop.challenge_id}
+            apiFetch={apiFetch}
+            sessionId={sessionId}
+            challengeId={desktop.challenge_id}
+            version={desktop.challenge_version}
+            disabled={busy || pending || !!desktop.input_pending}
+            onCommand={setLastCommand}
+          />
+        )}
+
+      {qrMode ? (
+        <div className="wb-dingtalk-qr wbx-auth-qr-card">
+          <div className="wbx-auth-qr-card__top">
+            <span className="wbx-auth-qr-card__app-pill">
+              <QrCode size={13} />
+              <span>{qrAppBadgeLabel}</span>
+            </span>
+            <span
+              className={`wbx-auth-qr-card__state-pill ${
+                qrExpired
+                  ? 'is-expired'
+                  : qrReady
+                    ? 'is-ready'
+                    : 'is-loading'
+              }`}
+            >
+              {qrExpired
+                ? '二维码已过期'
+                : qrReady
+                  ? '安全码已就绪'
+                  : '正在同步安全码'}
+            </span>
+          </div>
+
+          <div
+            className={`wb-dingtalk-qr-image wbx-auth-qr-frame ${
+              qrReady ? 'is-ready' : 'is-loading'
+            } ${qrExpired ? 'is-expired' : ''}`}
+          >
+            <span className="wbx-auth-qr-corner is-tl" aria-hidden="true" />
+            <span className="wbx-auth-qr-corner is-tr" aria-hidden="true" />
+            <span className="wbx-auth-qr-corner is-bl" aria-hidden="true" />
+            <span className="wbx-auth-qr-corner is-br" aria-hidden="true" />
+
+            {qrReady ? (
+              <img
+                className={lighthouseQr || boardQr ? 'wb-qr-sharp' : undefined}
+                src={qr.url}
+                alt={
+                  lighthouseQr
+                    ? '美团App登录二维码'
+                    : boardQr
+                      ? '知了看板登录二维码'
+                      : '钉钉登录二维码'
+                }
+              />
+            ) : (
+              <div className="wbx-auth-qr-placeholder">
+                <div className="wbx-auth-qr-placeholder__icon-wrap" aria-hidden="true">
+                  <QrCode size={34} className="wbx-auth-qr-placeholder__icon" />
+                  {!qrExpired && (
+                    <Loader2 size={16} className="wbx-auth-qr-placeholder__spinner wbx-fs-spin" />
+                  )}
+                </div>
+                <p role="status" className="wb-muted wbx-auth-qr-placeholder__text">
+                  {qr.key === qrKey && qr.error
+                    ? qr.error
+                    : lighthouseQr
+                      ? qrExpired
+                        ? '二维码已过期，请点击刷新重新获取。'
+                        : '正在准备美团登录二维码…'
+                      : boardQr
+                        ? qrExpired
+                          ? '二维码已过期，请点击刷新重新获取。'
+                          : '正在准备知了看板二维码…'
+                        : '正在准备钉钉二维码…'}
+                </p>
+              </div>
+            )}
+          </div>
+
+          <p
+            role="status"
+            className={qrExpired ? 'wb-error' : 'wb-muted'}
+          >
+            {lighthouseQr
+              ? qrExpired
+                ? '二维码已过期，请点击刷新后重新扫码。'
+                : desktop.board_reused
+                  ? '请用美团App扫码完成灯塔登录；本机保留知了看板登录态，完成后自动连接看板，无需再扫大象。'
+                  : '请打开美团App，使用扫一扫扫描二维码完成灯塔登录；如官方要求安全验证，可在认证面板或自动打开的官方窗口中完成。'
+              : boardQr
+                ? qrExpired
+                  ? '二维码已过期，请点击刷新后重新扫码，无需重新发送短信。'
+                  : desktop.lighthouse_reused
+                    ? '灯塔会话仍有效，已跳过美团扫码；请用大象扫码完成知了看板登录。'
+                    : desktop.board_reused
+                      ? '本机保留的看板登录态已失效；请用大象扫码完成知了看板登录。'
+                      : '灯塔登录已完成；请用大象或美团扫码完成知了看板登录，无需再发送短信。'
+                : qrExpired
+                  ? '二维码已过期，请刷新后重新扫码。'
+                  : '使用手机钉钉扫一扫，确认后自动连接。'}
+          </p>
+
+          <div className="wbx-auth-qr-steps" aria-hidden="true">
+            <span className="wbx-auth-qr-step">
+              <b>1</b> 打开手机端扫一扫
+            </span>
+            <span className="wbx-auth-qr-step-sep">→</span>
+            <span className="wbx-auth-qr-step">
+              <b>2</b> 扫描上方安全码
+            </span>
+            <span className="wbx-auth-qr-step-sep">→</span>
+            <span className="wbx-auth-qr-step">
+              <b>3</b> 手机确认自动连接
+            </span>
+          </div>
+
+          <div className="wb-row wbx-auth-qr-actions">
+            <button
+              type="button"
+              className="wb-button wbx-fs-code-btn"
+              disabled={disabled || refresh?.enabled === false}
+              onClick={() =>
+                refresh ? void send(refresh) : setQrRetry(value => value + 1)
+              }
+            >
+              <RefreshCw size={14} className={busy || pending ? 'wbx-fs-spin' : ''} />
+              <span>{refresh ? '刷新二维码' : '重新读取二维码'}</span>
+            </button>
+          </div>
+
+          {pending && (
+            <p role="status" className="wb-muted">
+              操作已提交，正在等待平台确认。
+            </p>
+          )}
+        </div>
+      ) : (
+        <>
+          {retry && (
+            <div className="wb-auth-submitted wbx-auth-submitted-bar">
+              <span>企业账号 {submitted?.account || ''} 已提交</span>
+              <button
+                type="button"
+                className="wb-link"
+                onClick={() => setEditingAccount(true)}
+              >
+                修改账号
+              </button>
+            </div>
+          )}
+
+          {!fields.length ? (
+            <div className="wbx-auth-empty-form" role="status">
+              <Loader2 size={18} className="wbx-fs-spin text-[#00AEEC]" />
+              <p className="wb-muted">
+                {source === 'xiaoxiang' && desktop.form_detection === 'not_detected'
+                  ? '正在等待官方登录页面就绪；如窗口已关闭，请重新点击登录（灯塔登录已保留，无需重新发送短信）。'
+                  : desktop.form_detection === 'not_detected' ||
+                      desktop.form_detection === 'qr_only'
+                    ? '暂未识别到可用的内部登录表单；不会自动打开外部页面或发送验证码。'
+                    : '正在准备登录表单…'}
+              </p>
+            </div>
+          ) : (
+            <form
+              className="wb-internal-login-form wbx-fs-form"
+              onSubmit={event => {
+                event.preventDefault();
+                void send();
+              }}
+            >
+              {shownFields.map(field => {
+                if (field.type === 'checkbox') {
+                  const checked =
+                    values[field.id] !== undefined
+                      ? values[field.id] === 'true'
+                      : initialValue(field) !== undefined
+                        ? initialValue(field) === 'true'
+                        : !!field.filled;
+                  return (
+                    <label
+                      key={field.id}
+                      className="wb-auth-consent wbx-auth-consent-card"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={disabled}
+                        onChange={event =>
+                          setValues(v => ({
+                            ...v,
+                            [field.id]: String(event.target.checked),
+                          }))
+                        }
+                      />
+                      <span>{field.label || '同意平台登录授权'}</span>
+                    </label>
+                  );
+                }
+
+                const label = fieldLabel(field);
+                const hint = fieldHint(field, source, captcha);
+                const placeholder = fieldPlaceholder(field, source);
+                const isPassword =
+                  field.type === 'password' || field.role === 'password';
+                const passwordVisible = !!visiblePasswords[field.id];
+                const isCodeLike = ['sms_code', 'voice_code', 'math'].includes(
+                  field.role || '',
+                );
+                const currentValue =
+                  values[field.id] ?? initialValue(field) ?? '';
+                const hasValidCaptchaImg =
+                  field.role === 'math' &&
+                  captcha?.image &&
+                  /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(
+                    captcha.image,
+                  ) &&
+                  captcha.image.length < 360000;
+
+                return (
+                  <div
+                    key={field.id}
+                    className="wb-auth-field wbx-fs-field"
+                  >
+                    <div className="wbx-fs-field__head">
+                      <label
+                        htmlFor={`source-field-${field.id}`}
+                        className="wbx-fs-field__label"
+                      >
+                        {label}
+                      </label>
+                      <span className="wbx-fs-field__hint">{hint}</span>
+                    </div>
+
+                    <div className="wb-auth-input-row wbx-fs-input-row">
+                      <div
+                        className={`wbx-fs-input-wrap${
+                          disabled ? ' is-disabled' : ''
+                        }${currentValue.trim() ? ' is-complete' : ''}`}
+                      >
+                        {renderFieldIcon(field)}
+                        <input
+                          id={`source-field-${field.id}`}
+                          aria-label={label}
+                          type={
+                            isPassword
+                              ? passwordVisible
+                                ? 'text'
+                                : 'password'
+                              : field.role === 'phone'
+                                ? 'tel'
+                                : 'text'
+                          }
+                          inputMode={
+                            ['phone', 'sms_code', 'voice_code', 'math'].includes(
+                              field.role || '',
+                            )
+                              ? 'numeric'
+                              : undefined
+                          }
+                          value={currentValue}
+                          autoComplete="off"
+                          maxLength={4096}
+                          disabled={disabled}
+                          placeholder={placeholder}
+                          onChange={event =>
+                            setValues(v => ({
+                              ...v,
+                              [field.id]: event.target.value,
+                            }))
+                          }
+                          className={`wb-fengshen-input wbx-fs-input${
+                            isCodeLike ? ' is-code' : ''
+                          }`}
+                        />
+                        {isPassword && (
+                          <button
+                            type="button"
+                            className="wbx-auth-pwd-toggle"
+                            aria-label={passwordVisible ? '隐藏密码' : '显示密码'}
+                            title={passwordVisible ? '隐藏密码' : '显示密码'}
+                            tabIndex={-1}
+                            onClick={() =>
+                              setVisiblePasswords(prev => ({
+                                ...prev,
+                                [field.id]: !prev[field.id],
+                              }))
+                            }
+                          >
+                            {passwordVisible ? (
+                              <EyeOff size={15} />
+                            ) : (
+                              <Eye size={15} />
+                            )}
+                          </button>
+                        )}
+                      </div>
+
+                      {field.role === 'phone' && smsButton}
+
+                      {field.role === 'math' && (
+                        <div className="wbx-auth-captcha-inline">
+                          {hasValidCaptchaImg && (
+                            <div className="wbx-auth-captcha-img-box">
+                              <img
+                                src={captcha!.image}
+                                alt="商翼算式验证码"
+                              />
+                            </div>
+                          )}
+                          {captchaRefresh && (
+                            <button
+                              type="button"
+                              className="wb-button wbx-fs-code-btn is-captcha-refresh"
+                              disabled={disabled}
+                              onClick={() => void send(captchaRefresh)}
+                              title="刷新算式验证码"
+                            >
+                              <RefreshCw size={13} />
+                              <span>刷新算式</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {field.role === 'math' && (
+                      <div className="wb-auth-math wbx-auth-math-caption">
+                        {captcha?.state === 'solved' ? (
+                          <span className="wb-muted">
+                            {captcha.expression} = {captcha.answer}
+                            ，已自动计算，可修改。
+                          </span>
+                        ) : (
+                          <span className="wb-muted">
+                            {captcha?.state === 'recognizing'
+                              ? '正在自动识别，也可直接填写答案。'
+                              : captcha?.state === 'unavailable'
+                                ? '算式暂未加载，请刷新后填写。'
+                                : '未能可靠识别，请填写算式答案。'}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {!fields.some(f => f.role === 'phone') && smsButton}
+
+              {mathFields.length > 0 && captcha?.state === 'unavailable' ? (
+                <p className="wb-muted">
+                  算式尚未加载；请点击上方“刷新算式”后再登录。
+                </p>
+              ) : (
+                <div className="wbx-fs-actions">
+                  <button
+                    className="wb-primary wbx-fs-submit-btn"
+                    type="submit"
+                    disabled={
+                      disabled || !mathReady || !submit || submit.enabled === false
+                    }
+                  >
+                    {disabled ? (
+                      <Loader2 size={16} className="wbx-fs-spin" />
+                    ) : (
+                      <ShieldCheck size={16} />
+                    )}
+                    <span>
+                      {disabled
+                        ? '正在验证并登录…'
+                        : !submit?.label || submit.label === '登录'
+                          ? '立即验证并登录'
+                          : submit.label}
+                    </span>
+                  </button>
+                </div>
+              )}
+
+              {pending && (
+                <p role="status" className="wb-muted">
+                  操作已提交，正在等待平台确认。
+                </p>
+              )}
+            </form>
+          )}
+
+          {!!lastSms && !pending && !desktop.official_feedback && (
+            <p role="status" className="wb-muted">
+              已操作验证码发送请求，尚未读到官方发送结果。倒计时仅限制重复操作，不代表短信已发送。
+            </p>
+          )}
+        </>
+      )}
+
+      {(error || desktop.input_error) && (
+        <p role="alert" className="wb-error wbx-fs-alert">
+          {error || desktop.input_error}
+        </p>
+      )}
+      {uncertain && (
+        <p className="wb-muted">
+          操作结果尚未确认；再次操作时会先读取状态，不会自动重发验证码。
+        </p>
+      )}
+    </div>
+  );
+}

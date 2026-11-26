@@ -78,6 +78,16 @@ import {
   type AccountConsoleTab,
 } from './components/AccountManagementPage';
 import { PlatformAuthCenterPage } from './components/PlatformAuthCenterPage';
+import { DisplayAdaptationPage } from './components/DisplayAdaptationPage';
+import {
+  DEFAULT_DISPLAY_CONFIG,
+  applyDisplayAdaptationToDocument,
+  detectScreenEnvironment,
+  formatDisplayAdaptationBadge,
+  loadLocalDisplayConfig,
+  saveLocalDisplayConfig,
+  type DisplayAdaptationConfig,
+} from './lib/displayAdaptation';
 import { HeaderAccountBar, WorkspaceInspectBanner } from './components/HeaderAccountBar';
 import {
   fetchWorkspaceSession,
@@ -283,6 +293,10 @@ function AuthenticatedWorkbench({
   const quickPayrollInputRef = useRef<HTMLInputElement>(null);
   // 外壳断点状态（D6：只用 1280/1024/768 三档；纯函数来自 lib/breakpoints）
   const [viewportWidth, setViewportWidth] = useState<number>(() => currentViewportWidth());
+  const [screenEnv, setScreenEnv] = useState(() => detectScreenEnvironment());
+  const [displayConfig, setDisplayConfig] = useState<DisplayAdaptationConfig>(() =>
+    loadLocalDisplayConfig(),
+  );
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [dockOpen, setDockOpen] = useState(false);
   const [cmdkOpen, setCmdkOpen] = useState(false);
@@ -291,7 +305,10 @@ function AuthenticatedWorkbench({
     let frame = 0;
     const onResize = () => {
       if (frame) cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => setViewportWidth(currentViewportWidth()));
+      frame = requestAnimationFrame(() => {
+        setViewportWidth(currentViewportWidth());
+        setScreenEnv(detectScreenEnvironment());
+      });
     };
     window.addEventListener('resize', onResize);
     return () => {
@@ -307,6 +324,12 @@ function AuthenticatedWorkbench({
       return false;
     }
   });
+  const setSidebarCollapsedPersist = (next: boolean) => {
+    setSidebarIsCollapsed(next);
+    try {
+      localStorage.setItem('workbench_sidebar_collapsed', next ? '1' : '0');
+    } catch {}
+  };
   const toggleSidebarCollapsed = () => {
     setSidebarIsCollapsed(prev => {
       const next = !prev;
@@ -316,6 +339,21 @@ function AuthenticatedWorkbench({
       return next;
     });
   };
+  const handleUpdateDisplayConfig = (next: DisplayAdaptationConfig) => {
+    setDisplayConfig(next);
+    saveLocalDisplayConfig(next);
+  };
+  const handleResetDisplayConfig = () => {
+    const def = { ...DEFAULT_DISPLAY_CONFIG };
+    setDisplayConfig(def);
+    saveLocalDisplayConfig(def);
+  };
+  useLayoutEffect(() => {
+    const tokens = applyDisplayAdaptationToDocument(displayConfig, screenEnv.detectedClass);
+    if (tokens.shouldCollapseSidebarOnLaptop && !sidebarIsCollapsed) {
+      setSidebarIsCollapsed(true);
+    }
+  }, [displayConfig, screenEnv.detectedClass]);
   useEffect(() => {
     if (!isDrawerMode) setMobileNavOpen(false);
   }, [isDrawerMode]);
@@ -351,7 +389,14 @@ function AuthenticatedWorkbench({
   const [deductionVersion, setDeductionVersion] = useState(0);
   const [payrollSubView, setPayrollSubView] = useState<PayrollSubView>('batches');
   const [workspaceView, setWorkspaceView] = useState<
-    'create' | 'history' | 'approval' | 'price-export' | 'pickup' | 'accounts' | 'platform-auth'
+    | 'create'
+    | 'history'
+    | 'approval'
+    | 'price-export'
+    | 'pickup'
+    | 'accounts'
+    | 'platform-auth'
+    | 'display-adaptation'
   >('create');
   const [downloadPlatform,setDownloadPlatform]=useState<DownloadPlatform>(()=>{
     try{
@@ -463,7 +508,15 @@ function AuthenticatedWorkbench({
   };
   useEffect(() => { try { localStorage.setItem('workbench_task_kind', taskKind); } catch {} setActiveMenu(taskKind === 'payroll' ? 'core' : 'fengshen_downloads'); }, [taskKind]);
   const navigateWorkspace = (
-    view: 'create' | 'history' | 'approval' | 'price-export' | 'pickup' | 'accounts' | 'platform-auth',
+    view:
+      | 'create'
+      | 'history'
+      | 'approval'
+      | 'price-export'
+      | 'pickup'
+      | 'accounts'
+      | 'platform-auth'
+      | 'display-adaptation',
   ) => {
     if (view === 'accounts' && currentUser.role !== 'admin') {
       showToast('仅系统管理员可访问账户与权限管理', 'error');
@@ -1521,6 +1574,7 @@ function AuthenticatedWorkbench({
           permissions={currentUser.permissions}
           isAdmin={currentUser.role === 'admin'}
           pendingAccountCount={session.pending_count}
+          displayAdaptationBadge={formatDisplayAdaptationBadge(displayConfig, screenEnv.detectedClass)}
         />
         <div className="wb-viewport wbx-workspace">
           {(() => {
@@ -1759,6 +1813,7 @@ function AuthenticatedWorkbench({
                 workspaceView === 'pickup' ||
                 workspaceView === 'accounts' ||
                 workspaceView === 'platform-auth' ||
+                workspaceView === 'display-adaptation' ||
                 (workspaceView === 'create' &&
                   ((taskKind === 'download' && !canCollection) ||
                     (taskKind === 'generate' && !canReports))) ||
@@ -1770,6 +1825,7 @@ function AuthenticatedWorkbench({
                 workspaceView === 'pickup' ||
                 workspaceView === 'accounts' ||
                 workspaceView === 'platform-auth' ||
+                workspaceView === 'display-adaptation' ||
                 (workspaceView === 'create' &&
                   ((taskKind === 'download' && !canCollection) ||
                     (taskKind === 'generate' && !canReports))) ||
@@ -1789,6 +1845,7 @@ function AuthenticatedWorkbench({
                     workspaceView === 'pickup' ||
                     workspaceView === 'accounts' ||
                     workspaceView === 'platform-auth' ||
+                    workspaceView === 'display-adaptation' ||
                     (workspaceView === 'create' &&
                       ((taskKind === 'download' && !canCollection) ||
                         (taskKind === 'generate' && !canReports))) ||
@@ -1865,6 +1922,20 @@ function AuthenticatedWorkbench({
                 onToast={(msg, type) => showToast(msg, type || 'info')}
               />
             </section>
+            {workspaceView === 'display-adaptation' && (
+              <section className="wbx-route-stage" aria-label="跨屏界面适配中心">
+                <DisplayAdaptationPage
+                  apiFetch={fetchWithAuth}
+                  config={displayConfig}
+                  screenEnv={screenEnv}
+                  sidebarCollapsed={sidebarIsCollapsed}
+                  onUpdateConfig={handleUpdateDisplayConfig}
+                  onResetDefault={handleResetDisplayConfig}
+                  onSetSidebarCollapsed={setSidebarCollapsedPersist}
+                  onToast={(msg, type) => showToast(msg, type || 'info')}
+                />
+              </section>
+            )}
             {workspaceView === 'accounts' && currentUser.role === 'admin' && (
               <section className="wbx-route-stage" aria-label="账户与模块权限管理">
                 <AccountManagementPage

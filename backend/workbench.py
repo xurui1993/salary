@@ -113,6 +113,104 @@ async def put_binding_platforms(request: Request):
         raise HTTPException(400, str(exc)) from None
 
 
+def _display_presets_path(ws_root) -> Path:
+    return Path(ws_root) / 'data' / 'display_presets.json'
+
+
+def _load_display_presets(ws_root) -> list[dict]:
+    path = _display_presets_path(ws_root)
+    if not path.exists():
+        return []
+    try:
+        raw = json.loads(path.read_text(encoding='utf-8-sig'))
+        if not isinstance(raw, list):
+            return []
+        return [item for item in raw if isinstance(item, dict) and isinstance(item.get('id'), str)]
+    except Exception:
+        return []
+
+
+def _save_display_presets(ws_root, presets: list[dict]) -> list[dict]:
+    path = _display_presets_path(ws_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(path, presets[:24])
+    return presets[:24]
+
+
+@router.get('/display-presets')
+def get_display_presets(request: Request):
+    from download_accounts import require_account
+    user = require_account(request)
+    ws_root = _ws_root(wid=user['effective_workspace'])
+    with SETTINGS_LOCK:
+        return {'presets': _load_display_presets(ws_root)}
+
+
+@router.post('/display-presets')
+async def save_display_preset(request: Request):
+    from download_accounts import require_account
+    import secrets
+    user = require_account(request)
+    ws_root = _ws_root(wid=user['effective_workspace'])
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(400, '预设参数格式无效')
+    name = str(payload.get('name') or '').strip()[:40]
+    if not name:
+        raise HTTPException(400, '请输入预设名称')
+    target_screen = str(payload.get('targetScreen') or 'custom')
+    if target_screen not in ('desktop_27', 'laptop_15', 'custom'):
+        target_screen = 'custom'
+    params = payload.get('params') if isinstance(payload.get('params'), dict) else payload
+    try:
+        ui_scale = max(85.0, min(115.0, float(params.get('uiScale', 100))))
+    except (TypeError, ValueError):
+        ui_scale = 100.0
+    font_offset = params.get('fontOffset', 0)
+    if font_offset not in (-1, 0, 1):
+        font_offset = 0
+    content_width = str(params.get('contentWidth') or 'wide')
+    if content_width not in ('standard', 'wide', 'full'):
+        content_width = 'wide'
+    density = str(params.get('density') or 'standard')
+    if density not in ('compact', 'standard', 'comfortable'):
+        density = 'standard'
+    sidebar_behavior = str(params.get('sidebarBehavior') or 'standard')
+    if sidebar_behavior not in ('standard', 'compact', 'auto_collapse'):
+        sidebar_behavior = 'standard'
+
+    preset_id = str(payload.get('id') or '').strip() or ('preset_' + secrets.token_hex(4))
+    entry = {
+        'id': preset_id,
+        'name': name,
+        'targetScreen': target_screen,
+        'uiScale': round(ui_scale, 1),
+        'fontOffset': font_offset,
+        'contentWidth': content_width,
+        'density': density,
+        'sidebarBehavior': sidebar_behavior,
+        'updatedAt': datetime.now().isoformat(),
+    }
+    with SETTINGS_LOCK:
+        existing = _load_display_presets(ws_root)
+        filtered = [item for item in existing if item.get('id') != preset_id and item.get('name') != name]
+        updated = [entry, *filtered][:24]
+        _save_display_presets(ws_root, updated)
+        return {'presets': updated, 'preset': entry, 'saved': entry}
+
+
+@router.delete('/display-presets/{preset_id}')
+def delete_display_preset(preset_id: str, request: Request):
+    from download_accounts import require_account
+    user = require_account(request)
+    ws_root = _ws_root(wid=user['effective_workspace'])
+    with SETTINGS_LOCK:
+        existing = _load_display_presets(ws_root)
+        updated = [item for item in existing if item.get('id') != preset_id]
+        _save_display_presets(ws_root, updated)
+        return {'presets': updated}
+
+
 @router.get('/deductions')
 def get_defaults(request: Request = None):
     if request is not None:

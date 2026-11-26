@@ -8,8 +8,8 @@
 .wb-shell.wbx-shell {
   display: grid;
   grid-template-columns: var(--wbx-sidebar-w) minmax(0, 1fr);
-  gap: 14px;
-  padding: 12px 16px 12px 12px;
+  gap: var(--wbx-shell-gap, 14px);
+  padding: var(--wbx-shell-pad, 12px 16px 12px 12px);
   width: 100%;
   max-width: 100%;
   height: 100dvh;
@@ -28,10 +28,10 @@
 .wb-sidebar.wbx-sidebar,
 .wbx-flat-sidebar {
   position: sticky;
-  top: 12px;
+  top: var(--wbx-shell-pad-y, 12px);
   width: var(--wbx-sidebar-w);
   min-width: var(--wbx-sidebar-w);
-  height: calc(100dvh - 24px);
+  height: calc(100dvh - var(--wbx-shell-pad-y2, 24px));
   display: flex;
   flex-direction: column;
   border-radius: 20px;
@@ -439,8 +439,8 @@
   max-width: 100%;
   min-width: 0;
   overflow-x: hidden;
-  height: calc(100dvh - 24px);
-  max-height: calc(100dvh - 24px);
+  height: calc(100dvh - var(--wbx-shell-pad-y2, 24px));
+  max-height: calc(100dvh - var(--wbx-shell-pad-y2, 24px));
 }
 
 .wbx-header,
@@ -456,8 +456,8 @@
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  height: 58px;
-  min-height: 58px;
+  height: var(--wbx-header-h, 58px);
+  min-height: var(--wbx-header-h, 58px);
   padding: 0 22px;
   border-radius: 18px;
   background: linear-gradient(180deg, #ffffff 0%, #fafcff 100%);
@@ -662,6 +662,43 @@
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-gutter: stable;
+}
+
+/* 15.6寸笔记本紧凑密度与27寸宽屏舒展密度自适应规则 */
+html[data-display-density="compact"] .wbx-snav-item {
+  height: 30px;
+  padding: 0 9px;
+  font-size: 13px;
+}
+
+html[data-display-density="compact"] .wbx-flat-sidebar__nav {
+  padding: 7px 9px 6px;
+  gap: 6px;
+}
+
+html[data-display-density="compact"] .wbx-snav-group + .wbx-snav-group {
+  padding-top: 6px;
+}
+
+html[data-display-density="compact"] .wbx-header,
+html[data-display-density="compact"] .wb-header.wbx-header {
+  padding: 0 16px;
+}
+
+html[data-display-density="compact"] .wbx-flat-sidebar__footer {
+  padding: 6px 8px 8px;
+}
+
+.wbx-res-mini__lead,
+.wbx-res-mini__metrics,
+.wbx-res-mini__pair,
+.wbx-res-mini__k,
+.wbx-res-mini__v {
+  white-space: nowrap;
+}
+
+html[data-display-density="comfortable"] .wbx-snav-item {
+  height: 35px;
 }
 
 /* 抽屉与遮罩（L3 景深毛玻璃层） */

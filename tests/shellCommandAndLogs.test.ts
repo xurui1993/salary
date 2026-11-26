@@ -84,7 +84,7 @@ test('getBreadcrumbModel provides interactive sibling switchers for collection, 
   });
   assert.equal(history.moduleLabel, '平台管理');
   assert.equal(history.viewLabel, '任务管理');
-  assert.equal(history.siblings.length, 4);
+  assert.equal(history.siblings.length, 5);
   assert.equal(history.siblings.find(s => s.active)?.id, 'history');
 
   const pickup = getBreadcrumbModel({

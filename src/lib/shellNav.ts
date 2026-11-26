@@ -12,7 +12,8 @@ export interface ShellNavState {
     | 'price-export'
     | 'pickup'
     | 'accounts'
-    | 'platform-auth';
+    | 'platform-auth'
+    | 'display-adaptation';
   taskKind: 'download' | 'generate' | 'payroll';
   downloadPlatform: DownloadPlatform;
   payrollSubView: PayrollSubView;
@@ -25,7 +26,14 @@ export type ShellCommandAction =
   | { type: 'payroll'; subView: PayrollSubView }
   | {
       type: 'workspace';
-      view: 'approval' | 'price-export' | 'history' | 'pickup' | 'accounts' | 'platform-auth';
+      view:
+        | 'approval'
+        | 'price-export'
+        | 'history'
+        | 'pickup'
+        | 'accounts'
+        | 'platform-auth'
+        | 'display-adaptation';
     }
   | { type: 'open-dock'; source?: string }
   | { type: 'open-logs' }
@@ -49,6 +57,7 @@ export type QuickTargetId =
   | 'workspace:history'
   | 'workspace:pickup'
   | 'workspace:platform-auth'
+  | 'workspace:display-adaptation'
   | 'workspace:accounts';
 
 export interface QuickTargetMeta {
@@ -266,6 +275,16 @@ export const QUICK_TARGETS: QuickTargetMeta[] = [
     action: { type: 'workspace', view: 'platform-auth' },
   },
   {
+    id: 'workspace:display-adaptation',
+    groupId: 'admin',
+    label: '界面适配',
+    shortLabel: '适配',
+    moduleLabel: '平台管理',
+    hint: '27寸办公大屏与15.6寸笔记本自动识别、缩放与紧凑排版适配',
+    accent: 'sapphire',
+    action: { type: 'workspace', view: 'display-adaptation' },
+  },
+  {
     id: 'workspace:accounts',
     groupId: 'admin',
     label: '权限管理',
@@ -286,7 +305,13 @@ export function getQuickTargetMeta(id: QuickTargetId): QuickTargetMeta | undefin
 }
 
 export function getActiveNavGroup(state: Pick<ShellNavState, 'workspaceView' | 'taskKind'>): NavGroupId {
-  if (state.workspaceView === 'accounts' || state.workspaceView === 'platform-auth') return 'admin';
+  if (
+    state.workspaceView === 'accounts' ||
+    state.workspaceView === 'platform-auth' ||
+    state.workspaceView === 'display-adaptation'
+  ) {
+    return 'admin';
+  }
   if (state.workspaceView === 'history' || state.workspaceView === 'pickup') return 'history';
   if (state.workspaceView === 'approval' || state.workspaceView === 'price-export') return 'payroll';
   if (state.taskKind === 'payroll') return 'payroll';
@@ -302,7 +327,9 @@ export function getRailIndex(groupId: NavGroupId): number {
 export function getCurrentQuickTargetId(state: ShellNavState): QuickTargetId {
   const groupId = getActiveNavGroup(state);
   if (groupId === 'admin') {
-    return state.workspaceView === 'platform-auth' ? 'workspace:platform-auth' : 'workspace:accounts';
+    if (state.workspaceView === 'platform-auth') return 'workspace:platform-auth';
+    if (state.workspaceView === 'display-adaptation') return 'workspace:display-adaptation';
+    return 'workspace:accounts';
   }
   if (groupId === 'history') return state.workspaceView === 'pickup' ? 'workspace:pickup' : 'workspace:history';
   if (state.workspaceView === 'approval' || state.workspaceView === 'price-export') {
@@ -485,6 +512,13 @@ export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
       action: { type: 'workspace', view: 'platform-auth' },
     },
     {
+      id: 'display-adaptation',
+      label: '界面适配',
+      hint: '公司27寸大屏与家里15.6寸笔记本自动识别、缩放与紧凑排版适配',
+      active: state.workspaceView === 'display-adaptation',
+      action: { type: 'workspace', view: 'display-adaptation' },
+    },
+    {
       id: 'accounts',
       label: '权限管理',
       hint: '成员注册审批、独立空间隔离与安全审计日志',
@@ -660,6 +694,15 @@ export function buildShellCommands(
       keywords: ['auth', 'login', 'platform', 'dl', 'pt', 'sq', '授权管理', '平台授权', '平台', '登录', '授权', '通道', '扫码', '换号', '切换'],
       active: state.workspaceView === 'platform-auth',
       action: { type: 'workspace', view: 'platform-auth' },
+    },
+    {
+      id: 'nav-display-adaptation',
+      group: '平台管理',
+      label: '界面适配',
+      subtitle: '公司27寸办公显示器与家里15.6寸笔记本跨屏缩放、满宽防截断与预设切换',
+      keywords: ['display', 'scale', 'zoom', 'screen', 'laptop', 'monitor', 'jm', 'sp', '界面适配', '页面适配', '27寸', '15.6寸', '笔记本', '缩放', '字号', '分辨率'],
+      active: state.workspaceView === 'display-adaptation',
+      action: { type: 'workspace', view: 'display-adaptation' },
     },
   );
 

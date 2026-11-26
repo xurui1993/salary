@@ -10,7 +10,7 @@ import { platformAuthRequest as fetchPlatformAuthJson } from '../lib/platformAut
 import { getPlatformCardBadge, getPlatformStatusCluster } from '../lib/workbench';
 import { systemLabel } from '../lib/platformCatalog';
 import { SourceLoginPanel } from './SourceLoginPanel';
-import { WorkbenchDrawer } from './WorkbenchDrawer';
+import { UnifiedPlatformAuthModal } from './UnifiedPlatformAuthModal';
 import { isPlatformStatusRecordEqual } from '../lib/perfUtils';
 
 function getActionLabel(_source: string, _status: any) {
@@ -714,45 +714,17 @@ export function SystemConnections({
       </div>
 
       {!!activeDef && (
-        <WorkbenchDrawer
-          title={activeDef.key === 'lanorange' ? '蓝橙扫码登录' : `${activeDef.label}登录验证`}
-          closeLabel="收起登录窗口"
-          bodyClassName="wb-auth-session"
+        <UnifiedPlatformAuthModal
+          sourceKey={activeDef.key}
+          displayName={activeDef.label}
+          status={activeStatus}
+          pending={!!pendingActions[activeDef.key]}
+          errorMessage={errors[activeDef.key] || ''}
+          startActionLabel={getActionLabel(activeDef.key, activeStatus) === '登录' ? '立即验证并登录' : getActionLabel(activeDef.key, activeStatus)}
           onClose={() => setActiveSessionKey('')}
+          onStartLogin={() => void handleStartLogin(activeDef.key)}
+          onCredentialAction={decision => void handleCredential(decision)}
         >
-          {activeStatus.message && (
-            <p role="status" className="wb-muted">
-              {activeStatus.message}
-            </p>
-          )}
-          {activeStatus.credential_prompt && (
-            <section className="wb-auth-credential-prompt">
-              <p>
-                是否保存 {activeStatus.credential_account || '当前账号'} 的账号密码，以便下次自动登录？
-              </p>
-              <div className="wb-row">
-                <button
-                  type="button"
-                  className="wb-primary"
-                  disabled={!!pendingActions[activeDef.key]}
-                  onClick={() => void handleCredential('save')}
-                >
-                  保存
-                </button>
-                <button
-                  type="button"
-                  className="wb-button"
-                  disabled={!!pendingActions[activeDef.key]}
-                  onClick={() => void handleCredential('skip')}
-                >
-                  不保存
-                </button>
-              </div>
-              <p className="wb-muted">
-                密码仅使用 Windows DPAPI 加密保存在本机；退出登录或切换账号时会同步清除。
-              </p>
-            </section>
-          )}
           {activeStatus.state === 'waiting_login' &&
             activeStatus.session_id &&
             !activeStatus.cancelling && (
@@ -764,24 +736,7 @@ export function SystemConnections({
                 apiFetch={apiFetch}
               />
             )}
-          {!activeStatus.busy &&
-            !['starting', 'waiting_login', 'refreshing', 'ready'].includes(
-              activeStatus.state || '',
-            ) && (
-              <button
-                className="wb-primary"
-                disabled={!!pendingActions[activeDef.key]}
-                onClick={() => void handleStartLogin(activeDef.key)}
-              >
-                {getActionLabel(activeDef.key, activeStatus)}
-              </button>
-            )}
-          {errors[activeDef.key] && (
-            <p role="alert" className="wb-error">
-              {errors[activeDef.key]}
-            </p>
-          )}
-        </WorkbenchDrawer>
+        </UnifiedPlatformAuthModal>
       )}
     </>
   );

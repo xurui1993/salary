@@ -1497,9 +1497,10 @@ class SourceAuth:
                     with self.lock:
                         entry = self.states.setdefault(source, {})
                         entry.update(state='waiting_login', session_id=session_id, message='请使用手机钉钉扫码，确认后自动连接' + SOURCES[source]['label']
-                                     if SOURCES[source].get('dingtalk_qr')
-                                     else '请在内部表单完成本来人力登录' if source == 'benlai'
-                                     else '请在内部表单完成白泽登录')
+                                     if source in ('lanorange', 'lanorange_mdr') or SOURCES[source].get('dingtalk_qr')
+                                     else '请输入本来人力商户号/手机号与登录密码，验证通过后自动同步会话' if source == 'benlai'
+                                     else '请输入商翼企业账号、密码与算式答案，验证通过后自动同步会话' if source == 'baize'
+                                     else '请在当前窗口完成平台安全认证')
                         if image: entry['image'] = image
                         elif confirmed: entry.pop('image', None)
                     page.wait_for_timeout(150 if source in ('baize', 'benlai') else 1000)
