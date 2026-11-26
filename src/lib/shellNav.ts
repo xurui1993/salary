@@ -5,7 +5,14 @@ import { getPlatformStatusCluster } from './workbench';
 export type NavGroupId = 'collection' | 'reports' | 'payroll' | 'approval' | 'history' | 'admin';
 
 export interface ShellNavState {
-  workspaceView: 'create' | 'history' | 'approval' | 'price-export' | 'pickup' | 'accounts';
+  workspaceView:
+    | 'create'
+    | 'history'
+    | 'approval'
+    | 'price-export'
+    | 'pickup'
+    | 'accounts'
+    | 'platform-auth';
   taskKind: 'download' | 'generate' | 'payroll';
   downloadPlatform: DownloadPlatform;
   payrollSubView: PayrollSubView;
@@ -16,8 +23,11 @@ export type ShellCommandAction =
   | { type: 'platform'; platform: DownloadPlatform }
   | { type: 'report'; reportId: string }
   | { type: 'payroll'; subView: PayrollSubView }
-  | { type: 'workspace'; view: 'approval' | 'price-export' | 'history' | 'pickup' | 'accounts' }
-  | { type: 'open-dock' }
+  | {
+      type: 'workspace';
+      view: 'approval' | 'price-export' | 'history' | 'pickup' | 'accounts' | 'platform-auth';
+    }
+  | { type: 'open-dock'; source?: string }
   | { type: 'open-logs' }
   | { type: 'toggle-sidebar' };
 
@@ -38,6 +48,7 @@ export type QuickTargetId =
   | 'workspace:price-export'
   | 'workspace:history'
   | 'workspace:pickup'
+  | 'workspace:platform-auth'
   | 'workspace:accounts';
 
 export interface QuickTargetMeta {
@@ -68,7 +79,7 @@ export interface BreadcrumbModel {
 
 export interface ShellCommandItem {
   id: string;
-  group: '数据采集' | '业务报表' | '薪资核算' | '价格审批' | '全局调度' | '系统管理';
+  group: '数据采集' | '业务报表' | '薪资核算' | '价格审批' | '平台管理';
   label: string;
   subtitle: string;
   keywords: string[];
@@ -227,9 +238,9 @@ export const QUICK_TARGETS: QuickTargetMeta[] = [
   {
     id: 'workspace:history',
     groupId: 'history',
-    label: '任务中心',
+    label: '任务管理',
     shortLabel: '任务',
-    moduleLabel: '全局交付',
+    moduleLabel: '平台管理',
     hint: '进度追踪与打包领取',
     accent: 'slate',
     action: { type: 'workspace', view: 'history' },
@@ -237,19 +248,29 @@ export const QUICK_TARGETS: QuickTargetMeta[] = [
   {
     id: 'workspace:pickup',
     groupId: 'history',
-    label: '文件领取',
-    shortLabel: '领取',
-    moduleLabel: '全局交付',
-    hint: '本机成品与共享电脑文件领取',
+    label: '组内共享',
+    shortLabel: '共享',
+    moduleLabel: '平台管理',
+    hint: '本机成品与局域网组内共享文件领取',
     accent: 'slate',
     action: { type: 'workspace', view: 'pickup' },
   },
   {
+    id: 'workspace:platform-auth',
+    groupId: 'admin',
+    label: '授权管理',
+    shortLabel: '授权',
+    moduleLabel: '平台管理',
+    hint: '五大业务平台账户绑定、切换与连通性巡检',
+    accent: 'sapphire',
+    action: { type: 'workspace', view: 'platform-auth' },
+  },
+  {
     id: 'workspace:accounts',
     groupId: 'admin',
-    label: '账户与权限',
+    label: '权限管理',
     shortLabel: '权限',
-    moduleLabel: '系统管理',
+    moduleLabel: '平台管理',
     hint: '成员审批、独立空间与安全审计',
     accent: 'sapphire',
     action: { type: 'workspace', view: 'accounts' },
@@ -265,7 +286,7 @@ export function getQuickTargetMeta(id: QuickTargetId): QuickTargetMeta | undefin
 }
 
 export function getActiveNavGroup(state: Pick<ShellNavState, 'workspaceView' | 'taskKind'>): NavGroupId {
-  if (state.workspaceView === 'accounts') return 'admin';
+  if (state.workspaceView === 'accounts' || state.workspaceView === 'platform-auth') return 'admin';
   if (state.workspaceView === 'history' || state.workspaceView === 'pickup') return 'history';
   if (state.workspaceView === 'approval' || state.workspaceView === 'price-export') return 'payroll';
   if (state.taskKind === 'payroll') return 'payroll';
@@ -280,7 +301,9 @@ export function getRailIndex(groupId: NavGroupId): number {
 
 export function getCurrentQuickTargetId(state: ShellNavState): QuickTargetId {
   const groupId = getActiveNavGroup(state);
-  if (groupId === 'admin') return 'workspace:accounts';
+  if (groupId === 'admin') {
+    return state.workspaceView === 'platform-auth' ? 'workspace:platform-auth' : 'workspace:accounts';
+  }
   if (groupId === 'history') return state.workspaceView === 'pickup' ? 'workspace:pickup' : 'workspace:history';
   if (state.workspaceView === 'approval' || state.workspaceView === 'price-export') {
     return 'workspace:approval';
@@ -439,44 +462,45 @@ export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
     };
   }
 
-  if (groupId === 'admin') {
-    return {
-      groupId: 'admin',
-      moduleLabel: '系统管理',
-      viewLabel: '账户与权限',
-      siblings: [
-        {
-          id: 'accounts',
-          label: '账户与权限',
-          hint: '成员注册审批、独立空间隔离与安全审计日志',
-          active: true,
-          action: { type: 'workspace', view: 'accounts' },
-        },
-      ],
-    };
-  }
+  const platformManagementSiblings: BreadcrumbSibling[] = [
+    {
+      id: 'history',
+      label: '任务管理',
+      hint: '全部历史任务与文件下载',
+      active: state.workspaceView === 'history',
+      action: { type: 'workspace', view: 'history' },
+    },
+    {
+      id: 'pickup',
+      label: '组内共享',
+      hint: '本机成品与局域网组内共享文件一键获取',
+      active: state.workspaceView === 'pickup',
+      action: { type: 'workspace', view: 'pickup' },
+    },
+    {
+      id: 'platform-auth',
+      label: '授权管理',
+      hint: '五大业务平台系统账户绑定、切换与连通性深度巡检',
+      active: state.workspaceView === 'platform-auth',
+      action: { type: 'workspace', view: 'platform-auth' },
+    },
+    {
+      id: 'accounts',
+      label: '权限管理',
+      hint: '成员注册审批、独立空间隔离与安全审计日志',
+      active: state.workspaceView === 'accounts',
+      action: { type: 'workspace', view: 'accounts' },
+    },
+  ];
 
-  const isPickup = state.workspaceView === 'pickup';
+  const currentPlatformSibling =
+    platformManagementSiblings.find(item => item.active) || platformManagementSiblings[0];
+
   return {
-    groupId: 'history',
-    moduleLabel: '全局交付',
-    viewLabel: isPickup ? '文件领取' : '任务中心',
-    siblings: [
-      {
-        id: 'history',
-        label: '任务中心',
-        hint: '全部历史任务与文件下载',
-        active: !isPickup,
-        action: { type: 'workspace', view: 'history' },
-      },
-      {
-        id: 'pickup',
-        label: '文件领取',
-        hint: '本机成品与共享电脑文件一键获取',
-        active: isPickup,
-        action: { type: 'workspace', view: 'pickup' },
-      },
-    ],
+    groupId: groupId === 'admin' ? 'admin' : 'history',
+    moduleLabel: '平台管理',
+    viewLabel: currentPlatformSibling.label,
+    siblings: platformManagementSiblings,
   };
 }
 
@@ -612,31 +636,40 @@ export function buildShellCommands(
   commands.push(
     {
       id: 'nav-history',
-      group: '全局调度',
-      label: '任务中心',
+      group: '平台管理',
+      label: '任务管理',
       subtitle: '查看跨平台任务执行记录并一键打包下载成果文件',
-      keywords: ['history', 'task', 'rw', '任务', '记录', '下载', '归档'],
+      keywords: ['history', 'task', 'rw', '任务', '任务管理', '任务中心', '记录', '下载', '归档'],
       active: state.workspaceView === 'history',
       action: { type: 'workspace', view: 'history' },
     },
     {
       id: 'nav-pickup',
-      group: '全局调度',
-      label: '文件领取',
-      subtitle: '按任务领取本机成品，或浏览局域网共享电脑的文件',
-      keywords: ['pickup', 'lingqu', 'lq', '文件', '领取', '共享', '局域网', 'ip'],
+      group: '平台管理',
+      label: '组内共享',
+      subtitle: '按任务领取本机成品，或浏览局域网组内共享电脑的文件',
+      keywords: ['pickup', 'lingqu', 'lq', 'zn', 'gx', '组内共享', '文件', '领取', '共享', '局域网', 'ip'],
       active: state.workspaceView === 'pickup',
       action: { type: 'workspace', view: 'pickup' },
+    },
+    {
+      id: 'nav-platform-auth',
+      group: '平台管理',
+      label: '授权管理',
+      subtitle: '管理风神、蓝橙、商翼、小象灯塔、本来人力系统账号与连接巡检',
+      keywords: ['auth', 'login', 'platform', 'dl', 'pt', 'sq', '授权管理', '平台授权', '平台', '登录', '授权', '通道', '扫码', '换号', '切换'],
+      active: state.workspaceView === 'platform-auth',
+      action: { type: 'workspace', view: 'platform-auth' },
     },
   );
 
   if (options.isAdmin) {
     commands.push({
       id: 'nav-accounts',
-      group: '系统管理',
-      label: '账户与权限',
+      group: '平台管理',
+      label: '权限管理',
       subtitle: '审批同事注册申请、配置模块权限与查看安全审计日志',
-      keywords: ['account', 'admin', 'perm', 'audit', 'zh', 'qx', '账户', '权限', '审批', '审计'],
+      keywords: ['account', 'admin', 'perm', 'audit', 'zh', 'qx', '权限管理', '账户与权限', '账户', '权限', '审批', '审计'],
       active: state.workspaceView === 'accounts',
       action: { type: 'workspace', view: 'accounts' },
     });
@@ -644,17 +677,8 @@ export function buildShellCommands(
 
   commands.push(
     {
-      id: 'act-platform-dock',
-      group: '全局调度',
-      label: '打开五大平台连接中心',
-      subtitle: '巡检风神、蓝橙、商翼、灯塔、本来登录态与授权',
-      keywords: ['auth', 'login', 'dl', 'pt', '平台', '登录', '授权', '通道', '扫码'],
-      active: false,
-      action: { type: 'open-dock' },
-    },
-    {
       id: 'act-log-drawer',
-      group: '全局调度',
+      group: '平台管理',
       label: '打开运行日志终端',
       subtitle: '实时检索、按级别筛选、复制与导出引擎运行日志',
       keywords: ['log', 'rz', 'console', 'terminal', '日志', '终端', '调试', '排查'],
@@ -664,7 +688,7 @@ export function buildShellCommands(
     },
     {
       id: 'act-toggle-sidebar',
-      group: '全局调度',
+      group: '平台管理',
       label: options.sidebarCollapsed ? '展开左侧情境导航栏' : '收起为极简命令轨',
       subtitle: '在双轨导航舱与 56px 极简深空图标轨之间切换工作区视野',
       keywords: ['sidebar', 'ce', 'nav', '侧栏', '折叠', '收起', '展开'],

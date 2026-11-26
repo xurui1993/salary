@@ -129,6 +129,22 @@ export function getWorkspaceDisplayLabel(workspaceId: string): string {
   return workspaceId === 'download_shared' ? '管理员主空间' : '独立工作空间';
 }
 
+export function resolveAuditTargetLabel(
+  runId: string,
+  users: Pick<WorkspaceUser, 'id' | 'username' | 'display_name' | 'workspace_id'>[],
+): string {
+  const clean = (runId || '').trim();
+  if (!clean) return '—';
+  if (clean === 'download_shared') return '管理员主空间';
+  const matched = users.find(
+    u => u.workspace_id === clean || u.username === clean || u.id === clean,
+  );
+  if (matched) {
+    return matched.display_name || matched.username;
+  }
+  return getWorkspaceDisplayLabel(clean);
+}
+
 export function getRoleTemplateLabel(
   role: 'admin' | 'member',
   roleTemplate: string,
@@ -158,7 +174,11 @@ export function filterManagedUsers(
   const q = options.query.trim().toLowerCase();
   return users.filter(user => {
     if (user.status === 'pending') return false;
-    if (options.status !== 'all' && user.status !== options.status) return false;
+    if (options.status === 'all') {
+      if (user.status === 'rejected') return false;
+    } else if (user.status !== options.status) {
+      return false;
+    }
     if (options.role !== 'all' && user.role !== options.role) return false;
     if (!q) return true;
     const haystack = `${user.display_name} ${user.username} ${user.note || ''} ${user.workspace_id}`.toLowerCase();
@@ -221,14 +241,20 @@ export function formatAuditTime(epochSeconds: number): string {
 
 export function filterAuditEvents(
   events: AuditEvent[],
-  options: { query: string; category: AuditCategory },
+  options: {
+    query: string;
+    category: AuditCategory;
+    users?: Pick<WorkspaceUser, 'id' | 'username' | 'display_name' | 'workspace_id'>[];
+  },
 ): AuditEvent[] {
   const q = options.query.trim().toLowerCase();
+  const users = options.users || [];
   return events.filter(evt => {
     const meta = formatAuditAction(evt.action);
     if (options.category !== 'all' && meta.category !== options.category) return false;
     if (!q) return true;
-    const haystack = `${evt.username} ${meta.label} ${evt.action} ${evt.run_id || ''} ${formatAuditDetail(evt.detail)}`.toLowerCase();
+    const resolvedTarget = evt.run_id && users.length ? resolveAuditTargetLabel(evt.run_id, users) : '';
+    const haystack = `${evt.username} ${meta.label} ${evt.action} ${evt.run_id || ''} ${resolvedTarget} ${formatAuditDetail(evt.detail)}`.toLowerCase();
     return haystack.includes(q);
   });
 }

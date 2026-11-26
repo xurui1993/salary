@@ -9,6 +9,7 @@ import {
   FolderCheck,
   FolderDown,
   FolderKanban,
+  KeyRound,
   Layers,
   Radar,
   ShieldCheck,
@@ -21,7 +22,12 @@ import {
 import { BrandLogo } from './BrandLogo';
 import { SidebarResourceStrip } from './SidebarResourceStrip';
 import type { DownloadPlatform } from '../lib/downloadModules';
-import type { PayrollSubView, PlatformStatusMap, SystemResourceStatsInput } from '../lib/workbench';
+import {
+  getPlatformStatusCluster,
+  type PayrollSubView,
+  type PlatformStatusMap,
+  type SystemResourceStatsInput,
+} from '../lib/workbench';
 import {
   getActiveNavGroup,
   getPlatformChannelStatus,
@@ -31,7 +37,14 @@ import {
 } from '../lib/shellNav';
 
 export interface DualRailSidebarProps {
-  workspaceView: 'create' | 'history' | 'approval' | 'price-export' | 'pickup' | 'accounts';
+  workspaceView:
+    | 'create'
+    | 'history'
+    | 'approval'
+    | 'price-export'
+    | 'pickup'
+    | 'accounts'
+    | 'platform-auth';
   taskKind: 'download' | 'generate' | 'payroll';
   downloadPlatform: DownloadPlatform;
   activeReportId?: string;
@@ -57,7 +70,7 @@ export interface DualRailSidebarProps {
   onCloseMobile: () => void;
   onOpenCmdk?: () => void;
   onToggleLogs?: () => void;
-  onOpenPlatformDock: () => void;
+  onOpenPlatformDock?: () => void;
   permissions?: Record<string, boolean>;
   isAdmin?: boolean;
   pendingAccountCount?: number;
@@ -199,36 +212,53 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
     return canUse('payroll');
   });
 
-  const deliveryItems: SidebarNavItem[] = [
+  const platformCluster = getPlatformStatusCluster(platformStatuses);
+  const platformReadyCount = platformCluster.filter(item => item.tone === 'ready').length;
+  const platformWarnCount = platformCluster.filter(item => item.tone === 'warn').length;
+
+  const platformManagementItems: SidebarNavItem[] = [
     {
       id: 'workspace:history',
-      label: '任务中心',
+      label: '任务管理',
       icon: <FolderCheck size={15.5} />,
       active: workspaceView === 'history',
       action: { type: 'workspace', view: 'history' },
     },
     {
       id: 'workspace:pickup',
-      label: '文件领取',
+      label: '组内共享',
       icon: <FolderDown size={15.5} />,
       active: workspaceView === 'pickup',
       action: { type: 'workspace', view: 'pickup' },
     },
+    {
+      id: 'workspace:platform-auth',
+      label: '授权管理',
+      icon: <KeyRound size={15.5} />,
+      active: workspaceView === 'platform-auth',
+      action: { type: 'workspace', view: 'platform-auth' },
+      badgeText: `${platformReadyCount}/${platformCluster.length}`,
+      badgeTone:
+        platformWarnCount > 0
+          ? 'warn'
+          : platformReadyCount === platformCluster.length
+            ? 'ready'
+            : undefined,
+    },
+    ...(isAdmin
+      ? [
+          {
+            id: 'workspace:accounts' as const,
+            label: '权限管理',
+            icon: <ShieldCheck size={15.5} />,
+            active: workspaceView === 'accounts',
+            action: { type: 'workspace' as const, view: 'accounts' as const },
+            badgeText: pendingAccountCount > 0 ? String(pendingAccountCount) : undefined,
+            badgeTone: pendingAccountCount > 0 ? ('warn' as const) : undefined,
+          },
+        ]
+      : []),
   ];
-
-  const adminItems: SidebarNavItem[] = isAdmin
-    ? [
-        {
-          id: 'workspace:accounts',
-          label: '账户与权限',
-          icon: <ShieldCheck size={15.5} />,
-          active: workspaceView === 'accounts',
-          action: { type: 'workspace', view: 'accounts' },
-          badgeText: pendingAccountCount > 0 ? String(pendingAccountCount) : undefined,
-          badgeTone: pendingAccountCount > 0 ? 'warn' : undefined,
-        },
-      ]
-    : [];
 
   const renderNavItem = (item: SidebarNavItem) => (
     <button
@@ -279,7 +309,7 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
         )}
       </div>
 
-      {/* 全展开三分栏核心业务导航：数据采集 / 业务报表 / 薪资核算 */}
+      {/* 全展开核心业务导航：数据采集 / 业务报表 / 薪资核算 / 平台管理 */}
       <nav className="wbx-flat-sidebar__nav" aria-label="业务功能导航">
         {visibleCollectionItems.length > 0 && (
           <section className="wbx-snav-group" aria-label="数据采集">
@@ -314,25 +344,14 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
           </section>
         )}
 
-        <section className="wbx-snav-group wbx-snav-group--delivery" aria-label="任务与交付">
+        <section className="wbx-snav-group wbx-snav-group--delivery" aria-label="平台管理">
           <div className="wbx-snav-group__head">
-            <span className="wbx-snav-group__title">任务与交付</span>
+            <span className="wbx-snav-group__title">平台管理</span>
           </div>
           <div className="wbx-snav-group__list">
-            {deliveryItems.map(renderNavItem)}
+            {platformManagementItems.map(renderNavItem)}
           </div>
         </section>
-
-        {adminItems.length > 0 && (
-          <section className="wbx-snav-group" aria-label="系统管理">
-            <div className="wbx-snav-group__head">
-              <span className="wbx-snav-group__title">系统管理</span>
-            </div>
-            <div className="wbx-snav-group__list">
-              {adminItems.map(renderNavItem)}
-            </div>
-          </section>
-        )}
       </nav>
 
       {/* 底部引擎资源状态条 */}

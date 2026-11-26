@@ -16,6 +16,7 @@ import {
   getStatusLabel,
   getWorkspaceDisplayLabel,
   hasDraftChanges,
+  resolveAuditTargetLabel,
 } from '../src/lib/accountConsole';
 import {
   buildShellCommands,
@@ -142,10 +143,14 @@ test('filterManagedUsers excludes pending applicants and filters by status, role
     makeUser({ id: '2', username: 'payroll_test', display_name: '林晓', role: 'member', status: 'active', note: '薪资核算' }),
     makeUser({ id: '3', username: 'disabled_user', display_name: '张敏', role: 'member', status: 'disabled', enabled: false, note: '离职停用' }),
     makeUser({ id: '4', username: 'pending_test', display_name: '王磊', role: 'member', status: 'pending', enabled: false, note: '待审批' }),
+    makeUser({ id: '5', username: 'rejected_test', display_name: '赵阳', role: 'member', status: 'rejected', enabled: false, note: '已驳回' }),
   ];
 
   const allManaged = filterManagedUsers(users, { query: '', status: 'all', role: 'all' });
   assert.deepEqual(allManaged.map(u => u.id), ['1', '2', '3']);
+
+  const rejectedOnly = filterManagedUsers(users, { query: '', status: 'rejected', role: 'all' });
+  assert.deepEqual(rejectedOnly.map(u => u.id), ['5']);
 
   const disabledOnly = filterManagedUsers(users, { query: '', status: 'disabled', role: 'all' });
   assert.deepEqual(disabledOnly.map(u => u.id), ['3']);
@@ -155,6 +160,11 @@ test('filterManagedUsers excludes pending applicants and filters by status, role
 
   const byQuery = filterManagedUsers(users, { query: '薪资', status: 'all', role: 'all' });
   assert.deepEqual(byQuery.map(u => u.id), ['2']);
+
+  assert.equal(resolveAuditTargetLabel('', users), '—');
+  assert.equal(resolveAuditTargetLabel('download_shared', users), '管理员主空间');
+  assert.equal(resolveAuditTargetLabel('ws_payroll_test', users), '林晓');
+  assert.equal(resolveAuditTargetLabel('ws_unknown', users), '独立工作空间');
 
   assert.equal(getWorkspaceDisplayLabel('download_shared'), '管理员主空间');
   assert.equal(getWorkspaceDisplayLabel('ws_payroll_test'), '独立工作空间');
@@ -216,6 +226,13 @@ test('audit log formatters and filterAuditEvents map actions, details, timestamp
 
   const byKeyword = filterAuditEvents(events, { query: '重置成员密码', category: 'all' });
   assert.deepEqual(byKeyword.map(e => e.id), [3]);
+
+  const byTargetDisplayName = filterAuditEvents(events, {
+    query: '林晓',
+    category: 'all',
+    users: [makeUser({ id: 'u-payroll', username: 'payroll_test', display_name: '林晓（薪资验收）', workspace_id: 'ws_payroll_test' })],
+  });
+  assert.deepEqual(byTargetDisplayName.map(e => e.id), [2, 3]);
 });
 
 test('buildShellCommands and shellNav helpers enforce admin & module permissions cleanly', () => {
@@ -229,8 +246,8 @@ test('buildShellCommands and shellNav helpers enforce admin & module permissions
   assert.equal(getActiveNavGroup(baseState), 'admin');
   assert.equal(getCurrentQuickTargetId(baseState), 'workspace:accounts');
   const crumb = getBreadcrumbModel(baseState);
-  assert.equal(crumb.moduleLabel, '系统管理');
-  assert.equal(crumb.viewLabel, '账户与权限');
+  assert.equal(crumb.moduleLabel, '平台管理');
+  assert.equal(crumb.viewLabel, '权限管理');
 
   const adminCommands = buildShellCommands(baseState, {
     isAdmin: true,

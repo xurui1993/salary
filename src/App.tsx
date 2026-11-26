@@ -77,6 +77,7 @@ import {
   NoModuleAccessNotice,
   type AccountConsoleTab,
 } from './components/AccountManagementPage';
+import { PlatformAuthCenterPage } from './components/PlatformAuthCenterPage';
 import { HeaderAccountBar, WorkspaceInspectBanner } from './components/HeaderAccountBar';
 import {
   fetchWorkspaceSession,
@@ -349,7 +350,9 @@ function AuthenticatedWorkbench({
   const [deductionDefaultOnly, setDeductionDefaultOnly] = useState(false);
   const [deductionVersion, setDeductionVersion] = useState(0);
   const [payrollSubView, setPayrollSubView] = useState<PayrollSubView>('batches');
-  const [workspaceView, setWorkspaceView] = useState<'create' | 'history' | 'approval' | 'price-export' | 'pickup' | 'accounts'>('create');
+  const [workspaceView, setWorkspaceView] = useState<
+    'create' | 'history' | 'approval' | 'price-export' | 'pickup' | 'accounts' | 'platform-auth'
+  >('create');
   const [downloadPlatform,setDownloadPlatform]=useState<DownloadPlatform>(()=>{
     try{
       const saved=localStorage.getItem('workbench_download_platform');
@@ -376,6 +379,7 @@ function AuthenticatedWorkbench({
   const canCollection = hasModulePermission(currentUser, 'collection');
   const canReports = hasModulePermission(currentUser, 'reports');
   const canPayroll = hasModulePermission(currentUser, 'payroll');
+  const canManageSharedAuth = hasModulePermission(currentUser, 'shared_auth_manage');
 
   useEffect(()=>{
     if (!canApproval) {
@@ -458,7 +462,9 @@ function AuthenticatedWorkbench({
     writeAutoJumpPreference(next);
   };
   useEffect(() => { try { localStorage.setItem('workbench_task_kind', taskKind); } catch {} setActiveMenu(taskKind === 'payroll' ? 'core' : 'fengshen_downloads'); }, [taskKind]);
-  const navigateWorkspace = (view: 'create' | 'history' | 'approval' | 'price-export' | 'pickup' | 'accounts') => {
+  const navigateWorkspace = (
+    view: 'create' | 'history' | 'approval' | 'price-export' | 'pickup' | 'accounts' | 'platform-auth',
+  ) => {
     if (view === 'accounts' && currentUser.role !== 'admin') {
       showToast('仅系统管理员可访问账户与权限管理', 'error');
       return;
@@ -598,7 +604,11 @@ function AuthenticatedWorkbench({
       return;
     }
     if (action.type === 'open-dock') {
-      setDockOpen(true);
+      navigateWorkspace('platform-auth');
+      if (action.source) {
+        window.dispatchEvent(new CustomEvent('workbench:connections', { detail: action.source }));
+      }
+      setMobileNavOpen(false);
       return;
     }
     if (action.type === 'open-logs') {
@@ -1553,7 +1563,9 @@ function AuthenticatedWorkbench({
                       if (plat === 'fengshen') {
                         setFengshenLoginRequest(value => value + 1);
                       } else {
-                        setDockOpen(true);
+                        window.dispatchEvent(
+                          new CustomEvent('workbench:connections', { detail: plat }),
+                        );
                       }
                     }}
                   />
@@ -1562,7 +1574,7 @@ function AuthenticatedWorkbench({
                 <div
                   className="wb-header-actions wbx-header__tools"
                   role="group"
-                  aria-label="全局审批待办通知、平台授权与空间账户"
+                  aria-label="全局审批待办通知与空间账户"
                 >
                   {canApproval && (
                     <HeaderApprovalNotifier
@@ -1570,27 +1582,16 @@ function AuthenticatedWorkbench({
                       workspaceId={workspaceId}
                       isApprovalViewActive={workspaceView === 'approval'}
                       onNavigateApproval={() => navigateWorkspace('approval')}
-                      onOpenLanorangeAuth={() => setDockOpen(true)}
+                      onOpenLanorangeAuth={() =>
+                        window.dispatchEvent(
+                          new CustomEvent('workbench:connections', { detail: 'lanorange' }),
+                        )
+                      }
                       onPendingCountChange={setApprovalPendingCount}
                       onShowToast={showToast}
                       onDesktopNotify={showDesktopNotification}
                     />
                   )}
-
-                  <PlatformDock
-                    open={dockOpen}
-                    onToggle={() => setDockOpen(value => !value)}
-                    onClose={() => setDockOpen(false)}
-                  >
-                    <SystemConnections
-                      apiFetch={fetchWithAuth}
-                      fengshenStatus={fengshenAuthStatus}
-                      onOpenFengshen={() => setFengshenLoginRequest(value => value + 1)}
-                      hideTrigger
-                      open={dockOpen}
-                      onOpenChange={setDockOpen}
-                    />
-                  </PlatformDock>
 
                   <HeaderAccountBar
                     user={currentUser}
@@ -1757,6 +1758,7 @@ function AuthenticatedWorkbench({
                 workspaceView === 'price-export' ||
                 workspaceView === 'pickup' ||
                 workspaceView === 'accounts' ||
+                workspaceView === 'platform-auth' ||
                 (workspaceView === 'create' &&
                   ((taskKind === 'download' && !canCollection) ||
                     (taskKind === 'generate' && !canReports))) ||
@@ -1767,6 +1769,7 @@ function AuthenticatedWorkbench({
                 workspaceView === 'price-export' ||
                 workspaceView === 'pickup' ||
                 workspaceView === 'accounts' ||
+                workspaceView === 'platform-auth' ||
                 (workspaceView === 'create' &&
                   ((taskKind === 'download' && !canCollection) ||
                     (taskKind === 'generate' && !canReports))) ||
@@ -1785,6 +1788,7 @@ function AuthenticatedWorkbench({
                     workspaceView === 'price-export' ||
                     workspaceView === 'pickup' ||
                     workspaceView === 'accounts' ||
+                    workspaceView === 'platform-auth' ||
                     (workspaceView === 'create' &&
                       ((taskKind === 'download' && !canCollection) ||
                         (taskKind === 'generate' && !canReports))) ||
@@ -1844,6 +1848,23 @@ function AuthenticatedWorkbench({
                 <FilePickup apiFetch={fetchWithAuth} />
               </section>
             )}
+            <section
+              className="wbx-route-stage"
+              hidden={workspaceView !== 'platform-auth'}
+              aria-hidden={workspaceView !== 'platform-auth' || undefined}
+              aria-label="平台授权与系统账户中心"
+            >
+              <PlatformAuthCenterPage
+                apiFetch={fetchWithAuth}
+                active={workspaceView === 'platform-auth'}
+                fengshenStatus={fengshenAuthStatus}
+                onOpenFengshen={() => setFengshenLoginRequest(value => value + 1)}
+                onNavigateToSelf={() => navigateWorkspace('platform-auth')}
+                isAdmin={currentUser.role === 'admin'}
+                canManageSharedAuth={canManageSharedAuth}
+                onToast={(msg, type) => showToast(msg, type || 'info')}
+              />
+            </section>
             {workspaceView === 'accounts' && currentUser.role === 'admin' && (
               <section className="wbx-route-stage" aria-label="账户与模块权限管理">
                 <AccountManagementPage

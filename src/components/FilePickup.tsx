@@ -350,9 +350,9 @@ export function FilePickup({ apiFetch }: { apiFetch: Fetcher }) {
     <div className="w-full max-w-full min-w-0 text-slate-900">
       <header className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 pb-3">
         <div>
-          <h2 className="text-lg font-semibold">文件领取</h2>
+          <h2 className="text-lg font-semibold">组内共享</h2>
           <p className="mt-1 text-xs text-slate-500">
-            仅列出已完成任务的成品文件；局域网同事可直接下载或打包，也可切换到已添加的共享电脑。
+            仅列出已完成任务的成品文件；局域网同事可直接下载或打包，也可切换到已添加的组内共享电脑。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

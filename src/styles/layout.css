@@ -86,11 +86,6 @@
   padding: 0;
 }
 
-.wbx-flat-sidebar.is-collapsed .wbx-snav-item.is-active::before {
-  top: 7px;
-  bottom: 7px;
-}
-
 .wbx-flat-sidebar.is-collapsed .wbx-flat-sidebar__footer {
   padding: 8px 6px;
 }
@@ -195,20 +190,20 @@
   min-height: 0;
   overflow-y: auto;
   scrollbar-gutter: stable;
-  padding: 12px 12px 10px;
+  padding: 10px 12px 8px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .wbx-snav-group {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
 .wbx-snav-group + .wbx-snav-group {
-  padding-top: 10px;
+  padding-top: 8px;
   border-top: 1px solid rgba(24, 25, 28, 0.045);
 }
 
@@ -217,7 +212,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 0 10px 2px;
+  padding: 0 11px 2px;
 }
 
 .wbx-snav-group__title {
@@ -236,17 +231,17 @@
 .wbx-snav-group__list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1.5px;
 }
 
-/* 单行清爽菜单项（B站同款墨黑柔灰 + 天青蓝轻玻璃胶囊激活态） */
+/* 单行清爽菜单项（克制纯白悬停与通透天青激活面，零左侧硬条裁切） */
 .wbx-snav-item {
   position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
-  height: 34px;
+  height: 33px;
   padding: 0 11px;
   border: 1px solid transparent;
   border-radius: 10px;
@@ -258,7 +253,6 @@
   cursor: pointer;
   transition: background-color var(--wbx-dur-fast) var(--wbx-ease),
               border-color var(--wbx-dur-fast) var(--wbx-ease),
-              box-shadow var(--wbx-dur-fast) var(--wbx-ease),
               color var(--wbx-dur-fast) var(--wbx-ease);
 }
 
@@ -273,26 +267,10 @@
 }
 
 .wbx-snav-item.is-active {
-  background: linear-gradient(135deg, rgba(0, 174, 236, 0.16) 0%, rgba(0, 156, 224, 0.08) 100%);
-  border-color: rgba(0, 174, 236, 0.28);
-  color: var(--wbx-primary);
-  font-weight: 500;
-  text-shadow: 0 0 0.28px currentColor;
-  box-shadow:
-    0 4px 12px -3px rgba(0, 156, 224, 0.16),
-    inset 0 1px 0 rgba(255, 255, 255, 0.85);
-}
-
-.wbx-snav-item.is-active::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 8px;
-  bottom: 8px;
-  width: 3.5px;
-  border-radius: 0 4px 4px 0;
-  background: linear-gradient(180deg, #00AEEC 0%, #009CE0 100%);
-  box-shadow: 0 0 8px rgba(0, 174, 236, 0.45);
+  background: rgba(0, 174, 236, 0.095);
+  border-color: rgba(0, 174, 236, 0.22);
+  color: #0086C4;
+  font-weight: 600;
 }
 
 .wbx-snav-icon {
@@ -311,7 +289,7 @@
 }
 
 .wbx-snav-item.is-active .wbx-snav-icon {
-  color: var(--wbx-primary);
+  color: #008EC4;
 }
 
 .wbx-snav-label {
@@ -395,19 +373,20 @@
   font-family: var(--wbx-font-mono);
   font-size: 10.5px;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 
 .wbx-snav-badge.is-warn {
-  background: rgba(24, 25, 28, 0.05);
-  color: var(--wbx-text-secondary);
-  border: 1px solid rgba(24, 25, 28, 0.05);
+  background: #fffbeb;
+  color: #b45309;
+  border: 1px solid #fde68a;
 }
 
 .wbx-snav-item.is-active .wbx-snav-badge.is-warn {
-  background: rgba(0, 174, 236, 0.16);
-  color: var(--wbx-primary);
-  border-color: rgba(0, 174, 236, 0.25);
+  background: rgba(0, 174, 236, 0.14);
+  color: #0086C4;
+  border-color: rgba(0, 174, 236, 0.22);
 }
 
 .wbx-snav-badge.is-done {

@@ -82,8 +82,9 @@ test('getBreadcrumbModel provides interactive sibling switchers for collection, 
     downloadPlatform: 'fengshen',
     payrollSubView: 'batches',
   });
-  assert.equal(history.viewLabel, '任务中心');
-  assert.equal(history.siblings.length, 2);
+  assert.equal(history.moduleLabel, '平台管理');
+  assert.equal(history.viewLabel, '任务管理');
+  assert.equal(history.siblings.length, 4);
   assert.equal(history.siblings.find(s => s.active)?.id, 'history');
 
   const pickup = getBreadcrumbModel({
@@ -92,7 +93,8 @@ test('getBreadcrumbModel provides interactive sibling switchers for collection, 
     downloadPlatform: 'fengshen',
     payrollSubView: 'batches',
   });
-  assert.equal(pickup.viewLabel, '文件领取');
+  assert.equal(pickup.moduleLabel, '平台管理');
+  assert.equal(pickup.viewLabel, '组内共享');
   assert.equal(pickup.siblings.find(s => s.active)?.id, 'pickup');
   assert.equal(getCurrentQuickTargetId({ workspaceView: 'pickup', taskKind: 'download', downloadPlatform: 'fengshen', payrollSubView: 'batches' }), 'workspace:pickup');
 });

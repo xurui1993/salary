@@ -56,8 +56,8 @@ import {
   formatAuditTime,
   getEnabledPermissionLabels,
   getStatusLabel,
-  getWorkspaceDisplayLabel,
   hasDraftChanges,
+  resolveAuditTargetLabel,
   type AuditCategory,
   type UserPermissionDraft,
 } from '../lib/accountConsole';
@@ -195,13 +195,13 @@ function PermissionConfigList({
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <span
-                        className={`w-7.5 h-7.5 rounded-[9px] flex items-center justify-center shrink-0 transition-colors duration-150 ${
+                        className={`w-8 h-8 rounded-[10px] flex items-center justify-center shrink-0 transition-colors duration-150 ${
                           checked
                             ? 'bg-sky-50 text-[#008EC4]'
                             : 'bg-slate-100/85 text-[#9499A0]'
                         }`}
                       >
-                        <Icon className="w-3.5 h-3.5" />
+                        <Icon className="w-4 h-4" />
                       </span>
                       <span
                         className={`text-[13px] font-medium truncate transition-colors ${
@@ -414,9 +414,10 @@ export function AccountManagementPage({
 
   const pendingUsers = useMemo(() => users.filter(u => u.status === 'pending'), [users]);
   const formalMemberCount = useMemo(
-    () => users.filter(u => u.status !== 'pending').length,
+    () => users.filter(u => u.status === 'active' || u.status === 'disabled').length,
     [users],
   );
+  const rejectedCount = useMemo(() => users.filter(u => u.status === 'rejected').length, [users]);
   const activeCount = useMemo(() => users.filter(u => u.status === 'active').length, [users]);
 
   const filteredMembers = useMemo(
@@ -430,8 +431,8 @@ export function AccountManagementPage({
   );
 
   const filteredAudits = useMemo(
-    () => filterAuditEvents(auditEvents, { query: auditQuery, category: auditCategory }),
-    [auditEvents, auditQuery, auditCategory],
+    () => filterAuditEvents(auditEvents, { query: auditQuery, category: auditCategory, users }),
+    [auditEvents, auditQuery, auditCategory, users],
   );
 
   const selectedUser = useMemo(
@@ -725,7 +726,7 @@ export function AccountManagementPage({
             setActiveTab('members');
             setMemberStatusFilter('all');
           }}
-          className={`px-5 py-4 text-left transition-colors cursor-pointer ${
+          className={`relative px-5 py-4 text-left transition-colors cursor-pointer ${
             activeTab === 'members' && memberStatusFilter === 'all'
               ? 'bg-sky-50/35'
               : 'hover:bg-slate-50/75'
@@ -738,6 +739,9 @@ export function AccountManagementPage({
             </span>
             <span className="text-[11.5px] text-[#9499A0]">已开通账号</span>
           </div>
+          {activeTab === 'members' && memberStatusFilter === 'all' && (
+            <span className="absolute inset-x-0 bottom-0 h-[2px] bg-[#00AEEC]" aria-hidden="true" />
+          )}
         </button>
 
         <button
@@ -746,9 +750,9 @@ export function AccountManagementPage({
             setActiveTab('members');
             setMemberStatusFilter('active');
           }}
-          className={`px-5 py-4 text-left transition-colors cursor-pointer ${
+          className={`relative px-5 py-4 text-left transition-colors cursor-pointer ${
             activeTab === 'members' && memberStatusFilter === 'active'
-              ? 'bg-sky-50/35'
+              ? 'bg-emerald-50/35'
               : 'hover:bg-slate-50/75'
           }`}
         >
@@ -759,13 +763,16 @@ export function AccountManagementPage({
             </span>
             <span className="text-[11.5px] text-[#9499A0]">可登录使用</span>
           </div>
+          {activeTab === 'members' && memberStatusFilter === 'active' && (
+            <span className="absolute inset-x-0 bottom-0 h-[2px] bg-emerald-500" aria-hidden="true" />
+          )}
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('pending')}
-          className={`px-5 py-4 text-left transition-colors cursor-pointer ${
-            activeTab === 'pending' ? 'bg-amber-50/45' : 'hover:bg-slate-50/75'
+          className={`relative px-5 py-4 text-left transition-colors cursor-pointer ${
+            activeTab === 'pending' ? 'bg-amber-50/40' : 'hover:bg-slate-50/75'
           }`}
         >
           <div className="text-[12px] font-medium text-[#61666D]">待审批</div>
@@ -781,12 +788,15 @@ export function AccountManagementPage({
               {pendingUsers.length > 0 ? '待审核开通' : '暂无待审'}
             </span>
           </div>
+          {activeTab === 'pending' && (
+            <span className="absolute inset-x-0 bottom-0 h-[2px] bg-amber-500" aria-hidden="true" />
+          )}
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('audit')}
-          className={`px-5 py-4 text-left transition-colors cursor-pointer ${
+          className={`relative px-5 py-4 text-left transition-colors cursor-pointer ${
             activeTab === 'audit' ? 'bg-sky-50/35' : 'hover:bg-slate-50/75'
           }`}
         >
@@ -797,6 +807,9 @@ export function AccountManagementPage({
             </span>
             <span className="text-[11.5px] text-[#9499A0]">操作轨迹</span>
           </div>
+          {activeTab === 'audit' && (
+            <span className="absolute inset-x-0 bottom-0 h-[2px] bg-[#00AEEC]" aria-hidden="true" />
+          )}
         </button>
       </div>
 
@@ -913,19 +926,20 @@ export function AccountManagementPage({
                 )}
               </div>
 
-              <div className="inline-flex items-center p-1 rounded-[11px] bg-slate-100/85 border border-slate-200/50">
+              <div className="inline-flex h-9 items-center p-1 rounded-[11px] bg-slate-100/85 border border-slate-200/50">
                 {(
                   [
                     ['all', '全部'],
                     ['active', '启用'],
                     ['disabled', '停用'],
+                    ...(rejectedCount > 0 ? ([['rejected', '已驳回']] as const) : []),
                   ] as const
                 ).map(([val, label]) => (
                   <button
                     key={val}
                     type="button"
                     onClick={() => setMemberStatusFilter(val)}
-                    className={`h-7 px-3 rounded-[8px] text-[12px] font-medium transition cursor-pointer whitespace-nowrap ${
+                    className={`h-full px-3 rounded-[8px] text-[12px] font-medium transition cursor-pointer whitespace-nowrap ${
                       memberStatusFilter === val
                         ? 'bg-white text-[#18191C] shadow-[0_1px_3px_rgba(15,23,42,0.08)]'
                         : 'text-[#61666D] hover:text-[#18191C]'
@@ -967,10 +981,14 @@ export function AccountManagementPage({
                 <table className="w-full min-w-[740px] table-fixed text-left border-collapse">
                   <thead>
                     <tr className="border-b border-slate-100 text-[12px] font-medium text-[#61666D] bg-[#FAFBFD]/60">
-                      <th className="py-3 pl-6 pr-4 w-[24%]">成员</th>
-                      <th className="py-3 px-4 w-[46%]">模块权限</th>
+                      <th className="py-3 pl-6 pr-4 w-[26%]">成员</th>
+                      <th className="py-3 px-4 w-[43%]">模块权限</th>
                       <th className="py-3 px-4 w-[16%]">状态</th>
-                      <th className="py-3 pl-4 pr-6 text-right w-[14%]">操作</th>
+                      <th className="py-3 pl-4 pr-6 text-right w-[15%]">
+                        <span className="inline-flex w-[76px] items-center justify-center">
+                          操作
+                        </span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100/90">
@@ -988,6 +1006,9 @@ export function AccountManagementPage({
                       const isSelected = selectedUserId === user.id;
                       const isToggleLocked = user.id === currentUserId || user.role === 'admin';
                       const isToggling = busyKey === `toggle:${user.id}`;
+                      const showDistinctAccount =
+                        Boolean(user.username) && user.username !== user.display_name;
+                      const isMutedRow = user.status === 'disabled' || user.status === 'rejected';
 
                       return (
                         <tr
@@ -999,9 +1020,18 @@ export function AccountManagementPage({
                         >
                           <td className="py-4 pl-6 pr-4" title={`账号：${user.username}`}>
                             <div className="flex items-center gap-1.5 min-w-0">
-                              <span className="text-[14px] font-semibold text-[#18191C] truncate">
+                              <span
+                                className={`text-[14px] font-semibold truncate ${
+                                  isMutedRow ? 'text-[#61666D]' : 'text-[#18191C]'
+                                }`}
+                              >
                                 {user.display_name}
                               </span>
+                              {showDistinctAccount && (
+                                <span className="text-[12px] text-[#9499A0] truncate">
+                                  · {user.username}
+                                </span>
+                              )}
                               {user.id === currentUserId && (
                                 <span className="text-[11.5px] font-medium text-[#008EC4] shrink-0">
                                   · 我
@@ -1128,10 +1158,10 @@ export function AccountManagementPage({
                                 openMemberDrawer(user.id);
                               }}
                               aria-label={`配置 ${user.display_name}`}
-                              className={`h-8 px-3 rounded-[10px] border text-[12px] font-medium inline-flex items-center gap-1 transition cursor-pointer ${
+                              className={`h-8 w-[76px] rounded-[9px] border text-[12px] font-medium inline-flex items-center justify-center gap-0.5 transition cursor-pointer ${
                                 isSelected
-                                  ? 'border-[#00AEEC]/40 bg-sky-50 text-[#008EC4]'
-                                  : 'border-slate-200/90 bg-white text-[#4E5969] group-hover:border-[#00AEEC]/40 group-hover:text-[#008EC4] group-hover:bg-sky-50/50'
+                                  ? 'border-[#00AEEC]/45 bg-sky-50 text-[#008EC4]'
+                                  : 'border-slate-200/90 bg-white text-[#4E5969] group-hover:border-[#00AEEC]/45 group-hover:text-[#008EC4] group-hover:bg-sky-50/60'
                               }`}
                             >
                               <span>配置</span>
@@ -1172,10 +1202,14 @@ export function AccountManagementPage({
                 <table className="w-full min-w-[680px] table-fixed text-left border-collapse">
                   <thead>
                     <tr className="border-b border-slate-100 text-[12px] font-medium text-[#61666D] bg-[#FAFBFD]/60">
-                      <th className="py-3 pl-6 pr-4 w-[32%]">申请人</th>
+                      <th className="py-3 pl-6 pr-4 w-[30%]">申请人</th>
                       <th className="py-3 px-4 w-[28%]">申请说明</th>
-                      <th className="py-3 px-4 w-[18%]">提交时间</th>
-                      <th className="py-3 pl-4 pr-6 text-right w-[22%]">操作</th>
+                      <th className="py-3 px-4 w-[20%]">提交时间</th>
+                      <th className="py-3 pl-4 pr-6 text-right w-[22%]">
+                        <span className="inline-flex w-[156px] items-center justify-center">
+                          操作
+                        </span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100/90 text-[13px]">
@@ -1203,7 +1237,12 @@ export function AccountManagementPage({
                               )}
                             </div>
                           </td>
-                          <td className="py-4 px-4 text-[12.5px] text-[#61666D] truncate">
+                          <td
+                            className={`py-4 px-4 text-[12.5px] truncate ${
+                              user.note ? 'text-[#61666D]' : 'text-[#9499A0]'
+                            }`}
+                            title={user.note || undefined}
+                          >
                             {user.note || '—'}
                           </td>
                           <td className="py-4 px-4 text-[#61666D] font-mono text-[12px] tabular-nums whitespace-nowrap">
@@ -1218,7 +1257,7 @@ export function AccountManagementPage({
                                 type="button"
                                 disabled={Boolean(busyKey)}
                                 onClick={() => setRejectConfirmUser(user)}
-                                className="h-8 px-3 rounded-[10px] border border-slate-200/90 bg-white hover:border-rose-200 hover:bg-rose-50/70 hover:text-rose-600 text-[12px] font-medium text-[#61666D] transition cursor-pointer disabled:opacity-50"
+                                className="h-8 w-[62px] rounded-[9px] border border-slate-200/90 bg-white hover:border-rose-200 hover:bg-rose-50/70 hover:text-rose-600 text-[12px] font-medium text-[#61666D] inline-flex items-center justify-center transition cursor-pointer disabled:opacity-50"
                               >
                                 驳回
                               </button>
@@ -1227,7 +1266,7 @@ export function AccountManagementPage({
                                 disabled={Boolean(busyKey)}
                                 onClick={() => openMemberDrawer(user.id)}
                                 aria-label={`审核 ${user.display_name}`}
-                                className="h-8 px-3 rounded-[10px] border border-[#00AEEC]/35 bg-sky-50/70 hover:bg-sky-50 text-[12px] font-medium text-[#008EC4] inline-flex items-center gap-1 transition cursor-pointer disabled:opacity-50"
+                                className="h-8 w-[86px] rounded-[9px] border border-[#00AEEC]/35 bg-sky-50/70 hover:bg-sky-50 text-[12px] font-medium text-[#008EC4] inline-flex items-center justify-center gap-0.5 transition cursor-pointer disabled:opacity-50"
                               >
                                 <span>审批配置</span>
                                 <ChevronRight className="w-3.5 h-3.5 transition-transform duration-150 group-hover:translate-x-0.5" />
@@ -1270,13 +1309,13 @@ export function AccountManagementPage({
                 )}
               </div>
 
-              <div className="inline-flex flex-wrap items-center p-1 rounded-[11px] bg-slate-100/85 border border-slate-200/50">
+              <div className="inline-flex h-9 flex-wrap items-center p-1 rounded-[11px] bg-slate-100/85 border border-slate-200/50">
                 {auditCategoryOptions.map(([cat, label]) => (
                   <button
                     key={cat}
                     type="button"
                     onClick={() => setAuditCategory(cat)}
-                    className={`h-7 px-3 rounded-[8px] text-[12px] font-medium transition cursor-pointer whitespace-nowrap ${
+                    className={`h-full px-3 rounded-[8px] text-[12px] font-medium transition cursor-pointer whitespace-nowrap ${
                       auditCategory === cat
                         ? 'bg-white text-[#18191C] shadow-[0_1px_3px_rgba(15,23,42,0.08)]'
                         : 'text-[#61666D] hover:text-[#18191C]'
@@ -1303,41 +1342,54 @@ export function AccountManagementPage({
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
+                <table className="w-full min-w-[680px] table-fixed text-left border-collapse">
                   <thead>
                     <tr className="border-b border-slate-100 text-[12px] font-medium text-[#61666D] bg-[#FAFBFD]/60">
-                      <th className="py-3 pl-6 pr-4">时间</th>
-                      <th className="py-3 px-4">操作账号</th>
-                      <th className="py-3 px-4">事件</th>
-                      <th className="py-3 px-4">目标对象</th>
-                      <th className="py-3 pl-4 pr-6 text-right">结果</th>
+                      <th className="py-3 pl-6 pr-4 w-[22%]">时间</th>
+                      <th className="py-3 px-4 w-[17%]">操作账号</th>
+                      <th className="py-3 px-4 w-[24%]">事件</th>
+                      <th className="py-3 px-4 w-[21%]">目标对象</th>
+                      <th className="py-3 pl-4 pr-6 text-right w-[16%]">结果</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100/90 text-[13px]">
                     {filteredAudits.map(evt => {
                       const meta = formatAuditAction(evt.action);
                       const detailLabel = formatAuditDetail(evt.detail);
+                      const targetLabel = evt.run_id
+                        ? resolveAuditTargetLabel(evt.run_id, users)
+                        : '—';
                       const isPositive =
                         evt.detail === 'success' ||
                         evt.detail === 'approved' ||
                         evt.detail === 'enabled';
-                      const isWarning = evt.detail === 'rejected' || evt.detail === 'disabled';
+                      const isWarning =
+                        evt.detail === 'rejected' ||
+                        evt.detail === 'disabled' ||
+                        evt.detail === 'failed';
+                      const isPendingTone = evt.detail === 'registered';
+                      const isInspectTone = evt.detail === 'inspect';
                       return (
                         <tr key={evt.id} className="hover:bg-[#F7FAFC] transition-colors">
                           <td className="py-3 pl-6 pr-4 font-mono text-[12px] text-[#61666D] tabular-nums whitespace-nowrap">
                             {formatAuditTime(evt.time)}
                           </td>
-                          <td className="py-3 px-4 text-[12.5px] font-medium text-[#18191C] whitespace-nowrap">
+                          <td
+                            className="py-3 px-4 text-[12.5px] font-medium text-[#18191C] truncate"
+                            title={evt.username || 'system'}
+                          >
                             {evt.username || 'system'}
                           </td>
-                          <td className="py-3 px-4 text-[#18191C] whitespace-nowrap">
+                          <td className="py-3 px-4 text-[#18191C] truncate" title={meta.label}>
                             {meta.label}
                           </td>
                           <td
-                            className="py-3 px-4 text-[12px] text-[#61666D] whitespace-nowrap"
-                            title={evt.run_id || undefined}
+                            className={`py-3 px-4 text-[12px] truncate ${
+                              targetLabel === '—' ? 'text-[#9499A0]' : 'text-[#4E5969]'
+                            }`}
+                            title={evt.run_id ? `${targetLabel} (${evt.run_id})` : undefined}
                           >
-                            {evt.run_id ? getWorkspaceDisplayLabel(evt.run_id) : '—'}
+                            {targetLabel}
                           </td>
                           <td className="py-3 pl-4 pr-6 text-right whitespace-nowrap">
                             <span
@@ -1346,7 +1398,11 @@ export function AccountManagementPage({
                                   ? 'text-emerald-600'
                                   : isWarning
                                     ? 'text-rose-600'
-                                    : 'text-[#61666D]'
+                                    : isPendingTone
+                                      ? 'text-amber-600'
+                                      : isInspectTone
+                                        ? 'text-[#008EC4]'
+                                        : 'text-[#61666D]'
                               }`}
                             >
                               {detailLabel}
@@ -1430,7 +1486,9 @@ export function AccountManagementPage({
                         {selectedUser.display_name}
                       </div>
                       <p className="text-[11.5px] text-[#61666D] mt-0.5">
-                        修改保存后，该成员原有的登录会话将立即失效
+                        {selectedUser.id === currentUserId
+                          ? '修改保存后，其他设备或旧的登录会话将自动失效'
+                          : '修改保存后，该成员原有的登录会话将立即失效'}
                       </p>
                     </div>
                   </div>
@@ -1557,7 +1615,7 @@ export function AccountManagementPage({
                         disabled={Boolean(busyKey)}
                         onClick={openDrawerPasswordMode}
                         title="点击修改该成员登录密码"
-                        className="group inline-flex items-center gap-2 -ml-2 px-2.5 py-1.5 rounded-xl hover:bg-sky-50/85 transition cursor-pointer min-w-0 disabled:opacity-55"
+                        className="group inline-flex items-center gap-2 -ml-2 px-2.5 py-1.5 rounded-xl border border-transparent hover:border-[#00AEEC]/25 hover:bg-sky-50/75 transition cursor-pointer min-w-0 disabled:opacity-55"
                       >
                         <span className="text-[15px] font-semibold text-[#18191C] group-hover:text-[#008EC4] truncate transition-colors">
                           {selectedUser.display_name}
@@ -1628,8 +1686,8 @@ export function AccountManagementPage({
                       <div className="rounded-2xl border border-slate-200/80 bg-white overflow-hidden shadow-[0_1px_3px_rgba(15,23,42,0.03)]">
                         <div className="px-4 py-3 flex items-center justify-between gap-3">
                           <div className="flex items-center gap-3 min-w-0">
-                            <span className="w-7.5 h-7.5 rounded-[9px] bg-sky-50 text-[#008EC4] flex items-center justify-center shrink-0">
-                              <CopyCheck className="w-3.5 h-3.5" />
+                            <span className="w-8 h-8 rounded-[10px] bg-sky-50 text-[#008EC4] flex items-center justify-center shrink-0">
+                              <CopyCheck className="w-4 h-4" />
                             </span>
                             <div className="min-w-0">
                               <div className="text-[13px] font-medium text-[#18191C]">
@@ -1795,9 +1853,9 @@ export function AccountManagementPage({
                   账号信息
                 </div>
                 <div className="rounded-2xl border border-slate-200/80 bg-white overflow-hidden divide-y divide-slate-100 shadow-[0_1px_3px_rgba(15,23,42,0.03)]">
-                  <label className="flex items-center gap-3 px-4 py-2.5 focus-within:bg-sky-50/45 transition-colors cursor-text">
-                    <span className="w-7.5 h-7.5 rounded-[9px] bg-sky-50 text-[#008EC4] flex items-center justify-center shrink-0">
-                      <User className="w-3.5 h-3.5" />
+                  <label className="flex items-center gap-3 px-4 py-3 focus-within:bg-sky-50/45 transition-colors cursor-text">
+                    <span className="w-8 h-8 rounded-[10px] bg-sky-50 text-[#008EC4] flex items-center justify-center shrink-0">
+                      <User className="w-4 h-4" />
                     </span>
                     <span className="w-16 shrink-0 text-[12.5px] font-medium text-[#4E5969]">
                       用户姓名
@@ -1817,9 +1875,9 @@ export function AccountManagementPage({
                     />
                   </label>
 
-                  <label className="flex items-center gap-3 px-4 py-2.5 focus-within:bg-sky-50/45 transition-colors cursor-text">
-                    <span className="w-7.5 h-7.5 rounded-[9px] bg-slate-100/85 text-[#61666D] flex items-center justify-center shrink-0">
-                      <Lock className="w-3.5 h-3.5" />
+                  <label className="flex items-center gap-3 px-4 py-3 focus-within:bg-sky-50/45 transition-colors cursor-text">
+                    <span className="w-8 h-8 rounded-[10px] bg-slate-100/85 text-[#61666D] flex items-center justify-center shrink-0">
+                      <Lock className="w-4 h-4" />
                     </span>
                     <span className="w-16 shrink-0 text-[12.5px] font-medium text-[#4E5969]">
                       初始密码
@@ -1848,6 +1906,27 @@ export function AccountManagementPage({
                       )}
                     </button>
                   </label>
+                </div>
+
+                <div className="flex items-center justify-between px-1 text-[11.5px]">
+                  <span
+                    className={
+                      createUsername.trim().length >= 2
+                        ? 'text-emerald-600 font-medium'
+                        : 'text-[#9499A0]'
+                    }
+                  >
+                    {createUsername.trim().length >= 2 ? '✓ 姓名格式可用' : '姓名至少 2 个字符'}
+                  </span>
+                  <span
+                    className={
+                      createPassword.length >= 6
+                        ? 'text-emerald-600 font-medium'
+                        : 'text-[#9499A0]'
+                    }
+                  >
+                    {createPassword.length >= 6 ? '✓ 密码长度已达标' : '密码不少于 6 位'}
+                  </span>
                 </div>
               </div>
 
@@ -1882,8 +1961,12 @@ export function AccountManagementPage({
               </button>
               <button
                 type="submit"
-                disabled={busyKey === 'create'}
-                className="h-9 px-4 rounded-xl bg-[#00AEEC] hover:bg-[#009CD6] text-white text-xs font-semibold shadow-[0_8px_18px_-10px_rgba(0,174,236,0.85)] transition cursor-pointer disabled:opacity-55"
+                disabled={
+                  busyKey === 'create' ||
+                  createUsername.trim().length < 2 ||
+                  createPassword.length < 6
+                }
+                className="h-9 px-4 rounded-xl bg-[#00AEEC] hover:bg-[#009CD6] text-white text-xs font-semibold shadow-[0_8px_18px_-10px_rgba(0,174,236,0.85)] transition cursor-pointer disabled:opacity-50"
               >
                 {busyKey === 'create' ? '创建中…' : '创建并开通'}
               </button>
@@ -1967,7 +2050,7 @@ export function NoModuleAccessNotice({
         <div className="space-y-1.5">
           <h2 className="text-sm font-bold text-[#18191C]">当前账号尚未开通此模块权限</h2>
           <p className="text-xs text-[#61666D] leading-relaxed">
-            {displayName}，请联系管理员开启对应模块权限，或先前往任务中心与文件领取查看记录。
+            {displayName}，请联系管理员开启对应模块权限，或先前往任务管理与组内共享查看记录。
           </p>
         </div>
         <div className="flex items-center justify-center gap-2.5">
@@ -1976,14 +2059,14 @@ export function NoModuleAccessNotice({
             onClick={onOpenHistory}
             className="h-9 px-4 rounded-xl bg-[#00AEEC] hover:bg-[#009CD6] text-white text-xs font-semibold transition cursor-pointer"
           >
-            进入任务中心
+            进入任务管理
           </button>
           <button
             type="button"
             onClick={onOpenPickup}
             className="h-9 px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-[#4E5969] transition cursor-pointer"
           >
-            前往文件领取
+            前往组内共享
           </button>
         </div>
       </div>

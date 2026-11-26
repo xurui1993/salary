@@ -666,10 +666,15 @@ class AccountStore:
             initialize_workspace_storage(wid)
         return _row_to_user(updated)
 
-    def reset_password(self, user_id: str, new_password: str) -> None:
+    def reset_password(self, user_id: str, new_password: str, *, keep_session_token: str | None = None) -> None:
         _, _, clean_pw = _credentials("placeholder", new_password)
         encoded = _password_hash(clean_pw)
         now = time.time()
+        keep_digest = (
+            hashlib.sha256(keep_session_token.encode()).hexdigest()
+            if isinstance(keep_session_token, str) and 20 <= len(keep_session_token) <= 128
+            else None
+        )
         with self._lock, self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute("SELECT id FROM accounts WHERE id = ?", (user_id,)).fetchone()
@@ -679,7 +684,13 @@ class AccountStore:
                 "UPDATE accounts SET password_hash = ?, updated_at = ? WHERE id = ?",
                 (encoded, now, user_id),
             )
-            connection.execute("DELETE FROM account_sessions WHERE user_id = ?", (user_id,))
+            if keep_digest:
+                connection.execute(
+                    "DELETE FROM account_sessions WHERE user_id = ? AND digest != ?",
+                    (user_id, keep_digest),
+                )
+            else:
+                connection.execute("DELETE FROM account_sessions WHERE user_id = ?", (user_id,))
 
     def change_password(self, user_id: str, current_password: str, new_password: str) -> None:
         if not isinstance(current_password, str) or not current_password:

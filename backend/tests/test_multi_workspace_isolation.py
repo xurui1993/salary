@@ -368,6 +368,22 @@ class MultiWorkspaceIsolationTests(unittest.TestCase):
             self.assertEqual(limit_err.exception.status_code, 429)
             self.assertEqual(self.store.pending_count(), 2)
 
+    def test_admin_self_reset_preserves_caller_session(self):
+        admin = self.store.create_user("admin", "adminPass123", role="admin", bootstrap=True)
+        tok_current = self.store.new_session(admin["id"])
+        tok_other = self.store.new_session(admin["id"])
+
+        req = make_request(
+            "POST",
+            f"/api/admin/accounts/{admin['id']}/reset-password",
+            token=tok_current,
+            body={"new_password": "newAdminPass456"},
+        )
+        res = asyncio.run(auth_routes.admin_reset_password(admin["id"], req))
+        self.assertTrue(res["ok"])
+        self.assertIsNotNone(self.store.session_user(tok_current))
+        self.assertIsNone(self.store.session_user(tok_other))
+
 
 if __name__ == "__main__":
     unittest.main()

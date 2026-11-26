@@ -376,14 +376,26 @@ async def admin_reset_password(user_id: str, request: Request):
     admin = require_admin(request)
     store = get_account_store()
     target = next((u for u in store.users() if u["id"] == user_id), None)
-    store.reset_password(user_id, payload.get("new_password", ""))
+    keep_token = request.cookies.get(COOKIE_NAME) if user_id == admin["id"] else None
+    store.reset_password(
+        user_id,
+        payload.get("new_password", ""),
+        keep_session_token=keep_token,
+    )
     audit_event(
         admin,
         "account.password.reset",
         run_id=(target["workspace_id"] if target else ""),
         detail="success",
     )
-    return {"ok": True, "message": "已重置该成员登录密码并使其旧登录会话失效"}
+    return {
+        "ok": True,
+        "message": (
+            "已更新个人登录密码，其他旧登录会话已失效"
+            if user_id == admin["id"]
+            else "已重置该成员登录密码并使其旧登录会话失效"
+        ),
+    }
 
 
 @admin_router.post("/{user_id}/sync-default-config")

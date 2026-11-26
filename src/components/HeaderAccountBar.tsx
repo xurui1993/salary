@@ -174,21 +174,23 @@ export function HeaderAccountBar({
               className="absolute right-0 mt-2 w-[264px] rounded-2xl bg-white/96 backdrop-blur-xl border border-slate-200/90 shadow-[0_18px_40px_-14px_rgba(15,23,42,0.18)] p-2 z-50"
             >
               {/* 当前登录身份摘要（点击用户名直接修改个人密码） */}
-              <button
-                type="button"
-                role="menuitem"
-                title="点击修改个人登录密码"
-                onClick={openPasswordModal}
-                className="w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl hover:bg-sky-50/75 transition cursor-pointer group border-b border-slate-100 mb-1"
-              >
-                <span className="text-[13px] font-semibold text-[#18191C] group-hover:text-[#008EC4] truncate transition-colors">
-                  {user.display_name}
-                </span>
-                <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-[#61666D] group-hover:text-[#008EC4] shrink-0 transition-colors">
-                  <KeyRound className="w-3 h-3" />
-                  <span>修改密码</span>
-                </span>
-              </button>
+              <div className="pb-1.5 mb-1 border-b border-slate-100">
+                <button
+                  type="button"
+                  role="menuitem"
+                  title="点击修改个人登录密码"
+                  onClick={openPasswordModal}
+                  className="w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl hover:bg-sky-50/75 transition cursor-pointer group"
+                >
+                  <span className="text-[13px] font-semibold text-[#18191C] group-hover:text-[#008EC4] truncate transition-colors">
+                    {user.display_name}
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-[#61666D] group-hover:text-[#008EC4] shrink-0 transition-colors">
+                    <KeyRound className="w-3 h-3" />
+                    <span>修改密码</span>
+                  </span>
+                </button>
+              </div>
 
               {/* 管理员专属：跨空间巡检快速切换区 */}
               {user.role === 'admin' && workspaces.length > 1 && (
