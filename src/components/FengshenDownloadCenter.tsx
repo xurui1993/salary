@@ -190,7 +190,6 @@ interface Props {
 
 const API_ROOT = '/api/fengshen-downloads';
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const LANORANGE_CITIES = ['保定','北京','潮州','大连','东莞','广州','惠州','宁波','泉州','三亚','汕头','上海','韶关','深圳','台州','天津'];
 
 function cleanBindingPlatforms(value: unknown): Record<string, BindingPlatform> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
@@ -646,7 +645,15 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     }
   }, [getJson]);
 
-  const stationDirectory=useStationDirectory(platform==='xiaoxiang'?'xiaoxiang':'fengshen',apiRef.current,platform!=='payout');
+  const directoryPlatform =
+    platform === 'xiaoxiang'
+      ? 'xiaoxiang'
+      : platform === 'lanorange'
+        ? 'lanorange'
+        : platform === 'lanorange_mdr'
+          ? 'lanorange_mdr'
+          : 'fengshen';
+  const stationDirectory=useStationDirectory(directoryPlatform,apiRef.current,platform!=='payout');
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -1020,16 +1027,41 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       .map(city => ({ id: city.id || city.name, name: city.name }));
     return sortCitiesWithLanorangeFirst(realCities);
   }, [options?.cities, platform, xiaoxiangOnly, stationDirectory.data?.cities]);
+  const blueDirectoryCities = React.useMemo<Array<{ id: string; name: string; station_count?: number | null }>>(() => {
+    const list = (stationDirectory.data?.cities ?? [])
+      .filter((city: any) => city?.name)
+      .map((city: any) => ({
+        id: String(city.id || city.name),
+        name: String(city.name),
+        station_count: city.station_count ?? null,
+      }));
+    return sortCitiesWithLanorangeFirst(list as any) as typeof list;
+  }, [stationDirectory.data?.cities]);
+  const blueCityNames = blueDirectoryCities.map(city => city.name);
+  const blueCityNamesKey = blueCityNames.join('\u0001');
+  const blueDirectoryLoading =
+    !stationDirectory.error &&
+    (!stationDirectory.data || ['loading', 'syncing'].includes(stationDirectory.data.status || ''));
   const selectableCities = displayedCities.filter(city => !city.disabled);
   const selectableCityNames = selectableCities.map(city => city.name).join('\u0001');
   useEffect(() => {
-    if (!xiaoxiangOnly || stationDirectory.data?.status !== 'ready') return;
-    const known = new Set(selectableCities.map(city => city.name));
-    setCities(previous => {
-      const kept = previous.filter(name => known.has(name));
-      return kept.length === previous.length ? previous : kept;
-    });
-  }, [xiaoxiangOnly, stationDirectory.data?.status, selectableCityNames]);
+    if (stationDirectory.data?.status !== 'ready') return;
+    if (xiaoxiangOnly) {
+      const known = new Set(selectableCities.map(city => city.name));
+      setCities(previous => {
+        const kept = previous.filter(name => known.has(name));
+        return kept.length === previous.length ? previous : kept;
+      });
+      return;
+    }
+    if (blueOnly || mdrOnly) {
+      const known = new Set(blueCityNames);
+      setBlueCities(previous => {
+        const kept = previous.filter(name => known.has(name));
+        return kept.length === previous.length ? previous : kept;
+      });
+    }
+  }, [xiaoxiangOnly, blueOnly, mdrOnly, stationDirectory.data?.status, selectableCityNames, blueCityNamesKey]);
   const invalidMerchantMix=hasAttendance&&!merchantDateValid;
 
   const fengshenNeedsCities =
@@ -2658,9 +2690,11 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                             <span id="download-cities-label" className="wb-step-title">处理城市与站点</span>
                             {(blueOnly || mdrOnly) ? (
                               <span className="wb-step-count-pill tabular-nums">
-                                {blueCities.length > 0
-                                  ? `已选 ${blueCities.length} / ${LANORANGE_CITIES.length}`
-                                  : `默认全部城市（已选 0 / ${LANORANGE_CITIES.length}）`}
+                                {blueDirectoryLoading
+                                  ? '正在读取平台城市目录…'
+                                  : blueCities.length > 0
+                                    ? `已选 ${blueCities.length} / ${blueCityNames.length}`
+                                    : `默认全部城市（已选 0 / ${blueCityNames.length}）`}
                               </span>
                             ) : (
                               <>
@@ -2680,14 +2714,25 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                 <button
                                   type="button"
                                   className="wb-city-preset-btn"
-                                  disabled={formLocked}
-                                  onClick={() => setBlueCities(blueCities.length === LANORANGE_CITIES.length ? [] : [...LANORANGE_CITIES])}
+                                  disabled={formLocked || !blueCityNames.length}
+                                  onClick={() => setBlueCities(blueCities.length === blueCityNames.length ? [] : [...blueCityNames])}
                                 >
-                                  {blueCities.length === LANORANGE_CITIES.length ? '清空城市' : '全选城市'}
+                                  {blueCities.length > 0 && blueCities.length === blueCityNames.length ? '清空城市' : '全选城市'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="wb-city-preset-btn"
+                                  disabled={formLocked || stationDirectory.data?.status === 'loading'}
+                                  onClick={stationDirectory.refresh}
+                                  title="从平台重新读取城市与站点目录"
+                                >
+                                  {stationDirectory.data?.status === 'loading' ? '目录同步中…' : '刷新站点数'}
                                 </button>
                                     <span className="wbx-toolbar-sep" aria-hidden="true" />
                                 {regionPresets.map(preset => {
-                                  const matched = LANORANGE_CITIES.filter(city => preset.cities.includes(city));
+                                  const matched = blueCityNames.filter(name =>
+                                    preset.cities.some(pc => name.includes(pc) || pc.includes(name.replace(/市$/, ''))),
+                                  );
                                   if (!matched.length) return null;
                                   const isActive = matched.length > 0 && matched.every(c => blueCities.includes(c));
                                   return (
@@ -2758,7 +2803,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                   <Plus size={13} />
                                   <span>存为预设</span>
                                 </button>
-                                {blueCities.length > 0 && blueCities.length < LANORANGE_CITIES.length && (
+                                {blueCities.length > 0 && blueCities.length < blueCityNames.length && (
                                   <button
                                     type="button"
                                     className="wb-city-preset-btn"
@@ -2901,26 +2946,62 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                         </div>
 
                         {(blueOnly || mdrOnly) ? (
-                          <div className="wb-inline-city-grid" role="group" aria-label="处理城市列表">
-                            {LANORANGE_CITIES.map(city => {
-                              const selected = blueCities.includes(city);
-                              return (
-                                <button
-                                  key={city}
-                                  type="button"
-                                  disabled={formLocked}
-                                  aria-pressed={selected}
-                                  onClick={() => toggle(city, blueCities, setBlueCities)}
-                                  className={`wb-inline-city-chip ${selected ? 'is-selected' : ''} ${formLocked ? 'is-disabled' : ''}`}
-                                >
-                                  <span className="wb-city-check-box" aria-hidden="true">
-                                    {selected && '✓'}
-                                  </span>
-                                  <span className="wb-city-chip-name">{city}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
+                          <>
+                            {blueDirectoryCities.length > 0 ? (
+                              <div className="wb-inline-city-grid" role="group" aria-label="处理城市列表">
+                                {blueDirectoryCities.map(city => {
+                                  const selected = blueCities.includes(city.name);
+                                  return (
+                                    <button
+                                      key={city.id}
+                                      type="button"
+                                      disabled={formLocked}
+                                      aria-pressed={selected}
+                                      onClick={() => toggle(city.name, blueCities, setBlueCities)}
+                                      className={`wb-inline-city-chip ${selected ? 'is-selected' : ''} ${formLocked ? 'is-disabled' : ''}`}
+                                    >
+                                      <span className="wb-city-check-box" aria-hidden="true">
+                                        {selected && '✓'}
+                                      </span>
+                                      <span className="wb-city-chip-name">{city.name}</span>
+                                      <span className="wb-city-status">
+                                        <CityStationCount directory={stationDirectory.data} city={city.id} />
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="wbx-auth-empty-form" role="status">
+                                {blueDirectoryLoading && (
+                                  <Loader2 size={18} className="wbx-fs-spin text-[#00AEEC]" />
+                                )}
+                                <p className="wb-muted">
+                                  {stationDirectory.error ||
+                                    stationDirectory.data?.message ||
+                                    (blueDirectoryLoading
+                                      ? `正在从平台读取${mdrOnly ? '新蓝橙' : '蓝橙'}城市与站点目录…`
+                                      : `暂未读取到${mdrOnly ? '新蓝橙' : '蓝橙'}城市目录，请先完成平台登录后刷新`)}
+                                </p>
+                              </div>
+                            )}
+                            {blueDirectoryCities.length > 0 && (
+                              <div className="wb-city-count-note">
+                                <small>
+                                  城市与站点数来自平台实时目录；未授权的城市不会显示。
+                                  {blueCities.length === 0 ? '未勾选城市时按全部授权城市执行。' : ''}
+                                </small>
+                              </div>
+                            )}
+                            {blueDirectoryCities.length > 0 &&
+                              (stationDirectory.error || stationDirectory.data?.message) && (
+                                <div className="wb-city-count-note">
+                                  <small className="wb-error">
+                                    {stationDirectory.error || stationDirectory.data?.message}
+                                  </small>
+                                </div>
+                              )}
+                          </>
                         ) : (
                           <>
                             <div className="wb-inline-city-grid" role="group" aria-label="处理城市列表">

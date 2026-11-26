@@ -15,7 +15,7 @@ ROOTS = {'lanorange': ('madouren.cdevelopment.cn', 'login.dingtalk.com', 'dingta
 QR_SOURCES = {'lanorange', 'lanorange_mdr'}
 MODES = {'账号登录','扫码登录','短信登录','密码登录','二维码登录','验证码登录','手机验证码登录','手机号登录','短信验证码登录','手机动态码登录','动态码登录','账号密码登录','通过手机号登录','通过邮箱登录'}
 SUBMITS = {'登录', '登 录', '立即登录', '确认登录', '验证并登录','下一步','验证'}
-OTHER = {'获取验证码','发送验证码','获取短信验证码','发送短信验证码','获取动态码','发送动态码','获取手机动态码','发送手机动态码','刷新二维码','刷新','点击刷新'}
+OTHER = {'获取验证码','发送验证码','获取短信验证码','发送短信验证码','获取动态码','发送动态码','获取手机动态码','发送手机动态码','刷新二维码','刷新','点击刷新','钉钉登录'}
 COUNTDOWN = r'(?:重新获取|重新发送|重发|获取验证码)?[（(]?\s*(\d{1,3})\s*(?:秒|s)[）)]?(?:后重新获取|后重试|后重发)?'
 CONSENT_LABEL = '我已阅读并同意《用户协议》《隐私政策》'
 
@@ -131,6 +131,8 @@ def inspect_login_page(source, page, previous=None):
             src_attr = (element.get_attribute('src') or '').lower()
             hint = ' '.join((element.get_attribute(k) or '') for k in ('class', 'id', 'src', 'alt')).lower()
             if 'captcha' in hint: continue
+            # 钉钉已登录确认页的头像是方形大图，不能当作扫码二维码截图。
+            if any(token in hint for token in ('avatar', 'headimg', 'portrait', 'logo')): continue
             is_canvas = element.evaluate('e=>e.tagName') == 'CANVAS'
             has_qr_hint = 'qr' in hint or '二维码' in hint
             ancestor_qr_hint = False
@@ -140,7 +142,7 @@ def inspect_login_page(source, page, previous=None):
                 else:
                     try:
                         ancestor_qr_hint = bool(element.evaluate(
-                            "e=>{let p=e.parentElement;for(let i=0;i<3&&p;i++,p=p.parentElement){let t=((p.className||'')+' '+(p.id||'')).toLowerCase();if(t.includes('qr')||t.includes('scan')||t.includes('code'))return true;}return false;}"
+                            "e=>{let p=e.parentElement;for(let i=0;i<3&&p;i++,p=p.parentElement){let t=((p.className||'')+' '+(p.id||'')).toLowerCase();if(t.includes('avatar')||t.includes('headimg')||t.includes('portrait')||t.includes('logo'))return false;if(t.includes('qr')||t.includes('scan')||t.includes('code'))return true;}return false;}"
                         ))
                     except Exception:
                         ancestor_qr_hint = False

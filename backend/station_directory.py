@@ -32,16 +32,24 @@ def _publish(platform, version, change):
 def _scan(platform, version):
     from deduction_stations import catalog
     try:
+        first = {}
         if platform == 'lanorange':
             from station_city_resolution import read_directory
             directory = read_directory(expected_version=version)
             cities = directory['city_entries']
             stations = [{**s, 'platform': platform} for s in directory['stations']]
+        elif platform == 'lanorange_mdr':
+            from lanorange_mdr_directory import load as load_mdr_directory
+            directory = load_mdr_directory(expected_version=version)
+            cities = [{'id': city['id'], 'name': city['name'],
+                       'project_code': city.get('project_code') or ''}
+                      for city in directory['cities']]
+            stations = [{**station, 'platform': platform} for station in directory['stations']]
         else:
             first = catalog(platform)
             cities, stations = first['cities'], first['stations']
         def initial(state):
-            if platform != 'lanorange' and first.get('account_scope'): state['account_scope'] = first['account_scope']
+            if platform not in ('lanorange', 'lanorange_mdr') and first.get('account_scope'): state['account_scope'] = first['account_scope']
             existing = {c['id']: c for c in state['cities']}
             state.update(cities=[{**c, 'station_count': existing.get(c['id'], {}).get('station_count'), 'status': existing.get(c['id'], {}).get('status', 'pending')} for c in cities],
                          stations=state['stations'] if platform == 'fengshen' else stations)
@@ -77,6 +85,10 @@ def _scan(platform, version):
         _publish(platform, version, lambda state: state.update(status='ready', fetched_at=datetime.now(timezone.utc).isoformat()))
     except Exception as error:
         code = getattr(error, 'status_code', None)
+        if code is None:
+            from binding_source_auth import SourceAuthenticationRequired
+            if isinstance(error, SourceAuthenticationRequired):
+                code = 401
         def failed(state):
             state.update(status='unavailable', message='请先完成平台登录后刷新' if code in (401, 403) else '目录暂不可用，请在当前采集或认证结束后刷新')
             detail = str(getattr(error, 'detail', ''))
@@ -91,7 +103,7 @@ def _scan(platform, version):
 
 
 def snapshot(platform, refresh=False):
-    if platform not in ('fengshen', 'xiaoxiang', 'lanorange'):
+    if platform not in ('fengshen', 'xiaoxiang', 'lanorange', 'lanorange_mdr'):
         from fastapi import HTTPException
         raise HTTPException(400, '平台无效')
     version = _version(platform)

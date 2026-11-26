@@ -42,7 +42,7 @@ SOURCES = {
                'cookie_auth': True, 'identity_path': '/api/getUserInfo',
                'identity_codes': (0,), 'token': 'fengxin-saas'},
 }
-DINGTALK_CONFIRM_LABELS = ('同意', '确认登录', '确认授权', '继续登录')
+DINGTALK_CONFIRM_LABELS = ('立即登录', '同意', '确认登录', '确认授权', '继续登录')
 _DEFAULT_AUTH_ROOT = Path(__file__).parent / '.local_auth'
 ROOT = _DEFAULT_AUTH_ROOT
 SHARED_SOURCES = frozenset({'benlai'})
@@ -297,6 +297,14 @@ def _mask_account(value):
     return text[:3] + '****' + text[-4:]
 
 
+def _click_control(element, timeout=2500):
+    """官方控件点击：动画/浮层让 Playwright 操作超时时，退回页面内 DOM 点击。"""
+    try:
+        element.click(timeout=timeout)
+    except Exception:
+        element.evaluate('e=>e.click()')
+
+
 def _confirm_dingtalk(page):
     """钉钉已登录时授权页会停在确认步骤，点一下即可跳回蓝橙，不必重新扫码。"""
     parsed = urlparse(page.url)
@@ -306,9 +314,14 @@ def _confirm_dingtalk(page):
         for locator in (page.get_by_role('button', name=label, exact=True).first,
                         page.get_by_text(label, exact=True).first):
             try:
-                if locator.is_visible():
+                if not locator.is_visible():
+                    continue
+                try:
                     locator.click(timeout=2000)
-                    return label
+                except Exception:
+                    # 钉钉确认页的按钮常被过渡层拦截；直接派发 DOM 点击仍属官方页面操作。
+                    locator.evaluate('e=>e.click()')
+                return label
             except Exception:
                 continue
     return None
@@ -876,13 +889,13 @@ class SourceAuth:
                                and (page.url, c.get('label')) not in attempted), None)
                 if choice is not None:
                     attempted.add((page.url, choice.get('label')))
-                    bindings[choice['id']].click(timeout=2500)
+                    _click_control(bindings[choice['id']])
                     desktop,bindings=inspect_login_page(source,page,desktop)
                     desktop.pop('_challenge',None);desktop.pop('_qr_element',None)
-            if source=='lanorange':
+            if source in ('lanorange','lanorange_mdr'):
                 preferred=self.login_mode(source)
-                # 小象灯塔的官方 SSO 入口默认就是美团App扫码页，保持扫码视图；
-                # 需要手机号登录时由用户在窗口中自行切换，系统不代点。
+                # 钉钉 OAuth 页默认可能停在账号登录视图；扫码平台统一切到扫码页，
+                # 需要账号登录时由用户在窗口中自行切换，系统不代填账号。
                 need_mode=desktop.get('qr_state') not in ('visible','expired')
                 if need_mode:
                     modes=[c for c in desktop.get('controls',[]) if c.get('kind')=='mode' and c.get('enabled',True)]
@@ -893,7 +906,7 @@ class SourceAuth:
                     choice=next((c for label in labels for c in modes if c['label']==label and (page.url,c['label']) not in attempted),None)
                     key=(page.url,choice['label']) if choice else None
                     if choice:
-                        attempted.add(key);bindings[choice['id']].click(timeout=2500)
+                        attempted.add(key);_click_control(bindings[choice['id']])
                         desktop,bindings=inspect_login_page(source,page,desktop)
                         challenge=desktop.pop('_challenge',None)
                         qr_element=desktop.pop('_qr_element',None)
