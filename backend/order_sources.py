@@ -33,7 +33,7 @@ VIOLATION_CLEAN_COLUMNS = ["违规编号", "日期", "运单号", "团队名称"
 MAX_BYTES = 200 * 1024 * 1024
 READ_CHUNK_ROWS = 10000
 SCOPE_COLUMNS = {"代理商ID", "加盟商ID", "物流合作商ID", "商id"}
-POLARS_MIN_FILE_BYTES = 8 * 1024 * 1024
+POLARS_MIN_FILE_BYTES = 2 * 1024 * 1024
 
 
 def file_hash(path):
@@ -75,25 +75,19 @@ def _large_xlsx_is_simple(path):
     """Reuse the guarded reader's structural checks before the native path."""
     from zipfile import ZipFile
     from order_xlsx import _metadata, FastXlsxUnsupported
+    probe_limit = 4 * 1024 * 1024
     try:
         with ZipFile(path) as archive:
             _, date_styles, _ = _metadata(archive)
             if date_styles:
                 return False
             for name in archive.namelist():
-                if not (name == "xl/sharedStrings.xml"
-                        or (name.startswith("xl/worksheets/") and name.endswith(".xml"))):
+                if not (name.startswith("xl/worksheets/") and name.endswith(".xml")):
                     continue
                 with archive.open(name) as stream:
-                    tail = b""
-                    while True:
-                        block = stream.read(4 * 1024 * 1024)
-                        if not block:
-                            break
-                        joined = tail + block
-                        if b"<f>" in joined or b"<f " in joined:
-                            return False
-                        tail = joined[-4:]
+                    sample = stream.read(probe_limit)
+                    if b"<f>" in sample or b"<f " in sample:
+                        return False
     except FastXlsxUnsupported:
         return False
     except Exception:
@@ -102,37 +96,49 @@ def _large_xlsx_is_simple(path):
 
 
 def _read_xlsx_polars(path, required, checkpoint=None, optional=()):
-    """Read only the agreed columns through Rust calamine.
+    """Read only the agreed columns through Rust calamine in a single pass.
 
     Every value stays text: IDs and timestamps must not be coerced by Excel
     type inference. Complex files fall back to the guarded readers below.
     """
+    import fastexcel
     import polars as pl
     if checkpoint is not None:
         checkpoint()
     if not _large_xlsx_is_simple(path):
         return None
-    try:
-        sheets = pl.read_excel(str(path), engine="calamine", sheet_id=0)
-    except Exception:
-        return None
-    if isinstance(sheets, pl.DataFrame):
-        sheets = {"sheet": sheets}
     selected_columns = set(required) | SCOPE_COLUMNS | set(optional)
     matched = []
-    for frame in sheets.values():
-        if not set(required).issubset(frame.columns):
-            continue
-        frame = frame.select(sorted(column for column in frame.columns if column in selected_columns))
-        frame = frame.with_columns([
-            pl.col(column).cast(pl.Utf8, strict=False).str.strip_chars()
-            for column in frame.columns
-        ])
-        frame = frame.filter(~pl.all_horizontal([
-            pl.col(column).is_null() | (pl.col(column) == "")
-            for column in frame.columns
-        ]))
-        matched.append(polars_frame_to_pandas(frame))
+    try:
+        excel = fastexcel.read_excel(str(path))
+        for sheet_name in excel.sheet_names:
+            if checkpoint is not None:
+                checkpoint()
+            try:
+                sheet = excel.load_sheet(
+                    sheet_name,
+                    use_columns=lambda col: col.name in selected_columns,
+                    dtypes="string",
+                )
+            except Exception:
+                continue
+            frame = sheet.to_polars()
+            if not set(required).issubset(frame.columns):
+                continue
+            if len(set(frame.columns)) != len(frame.columns):
+                return None
+            frame = frame.select(sorted(frame.columns))
+            frame = frame.with_columns([
+                pl.col(column).cast(pl.Utf8, strict=False).str.strip_chars()
+                for column in frame.columns
+            ])
+            frame = frame.filter(~pl.all_horizontal([
+                pl.col(column).is_null() | (pl.col(column) == "")
+                for column in frame.columns
+            ]))
+            matched.append(polars_frame_to_pandas(frame))
+    except Exception:
+        return None
     if checkpoint is not None:
         checkpoint()
     return matched[0] if len(matched) == 1 else None
@@ -384,6 +390,11 @@ def prepare_order_files(downloads, raw, inputs, plan, batches, selected_kinds=No
                                       issue_rules=(issue_rules or {}).get(plan.city))
     # 问题单汇总依然需要在内存识别欺诈运单，避免把同一运单重复列入问题单。
     kinds = cleaner.run(issue_types(plan.city) if include_violations else ["欺诈单"])
+    service_excluded_rows = len(penalties) - len(cleaner.bad_unit_data)
+    service_rows = len(penalties)
+    del orders, penalties
+    cleaner.waybill_data = None
+    cleaner.bad_unit_data = None
     fraud = kinds["欺诈单"]
     result = {"order_batches": proofs}
     if "欺诈单" in selected_kinds:
@@ -396,14 +407,17 @@ def prepare_order_files(downloads, raw, inputs, plan, batches, selected_kinds=No
         # Payroll matches natural days; mixed date/timestamp CSV values lose dates downstream.
         summary["日期"] = natural_dates(summary["日期"])
         details, detail_proofs = _problem_details(kinds, separation_include)
+        del kinds
         summarised, summary_proof = _filter_sites(summary, separation_include, "问题单汇总")
+        del summary
         counts = summarised["类型"].value_counts().to_dict()
         result["问题单"] = {"rows": len(summarised),
                             "status": "empty" if summarised.empty else "validated",
                             "filtered_by_applicants": False,
-                            "type_counts": {kind: int(counts.get(kind, 0)) for kind in kinds if kind != "欺诈单"},
-                            "service_rows": len(penalties),
-                            "service_excluded_rows": len(penalties) - len(cleaner.bad_unit_data)}
+                            "type_counts": {kind: int(counts.get(kind, 0))
+                                            for kind in issue_types(plan.city) if kind != "欺诈单"},
+                            "service_rows": service_rows,
+                            "service_excluded_rows": service_excluded_rows}
         if separation_include is not None:
             result["问题单"]["separation_filter"] = {
                 "direction": "only" if separation_include else "exclude",
@@ -469,39 +483,117 @@ def _problem_details(kinds, include):
     return details, proofs
 
 
+def _prepare_xlsx_column(series):
+    from decimal import Decimal
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return [value.to_pydatetime() if pd.notna(value) else None for value in series]
+    converted = []
+    for value in series.tolist():
+        if value is None or value is pd.NA or value is pd.NaT or (isinstance(value, float) and math.isnan(value)):
+            converted.append(None)
+        elif isinstance(value, pd.Timestamp):
+            converted.append(value.to_pydatetime())
+        elif isinstance(value, Decimal):
+            converted.append(str(value))
+        else:
+            converted.append(value)
+    return converted
+
+
+@measured("xlsx_write_seconds")
+def _write_xlsx_sheets(path, sheets):
+    import xlsxwriter
+    workbook = xlsxwriter.Workbook(str(path), {
+        "default_date_format": "yyyy-mm-dd hh:mm:ss",
+        "strings_to_numbers": False,
+        "strings_to_urls": False,
+        "strings_to_formulas": False,
+    })
+    try:
+        header_fmt = workbook.add_format({"bold": True})
+        for name, frame in sheets:
+            worksheet = workbook.add_worksheet(name)
+            headers = [str(column) for column in frame.columns]
+            if headers:
+                worksheet.write_row(0, 0, headers, header_fmt)
+            if frame.empty or not headers:
+                continue
+            columns = [_prepare_xlsx_column(frame[column]) for column in frame.columns]
+            write_row = worksheet.write_row
+            for row_index, row in enumerate(zip(*columns), 1):
+                write_row(row_index, 0, row)
+    finally:
+        workbook.close()
+
+
 def _write_xlsx(frame, path, sheet):
-    # pandas 与 xlsxwriter 的 constant_memory 模式组合会丢弃非末行除首列外的单元格。
-    with pd.ExcelWriter(path, engine="xlsxwriter") as writer:
-        frame.to_excel(writer, index=False, sheet_name=sheet)
+    _write_xlsx_sheets(path, [(sheet, frame)])
 
 
 def _nonempty_counts(frame):
+    if frame.empty:
+        return [0] * len(frame.columns)
     counts = []
     for column in frame.columns:
         values = frame[column]
-        counts.append(int(values.map(
-            lambda value: pd.notna(value) and str(value).strip() != "").sum()))
+        counts.append(int((values.notna() & values.astype(str).str.strip().ne("")).sum()))
     return counts
 
 
-def _verify_sheet(path, sheet, frame):
-    book = load_workbook(path, read_only=True, data_only=True)
-    try:
-        if sheet not in book.sheetnames:
+def _verify_workbook_fastexcel(path, sheets):
+    import fastexcel
+    excel = fastexcel.read_excel(str(path))
+    names = set(excel.sheet_names)
+    for sheet, frame in sheets:
+        if sheet not in names:
             raise BillCollectionError("问题单写入缺少工作表，已停止发布")
-        rows = book[sheet].iter_rows(values_only=True)
-        header = next(rows, ())
-        if list(header) != [str(column) for column in frame.columns]:
+        expected_headers = [str(column) for column in frame.columns]
+        loaded = excel.load_sheet(sheet, dtypes="string").to_polars()
+        if list(loaded.columns) != expected_headers:
             raise BillCollectionError("问题单写入表头不完整，已停止发布")
-        counts = [0] * len(header)
-        for row in rows:
-            for index, value in enumerate(row):
-                if value is not None and str(value).strip() != "":
-                    counts[index] += 1
+        if loaded.is_empty():
+            counts = [0] * len(expected_headers)
+        else:
+            counts = [
+                int((loaded[column].is_not_null() & (loaded[column].str.strip_chars() != "")).sum())
+                for column in loaded.columns
+            ]
         if counts != _nonempty_counts(frame):
             raise BillCollectionError("问题单写入内容不完整，已停止发布")
+
+
+def _verify_workbook(path, sheets):
+    if not sheets:
+        return
+    try:
+        _verify_workbook_fastexcel(path, sheets)
+        return
+    except BillCollectionError:
+        raise
+    except Exception:
+        pass
+    book = load_workbook(path, read_only=True, data_only=True)
+    try:
+        for sheet, frame in sheets:
+            if sheet not in book.sheetnames:
+                raise BillCollectionError("问题单写入缺少工作表，已停止发布")
+            rows = book[sheet].iter_rows(values_only=True)
+            header = next(rows, ())
+            if list(header) != [str(column) for column in frame.columns]:
+                raise BillCollectionError("问题单写入表头不完整，已停止发布")
+            counts = [0] * len(header)
+            for row in rows:
+                for index, value in enumerate(row):
+                    if value is not None and str(value).strip() != "":
+                        counts[index] += 1
+            if counts != _nonempty_counts(frame):
+                raise BillCollectionError("问题单写入内容不完整，已停止发布")
     finally:
         book.close()
+
+
+def _verify_sheet(path, sheet, frame):
+    _verify_workbook(path, [(sheet, frame)])
 
 
 def _write_problem_deliverables(summary, details, targets):
@@ -510,16 +602,10 @@ def _write_problem_deliverables(summary, details, targets):
                  for key, suffix in (("csv", ".csv"), ("summary", ".xlsx"), ("detail", ".xlsx"))}
     try:
         write_order_csv(summary, temporary["csv"])
-        _write_xlsx(summary, temporary["summary"], "问题单汇总")
-        with pd.ExcelWriter(temporary["detail"], engine="xlsxwriter") as writer:
-            if details:
-                for name, data in details:
-                    data.to_excel(writer, index=False, sheet_name=name)
-            else:
-                pd.DataFrame().to_excel(writer, index=False, sheet_name="Sheet1")
-        _verify_sheet(temporary["summary"], "问题单汇总", summary)
-        for name, data in details:
-            _verify_sheet(temporary["detail"], name, data)
+        _write_xlsx_sheets(temporary["summary"], [("问题单汇总", summary)])
+        _write_xlsx_sheets(temporary["detail"], details if details else [("Sheet1", pd.DataFrame())])
+        _verify_workbook(temporary["summary"], [("问题单汇总", summary)])
+        _verify_workbook(temporary["detail"], details)
         for key in temporary:
             os.replace(temporary[key], targets[key])
     except Exception:
