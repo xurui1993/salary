@@ -86,41 +86,42 @@ def status(source, user=None):
     from workspace_context import current_user, current_workspace
     resolved_user = user or current_user()
     wid = current_workspace()
-    base = BROKER.status(wid) if source == 'fengshen' else target(source).status() if source == 'xiaoxiang' else target(source).status(source)
-    fingerprint = version(source)
-    meta = META.get(_scope_key(source)) or META.get(source, {})
-    active = base.get('busy') or base.get('state') in ('starting', 'waiting_login', 'refreshing')
-    if meta.get('session_version') == fingerprint and not active and meta.get('checked_at', '') >= base.get('checked_at', ''):
-        base = {**base, **{k: v for k, v in meta.items() if k != '_clock'}}
-    from auth_diagnostics import history
-    from function_availability import snapshot
-    is_shared = source in SHARED_SOURCES
-    can_manage = can_manage_shared_auth(resolved_user) if (is_shared and resolved_user is not None) else True
-    src_files = files(source)
-    payload = {
-        **base,
-        'capabilities': snapshot(source, fingerprint),
-        'diagnostics': history(source),
-        'source': source,
-        'session_version': fingerprint,
-        'saved': any(p.exists() for p in src_files),
-        'shared': is_shared,
-        'can_manage': can_manage,
-    }
-    accounts, active_account_id, pending_new_account = pool.sync_pool_with_status(
-        source, src_files, payload
-    )
-    if payload.get('saved') and active_account_id:
-        active_acct = next((a for a in accounts if a.get('slot_id') == active_account_id), None)
-        if active_acct:
-            if not payload.get('account_label') and active_acct.get('account_label'):
-                payload['account_label'] = active_acct['account_label']
-            if not payload.get('organization') and active_acct.get('organization'):
-                payload['organization'] = active_acct['organization']
-    payload['accounts'] = accounts
-    payload['active_account_id'] = active_account_id
-    payload['pending_new_account'] = pending_new_account
-    return payload
+    with _source_lock(source):
+        base = BROKER.status(wid) if source == 'fengshen' else target(source).status() if source == 'xiaoxiang' else target(source).status(source)
+        fingerprint = version(source)
+        meta = META.get(_scope_key(source)) or META.get(source, {})
+        active = base.get('busy') or base.get('state') in ('starting', 'waiting_login', 'refreshing')
+        if meta.get('session_version') == fingerprint and not active and meta.get('checked_at', '') >= base.get('checked_at', ''):
+            base = {**base, **{k: v for k, v in meta.items() if k != '_clock'}}
+        from auth_diagnostics import history
+        from function_availability import snapshot
+        is_shared = source in SHARED_SOURCES
+        can_manage = can_manage_shared_auth(resolved_user) if (is_shared and resolved_user is not None) else True
+        src_files = files(source)
+        payload = {
+            **base,
+            'capabilities': snapshot(source, fingerprint),
+            'diagnostics': history(source),
+            'source': source,
+            'session_version': fingerprint,
+            'saved': any(p.exists() for p in src_files),
+            'shared': is_shared,
+            'can_manage': can_manage,
+        }
+        accounts, active_account_id, pending_new_account = pool.sync_pool_with_status(
+            source, src_files, payload
+        )
+        if payload.get('saved') and active_account_id:
+            active_acct = next((a for a in accounts if a.get('slot_id') == active_account_id), None)
+            if active_acct:
+                if not payload.get('account_label') and active_acct.get('account_label'):
+                    payload['account_label'] = active_acct['account_label']
+                if not payload.get('organization') and active_acct.get('organization'):
+                    payload['organization'] = active_acct['organization']
+        payload['accounts'] = accounts
+        payload['active_account_id'] = active_account_id
+        payload['pending_new_account'] = pending_new_account
+        return payload
 
 
 def display_identity(data):
@@ -329,8 +330,18 @@ def disconnect(source, expected, *, guarded=False):
                     controller.stages = {'lighthouse': 'pending', 'board': 'pending'}
                     controller.board_reused = False
             pool.remove_active_slot_on_disconnect(source, files(source))
+            _invalidate_source_caches(source)
             discard_meta(source)
             return status(source)
+
+
+def _invalidate_source_caches(source: str) -> None:
+    if source == 'baize':
+        try:
+            import baize_accounts as baize_acct_mod
+            baize_acct_mod.invalidate_cache()
+        except Exception:
+            pass
 
 
 def _apply_slot_to_controller(source: str, slot: dict) -> None:
@@ -350,6 +361,16 @@ def _apply_slot_to_controller(source: str, slot: dict) -> None:
                 'account_label': slot.get('account_label') or '',
                 'organization': slot.get('organization') or '',
             }
+            getattr(controller, 'pending_credentials', {}).pop(source, None)
+            getattr(controller, 'credential_prompt', {}).pop(source, None)
+            if source == 'xiaoxiang':
+                controller.resume_state = None
+                controller.board_reused = False
+                controller.stages = {
+                    'lighthouse': 'ready' if slot_state in ('ready', 'partial') else 'pending',
+                    'board': 'ready' if slot_state == 'ready' else 'pending',
+                }
+    _invalidate_source_caches(source)
     fp = version(source)
     now_iso = datetime.now(timezone.utc).isoformat()
     META[_scope_key(source)] = {
@@ -382,6 +403,7 @@ def _reset_controller_for_new_account(source: str) -> None:
                 controller.resume_state = None
                 controller.stages = {'lighthouse': 'pending', 'board': 'pending'}
                 controller.board_reused = False
+    _invalidate_source_caches(source)
     discard_meta(source)
 
 
@@ -493,16 +515,20 @@ def do_remove_account(source: str, slot_id: str, request: Request):
 def baize_accounts(request: Request):
     require_account(request)
     from baize_accounts import snapshot
+    fp_before = version('baize')
     data = snapshot()
     if isinstance(data, dict) and data.get('state') == 'ready':
-        pool.enrich_active_slot_identity(
-            'baize',
-            files('baize'),
-            account_label=str(data.get('account_label') or ''),
-            organization=str(data.get('organization') or ''),
-            account_type=str(data.get('account_type') or ''),
-            region_text=str(data.get('region_text') or ''),
-        )
+        with _source_lock('baize'):
+            if version('baize') == fp_before:
+                pool.enrich_active_slot_identity(
+                    'baize',
+                    files('baize'),
+                    account_label=str(data.get('account_label') or ''),
+                    organization=str(data.get('organization') or ''),
+                    account_type=str(data.get('account_type') or ''),
+                    region_text=str(data.get('region_text') or ''),
+                    expected_session_version=fp_before,
+                )
     return data
 
 

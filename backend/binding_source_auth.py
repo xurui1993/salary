@@ -27,6 +27,7 @@ _log = logging.getLogger(__name__)
 SOURCES = {
     'lanorange': {'host': 'madouren.cdevelopment.cn', 'entry': '/admin/login', 'token': 'Admin-Token',
                   'label': '蓝橙', 'clientid': 'e5cd7e4891bf95d1d19206ce24a7b32e',
+                  'dingtalk_qr': True,
                   # 钉钉授权会话一并加密保存，令牌过期时可直接确认跳转，不必重新扫码
                   'state_hosts': ('login.dingtalk.com', 'dingtalk.com')},
     'lanorange_mdr': {'host': 'mdr.lanchengsz.cn', 'entry': '/login', 'token': 'hr_admin_token',
@@ -565,7 +566,7 @@ class SourceAuth:
         self.auto_login_failed_until = {}
 
     def login_mode(self, source):
-        return 'qr' if SOURCES[source].get('dingtalk_qr') else 'sms'
+        return 'qr' if SOURCES.get(source, {}).get('dingtalk_qr') else 'sms'
 
     def sms_key(self,source,control_id=None):
         control=next((c for c in self.desktop.get(source,{}).get('controls',[]) if c.get('kind')=='sms' and (control_id is None or c.get('id')==control_id)),{})
@@ -595,7 +596,7 @@ class SourceAuth:
         if not isinstance(command, dict):
             raise HTTPException(400, '认证操作格式无效')
         action = command.get('action')
-        if SOURCES[source].get('dingtalk_qr') and (action not in ('inspect','control') or command.get('values')):
+        if SOURCES.get(source, {}).get('dingtalk_qr') and (action not in ('inspect','control') or command.get('values')):
             raise HTTPException(400, SOURCES[source]['label'] + '仅支持扫码登录')
         if action == 'click':
             if any(type(command.get(k)) not in (int, float) or not 0 <= command[k] <= 1 for k in ('x', 'y')):
@@ -656,7 +657,7 @@ class SourceAuth:
                         or (payload.get('submit_id') and controls.get(payload['submit_id']) != 'submit')
                         or (action == 'control' and payload.get('id') not in controls)):
                     raise HTTPException(400, '认证表单操作类型无效')
-                if SOURCES[source].get('dingtalk_qr') and controls.get(payload.get('id'))!='qr_refresh':
+                if SOURCES.get(source, {}).get('dingtalk_qr') and controls.get(payload.get('id'))!='qr_refresh':
                     raise HTTPException(400, SOURCES[source]['label'] + '仅支持扫码和刷新二维码')
                 # 记录用户对协议勾选的明确选择；取消后不再自动勾选。
                 consent_ids={f['id'] for f in desktop.get('fields',[]) if f.get('role')=='consent'}
@@ -708,8 +709,11 @@ class SourceAuth:
                 if not trusted(source, page.url):
                     raise ValueError('untrusted login page')
                 if action in ('fill_fields', 'control'):
+                    desktop_now = self.desktop.get(source, {})
+                    if action == 'control' and payload.get('form_id') and desktop_now.get('form_id') and payload.get('form_id') != desktop_now.get('form_id'):
+                        raise ValueError('stale form')
                     bindings = self.form_bindings.get(source, {})
-                    fields={f['id']:f for f in self.desktop.get(source,{}).get('fields',[])}
+                    fields={f['id']:f for f in desktop_now.get('fields',[])}
                     for value in payload.get('values',[]):
                         if self.cancelled.get(source) and self.cancelled[source].is_set():raise ValueError('cancelled')
                         field=fields.get(value['id'],{})
@@ -880,7 +884,7 @@ class SourceAuth:
                         desktop,bindings=inspect_login_page(source,page,desktop)
                         challenge=desktop.pop('_challenge',None)
                         qr_element=desktop.pop('_qr_element',None)
-            if SOURCES[source].get('dingtalk_qr'):
+            if SOURCES.get(source, {}).get('dingtalk_qr'):
                 from desktop_auth_page import trusted
                 preferred=self.login_mode(source);desktop['login_mode']=preferred
                 region=desktop.get('regions',{}).get('qr')
@@ -888,7 +892,16 @@ class SourceAuth:
                 image=None
                 if preferred=='qr' and region and trusted(source,page.url):
                     if not old_image or time.monotonic()-self.qr_captured_at.get(source,0)>=1:
-                        candidate=page.screenshot(type='png',clip=region,timeout=1500)
+                        candidate=None
+                        try:
+                            candidate=page.screenshot(type='png',clip=region,timeout=1500)
+                        except Exception:
+                            candidate=None
+                        if (not (isinstance(candidate,bytes) and candidate.startswith(b'\x89PNG\r\n\x1a\n') and len(candidate)<=512*1024)) and qr_element is not None:
+                            try:
+                                candidate=qr_element.screenshot(type='png',timeout=1500)
+                            except Exception:
+                                candidate=None
                         if isinstance(candidate,bytes) and candidate.startswith(b'\x89PNG\r\n\x1a\n') and len(candidate)<=512*1024:image=candidate
                         self.qr_captured_at[source]=time.monotonic()
                     else:image=old_image
@@ -1409,14 +1422,25 @@ class SourceAuth:
                         page = context.new_page()
                         navigate(page, entry, cancelled)
                     try:
-                        page.get_by_role('button', name='钉钉登录', exact=True).click(timeout=5000)
+                        page.get_by_role('button', name='钉钉登录', exact=True).click(timeout=3500)
                     except Exception:
                         if self._reuse_context(source, context, cancelled):
                             authenticated = True
                             with self.lock:
                                 self.states[source] = {'state': 'ready', 'message': '认证成功，下载使用 HTTP 接口'}
                             return
-                        raise BillCollectionError('蓝橙登录页未出现「钉钉登录」入口，页面可能已改版') from None
+                        current_host = (urlparse(page.url).hostname or '').lower()
+                        if not (current_host == 'dingtalk.com' or current_host.endswith('.dingtalk.com')):
+                            clicked_fallback = False
+                            try:
+                                fallback_btn = page.locator('button:visible, a:visible, [role=button]:visible, [role=tab]:visible').filter(has_text='钉钉').first
+                                if fallback_btn.is_visible():
+                                    fallback_btn.click(timeout=2000)
+                                    clicked_fallback = True
+                            except Exception:
+                                clicked_fallback = False
+                            if not clicked_fallback and source == 'lanorange':
+                                raise BillCollectionError('蓝橙登录页未出现「钉钉登录」入口，页面可能已改版') from None
                 elif stored is not None:
                     # 失效令牌留在会话里会让下面的循环立刻校验失败并关闭窗口，用户来不及登录；
                     # 先确认旧会话，失效则丢弃并用干净的上下文重新打开登录页。
@@ -1503,7 +1527,9 @@ class SourceAuth:
                                      else '请在当前窗口完成平台安全认证')
                         if image: entry['image'] = image
                         elif confirmed: entry.pop('image', None)
-                    page.wait_for_timeout(150 if source in ('baize', 'benlai') else 1000)
+                    with self.lock:
+                        has_qr_now = bool(self.states.get(source, {}).get('image'))
+                    page.wait_for_timeout(150 if source in ('baize', 'benlai') else 250 if not has_qr_now else 450)
                 else:
                     raise BillCollectionError('官方认证等待超时，请重新打开登录')
                 self._close_browser(source, browser); browser = None
@@ -1670,7 +1696,7 @@ def qr(source: str, request: Request):
         raise HTTPException(404, '资料来源不存在')
     with target.lock:
         state = target.states.get(source, {})
-        if source in ('lanorange','xiaoxiang') and (state.get('state')!='waiting_login' or state.get('cancelling') or not request.query_params.get('session_id') or request.query_params['session_id']!=state.get('session_id')):
+        if source in ('lanorange','lanorange_mdr','xiaoxiang') and (state.get('state')!='waiting_login' or state.get('cancelling') or not request.query_params.get('session_id') or request.query_params['session_id']!=state.get('session_id')):
             raise HTTPException(409,'认证会话已变化，请重新读取当前验证画面')
         data = target.states.get(source, {}).get('image')
         if source=='xiaoxiang':

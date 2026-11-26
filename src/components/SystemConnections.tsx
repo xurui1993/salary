@@ -208,8 +208,8 @@ export function SystemConnections({
       }
       if (!disposed) {
         const delay =
-          source === activeSessionKey && ['baize', 'xiaoxiang'].includes(source)
-            ? 500
+          source === activeSessionKey
+            ? 450
             : drawerOpen || activeSessionKey
               ? 2000
               : 20000;

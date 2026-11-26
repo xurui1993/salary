@@ -48,7 +48,8 @@ def launch_auth_browser(playwright, headless=True, args=None):
 
 
 def launch_edge(playwright, headless=True, args=None):
-    path = edge_executable()
+    # 无头认证优先 Chrome（启动 <0.5s，避免本机无头 Edge 4~18s 冷启动阻塞）；不可用时回退 Edge。
+    path = (chrome_executable() or edge_executable()) if headless else (edge_executable() or chrome_executable())
     options = {'headless': headless}
     if args:
         options['args'] = args

@@ -248,10 +248,14 @@ export function SourceLoginPanel({
     }
     let disposed = false;
     let objectUrl = '';
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let activeController: AbortController | null = null;
 
-    void (async () => {
+    const loadQr = async (attempt: number) => {
+      if (disposed) return;
+      const controller = new AbortController();
+      activeController = controller;
+      const timer = setTimeout(() => controller.abort(), 8000);
       try {
         const response = await fetchRef.current(
           `${endpoint}/qr?session_id=${encodeURIComponent(sessionId)}&v=${encodeURIComponent(
@@ -270,26 +274,32 @@ export function SourceLoginPanel({
           throw new Error('二维码暂不可用，请重新读取。');
         }
         if (!disposed) {
+          if (objectUrl) URL.revokeObjectURL(objectUrl);
           objectUrl = URL.createObjectURL(blob);
           setQr({ key: qrKey, url: objectUrl, error: '' });
         }
       } catch {
-        if (!disposed) {
-          setQr({
-            key: qrKey,
-            url: '',
-            error: '二维码读取未完成，请重新读取。',
-          });
+        if (disposed) return;
+        if (attempt < 3) {
+          retryTimer = setTimeout(() => void loadQr(attempt + 1), 550);
+          return;
         }
+        setQr({
+          key: qrKey,
+          url: '',
+          error: '二维码读取未完成，请重新读取。',
+        });
       } finally {
         clearTimeout(timer);
       }
-    })();
+    };
+
+    void loadQr(0);
 
     return () => {
       disposed = true;
-      clearTimeout(timer);
-      controller.abort();
+      if (retryTimer) clearTimeout(retryTimer);
+      if (activeController) activeController.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [endpoint, sessionId, qrKey, qrRetry, desktop.qr_version]);

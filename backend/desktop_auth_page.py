@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 _log = logging.getLogger(__name__)
 
-ROOTS = {'lanorange': ('madouren.cdevelopment.cn', 'login.dingtalk.com'),
+ROOTS = {'lanorange': ('madouren.cdevelopment.cn', 'login.dingtalk.com', 'dingtalk.com'),
          'lanorange_mdr': ('mdr.lanchengsz.cn', 'login.dingtalk.com', 'dingtalk.com'),
          'baize': ('merchant.shangyiworker.com',),
          'xiaoxiang': ('meituan.com', 'sankuai.com'), 'benlai': ('b.icp88.com',)}
@@ -103,9 +103,9 @@ def inspect_login_page(source, page, previous=None):
             if box: boxes.append(box)
         named=re.compile(r'^\s*(?:'+ '|'.join(re.escape(label) for label in MODES|SUBMITS|OTHER) +'|'+COUNTDOWN+r')\s*$')
         selector='button:visible, input[type=button]:visible, input[type=submit]:visible, [role=button]:visible, [role=tab]:visible, a:visible'
-        # Do not walk unrelated decorative spans on each form poll; exact
+        # Do not walk unrelated decorative spans on each poll; exact
         # named controls below still include span-based buttons and mode tabs.
-        candidates=frame.locator(selector+('' if source in ('baize','xiaoxiang','benlai') else ', span:visible')).all()[:160]
+        candidates=frame.locator(selector).all()[:160]
         candidates+=frame.get_by_text(named).all()[:40]
         for index, element in enumerate(candidates):
             if time.perf_counter()>deadline:break
@@ -122,17 +122,46 @@ def inspect_login_page(source, page, previous=None):
             bindings[key] = element
             box = element.bounding_box()
             if box: boxes.append(box)
+        is_qr_frame = source in QR_SOURCES or source == 'xiaoxiang'
         for element in frame.locator('canvas:visible, img:visible').all()[:30]:
             if time.perf_counter()>deadline:break
             box = element.bounding_box()
             if not box or not 110 <= box['width'] <= 500 or not .8 <= box['width'] / max(box['height'], 1) <= 1.2:
                 continue
+            src_attr = (element.get_attribute('src') or '').lower()
             hint = ' '.join((element.get_attribute(k) or '') for k in ('class', 'id', 'src', 'alt')).lower()
             if 'captcha' in hint: continue
             is_canvas = element.evaluate('e=>e.tagName') == 'CANVAS'
-            if not is_canvas and 'qr' not in hint and '二维码' not in hint: continue
-            score = 3 + (5 if is_canvas else 0) + (8 if 'qr' in hint or '二维码' in hint else 0)
+            has_qr_hint = 'qr' in hint or '二维码' in hint
+            ancestor_qr_hint = False
+            if not is_canvas and not has_qr_hint and is_qr_frame:
+                if src_attr.startswith('data:image/'):
+                    ancestor_qr_hint = True
+                else:
+                    try:
+                        ancestor_qr_hint = bool(element.evaluate(
+                            "e=>{let p=e.parentElement;for(let i=0;i<3&&p;i++,p=p.parentElement){let t=((p.className||'')+' '+(p.id||'')).toLowerCase();if(t.includes('qr')||t.includes('scan')||t.includes('code'))return true;}return false;}"
+                        ))
+                    except Exception:
+                        ancestor_qr_hint = False
+            if not is_canvas and not has_qr_hint and not ancestor_qr_hint: continue
+            score = 3 + (5 if is_canvas else 0) + (8 if has_qr_hint else 4 if ancestor_qr_hint else 0)
             if qr is None or score > qr[0]: qr = (score, box, element)
+        if qr is None and is_qr_frame:
+            try:
+                for element in frame.locator('svg:visible').all()[:15]:
+                    if time.perf_counter()>deadline:break
+                    box = element.bounding_box()
+                    if not box or not 110 <= box['width'] <= 420 or not .85 <= box['width'] / max(box['height'], 1) <= 1.15:
+                        continue
+                    in_qr_box = bool(element.evaluate(
+                        "e=>{let p=e;for(let i=0;i<4&&p;i++,p=p.parentElement){let t=(String(p.className?.baseVal||p.className||'')+' '+(p.id||'')).toLowerCase();if(t.includes('qr')||t.includes('scan')||t.includes('code'))return true;}return false;}"
+                    ))
+                    if in_qr_box:
+                        qr = (6, box, element)
+                        break
+            except Exception:
+                pass
         try:
             expired = frame.get_by_text(re.compile(r'二维码.{0,6}(已失效|已过期|失效|过期)|扫码.{0,4}超时')).first
             if expired.is_visible() is True: qr_expired = True

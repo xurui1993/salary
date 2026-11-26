@@ -1,10 +1,18 @@
 """Read-only Baize merchant/region identity for the two business accounts."""
+import threading
 import time
 
 import binding_source_auth
 
 CACHE_SECONDS = 30
+_CACHE_LOCK = threading.Lock()
 _cache = {'at': 0, 'value': None, 'key': None}
+
+
+def invalidate_cache():
+    """Clear cached merchant/region identity immediately after account switches or logouts."""
+    with _CACHE_LOCK:
+        _cache.update(at=0, value=None, key=None)
 
 
 def _text(value):
@@ -22,19 +30,21 @@ def _query(session, path, params=None):
 def _key():
     parts = []
     for path in (binding_source_auth.session_path('baize'), binding_source_auth.state_path('baize')):
+        resolved = str(path)
         try:
             stat = path.stat()
-            parts.append((path.name, stat.st_mtime_ns, stat.st_size))
+            parts.append((resolved, stat.st_mtime_ns, stat.st_size))
         except OSError:
-            parts.append((path.name, 0, 0))
+            parts.append((resolved, 0, 0))
     return tuple(parts)
 
 
 def snapshot(force=False):
     key = _key()
     now = time.monotonic()
-    if not force and _cache['value'] is not None and _cache['key'] == key and now - _cache['at'] < CACHE_SECONDS:
-        return dict(_cache['value'])
+    with _CACHE_LOCK:
+        if not force and _cache['value'] is not None and _cache['key'] == key and now - _cache['at'] < CACHE_SECONDS:
+            return dict(_cache['value'])
     value = {'state': 'signed_out', 'account_type': 'unknown', 'account_label': '',
              'organization': '', 'regions': [], 'region_text': '', 'merchant_name': ''}
     try:
@@ -71,5 +81,6 @@ def snapshot(force=False):
             session.close()
     except Exception:
         value.update(state='unknown', account_type='unknown')
-    _cache.update(at=now, value=dict(value), key=key)
+    with _CACHE_LOCK:
+        _cache.update(at=now, value=dict(value), key=key)
     return value

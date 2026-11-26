@@ -159,6 +159,25 @@ export function UnifiedPlatformAuthModal({
   children,
 }: UnifiedPlatformAuthModalProps) {
   const [animPhase, setAnimPhase] = useState<'entering' | 'entered'>('entering');
+  const [waitSeconds, setWaitSeconds] = useState<number>(0);
+
+  const isPreparingSession =
+    !status.session_id &&
+    (status.state === 'starting' ||
+      status.state === 'refreshing' ||
+      (pending && status.state !== 'ready' && status.state !== 'error'));
+
+  useEffect(() => {
+    if (!isPreparingSession) {
+      setWaitSeconds(0);
+      return;
+    }
+    setWaitSeconds(0);
+    const timer = window.setInterval(() => {
+      setWaitSeconds(prev => prev + 1);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [isPreparingSession, sourceKey]);
 
   useEffect(() => {
     let raf2 = 0;
@@ -218,6 +237,7 @@ export function UnifiedPlatformAuthModal({
 
   const phaseClass = animPhase === 'entered' ? 'is-entered' : 'is-entering';
   const showStartTrigger =
+    !pending &&
     !status.busy &&
     !['starting', 'waiting_login', 'refreshing', 'ready'].includes(status.state || '');
 
@@ -317,7 +337,7 @@ export function UnifiedPlatformAuthModal({
             </section>
           )}
 
-          {status.state === 'starting' && !status.session_id && (
+          {isPreparingSession && (
             <div className="wbx-auth-starting-card" role="status">
               <Loader2 size={22} className="wbx-fs-spin text-[#00AEEC]" />
               <div className="wbx-auth-starting-card__text">
@@ -325,7 +345,9 @@ export function UnifiedPlatformAuthModal({
                   正在安全沙箱中准备{displayName}登录环境…
                 </p>
                 <p className="wb-muted">
-                  系统正在自动加载认证组件，无需在外部浏览器中操作。
+                  {waitSeconds >= 3
+                    ? `正在建立官方安全通道（已用时 ${waitSeconds} 秒），马上就好…`
+                    : '系统正在自动加载认证组件，无需在外部浏览器中操作。'}
                 </p>
               </div>
             </div>
