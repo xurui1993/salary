@@ -29,6 +29,7 @@ import {
   PLATFORM_AUTH_REGISTRY,
   buildPlatformAuthCardViewModels,
   filterPlatformAuthCards,
+  shouldCancelAuthOnModalClose,
   summarizePlatformAuthOverview,
   type BaizeAccountMeta,
   type PlatformAccountSlotViewModel,
@@ -380,8 +381,8 @@ export function PlatformAuthCenterPage({
       // 立即弹出统一认证窗并展示加载反馈，避免点击后先等待状态预检造成卡顿感
       setActiveSessionKey(source);
       if (
-        ['starting', 'waiting_login', 'refreshing'].includes(cached.state || '') ||
-        cached.busy
+        !cached.cancelling &&
+        (['starting', 'waiting_login', 'refreshing'].includes(cached.state || '') || cached.busy)
       ) {
         return;
       }
@@ -595,6 +596,70 @@ export function PlatformAuthCenterPage({
     await Promise.allSettled(promises);
     onToastRef.current?.('已完成全部平台账户连通性巡检', 'info');
   }
+
+  const activeSessionRef = useRef<string>('');
+  activeSessionRef.current = activeSessionKey;
+  const statusesRef = useRef<Record<string, PlatformRawAuthStatus>>(statuses);
+  statusesRef.current = statuses;
+
+  function cancelActiveAuthSession(source: string, keepalive = false) {
+    const current = statusesRef.current[source];
+    if (!shouldCancelAuthOnModalClose(source, current)) {
+      return;
+    }
+    if (!keepalive) {
+      setStatuses(prev => {
+        const existing = prev[source];
+        if (!existing) return prev;
+        return {
+          ...prev,
+          [source]: {
+            ...existing,
+            cancelling: true,
+            message: '正在收起认证窗口并保留原有会话…',
+          },
+        };
+      });
+    }
+    void fetchRef.current(`/api/fengshen-downloads/platform-auth/${source}/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+      keepalive,
+    })
+      .then(async res => {
+        if (keepalive || !res.ok) return;
+        const data = await res.json().catch(() => null);
+        if (data && typeof data === 'object') {
+          updateStatus(source, { ...data, offline: false });
+        }
+      })
+      .catch(() => {
+        // 静默兜底：后台空闲超时也会自动回收无头浏览器
+      });
+  }
+
+  function handleCloseAuthModal(source: string) {
+    setActiveSessionKey('');
+    cancelActiveAuthSession(source, false);
+  }
+
+  useEffect(() => {
+    const onPageHide = () => {
+      const openSource = activeSessionRef.current;
+      if (openSource) {
+        cancelActiveAuthSession(openSource, true);
+      }
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.removeEventListener('pagehide', onPageHide);
+      const openSource = activeSessionRef.current;
+      if (openSource) {
+        cancelActiveAuthSession(openSource, true);
+      }
+    };
+  }, []);
 
   async function handleCredential(action: 'save' | 'skip') {
     const source = activeSessionKey;
@@ -1215,7 +1280,7 @@ export function PlatformAuthCenterPage({
           pending={!!pendingActions[activeDef.key]}
           errorMessage={errors[activeDef.key] || ''}
           startActionLabel="立即验证并登录"
-          onClose={() => setActiveSessionKey('')}
+          onClose={() => handleCloseAuthModal(activeDef.key)}
           onStartLogin={() => void handleStartLogin(activeDef.key)}
           onCredentialAction={decision => void handleCredential(decision)}
         >

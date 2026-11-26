@@ -687,3 +687,20 @@ export function filterPlatformAuthCards(
     return haystack.includes(q);
   });
 }
+
+export function shouldCancelAuthOnModalClose(
+  sourceKey: string,
+  status: PlatformRawAuthStatus | undefined,
+): boolean {
+  if (!sourceKey || sourceKey === 'fengshen' || !status) {
+    return false;
+  }
+  if (status.cancelling || status.state === 'ready') {
+    return false;
+  }
+  return (
+    Boolean(status.busy) ||
+    ['starting', 'waiting_login', 'refreshing'].includes(status.state || '')
+  );
+}
+

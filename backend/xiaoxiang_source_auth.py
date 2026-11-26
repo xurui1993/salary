@@ -119,6 +119,21 @@ class XiangAuth(SourceAuth):
         self._set('login_required', '小象灯塔会话不可用或已失效，请在系统通道重新完成两段认证')
 
     def start(self):
+        while True:
+            with self.lock:
+                existing_worker = self.workers.get(SOURCE)
+                existing_state = self.states.get(SOURCE, {})
+                if existing_worker and existing_worker.is_alive() and existing_state.get('cancelling'):
+                    wait_worker = existing_worker
+                else:
+                    wait_worker = None
+                    if (existing_worker and existing_worker.is_alive()) or existing_state.get('state') in ('starting', 'waiting_login'):
+                        return self.status()
+                    break
+            wait_worker.join(timeout=3.0)
+            with self.lock:
+                if self.workers.get(SOURCE) is wait_worker and wait_worker.is_alive():
+                    return self.status()
         with self.lock:
             if (self.workers.get(SOURCE) and self.workers[SOURCE].is_alive()) or self.states.get(SOURCE, {}).get('state') in ('starting', 'waiting_login'):
                 return self.status()
@@ -269,13 +284,16 @@ class XiangAuth(SourceAuth):
                 self.stage('board' if self.stages['lighthouse'] == 'ready' else 'lighthouse', 'error')
                 self._set('error', str(exc))
         except Exception as exc:
-            _log.warning('小象灯塔登录中断 error=%s: %s', type(exc).__name__, exc)
-            if self.stages['lighthouse'] == 'ready' and self._persist_resume():
-                self.stage('board', 'unknown')
-                self._set('saved', '知了看板登录未完成（窗口可能已关闭）；灯塔登录已保存，请再次点击登录继续（无需重新发送短信）')
+            if cancelled.is_set():
+                _log.info('小象灯塔认证已取消')
             else:
-                self.stage('board' if self.stages['lighthouse'] == 'ready' else 'lighthouse', 'unknown')
-                self._set('error', '官方认证未完成或连接中断，请重新打开认证入口')
+                _log.warning('小象灯塔登录中断 error=%s: %s', type(exc).__name__, exc)
+                if self.stages['lighthouse'] == 'ready' and self._persist_resume():
+                    self.stage('board', 'unknown')
+                    self._set('saved', '知了看板登录未完成（窗口可能已关闭）；灯塔登录已保存，请再次点击登录继续（无需重新发送短信）')
+                else:
+                    self.stage('board' if self.stages['lighthouse'] == 'ready' else 'lighthouse', 'unknown')
+                    self._set('error', '官方认证未完成或连接中断，请重新打开认证入口')
         finally:
             if cancelled.is_set():
                 self._set('saved' if xiaoxiang_lighthouse.SESSION_FILE.exists() else 'signed_out', '认证已取消，原会话保留')

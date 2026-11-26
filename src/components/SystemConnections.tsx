@@ -12,6 +12,7 @@ import { systemLabel } from '../lib/platformCatalog';
 import { SourceLoginPanel } from './SourceLoginPanel';
 import { UnifiedPlatformAuthModal } from './UnifiedPlatformAuthModal';
 import { isPlatformStatusRecordEqual } from '../lib/perfUtils';
+import { shouldCancelAuthOnModalClose } from '../lib/platformAuthCenter';
 
 function getActionLabel(_source: string, _status: any) {
   return '登录';
@@ -301,7 +302,10 @@ export function SystemConnections({
         return;
       }
       setActiveSessionKey(source);
-      if (['starting', 'waiting_login', 'refreshing'].includes(current.state || '') || current.busy) {
+      if (
+        !current.cancelling &&
+        (['starting', 'waiting_login', 'refreshing'].includes(current.state || '') || current.busy)
+      ) {
         return;
       }
       const started = await fetchPlatformAuthJson(
@@ -353,6 +357,68 @@ export function SystemConnections({
   const cluster = getPlatformStatusCluster(statuses, fengshenStatus);
   const activeDef = PLATFORM_DEFS.find(item => item.key === activeSessionKey);
   const activeStatus = statuses[activeSessionKey] || {};
+
+  const activeSessionRef = useRef<string>('');
+  activeSessionRef.current = activeSessionKey;
+  const statusesRef = useRef<Record<string, any>>(statuses);
+  statusesRef.current = statuses;
+
+  function cancelActiveAuthSession(source: string, keepalive = false) {
+    const current = statusesRef.current[source];
+    if (!shouldCancelAuthOnModalClose(source, current)) {
+      return;
+    }
+    if (!keepalive) {
+      setStatuses(prev => {
+        const existing = prev[source];
+        if (!existing) return prev;
+        return {
+          ...prev,
+          [source]: {
+            ...existing,
+            cancelling: true,
+            message: '正在收起认证窗口并保留原有会话…',
+          },
+        };
+      });
+    }
+    void fetchRef.current(`/api/fengshen-downloads/platform-auth/${source}/cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+      keepalive,
+    })
+      .then(async res => {
+        if (keepalive || !res.ok) return;
+        const data = await res.json().catch(() => null);
+        if (data && typeof data === 'object') {
+          updateStatus(source, { ...data, offline: false });
+        }
+      })
+      .catch(() => {});
+  }
+
+  function handleCloseAuthModal(source: string) {
+    setActiveSessionKey('');
+    cancelActiveAuthSession(source, false);
+  }
+
+  useEffect(() => {
+    const onPageHide = () => {
+      const openSource = activeSessionRef.current;
+      if (openSource) {
+        cancelActiveAuthSession(openSource, true);
+      }
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.removeEventListener('pagehide', onPageHide);
+      const openSource = activeSessionRef.current;
+      if (openSource) {
+        cancelActiveAuthSession(openSource, true);
+      }
+    };
+  }, []);
 
   async function handleCredential(action: 'save' | 'skip') {
     const source = activeSessionKey;
@@ -721,7 +787,7 @@ export function SystemConnections({
           pending={!!pendingActions[activeDef.key]}
           errorMessage={errors[activeDef.key] || ''}
           startActionLabel={getActionLabel(activeDef.key, activeStatus) === '登录' ? '立即验证并登录' : getActionLabel(activeDef.key, activeStatus)}
-          onClose={() => setActiveSessionKey('')}
+          onClose={() => handleCloseAuthModal(activeDef.key)}
           onStartLogin={() => void handleStartLogin(activeDef.key)}
           onCredentialAction={decision => void handleCredential(decision)}
         >

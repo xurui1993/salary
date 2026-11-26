@@ -64,7 +64,15 @@ def _configured_keepalive():
         return KEEPALIVE_SECONDS
 
 
+def _configured_wait_timeout():
+    try:
+        return max(30, min(1800, int(os.environ.get('SOURCE_AUTH_WAIT_TIMEOUT_SECONDS', '300'))))
+    except ValueError:
+        return 300
+
+
 KEEPALIVE_SECONDS = _configured_keepalive()
+WAIT_TIMEOUT_SECONDS = _configured_wait_timeout()
 
 
 def _source_root(source: str) -> Path:
@@ -487,6 +495,11 @@ class SourceAuthenticationRequired(BillCollectionError):
 
 
 class SourceProbeUnavailable(BillCollectionError):
+    pass
+
+
+class _AuthWaitTimeout(BillCollectionError):
+    """Expected expiry when the user did not finish interactive login within the window."""
     pass
 
 
@@ -1002,6 +1015,21 @@ class SourceAuth:
             scope_id = self._wid or current_workspace()
             if has_active(scope_id) or prices_active(scope_id):
                 raise HTTPException(409,'当前空间有蓝橙价格审批或导出正在执行，请结束任务后再登录或切换账号')
+        while True:
+            with self.lock:
+                existing_worker = self.workers.get(source)
+                existing_state = self.states.get(source, {})
+                if existing_worker and existing_worker.is_alive() and existing_state.get('cancelling'):
+                    wait_worker = existing_worker
+                else:
+                    wait_worker = None
+                    if (existing_worker and existing_worker.is_alive()) or existing_state.get('state') in ('starting', 'waiting_login', 'refreshing'):
+                        return self.status(source)
+                    break
+            wait_worker.join(timeout=3.0)
+            with self.lock:
+                if self.workers.get(source) is wait_worker and wait_worker.is_alive():
+                    return self.status(source)
         with self.lock:
             if (self.workers.get(source) and self.workers[source].is_alive()) or self.states.get(source, {}).get('state') in ('starting', 'waiting_login', 'refreshing'):
                 return self.status(source)
@@ -1457,7 +1485,7 @@ class SourceAuth:
                     navigate(page, entry, cancelled)
                 with self.lock:
                     self.states.setdefault(source, {}).update(**phase_fields('waiting_user'))
-                deadline, last_image, last_confirm = time.monotonic() + 900, 0, 0
+                deadline, last_image, last_confirm = time.monotonic() + WAIT_TIMEOUT_SECONDS, 0, 0
                 session_id = secrets.token_urlsafe(24)
                 rejected_token = None
                 probe_failures = 0
@@ -1531,16 +1559,30 @@ class SourceAuth:
                         has_qr_now = bool(self.states.get(source, {}).get('image'))
                     page.wait_for_timeout(150 if source in ('baize', 'benlai') else 250 if not has_qr_now else 450)
                 else:
-                    raise BillCollectionError('官方认证等待超时，请重新打开登录')
+                    raise _AuthWaitTimeout('认证等待已超时，已自动关闭登录窗口，请重新点击登录')
                 self._close_browser(source, browser); browser = None
         except Exception as exc:
-            _log.warning('来源认证失败 source=%s error=%s: %s', source, type(exc).__name__, _safe_detail(exc))
+            is_cancelled = cancelled.is_set()
+            is_wait_timeout = isinstance(exc, _AuthWaitTimeout)
+            if is_cancelled:
+                _log.info('来源认证已取消 source=%s', source)
+            elif is_wait_timeout:
+                _log.info('来源认证等待超时已自动结束 source=%s', source)
+            else:
+                _log.warning('来源认证失败 source=%s error=%s: %s', source, type(exc).__name__, _safe_detail(exc))
             with self.lock:
                 if not authenticated:
-                    message = (str(exc) if isinstance(exc, BillCollectionError)
-                               else '官方认证未完成或连接中断，请重新打开认证入口')
-                    if cancelled.is_set(): message = '认证已取消，原会话保留'
-                    self.states[source] = {'state': ('saved' if session_path(source).exists() else 'signed_out') if cancelled.is_set() else 'unknown' if isinstance(exc, SourceProbeUnavailable) else 'error', 'message': message}
+                    if is_cancelled:
+                        next_state = 'saved' if session_path(source).exists() else 'signed_out'
+                        message = '认证已取消，原会话保留'
+                    elif is_wait_timeout:
+                        next_state = 'saved' if session_path(source).exists() else 'signed_out'
+                        message = str(exc)
+                    else:
+                        next_state = 'unknown' if isinstance(exc, SourceProbeUnavailable) else 'error'
+                        message = (str(exc) if isinstance(exc, BillCollectionError)
+                                   else '官方认证未完成或连接中断，请重新打开认证入口')
+                    self.states[source] = {'state': next_state, 'message': message}
         finally:
             with self.lock:
                 self.states.get(source, {})['checked_at'] = datetime.now(timezone.utc).isoformat()

@@ -4,6 +4,7 @@ import {
   PLATFORM_AUTH_REGISTRY,
   buildPlatformAuthCardViewModels,
   filterPlatformAuthCards,
+  shouldCancelAuthOnModalClose,
   summarizePlatformAuthOverview,
 } from '../src/lib/platformAuthCenter';
 import {
@@ -203,3 +204,18 @@ test('shellNav places workspace:platform-auth under 平台管理 for all users',
   assert.ok(memberCommands.some(c => c.id === 'nav-platform-auth' && c.group === '平台管理' && c.label === '授权管理'));
   assert.ok(!memberCommands.some(c => c.id === 'nav-accounts'));
 });
+
+test('shouldCancelAuthOnModalClose cancels only active non-fengshen auth sessions', () => {
+  assert.equal(shouldCancelAuthOnModalClose('lanorange', { state: 'waiting_login', busy: true }), true);
+  assert.equal(shouldCancelAuthOnModalClose('baize', { state: 'starting', busy: true }), true);
+  assert.equal(shouldCancelAuthOnModalClose('xiaoxiang', { state: 'waiting_login', busy: false }), true);
+  assert.equal(shouldCancelAuthOnModalClose('benlai', { state: 'signed_out', busy: true }), true);
+  assert.equal(shouldCancelAuthOnModalClose('lanorange', { state: 'waiting_login', busy: true, cancelling: true }), false);
+  assert.equal(shouldCancelAuthOnModalClose('baize', { state: 'ready', busy: false }), false);
+  assert.equal(shouldCancelAuthOnModalClose('baize', { state: 'signed_out', busy: false }), false);
+  assert.equal(shouldCancelAuthOnModalClose('baize', { state: 'error', busy: false }), false);
+  assert.equal(shouldCancelAuthOnModalClose('fengshen', { state: 'waiting_login', busy: true }), false);
+  assert.equal(shouldCancelAuthOnModalClose('', { state: 'waiting_login', busy: true }), false);
+  assert.equal(shouldCancelAuthOnModalClose('lanorange', undefined), false);
+});
+

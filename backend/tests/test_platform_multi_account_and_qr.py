@@ -293,5 +293,114 @@ class LanorangeQrAndFastLaunchTests(unittest.TestCase):
         pw.chromium.launch.assert_called_once_with(headless=True, executable_path='/usr/bin/chrome')
 
 
+class AuthLifecycleCancellationAndTimeoutTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.orig_root = sources.ROOT
+        sources.ROOT = self.root
+
+    def tearDown(self):
+        sources.ROOT = self.orig_root
+        self.temp.cleanup()
+
+    def _run_login_with_fake_browser(self, source, *, wait_timeout=0, cancel_on_first_wait=False):
+        import contextlib
+        auth = sources.SourceAuth()
+        auth.cancelled[source] = threading.Event()
+        browser = MagicMock()
+        page = MagicMock()
+        page.url = 'https://' + sources.SOURCES[source]['host'] + sources.SOURCES[source]['entry']
+        page.is_closed.return_value = False
+        page.get_by_role.return_value.click.return_value = None
+
+        def fake_wait(_ms):
+            if cancel_on_first_wait:
+                auth.cancelled[source].set()
+
+        page.wait_for_timeout.side_effect = fake_wait
+        context = MagicMock()
+        context.new_page.return_value = page
+        context.pages = [page]
+        context.storage_state.return_value = {'cookies': [], 'origins': []}
+        browser.new_context.return_value = context
+
+        @contextlib.contextmanager
+        def fake_guarded(cancelled, publish, holder):
+            yield MagicMock()
+
+        @contextlib.contextmanager
+        def fake_slot():
+            yield
+
+        with patch.object(sources, 'WAIT_TIMEOUT_SECONDS', wait_timeout), \
+             patch.object(auth, '_reuse_saved', return_value=False), \
+             patch.object(auth, '_capture_desktop', return_value=None), \
+             patch.object(auth, '_apply_inputs', return_value=None), \
+             patch('auth_browser_guard.guarded_playwright', side_effect=fake_guarded), \
+             patch('auth_browser_runtime.launch_edge', return_value=browser), \
+             patch('auth_browser_runtime.navigate', return_value=None), \
+             patch('workspace_context.acquire_login_browser_slot', side_effect=fake_slot), \
+             patch.object(sources._log, 'warning') as warn_log, \
+             patch.object(sources._log, 'info') as info_log:
+            auth._login(source)
+        return auth, browser, warn_log, info_log
+
+    def test_wait_timeout_closes_browser_cleanly_without_error_state_or_warning_log(self):
+        for source in ('lanorange', 'baize'):
+            with self.subTest(source=source):
+                auth, browser, warn_log, info_log = self._run_login_with_fake_browser(
+                    source, wait_timeout=-1,
+                )
+                browser.close.assert_called_once()
+                warn_log.assert_not_called()
+                self.assertTrue(info_log.called)
+                status = auth.status(source)
+                self.assertEqual(status['state'], 'signed_out')
+                self.assertIn('超时', status['message'])
+
+    def test_cancel_during_waiting_login_closes_browser_without_warning_log(self):
+        for source in ('lanorange', 'baize'):
+            with self.subTest(source=source):
+                auth, browser, warn_log, info_log = self._run_login_with_fake_browser(
+                    source, wait_timeout=30, cancel_on_first_wait=True,
+                )
+                browser.close.assert_called_once()
+                warn_log.assert_not_called()
+                self.assertTrue(info_log.called)
+                status = auth.status(source)
+                self.assertEqual(status['state'], 'signed_out')
+                self.assertIn('认证已取消', status['message'])
+
+    def test_start_waits_for_cancelling_worker_then_starts_fresh_session(self):
+        auth = sources.SourceAuth()
+        gate = threading.Event()
+
+        def finishing_worker():
+            gate.wait(0.15)
+            with auth.lock:
+                auth.states['baize'] = {'state': 'signed_out', 'message': '认证已取消，原会话保留'}
+
+        old_thread = threading.Thread(target=finishing_worker, daemon=True)
+        auth.workers['baize'] = old_thread
+        auth.states['baize'] = {'state': 'waiting_login', 'cancelling': True}
+        old_thread.start()
+
+        started_threads = []
+
+        class FakeWorker:
+            def is_alive(self):
+                return False
+
+            def start(self):
+                started_threads.append(self)
+
+        with patch('workspace_context.spawn_in_context', return_value=FakeWorker()):
+            result = auth.start('baize')
+        self.assertEqual(len(started_threads), 1)
+        self.assertEqual(result['state'], 'starting')
+
+
 if __name__ == '__main__':
     unittest.main()
+
