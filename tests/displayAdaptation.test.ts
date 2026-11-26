@@ -142,31 +142,29 @@ test('formatDisplayAdaptationBadge formats sidebar badge accurately', () => {
   );
 });
 
-test('shellNav places workspace:display-adaptation (界面适配) under 平台管理 for all users', () => {
+test('shellNav removes 界面适配 submodule and exposes 4 renamed items under 平台管理', () => {
   const state: ShellNavState = {
-    workspaceView: 'display-adaptation',
+    workspaceView: 'history',
     taskKind: 'download',
     downloadPlatform: 'fengshen',
     payrollSubView: 'batches',
   };
 
-  assert.equal(getActiveNavGroup(state), 'admin');
-  assert.equal(getCurrentQuickTargetId(state), 'workspace:display-adaptation');
+  assert.equal(getActiveNavGroup(state), 'history');
+  assert.equal(getCurrentQuickTargetId(state), 'workspace:history');
 
   const breadcrumb = getBreadcrumbModel(state);
   assert.equal(breadcrumb.moduleLabel, '平台管理');
-  assert.equal(breadcrumb.viewLabel, '界面适配');
-  assert.equal(breadcrumb.siblings.length, 5);
-  assert.equal(breadcrumb.siblings.find(s => s.active)?.id, 'display-adaptation');
+  assert.equal(breadcrumb.viewLabel, '任务下载');
+  assert.deepEqual(
+    breadcrumb.siblings.map(s => s.label),
+    ['任务下载', '组内共享', '授权管理', '用户权限分配'],
+  );
 
-  const commands = buildShellCommands(state, { isAdmin: false });
-  const cmd = commands.find(c => c.id === 'nav-display-adaptation');
-  assert.ok(cmd);
-  assert.equal(cmd.group, '平台管理');
-  assert.equal(cmd.label, '界面适配');
-  assert.equal(cmd.active, true);
-
-  assert.equal(filterShellCommands(commands, '15.6寸')[0]?.id, 'nav-display-adaptation');
-  assert.equal(filterShellCommands(commands, '27寸')[0]?.id, 'nav-display-adaptation');
-  assert.equal(filterShellCommands(commands, '界面适配')[0]?.id, 'nav-display-adaptation');
+  const commands = buildShellCommands(state, { isAdmin: true });
+  assert.equal(commands.some(c => c.id === 'nav-display-adaptation'), false);
+  assert.equal(commands.find(c => c.id === 'nav-history')?.label, '任务下载');
+  assert.equal(commands.find(c => c.id === 'nav-accounts')?.label, '用户权限分配');
+  assert.equal(filterShellCommands(commands, '任务下载')[0]?.id, 'nav-history');
+  assert.equal(filterShellCommands(commands, '用户权限分配')[0]?.id, 'nav-accounts');
 });

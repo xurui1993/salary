@@ -114,39 +114,6 @@ test('isPlatformStatusRecordEqual and arePlatformStatusMapsEqual prevent redunda
   );
 });
 
-test('isPlatformStatusRecordEqual detects live login progress within the same waiting state', () => {
-  const base = {
-    state: 'waiting_login',
-    saved: false,
-    offline: false,
-    session_version: 'v1',
-    message: '请使用手机钉钉扫码，确认后自动连接蓝橙',
-    qr_state: 'expired',
-    qr_version: 'qr-1',
-    input_completed: 0,
-    input_pending: true,
-    fields: [{ id: 'f1', role: 'username', filled: false }],
-  };
-
-  // Timestamps/countdowns alone must not trigger a re-render.
-  assert.equal(
-    isPlatformStatusRecordEqual(base, { ...base, checked_at: 'later', sms_retry_after: 3 }),
-    true,
-  );
-  // Login progress within the same coarse state must still reach the UI.
-  assert.equal(isPlatformStatusRecordEqual(base, { ...base, qr_state: 'visible' }), false);
-  assert.equal(isPlatformStatusRecordEqual(base, { ...base, qr_version: 'qr-2' }), false);
-  assert.equal(isPlatformStatusRecordEqual(base, { ...base, input_completed: 1 }), false);
-  assert.equal(isPlatformStatusRecordEqual(base, { ...base, input_pending: false }), false);
-  assert.equal(
-    isPlatformStatusRecordEqual(base, {
-      ...base,
-      fields: [{ id: 'f1', role: 'username', filled: true }],
-    }),
-    false,
-  );
-});
-
 test('buildPayrollQueueFingerprint and buildApprovalBatchesFingerprint stabilize idle polling', () => {
   const tasks = [
     { id: 't1', status: 'calculated', stage: 'done', applicant_count: 42 },

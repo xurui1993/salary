@@ -71,11 +71,12 @@
 }
 .wbx-route-stage[hidden] {
   display: none;
+  content-visibility: hidden;
 }
 .wbx-route-stage:not([hidden]),
 .wbx-route-stage.is-entering,
 .wbx-subpane-enter {
-  animation: wbx-view-enter 170ms var(--wbx-ease);
+  animation: wbx-view-enter 110ms var(--wbx-ease);
 }
 
 /* 无障碍兜底：不写强制标记，靠双类特异性压过上面的单类声明 */

@@ -121,8 +121,7 @@ export function buildTaskReturnTarget(state: ShellNavState): TaskReturnTarget | 
     state.workspaceView === 'history' ||
     state.workspaceView === 'pickup' ||
     state.workspaceView === 'accounts' ||
-    state.workspaceView === 'platform-auth' ||
-    state.workspaceView === 'display-adaptation'
+    state.workspaceView === 'platform-auth'
   ) {
     return null;
   }

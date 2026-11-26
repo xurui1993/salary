@@ -811,36 +811,6 @@ class DownloadServiceTests(unittest.TestCase):
         finally:
             book.close()
 
-    def test_new_lanorange_only_task_never_opens_fengshen_runner(self):
-        def fake_collect(kind, directory, log, cancelled, resume=None, months=None, **scope):
-            directory = Path(directory)
-            directory.mkdir(parents=True, exist_ok=True)
-            target = directory / '骑手档案.xlsx'
-            from openpyxl import Workbook
-            book = Workbook()
-            book.active.append(['姓名'])
-            book.save(target)
-            book.close()
-            (directory / 'source_receipt.json').write_text(
-                json.dumps({'status': 'validated'}), encoding='utf-8')
-            return target
-
-        def forbidden_factory(*args):
-            raise AssertionError('纯新蓝橙任务不应打开风神采集会话')
-
-        config = service.validate_request(
-            {"cities": ["深圳"], "datasets": ["lcmdr_archive"],
-             "start": "2026-10-16", "end": "2026-10-16"}, today=TODAY)
-        config.update(owner="test", archive_created_at=PUBLISHED_AT)
-        with patch('lanorange_mdr_download.collect', side_effect=fake_collect), \
-                patch('lanorange_mdr_download.platform_cities',
-                      return_value=[{'id': '11', 'cityName': '深圳'}]):
-            files = service.execute_downloads(config, self.root / "run", lambda *_: None,
-                                              threading.Event(), lambda *_: None,
-                                              runner_factory=forbidden_factory)
-        self.assertEqual([file['dataset'] for file in files], ['lcmdr_archive'])
-        self.assertEqual(files[0]['name'], '深圳新蓝橙骑手档案1016.xlsx')
-
     def test_receive_account_only_publishes_all_covered_months(self):
         files, updates, _ = self.execute(self.config(["receive_account"]))
         self.assertEqual([(f["dataset"], f["start"], f["end"]) for f in files],

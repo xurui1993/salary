@@ -27,7 +27,7 @@ from order_sources import (prepare_order_slice, validate_slice, WAYBILL_COLUMNS,
 
 SCHEMA_VERSION = "orders-source-v2"
 CACHE_SECONDS = 24 * 60 * 60
-CACHE_BATCH_BYTES = 200 * 1024 * 1024
+CACHE_BATCH_BYTES = 48 * 1024 * 1024
 
 
 def _json_default(value):
@@ -221,13 +221,8 @@ class OrderCache:
         if not decode:
             return None
         try:
-            payload = row["payload"]
-            if payload[:4] == b"PAR1":
-                import polars as pl
-                frame = polars_frame_to_pandas(pl.read_parquet(io.BytesIO(payload)))
-            else:
-                with gzip.GzipFile(fileobj=io.BytesIO(payload), mode="rb") as stream:
-                    frame = _read_frame(stream)
+            with gzip.GzipFile(fileobj=io.BytesIO(row["payload"]), mode="rb") as stream:
+                frame = _read_frame(stream)
             required = WAYBILL_COLUMNS if kind == "waybills" else VIOLATION_COLUMNS
             if not required.issubset(frame.columns) or len(frame) != row["rows"]:
                 raise ValueError()
@@ -239,42 +234,18 @@ class OrderCache:
         except Exception:
             raise CacheMiss("历史缓存内容校验失败，需重新获取") from None
 
-    @staticmethod
-    def _encode_payload(frame):
-        buffer = io.BytesIO()
-        try:
-            _pandas_to_polars(frame).write_parquet(buffer, compression="zstd")
-        except Exception:
-            buffer = io.BytesIO()
-            with gzip.GzipFile(fileobj=buffer, mode="wb", compresslevel=1) as stream:
-                _write_frame(frame, stream)
-        return buffer.getvalue()
-
     @measured("cache_write_seconds")
     def put(self, agency, day, kind, frame, captured, source):
         if day >= self.today or not 0 <= self.clock() - captured < CACHE_SECONDS:
             return
-        payload = self._encode_payload(frame)
+        buffer = io.BytesIO()
+        with gzip.GzipFile(fileobj=buffer, mode="wb", compresslevel=1) as stream:
+            _write_frame(frame, stream)
+        payload = buffer.getvalue()
         with self.connect() as db:
             db.execute("INSERT OR REPLACE INTO slices VALUES(?,?,?,?,?,?,?,?,?)",
                        (agency, day, kind, SCHEMA_VERSION, captured, payload,
                         hashlib.sha256(payload).hexdigest(), len(frame), json.dumps(source)))
-
-    @measured("cache_write_seconds")
-    def put_many(self, agency, kind, entries, captured):
-        if not 0 <= self.clock() - captured < CACHE_SECONDS:
-            return
-        rows = []
-        for day, frame, source in entries:
-            if day >= self.today:
-                continue
-            payload = self._encode_payload(frame)
-            rows.append((agency, day, kind, SCHEMA_VERSION, captured, payload,
-                         hashlib.sha256(payload).hexdigest(), len(frame), json.dumps(source)))
-        if not rows:
-            return
-        with self.connect() as db:
-            db.executemany("INSERT OR REPLACE INTO slices VALUES(?,?,?,?,?,?,?,?,?)", rows)
 
     def available(self, agency, day, include_violations):
         try:
@@ -314,14 +285,11 @@ def _worker_prepare(download, raw, plan_data, include_violations, spool, cache_p
         frame = prepared[kind]
         if cache_enabled:
             date_values = natural_dates(frame["运单完成时间" if kind == "waybills" else "违规时间"])
-            entries = []
             for day in _days(download["start"], download["end"]):
                 selected = date_values.eq(day)
-                entries.append((day, frame.loc[selected], {
-                    **source, "batch": download["start"] + "_" + download["end"],
-                    "positions": [int(index) for index in frame.index[selected]],
-                }))
-            cache.put_many(plan.agency_id, kind, entries, captured)
+                cache.put(plan.agency_id, day, kind, frame.loc[selected], captured,
+                          {**source, "batch": download["start"] + "_" + download["end"],
+                           "positions": [int(index) for index in frame.index[selected]]})
         path = Path(spool) / (download["start"] + "_" + download["end"] + "_" + kind + ".parquet")
         dump_frame(frame, path)
         files[kind] = str(path)
@@ -466,21 +434,16 @@ class OrderPipeline:
                 self.emit("processing")
 
     def collect(self, runner):
-        import os
         segments = self.segments()
         self.metrics["batches"] = len(segments)
-        total_days = len(_days(self.plan.start, self.plan.end))
-        desired_workers = max(len(segments), 3 if total_days >= 4 else 1)
-        workers = max(1, min(4, desired_workers, (os.cpu_count() or 2) // 2))
-        executor = ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("spawn"))
+        executor = ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn"))
         platform = []
-        cached_batches = 0
         try:
             for number, (first, last, cached) in enumerate(segments, 1):
                 if self.cancelled.is_set():
                     raise BillCollectionError("任务已取消")
                 pending = [future for future in self.futures if not future.done()]
-                if len(pending) >= workers + 1:
+                if len(pending) >= 2:
                     self._settle(pending[0])
                 self.metrics["batch"] = number
                 self.emit("collecting")
@@ -508,7 +471,6 @@ class OrderPipeline:
                     ready_future.set_result(reference)
                     self.futures.append(ready_future)
                     self.downloads.append(manifest)
-                    cached_batches += 1
                     self.metrics["obtained"] += 1
                     self.emit()
                 else:
@@ -523,18 +485,15 @@ class OrderPipeline:
                             if self.cancelled.is_set():
                                 raise BillCollectionError("任务已取消")
                             pending = [future for future in self.futures if not future.done()]
-                            if len(pending) >= workers + 1:
+                            if len(pending) >= 2:
                                 self._settle(pending[0])
-                            self.metrics["batch"] = min(self.metrics["batches"], self.metrics["obtained"] + 1)
+                            self.metrics["batch"] = min(len(segments), self.metrics["obtained"] + 1)
                             started = time.perf_counter()
                             try:
                                 manifest = next(iterator)
                             except StopIteration:
                                 break
                             self.metrics["collection_seconds"] += time.perf_counter() - started
-                            stream_total = manifest.get("total_stream_batches")
-                            if isinstance(stream_total, int) and stream_total > 0:
-                                self.metrics["batches"] = max(self.metrics["batches"], cached_batches + stream_total)
                             self._queue_stream(manifest, executor)
                             self.emit()
                 finally:
@@ -547,7 +506,7 @@ class OrderPipeline:
                     if self.cancelled.is_set():
                         raise BillCollectionError("任务已取消")
                     pending = [future for future in self.futures if not future.done()]
-                    if len(pending) >= workers + 1:
+                    if len(pending) >= 2:
                         self._settle(pending[0])
                     self.metrics["batch"] = number
                     plan = SimpleNamespace(**{**vars(self.plan), "start": first, "end": last})

@@ -83,41 +83,6 @@ class DesktopAuthTests(unittest.TestCase):
         result,bindings=inspect_login_page('baize',page)
         self.assertFalse(result['fields']);self.assertFalse(bindings)
 
-    def test_account_avatar_is_not_treated_as_login_qr(self):
-        page,_,_=self.page()
-        page.url=page.frames[0].url='https://login.dingtalk.com/oauth2/challenge.htm'
-        frame=page.frames[0]
-        avatar=Mock()
-        avatar.evaluate.side_effect=lambda script:'IMG' if script=='e=>e.tagName' else True
-        avatar.get_attribute.side_effect=lambda key:'base-comp-avatar' if key=='class' else ''
-        avatar.bounding_box.return_value={'x':120,'y':90,'width':170,'height':170}
-        def locator(query):
-            if query.startswith('canvas:visible, img:visible'): return SimpleNamespace(all=lambda:[avatar])
-            if query.startswith('input:'): return SimpleNamespace(all=lambda:[])
-            return SimpleNamespace(all=lambda:[])
-        frame.locator.side_effect=locator
-        frame.get_by_text.return_value.all.return_value=[]
-        frame.get_by_text.return_value.first.is_visible.return_value=False
-        metadata,_=inspect_login_page('lanorange_mdr',page)
-        self.assertEqual(metadata.get('qr_state'),'not_detected')
-
-    def test_dingtalk_login_entry_is_discoverable_on_new_lanorange_login_page(self):
-        page,_,_=self.page()
-        page.url=page.frames[0].url='https://mdr.lanchengsz.cn/login'
-        frame=page.frames[0]
-        entry=Mock()
-        entry.evaluate.side_effect=lambda script:True if 'elementFromPoint' in script else '钉钉登录'
-        entry.inner_text.return_value='钉钉登录'
-        entry.is_enabled.return_value=True
-        entry.bounding_box.return_value={'x':300,'y':420,'width':320,'height':40}
-        frame.get_by_text.return_value.all.return_value=[entry]
-        metadata,bindings=inspect_login_page('lanorange_mdr',page)
-        labels=[control['label'] for control in metadata['controls']]
-        self.assertIn('钉钉登录',labels)
-        control=next(item for item in metadata['controls'] if item['label']=='钉钉登录')
-        self.assertEqual(control['kind'],'other')
-        self.assertIn(control['id'],bindings)
-
     def test_dingtalk_expired_click_to_refresh_is_scoped_qr_control(self):
         page,_,button=self.page();page.url=page.frames[0].url='https://login.dingtalk.com/'
         button.evaluate.side_effect=lambda script:True if 'elementFromPoint' in script else '点击刷新'

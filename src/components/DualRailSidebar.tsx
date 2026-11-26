@@ -11,7 +11,6 @@ import {
   FolderKanban,
   KeyRound,
   Layers,
-  MonitorSmartphone,
   Radar,
   ShieldCheck,
   SlidersHorizontal,
@@ -45,8 +44,7 @@ export interface DualRailSidebarProps {
     | 'price-export'
     | 'pickup'
     | 'accounts'
-    | 'platform-auth'
-    | 'display-adaptation';
+    | 'platform-auth';
   taskKind: 'download' | 'generate' | 'payroll';
   downloadPlatform: DownloadPlatform;
   activeReportId?: string;
@@ -76,7 +74,6 @@ export interface DualRailSidebarProps {
   permissions?: Record<string, boolean>;
   isAdmin?: boolean;
   pendingAccountCount?: number;
-  displayAdaptationBadge?: string;
 }
 
 interface SidebarNavItem {
@@ -112,7 +109,6 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
   permissions,
   isAdmin = true,
   pendingAccountCount = 0,
-  displayAdaptationBadge,
 }: DualRailSidebarProps) {
   const activeGroup = getActiveNavGroup({ workspaceView, taskKind });
   const isCollapsedRail = Boolean(collapsed && !isDrawerMode);
@@ -223,7 +219,7 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
   const platformManagementItems: SidebarNavItem[] = [
     {
       id: 'workspace:history',
-      label: '任务管理',
+      label: '任务下载',
       icon: <FolderCheck size={15.5} />,
       active: workspaceView === 'history',
       action: { type: 'workspace', view: 'history' },
@@ -249,19 +245,11 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
             ? 'ready'
             : undefined,
     },
-    {
-      id: 'workspace:display-adaptation',
-      label: '界面适配',
-      icon: <MonitorSmartphone size={15.5} />,
-      active: workspaceView === 'display-adaptation',
-      action: { type: 'workspace', view: 'display-adaptation' },
-      badgeText: displayAdaptationBadge,
-    },
     ...(isAdmin
       ? [
           {
             id: 'workspace:accounts' as const,
-            label: '权限管理',
+            label: '用户权限分配',
             icon: <ShieldCheck size={15.5} />,
             active: workspaceView === 'accounts',
             action: { type: 'workspace' as const, view: 'accounts' as const },

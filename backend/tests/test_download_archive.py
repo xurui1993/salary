@@ -18,21 +18,6 @@ class DownloadArchiveTests(unittest.TestCase):
         self.assertEqual(archive.artifact_scope({**item,'dataset':'rider_archive'}),('当前快照',''))
         self.assertEqual(archive.artifact_scope({**item,'dataset':'rider_monthly'}),('2026-10-01','2026-10-31'))
 
-    def test_new_lanorange_archive_label_uses_new_platform_prefix(self):
-        self.assertEqual(archive.task_archive_label(['lcmdr_archive']), '新蓝橙_骑手档案')
-        self.assertEqual(archive.delivery_label(['lcmdr_archive']), '骑手档案')
-
-    def test_new_lanorange_workbooks_have_stable_archive_names(self):
-        self.assertEqual(
-            archive.archive_filename('深圳', 'lcmdr_archive', '2026-11-26', '2026-11-26',
-                                     suffix='.xlsx', stamp='2026-11-26'),
-            '深圳新蓝橙骑手档案1126.xlsx')
-        self.assertEqual(
-            archive.archive_filename('深圳', 'lcmdr_commission_proxy', '2026-11-01', '2026-11-30',
-                                     suffix='.xlsx', stamp='2026-11-26', months=['2026-11']),
-            '深圳新蓝橙佣金代领2026-11_1126.xlsx')
-        self.assertEqual(archive.artifact_scope({'dataset': 'lcmdr_archive'}), ('全量', ''))
-
     def test_price_archive_months_are_written_into_the_workbook_name(self):
         args = ('全部城市', 'lanorange_part_price', '2026-11-07', '2026-11-07')
         self.assertEqual(archive.archive_filename(*args, suffix='.xlsx', stamp='2026-11-07',

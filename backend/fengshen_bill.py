@@ -19,7 +19,6 @@ from atomic_files import atomic_replace
 from urllib.parse import parse_qs, urlparse
 import uuid
 import zipfile
-import zlib
 
 
 BILL_URL = "https://aeolus.ele.me/?targetId=58668#/bill/download"
@@ -437,7 +436,7 @@ def validate_bill_file(path, max_bytes=200 * 1024 * 1024, *, max_unpacked=None):
             xlsx = {"[Content_Types].xml", "xl/workbook.xml"}.issubset(names)
             if not xlsx and not any(name.lower().endswith((".xlsx", ".xls", ".csv")) for name in names):
                 raise BillCollectionError("ZIP 中没有账单数据文件")
-    except (zipfile.BadZipFile, zlib.error):
+    except zipfile.BadZipFile:
         raise BillCollectionError("账单压缩文件损坏") from None
     digest = hashlib.sha256()
     with path.open("rb") as source:

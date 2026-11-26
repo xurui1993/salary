@@ -27,14 +27,17 @@ interface DirectoryCacheEntry {
 }
 
 const directoryCache = new Map<string, DirectoryCacheEntry>();
-const DIRECTORY_CACHE_TTL_MS = 10_000;
+const DIRECTORY_CACHE_TTL_MS = 120_000;
 
 export function useStationDirectory(
   platform: any,
   fetcher: any = defaultFetch,
   enabled = true,
 ): { data: StationDirectory | null; error: string; refresh: () => void } {
-  const [data, setData] = useState<StationDirectory | null>(() => directoryCache.get(String(platform))?.data ?? null);
+  const cacheKey = `${getWorkspaceId()}:${String(platform)}`;
+  const [data, setData] = useState<StationDirectory | null>(
+    () => directoryCache.get(cacheKey)?.data ?? directoryCache.get(String(platform))?.data ?? null,
+  );
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
 
@@ -44,7 +47,6 @@ export function useStationDirectory(
     let timer: any;
     let generation = 0;
     const controller = new AbortController();
-    const cacheKey = String(platform);
 
     async function read(refresh = false) {
       const request = ++generation;
@@ -53,9 +55,9 @@ export function useStationDirectory(
         const existing = directoryCache.get(cacheKey);
         let nextValue: StationDirectory;
 
-        if (!refresh && existing?.data && now - existing.timestamp < DIRECTORY_CACHE_TTL_MS && fetcher === defaultFetch) {
+        if (!refresh && existing?.data && now - existing.timestamp < DIRECTORY_CACHE_TTL_MS) {
           nextValue = existing.data;
-        } else if (!refresh && existing?.inflight && fetcher === defaultFetch) {
+        } else if (!refresh && existing?.inflight) {
           nextValue = await existing.inflight;
         } else {
           const inflightPromise = (async () => {
@@ -69,22 +71,18 @@ export function useStationDirectory(
               platform === 'xiaoxiang' && Array.isArray(value?.cities)
                 ? { ...value, cities: sortCitiesWithLanorangeFirst(value.cities) }
                 : value;
-            if (fetcher === defaultFetch) {
-              directoryCache.set(cacheKey, {
-                data: normalized,
-                timestamp: Date.now(),
-              });
-            }
+            directoryCache.set(cacheKey, {
+              data: normalized,
+              timestamp: Date.now(),
+            });
             return normalized;
           })();
 
-          if (fetcher === defaultFetch) {
-            directoryCache.set(cacheKey, {
-              data: existing?.data ?? null,
-              timestamp: existing?.timestamp ?? 0,
-              inflight: inflightPromise,
-            });
-          }
+          directoryCache.set(cacheKey, {
+            data: existing?.data ?? null,
+            timestamp: existing?.timestamp ?? 0,
+            inflight: inflightPromise,
+          });
 
           try {
             nextValue = await inflightPromise;
@@ -97,8 +95,8 @@ export function useStationDirectory(
         }
 
         if (!disposed && request === generation) {
-          setData(nextValue);
-          setError('');
+          setData(prev => (prev === nextValue ? prev : nextValue));
+          setError(prev => (prev === '' ? prev : ''));
           const isPendingSync = nextValue?.status === 'loading' || nextValue?.status === 'syncing';
           if (isPendingSync) {
             timer = setTimeout(() => void read(false), 4000);

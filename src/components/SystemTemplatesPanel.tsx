@@ -27,6 +27,7 @@ import {
   type TemplateRecord,
 } from '../lib/templateCenterDisplay';
 
+export { preloadSystemTemplates };
 export type { TemplateRecord };
 
 export interface SystemTemplatesPanelProps {

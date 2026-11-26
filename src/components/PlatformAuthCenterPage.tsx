@@ -53,12 +53,12 @@ const PLATFORM_ICONS: Record<ConnectionChipKey, React.ComponentType<{ className?
 };
 
 const ACCENT_ICON_STYLES: Record<string, string> = {
-  sky: 'bg-sky-50 text-[#008EC4] border border-sky-100/80',
-  amber: 'bg-amber-50 text-amber-600 border border-amber-100/80',
-  cyan: 'bg-cyan-50 text-cyan-700 border border-cyan-100/80',
-  emerald: 'bg-emerald-50 text-emerald-600 border border-emerald-100/80',
-  violet: 'bg-violet-50 text-violet-600 border border-violet-100/80',
-  indigo: 'bg-indigo-50 text-indigo-600 border border-indigo-100/80',
+  sky: 'bg-gradient-to-b from-sky-50 to-sky-100/70 text-[#0086C4] ring-1 ring-inset ring-sky-200/70',
+  amber: 'bg-gradient-to-b from-amber-50 to-amber-100/70 text-amber-600 ring-1 ring-inset ring-amber-200/75',
+  cyan: 'bg-gradient-to-b from-cyan-50 to-cyan-100/70 text-cyan-700 ring-1 ring-inset ring-cyan-200/75',
+  emerald: 'bg-gradient-to-b from-emerald-50 to-emerald-100/70 text-emerald-600 ring-1 ring-inset ring-emerald-200/75',
+  violet: 'bg-gradient-to-b from-violet-50 to-violet-100/70 text-violet-600 ring-1 ring-inset ring-violet-200/75',
+  indigo: 'bg-gradient-to-b from-indigo-50 to-indigo-100/70 text-indigo-600 ring-1 ring-inset ring-indigo-200/75',
 };
 
 export interface PlatformAuthCenterPageProps {
@@ -713,141 +713,108 @@ export function PlatformAuthCenterPage({
   const activeDef = PLATFORM_AUTH_REGISTRY.find(item => item.key === activeSessionKey);
   const activeStatus = statuses[activeSessionKey] || {};
 
+  const groupedSections = useMemo(() => {
+    if (scopeFilter !== 'all') {
+      return [
+        {
+          id: scopeFilter,
+          title: scopeFilter === 'personal' ? '个人独立通道' : '全局共享通道',
+          caption:
+            scopeFilter === 'personal'
+              ? '仅当前工作空间独享会话，支持多账户驻留秒切'
+              : '全员复用主机统一连接，由管理员或维护人统一授权',
+          items: filteredCards,
+        },
+      ];
+    }
+    const personal = filteredCards.filter(c => c.entry.scope === 'personal');
+    const shared = filteredCards.filter(c => c.entry.scope === 'shared');
+    const sections: { id: string; title: string; caption: string; items: PlatformAuthCardViewModel[] }[] = [];
+    if (personal.length > 0) {
+      sections.push({
+        id: 'personal',
+        title: '个人独立通道',
+        caption: '当前工作空间独享会话 · 支持多账户驻留切换',
+        items: personal,
+      });
+    }
+    if (shared.length > 0) {
+      sections.push({
+        id: 'shared',
+        title: '全局共享通道',
+        caption: '全员复用主机统一连接 · 统一维护授权',
+        items: shared,
+      });
+    }
+    return sections;
+  }, [filteredCards, scopeFilter]);
+
   return (
     <>
       {active && (
-        <div className="max-w-[1160px] mx-auto space-y-5 pb-8">
-          {/* 1. 极简页头 + 一行式筛选条（无药丸堆叠、单层平面深度） */}
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-baseline gap-x-3.5 gap-y-1 min-w-0">
-                <h2 className="text-[19px] font-bold text-[#18191C] tracking-tight">
-                  授权管理
-                </h2>
-                <p className="text-[12.5px] text-[#61666D] tabular-nums">
-                  <span>
-                    已就绪{' '}
-                    <strong className="font-semibold text-[#18191C]">
-                      {overview.readyCount}/{overview.totalCount}
-                    </strong>
-                  </span>
-                  <span className="mx-2 text-slate-300">·</span>
-                  <span>
-                    已驻留{' '}
-                    <strong className="font-semibold text-[#18191C]">
-                      {overview.totalLoggedAccountsCount}
-                    </strong>{' '}
-                    个账户
-                  </span>
-                  {lastInspectedAt && (
-                    <>
-                      <span className="mx-2 text-slate-300">·</span>
-                      <span className="text-[#9499A0]">巡检 {lastInspectedAt}</span>
-                    </>
-                  )}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                disabled={anyVerifying}
-                onClick={() => void handleCheckAllPlatforms()}
-                className="h-8.5 inline-flex items-center gap-1.5 rounded-[10px] bg-[#00AEEC] hover:bg-[#009CD6] text-white px-3.5 text-[12.5px] font-semibold shadow-[0_6px_16px_-8px_rgba(0,174,236,0.75)] transition cursor-pointer whitespace-nowrap disabled:opacity-60"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${anyVerifying ? 'animate-spin' : ''}`} />
-                <span>一键巡检全部</span>
-              </button>
-            </div>
-
-            <div className="rounded-xl bg-white border border-slate-200/80 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5">
-              <div className="flex flex-wrap items-center gap-3">
-                <div
-                  className="inline-flex items-center h-7.5 p-0.5 rounded-lg bg-slate-100/90"
-                  role="group"
-                  aria-label="按通道归属筛选"
-                >
-                  {(
-                    [
-                      ['all', `全部 ${overview.totalCount}`],
-                      ['personal', `个人 ${overview.personalCount}`],
-                      ['shared', `共享 ${overview.sharedCount}`],
-                    ] as [PlatformScopeFilter, string][]
-                  ).map(([key, label]) => (
+        <div className="w-full space-y-3 pb-6" data-testid="platform-auth-center-page">
+          {/* 1. 紧凑单行页头：标题 + 内联指标 + 唯一主操作 CTA */}
+          <div className="flex flex-wrap items-center justify-between gap-2.5 px-0.5">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 min-w-0">
+              <h1 className="text-[17px] font-semibold text-[#18191C] tracking-tight leading-none">
+                授权管理
+              </h1>
+              <span
+                className="hidden sm:inline-block h-3.5 w-px bg-slate-200 self-center"
+                aria-hidden="true"
+              />
+              <p className="text-[12px] text-[#61666D] tabular-nums flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span>
+                  已就绪{' '}
+                  <strong className="font-semibold text-[#18191C]">
+                    {overview.readyCount}/{overview.totalCount}
+                  </strong>
+                </span>
+                <span className="text-slate-300" aria-hidden="true">·</span>
+                <span>
+                  已驻留{' '}
+                  <strong className="font-semibold text-[#18191C]">
+                    {overview.totalLoggedAccountsCount}
+                  </strong>{' '}
+                  个账户
+                </span>
+                {overview.attentionCount > 0 && (
+                  <>
+                    <span className="text-slate-300" aria-hidden="true">·</span>
                     <button
-                      key={key}
                       type="button"
-                      onClick={() => setScopeFilter(key)}
-                      className={`h-6.5 px-2.5 rounded-[6px] text-[12px] transition whitespace-nowrap cursor-pointer tabular-nums ${
-                        scopeFilter === key
-                          ? 'bg-white text-[#18191C] shadow-2xs font-semibold'
-                          : 'text-[#61666D] hover:text-[#18191C]'
-                      }`}
+                      onClick={() => setStateFilter('attention')}
+                      className="text-amber-700 hover:underline font-medium cursor-pointer"
                     >
-                      {label}
+                      待验证 <strong className="font-semibold">{overview.attentionCount}</strong>
                     </button>
-                  ))}
-                </div>
-
-                <span className="hidden sm:inline-block w-px h-4 bg-slate-200" aria-hidden="true" />
-
-                <div
-                  className="inline-flex items-center gap-1"
-                  role="group"
-                  aria-label="按连接状态筛选"
-                >
-                  {(
-                    [
-                      ['all', '全部状态'],
-                      ['ready', '已就绪'],
-                      ['attention', '待验证'],
-                      ['idle', '未登录'],
-                    ] as [PlatformStateFilter, string][]
-                  ).map(([key, label]) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setStateFilter(key)}
-                      className={`h-7 px-2.5 rounded-lg text-[12px] transition whitespace-nowrap cursor-pointer ${
-                        stateFilter === key
-                          ? 'bg-sky-50 text-[#008EC4] font-semibold'
-                          : 'text-[#61666D] hover:bg-slate-50 hover:text-[#18191C]'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="relative w-full sm:w-[220px]">
-                <Search className="w-3.5 h-3.5 text-[#9499A0] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="搜索平台或账号..."
-                  aria-label="搜索平台或绑定账号"
-                  className="w-full h-7.5 rounded-lg border border-slate-200/85 bg-[#F8FAFC] focus:bg-white pl-8 pr-7 text-[12px] text-[#18191C] placeholder:text-[#9499A0] transition focus:outline-none focus:border-[#00AEEC]"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    aria-label="清空搜索"
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[#9499A0] hover:text-[#18191C] cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+                  </>
                 )}
-              </div>
+                {lastInspectedAt && (
+                  <>
+                    <span className="text-slate-300" aria-hidden="true">·</span>
+                    <span className="text-[#9499A0]">上次巡检 {lastInspectedAt}</span>
+                  </>
+                )}
+              </p>
             </div>
+
+            <button
+              type="button"
+              disabled={anyVerifying}
+              onClick={() => void handleCheckAllPlatforms()}
+              className="h-8 inline-flex items-center gap-1.5 rounded-lg bg-[#00AEEC] hover:bg-[#009CD6] text-white px-3.5 text-[12px] font-semibold shadow-xs transition cursor-pointer whitespace-nowrap disabled:opacity-60"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${anyVerifying ? 'animate-spin' : ''}`} />
+              <span>一键巡检全部</span>
+            </button>
           </div>
 
           {/* 预检拦截引导横幅（仅在任务被授权阻塞时显示） */}
           {preflightItems.length > 0 && (
             <div
               role="status"
-              className="rounded-xl border border-amber-300/85 bg-amber-50/90 px-4 py-3 flex flex-wrap items-center justify-between gap-3"
+              className="rounded-xl border border-amber-300/85 bg-amber-50/90 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3"
             >
               <div className="flex items-center gap-2.5 min-w-0">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
@@ -879,395 +846,538 @@ export function PlatformAuthCenterPage({
             </div>
           )}
 
-          {/* 2. 清爽通透双列平台卡片网格 */}
-          {filteredCards.length === 0 ? (
-            <div className="rounded-2xl bg-white border border-slate-200/80 p-10 text-center space-y-2.5">
-              <div className="w-9 h-9 rounded-xl bg-slate-100 text-[#61666D] flex items-center justify-center mx-auto">
-                <KeyRound className="w-4 h-4" />
-              </div>
-              <div className="text-[13.5px] font-semibold text-[#18191C]">
-                未找到匹配的业务平台或账户
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery('');
-                  setScopeFilter('all');
-                  setStateFilter('all');
-                }}
-                className="h-7.5 px-3 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-[12px] font-medium text-[#18191C] transition cursor-pointer"
-              >
-                重置筛选
-              </button>
-            </div>
-          ) : (
-            <div
-              className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start"
-              role="list"
-              aria-label="业务系统平台账户卡片列表"
-            >
-              {filteredCards.map(card => {
-                const { entry, badge, accounts } = card;
-                const Icon = PLATFORM_ICONS[entry.key] || Compass;
-                const isFocused = focusedPlatformKey === entry.key;
-                const pendingAction = pendingActions[entry.key];
-                const warnProbes = card.probes.filter(p => p.tone === 'warn');
+          {/* 2. 单层高纯净白一体化平台目录（融合筛选栏 + 分组通道列表，零重复浮卡与高饱和按钮轰炸） */}
+          <div className="rounded-xl bg-white border border-slate-200/85 overflow-hidden">
+            {/* 顶部统一工具条 */}
+            <div className="px-4 py-2 border-b border-slate-100 bg-slate-50/45 flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div
+                  className="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-100/85 border border-slate-200/60"
+                  role="group"
+                  aria-label="按通道归属筛选"
+                >
+                  {(
+                    [
+                      ['all', `全部 ${overview.totalCount}`],
+                      ['personal', `个人 ${overview.personalCount}`],
+                      ['shared', `共享 ${overview.sharedCount}`],
+                    ] as [PlatformScopeFilter, string][]
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setScopeFilter(key)}
+                      className={`h-7 px-2.5 rounded-md text-[12px] transition whitespace-nowrap cursor-pointer tabular-nums ${
+                        scopeFilter === key
+                          ? 'bg-white text-[#18191C] shadow-xs font-semibold'
+                          : 'text-[#61666D] hover:text-[#18191C]'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
 
-                return (
-                  <article
-                    key={entry.key}
-                    role="listitem"
-                    data-platform-card={entry.key}
-                    className={`rounded-2xl bg-white border transition-colors duration-150 flex flex-col overflow-hidden ${
-                      isFocused
-                        ? 'border-[#00AEEC]/60 shadow-[0_4px_18px_-8px_rgba(0,174,236,0.2)]'
-                        : 'border-slate-200/85 hover:border-slate-300/90'
-                    }`}
+                <span className="hidden sm:inline-block w-px h-4 bg-slate-200" aria-hidden="true" />
+
+                <div
+                  className="inline-flex items-center gap-0.5"
+                  role="group"
+                  aria-label="按连接状态筛选"
+                >
+                  {(
+                    [
+                      ['all', '全部状态'],
+                      ['ready', '已就绪'],
+                      ['attention', '待验证'],
+                      ['idle', '未登录'],
+                    ] as [PlatformStateFilter, string][]
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setStateFilter(key)}
+                      className={`h-7 px-2.5 rounded-md text-[12px] transition whitespace-nowrap cursor-pointer ${
+                        stateFilter === key
+                          ? 'bg-sky-50/90 text-[#0086C4] font-semibold ring-1 ring-inset ring-[#00AEEC]/20'
+                          : 'text-[#61666D] hover:bg-slate-100/70 hover:text-[#18191C]'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="relative w-full sm:w-[220px]">
+                <Search className="w-3.5 h-3.5 text-[#9499A0] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="搜索平台、业务或账号..."
+                  aria-label="搜索平台或绑定账号"
+                  className="w-full h-8 rounded-lg border border-slate-200/85 bg-white pl-8 pr-7 text-[12px] text-[#18191C] placeholder:text-[#9499A0] transition focus:outline-none focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/15"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    aria-label="清空搜索"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[#9499A0] hover:text-[#18191C] cursor-pointer"
                   >
-                    {/* 卡片顶栏：平台名 + 极简归属/方式 + 状态点 + 轻量操作 */}
-                    <div className="px-5 py-3.5 flex items-center justify-between gap-3 border-b border-slate-100/90">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span
-                          className={`w-9 h-9 rounded-[11px] flex items-center justify-center shrink-0 ${
-                            ACCENT_ICON_STYLES[entry.accent] || ACCENT_ICON_STYLES.sky
-                          }`}
-                          aria-hidden="true"
-                        >
-                          <Icon size={17} />
-                        </span>
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
 
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <h3 className="text-[14.5px] font-bold text-[#18191C] tracking-tight truncate">
-                              {entry.displayName}
-                            </h3>
-                            <span className="text-[11.5px] text-[#9499A0] shrink-0">
-                              {entry.scope === 'shared' ? '全局共享' : '个人独立'}
-                            </span>
-                          </div>
-                          <div className="text-[12px] text-[#61666D] mt-0.5 truncate">
-                            {entry.authMethodLabel}
-                          </div>
-                        </div>
+            {filteredCards.length === 0 ? (
+              <div className="py-14 px-6 text-center space-y-2.5">
+                <div className="w-9 h-9 rounded-lg bg-slate-100 text-[#61666D] flex items-center justify-center mx-auto">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+                <div className="text-[13px] font-semibold text-[#18191C]">
+                  未找到匹配的业务平台或账户
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setScopeFilter('all');
+                    setStateFilter('all');
+                  }}
+                  className="h-7.5 px-3 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-[12px] font-medium text-[#18191C] transition cursor-pointer"
+                >
+                  重置筛选
+                </button>
+              </div>
+            ) : (
+              <div role="list" aria-label="业务系统平台账户列表">
+                {/* 宽屏表头：让 15.6" 与 27" 下四列垂直基线完全对齐、视觉通透均衡 */}
+                <div
+                  className="hidden xl:grid xl:grid-cols-[minmax(220px,1.05fr)_minmax(215px,1fr)_minmax(240px,1.2fr)_212px] items-center gap-x-5 px-5 py-2 border-b border-slate-100 bg-white text-[11px] font-medium text-[#9499A0]"
+                  aria-hidden="true"
+                >
+                  <span>平台与系统</span>
+                  <span>认证方式与会话能力</span>
+                  <span>覆盖业务模块</span>
+                  <span className="text-right">连接状态与操作</span>
+                </div>
+
+                {groupedSections.map((section, sectionIndex) => (
+                  <div
+                    key={section.id}
+                    className={sectionIndex > 0 ? 'border-t border-slate-100' : ''}
+                  >
+                    {/* 轻量分组栏 */}
+                    <div className="px-4 sm:px-5 py-1.5 bg-slate-50/75 border-b border-slate-100 flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 text-[11.5px]">
+                        <span className="font-semibold text-slate-600">{section.title}</span>
+                        <span className="text-slate-400 tabular-nums">{section.items.length}</span>
                       </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span
-                          className={`inline-flex items-center gap-1.5 text-[12px] font-medium tabular-nums ${
-                            badge.tone === 'ready'
-                              ? 'text-emerald-700'
-                              : badge.tone === 'warn'
-                                ? 'text-amber-700'
-                                : badge.tone === 'busy'
-                                  ? 'text-[#008EC4]'
-                                  : 'text-[#9499A0]'
-                          }`}
-                        >
-                          <span
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              badge.tone === 'ready'
-                                ? 'bg-emerald-500'
-                                : badge.tone === 'warn'
-                                  ? 'bg-amber-500'
-                                  : badge.tone === 'busy'
-                                    ? 'bg-[#00AEEC]'
-                                    : 'bg-slate-300'
-                            }`}
-                            aria-hidden="true"
-                          />
-                          <span>{badge.label}</span>
-                        </span>
-
-                        <button
-                          type="button"
-                          disabled={Boolean(pendingAction)}
-                          onClick={() => void handleCheckPlatform(entry.key)}
-                          title="检测该平台连通性"
-                          aria-label={`检测${entry.displayName}连接`}
-                          className="w-7 h-7 rounded-lg text-[#9499A0] hover:text-[#18191C] hover:bg-slate-100 inline-flex items-center justify-center transition cursor-pointer disabled:opacity-45"
-                        >
-                          <RefreshCw
-                            className={`w-3.5 h-3.5 ${pendingAction === 'verify' ? 'animate-spin' : ''}`}
-                          />
-                        </button>
-
-                        {card.canManage && accounts.length > 0 && (
-                          <button
-                            type="button"
-                            disabled={Boolean(pendingAction)}
-                            onClick={() => void handleAddNewAccount(card)}
-                            title="保留当前账户，继续登录另一个新账户"
-                            className="h-7 px-2.5 rounded-lg border border-slate-200/90 bg-white hover:border-[#00AEEC]/60 hover:text-[#008EC4] text-[#4E5969] text-[12px] font-medium inline-flex items-center gap-1 transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>添加账户</span>
-                          </button>
-                        )}
-                      </div>
+                      <span className="hidden sm:inline text-[11px] text-slate-400">
+                        {section.caption}
+                      </span>
                     </div>
 
-                    {/* 卡片主体：单层平面布局（无嵌套虚线盒），多账户切换一目了然 */}
-                    <div className="px-5 py-4 flex-1 flex flex-col justify-center gap-2.5">
-                      {accounts.length === 0 ? (
-                        <div className="flex items-center justify-between gap-4">
-                          <span className="text-[12.5px] text-[#9499A0]">
-                            {card.canManage ? '暂未登录' : '由管理员统一维护'}
-                          </span>
+                    {/* 平台通道行列表 */}
+                    <div className="divide-y divide-slate-100">
+                      {section.items.map(card => {
+                        const { entry, badge, accounts } = card;
+                        const Icon = PLATFORM_ICONS[entry.key] || Compass;
+                        const isFocused = focusedPlatformKey === entry.key;
+                        const pendingAction = pendingActions[entry.key];
+                        const warnProbes = card.probes.filter(p => p.tone === 'warn');
 
-                          {card.canManage && (
-                            <button
-                              type="button"
-                              disabled={Boolean(pendingAction)}
-                              onClick={() => void handleStartLogin(entry.key, true)}
-                              className="h-8 px-3.5 rounded-[9px] bg-[#00AEEC] hover:bg-[#009CD6] text-white text-[12.5px] font-semibold inline-flex items-center gap-1.5 transition cursor-pointer disabled:opacity-55 shrink-0 whitespace-nowrap"
-                            >
-                              <LogIn className="w-3.5 h-3.5" />
-                              <span>立即登录</span>
-                            </button>
-                          )}
-                        </div>
-                      ) : (
-                        <div
-                          className="divide-y divide-slate-100 -mx-5 -my-1"
-                          role="list"
-                          aria-label={`${entry.displayName}已登录账户列表`}
-                        >
-                          {accounts.map(slot => {
-                            const compositeKey = `${entry.key}:${slot.slotId}`;
-                            const isEditingAlias = editingSlotKey === compositeKey;
+                        return (
+                          <article
+                            key={entry.key}
+                            role="listitem"
+                            data-platform-card={entry.key}
+                            className={`px-4 sm:px-5 py-3.5 transition-colors duration-150 ${
+                              isFocused
+                                ? 'bg-[#00AEEC]/[0.04]'
+                                : 'bg-white hover:bg-slate-50/55'
+                            }`}
+                          >
+                            {/* 主行：对齐四列网格（平台标识 / 认证与能力 / 覆盖业务 / 状态与克制操作） */}
+                            <div className="grid grid-cols-1 md:grid-cols-[minmax(210px,1.05fr)_minmax(210px,1.15fr)_auto] xl:grid-cols-[minmax(220px,1.05fr)_minmax(215px,1fr)_minmax(240px,1.2fr)_212px] items-center gap-x-5 gap-y-2.5">
+                              {/* 1. 平台标识 */}
+                              <div className="flex items-center gap-3 min-w-0">
+                                <span
+                                  className={`w-9 h-9 rounded-[10px] flex items-center justify-center shrink-0 ${
+                                    ACCENT_ICON_STYLES[entry.accent] || ACCENT_ICON_STYLES.sky
+                                  }`}
+                                  aria-hidden="true"
+                                >
+                                  <Icon size={17} />
+                                </span>
 
-                            return (
-                              <div
-                                key={slot.slotId}
-                                role="listitem"
-                                className={`px-5 py-2.5 transition-colors ${
-                                  slot.isActive
-                                    ? 'bg-[#F0F9FF]/55'
-                                    : 'bg-white hover:bg-slate-50/75'
-                                }`}
-                              >
-                                {isEditingAlias ? (
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      type="text"
-                                      value={editingAliasValue}
-                                      onChange={e => setEditingAliasValue(e.target.value)}
-                                      placeholder="输入账户备注名（如：闪购主号）"
-                                      aria-label="账户备注名称"
-                                      autoFocus
-                                      onKeyDown={e => {
-                                        if (e.key === 'Enter') {
-                                          void handleSaveAccountAlias(entry.key, slot.slotId);
-                                        } else if (e.key === 'Escape') {
-                                          setEditingSlotKey('');
-                                        }
-                                      }}
-                                      className="flex-1 h-7.5 rounded-lg border border-[#00AEEC] bg-white px-2.5 text-[12px] text-[#18191C] focus:outline-none"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => void handleSaveAccountAlias(entry.key, slot.slotId)}
-                                      className="h-7.5 px-2.5 rounded-lg bg-[#00AEEC] text-white text-[12px] font-semibold inline-flex items-center gap-1 cursor-pointer"
-                                    >
-                                      <Check className="w-3.5 h-3.5" />
-                                      <span>保存</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => setEditingSlotKey('')}
-                                      className="h-7.5 px-2 rounded-lg border border-slate-200 bg-white text-[#61666D] text-[12px] cursor-pointer"
-                                    >
-                                      取消
-                                    </button>
-                                  </div>
-                                ) : (
-                                  <div className="flex items-center justify-between gap-3">
-                                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                                      <span
-                                        className={`w-2 h-2 rounded-full shrink-0 ${
-                                          slot.isActive
-                                            ? slot.tone === 'ready'
-                                              ? 'bg-emerald-500 ring-4 ring-emerald-500/15'
-                                              : 'bg-amber-500 ring-4 ring-amber-500/15'
-                                            : 'bg-slate-300'
-                                        }`}
-                                        aria-hidden="true"
-                                      />
-
-                                      <div className="min-w-0 flex-1">
-                                        <div className="flex items-center gap-2 min-w-0">
-                                          <span
-                                            className={`text-[13.5px] truncate ${
-                                              slot.isActive
-                                                ? 'font-semibold text-[#18191C]'
-                                                : 'font-medium text-[#3F4652]'
-                                            }`}
-                                            title={slot.displayTitle}
-                                          >
-                                            {slot.displayTitle}
-                                          </span>
-                                          <span
-                                            className={`text-[11px] shrink-0 ${
-                                              slot.isActive
-                                                ? slot.tone === 'ready'
-                                                  ? 'text-emerald-700 font-medium'
-                                                  : 'text-amber-700 font-medium'
-                                                : 'text-[#9499A0]'
-                                            }`}
-                                          >
-                                            {slot.badgeText}
-                                          </span>
-                                        </div>
-
-                                        {slot.subtitle && (
-                                          <div
-                                            className="text-[11.5px] text-[#86909C] mt-0.5 truncate"
-                                            title={slot.subtitle}
-                                          >
-                                            {slot.subtitle}
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    {card.canManage && (
-                                      <div className="flex items-center gap-1 shrink-0">
-                                        {!slot.isActive ? (
-                                          <button
-                                            type="button"
-                                            disabled={Boolean(pendingAction)}
-                                            onClick={() =>
-                                              void handleActivateAccountSlot(entry.key, slot)
-                                            }
-                                            title="切换此账户为当前生效账户"
-                                            className="h-7 px-2.5 rounded-lg border border-sky-200 bg-white hover:bg-sky-50 text-[#008EC4] text-[12px] font-semibold inline-flex items-center gap-1 transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
-                                          >
-                                            <ArrowRightLeft className="w-3 h-3" />
-                                            <span>切换</span>
-                                          </button>
-                                        ) : (
-                                          !card.isReady && (
-                                            <button
-                                              type="button"
-                                              disabled={Boolean(pendingAction)}
-                                              onClick={() => void handleStartLogin(entry.key, true)}
-                                              className="h-7 px-2.5 rounded-lg bg-[#00AEEC] hover:bg-[#009CD6] text-white text-[12px] font-semibold inline-flex items-center gap-1 transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
-                                            >
-                                              <LogIn className="w-3 h-3" />
-                                              <span>重新验证</span>
-                                            </button>
-                                          )
-                                        )}
-
-                                        {slot.slotId !== 'active_default' && (
-                                          <button
-                                            type="button"
-                                            disabled={Boolean(pendingAction)}
-                                            onClick={() => {
-                                              setEditingSlotKey(compositeKey);
-                                              setEditingAliasValue(slot.alias || slot.displayTitle);
-                                            }}
-                                            title="修改备注名"
-                                            aria-label={`修改${slot.displayTitle}备注`}
-                                            className="w-7 h-7 rounded-lg text-[#9499A0] hover:text-[#18191C] hover:bg-slate-100 inline-flex items-center justify-center transition cursor-pointer disabled:opacity-45"
-                                          >
-                                            <Edit3 className="w-3.5 h-3.5" />
-                                          </button>
-                                        )}
-
-                                        <button
-                                          type="button"
-                                          disabled={Boolean(pendingAction)}
-                                          onClick={() =>
-                                            void handleRemoveAccountSlot(entry.key, slot)
-                                          }
-                                          title={
-                                            slot.isActive
-                                              ? '退出并移除当前账户'
-                                              : '移除此驻留账户'
-                                          }
-                                          aria-label={`移除${slot.displayTitle}`}
-                                          className="w-7 h-7 rounded-lg text-[#9499A0] hover:text-rose-600 hover:bg-rose-50 inline-flex items-center justify-center transition cursor-pointer disabled:opacity-45"
-                                        >
-                                          {slot.isActive ? (
-                                            <LogOut className="w-3.5 h-3.5" />
-                                          ) : (
-                                            <Trash2 className="w-3.5 h-3.5" />
-                                          )}
-                                        </button>
-                                      </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <h3 className="text-[14px] font-semibold text-[#18191C] tracking-tight truncate">
+                                      {entry.displayName}
+                                    </h3>
+                                    {accounts.length > 1 && (
+                                      <span className="text-[11px] font-medium text-[#0086C4] tabular-nums shrink-0">
+                                        {accounts.length} 账户
+                                      </span>
                                     )}
+                                  </div>
+                                  <div className="text-[11.5px] text-[#86909C] mt-0.5 truncate">
+                                    {entry.businessLine}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* 2. 认证方式与会话能力 */}
+                              <div className="hidden md:flex flex-col min-w-0">
+                                <div className="text-[12.5px] font-medium text-[#4E5969] truncate">
+                                  {entry.authMethodLabel}
+                                </div>
+                                <div className="text-[11.5px] text-[#9499A0] mt-0.5 truncate">
+                                  <span className="xl:hidden">{entry.usedByModules.join(' · ')}</span>
+                                  <span className="hidden xl:inline">
+                                    {card.probes.map(p => p.label).join(' · ')}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* 3. 覆盖业务模块（15.6" 及 27" 宽屏独立对齐列） */}
+                              <div className="hidden xl:flex flex-col min-w-0">
+                                <div className="text-[12.5px] text-[#4E5969] truncate">
+                                  {entry.usedByModules.join(' · ')}
+                                </div>
+                                <div className="text-[11.5px] text-[#9499A0] mt-0.5 truncate">
+                                  {entry.scope === 'personal'
+                                    ? '支持多账户驻留与一键切换'
+                                    : '主机统一授权 · 全员自动复用'}
+                                </div>
+                              </div>
+
+                              {/* 4. 状态与操作区 */}
+                              <div className="flex items-center justify-end gap-2 shrink-0">
+                                <span
+                                  className={`inline-flex items-center justify-end gap-1.5 min-w-[66px] text-[12px] font-medium tabular-nums ${
+                                    badge.tone === 'ready'
+                                      ? 'text-emerald-700'
+                                      : badge.tone === 'warn'
+                                        ? 'text-amber-700'
+                                        : badge.tone === 'busy'
+                                          ? 'text-[#0086C4]'
+                                          : 'text-[#86909C]'
+                                  }`}
+                                >
+                                  <span
+                                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                      badge.tone === 'ready'
+                                        ? 'bg-emerald-500'
+                                        : badge.tone === 'warn'
+                                          ? 'bg-amber-500'
+                                          : badge.tone === 'busy'
+                                            ? 'bg-[#00AEEC]'
+                                            : 'bg-slate-300'
+                                    }`}
+                                    aria-hidden="true"
+                                  />
+                                  <span>{badge.label}</span>
+                                </span>
+
+                                <button
+                                  type="button"
+                                  disabled={Boolean(pendingAction)}
+                                  onClick={() => void handleCheckPlatform(entry.key)}
+                                  title="检测该平台连通性"
+                                  aria-label={`检测${entry.displayName}连接`}
+                                  className="w-8 h-8 rounded-lg border border-transparent hover:border-slate-200/80 text-[#9499A0] hover:text-[#18191C] hover:bg-white inline-flex items-center justify-center transition cursor-pointer disabled:opacity-45"
+                                >
+                                  <RefreshCw
+                                    className={`w-3.5 h-3.5 ${pendingAction === 'verify' ? 'animate-spin' : ''}`}
+                                  />
+                                </button>
+
+                                {accounts.length === 0 ? (
+                                  card.canManage ? (
+                                    <button
+                                      type="button"
+                                      disabled={Boolean(pendingAction)}
+                                      onClick={() => void handleStartLogin(entry.key, true)}
+                                      className={`h-8 min-w-[92px] px-3 rounded-lg text-[12px] font-semibold inline-flex items-center justify-center gap-1.5 transition duration-150 cursor-pointer disabled:opacity-55 whitespace-nowrap ${
+                                        badge.tone === 'warn'
+                                          ? 'bg-amber-50 border border-amber-300/90 text-amber-800 hover:bg-amber-100/80'
+                                          : 'bg-white border border-slate-200/95 text-[#18191C] hover:border-[#00AEEC] hover:text-[#0086C4] hover:bg-sky-50/55 shadow-[0_1px_2px_rgba(15,23,42,0.03)]'
+                                      }`}
+                                    >
+                                      <LogIn className="w-3.5 h-3.5" />
+                                      <span>{badge.tone === 'warn' ? '重新验证' : '登录授权'}</span>
+                                    </button>
+                                  ) : (
+                                    <span className="min-w-[92px] text-right text-[11.5px] text-[#9499A0]">
+                                      管理员维护
+                                    </span>
+                                  )
+                                ) : (
+                                  card.canManage && (
+                                    <button
+                                      type="button"
+                                      disabled={Boolean(pendingAction)}
+                                      onClick={() => void handleAddNewAccount(card)}
+                                      title="保留当前账户，继续登录另一个新账户"
+                                      className="h-8 min-w-[92px] px-3 rounded-lg border border-slate-200/90 bg-white hover:border-[#00AEEC]/70 hover:text-[#0086C4] hover:bg-sky-50/45 text-[#4E5969] text-[12px] font-medium inline-flex items-center justify-center gap-1 transition cursor-pointer disabled:opacity-50 whitespace-nowrap shadow-[0_1px_2px_rgba(15,23,42,0.025)]"
+                                    >
+                                      <Plus className="w-3.5 h-3.5" />
+                                      <span>添加账户</span>
+                                    </button>
+                                  )
+                                )}
+                              </div>
+                            </div>
+
+                            {/* 已登录多账户驻留与一键切换子区（仅当该平台已登录至少 1 个账户时优雅展开） */}
+                            {accounts.length > 0 && (
+                              <div
+                                className="mt-2.5 sm:ml-12 rounded-lg bg-slate-50/75 border border-slate-200/70 divide-y divide-slate-200/55 overflow-hidden"
+                                role="list"
+                                aria-label={`${entry.displayName}已登录账户列表`}
+                              >
+                                {accounts.map(slot => {
+                                  const compositeKey = `${entry.key}:${slot.slotId}`;
+                                  const isEditingAlias = editingSlotKey === compositeKey;
+
+                                  return (
+                                    <div
+                                      key={slot.slotId}
+                                      role="listitem"
+                                      className={`px-3.5 py-2 transition-colors ${
+                                        slot.isActive
+                                          ? 'bg-sky-50/45'
+                                          : 'bg-transparent hover:bg-white/80'
+                                      }`}
+                                    >
+                                      {isEditingAlias ? (
+                                        <div className="flex items-center gap-2">
+                                          <input
+                                            type="text"
+                                            value={editingAliasValue}
+                                            onChange={e => setEditingAliasValue(e.target.value)}
+                                            placeholder="输入账户备注名（如：闪购主号）"
+                                            aria-label="账户备注名称"
+                                            autoFocus
+                                            onKeyDown={e => {
+                                              if (e.key === 'Enter') {
+                                                void handleSaveAccountAlias(entry.key, slot.slotId);
+                                              } else if (e.key === 'Escape') {
+                                                setEditingSlotKey('');
+                                              }
+                                            }}
+                                            className="flex-1 h-7 rounded-md border border-[#00AEEC] bg-white px-2.5 text-[12px] text-[#18191C] focus:outline-none"
+                                          />
+                                          <button
+                                            type="button"
+                                            onClick={() => void handleSaveAccountAlias(entry.key, slot.slotId)}
+                                            className="h-7 px-2.5 rounded-md bg-[#00AEEC] text-white text-[11.5px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                                          >
+                                            <Check className="w-3 h-3" />
+                                            <span>保存</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => setEditingSlotKey('')}
+                                            className="h-7 px-2 rounded-md border border-slate-200 bg-white text-[#61666D] text-[11.5px] cursor-pointer"
+                                          >
+                                            取消
+                                          </button>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center justify-between gap-3">
+                                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                            <span
+                                              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                                slot.isActive
+                                                  ? slot.tone === 'ready'
+                                                    ? 'bg-emerald-500 ring-3 ring-emerald-500/20'
+                                                    : 'bg-amber-500 ring-3 ring-amber-500/20'
+                                                  : 'bg-slate-300'
+                                              }`}
+                                              aria-hidden="true"
+                                            />
+
+                                            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 min-w-0 flex-1">
+                                              <span
+                                                className={`text-[12.5px] truncate ${
+                                                  slot.isActive
+                                                    ? 'font-semibold text-[#18191C]'
+                                                    : 'font-medium text-[#3F4652]'
+                                                }`}
+                                                title={slot.displayTitle}
+                                              >
+                                                {slot.displayTitle}
+                                              </span>
+                                              <span
+                                                className={`text-[11px] shrink-0 ${
+                                                  slot.isActive
+                                                    ? slot.tone === 'ready'
+                                                      ? 'text-emerald-700 font-medium'
+                                                      : 'text-amber-700 font-medium'
+                                                    : 'text-[#9499A0]'
+                                                }`}
+                                              >
+                                                {slot.badgeText}
+                                              </span>
+                                              {slot.subtitle && (
+                                                <span
+                                                  className="text-[11.5px] text-[#86909C] truncate max-w-[360px]"
+                                                  title={slot.subtitle}
+                                                >
+                                                  · {slot.subtitle}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+
+                                          {card.canManage && (
+                                            <div className="flex items-center gap-1 shrink-0">
+                                              {!slot.isActive ? (
+                                                <button
+                                                  type="button"
+                                                  disabled={Boolean(pendingAction)}
+                                                  onClick={() =>
+                                                    void handleActivateAccountSlot(entry.key, slot)
+                                                  }
+                                                  title="切换此账户为当前生效账户"
+                                                  className="h-6.5 px-2.5 rounded-md border border-sky-200 bg-white hover:bg-sky-50 text-[#0086C4] text-[11.5px] font-semibold inline-flex items-center gap-1 transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
+                                                >
+                                                  <ArrowRightLeft className="w-3 h-3" />
+                                                  <span>切换使用</span>
+                                                </button>
+                                              ) : (
+                                                !card.isReady && (
+                                                  <button
+                                                    type="button"
+                                                    disabled={Boolean(pendingAction)}
+                                                    onClick={() => void handleStartLogin(entry.key, true)}
+                                                    className="h-6.5 px-2.5 rounded-md bg-[#00AEEC] hover:bg-[#009CD6] text-white text-[11.5px] font-semibold inline-flex items-center gap-1 transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
+                                                  >
+                                                    <LogIn className="w-3 h-3" />
+                                                    <span>重新验证</span>
+                                                  </button>
+                                                )
+                                              )}
+
+                                              {slot.slotId !== 'active_default' && (
+                                                <button
+                                                  type="button"
+                                                  disabled={Boolean(pendingAction)}
+                                                  onClick={() => {
+                                                    setEditingSlotKey(compositeKey);
+                                                    setEditingAliasValue(slot.alias || slot.displayTitle);
+                                                  }}
+                                                  title="修改备注名"
+                                                  aria-label={`修改${slot.displayTitle}备注`}
+                                                  className="w-6.5 h-6.5 rounded-md text-[#9499A0] hover:text-[#18191C] hover:bg-white inline-flex items-center justify-center transition cursor-pointer disabled:opacity-45"
+                                                >
+                                                  <Edit3 className="w-3.5 h-3.5" />
+                                                </button>
+                                              )}
+
+                                              <button
+                                                type="button"
+                                                disabled={Boolean(pendingAction)}
+                                                onClick={() =>
+                                                  void handleRemoveAccountSlot(entry.key, slot)
+                                                }
+                                                title={
+                                                  slot.isActive
+                                                    ? '退出并移除当前账户'
+                                                    : '移除此驻留账户'
+                                                }
+                                                aria-label={`移除${slot.displayTitle}`}
+                                                className="w-6.5 h-6.5 rounded-md text-[#9499A0] hover:text-rose-600 hover:bg-rose-50 inline-flex items-center justify-center transition cursor-pointer disabled:opacity-45"
+                                              >
+                                                {slot.isActive ? (
+                                                  <LogOut className="w-3.5 h-3.5" />
+                                                ) : (
+                                                  <Trash2 className="w-3.5 h-3.5" />
+                                                )}
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+
+                                {card.pendingNewAccount && card.canManage && (
+                                  <div className="px-3.5 py-2 bg-sky-50/55 flex items-center justify-between gap-2">
+                                    <span className="text-[12px] text-[#0086C4]">
+                                      等待登录新账户（已有账户已保留）
+                                    </span>
+                                    <button
+                                      type="button"
+                                      disabled={Boolean(pendingAction)}
+                                      onClick={() => void handleStartLogin(entry.key, true)}
+                                      className="h-6.5 px-2.5 rounded-md bg-[#00AEEC] hover:bg-[#009CD6] text-white text-[11.5px] font-semibold cursor-pointer"
+                                    >
+                                      继续登录
+                                    </button>
                                   </div>
                                 )}
                               </div>
-                            );
-                          })}
+                            )}
 
-                          {card.pendingNewAccount && card.canManage && (
-                            <div className="px-5 py-2.5 bg-sky-50/45 flex items-center justify-between gap-2">
-                              <span className="text-[12px] text-[#008EC4]">
-                                等待登录新账户（已有账户已保留）
-                              </span>
-                              <button
-                                type="button"
-                                disabled={Boolean(pendingAction)}
-                                onClick={() => void handleStartLogin(entry.key, true)}
-                                className="h-7 px-2.5 rounded-lg bg-[#00AEEC] hover:bg-[#009CD6] text-white text-[11.5px] font-semibold cursor-pointer"
+                            {/* 子通道告警提示 */}
+                            {warnProbes.length > 0 && accounts.length > 0 && (
+                              <div className="mt-2 sm:ml-12 rounded-lg bg-amber-50/85 border border-amber-200/70 px-3 py-1.5 text-[11.5px] text-amber-800 flex items-center justify-between gap-2">
+                                <span className="truncate">
+                                  {warnProbes.map(p => `${p.label}${p.statusText}`).join(' · ')}
+                                </span>
+                                {card.canManage && (
+                                  <button
+                                    type="button"
+                                    disabled={Boolean(pendingAction)}
+                                    onClick={() => void handleStartLogin(entry.key, true)}
+                                    className="text-amber-700 hover:text-amber-950 font-semibold shrink-0 cursor-pointer"
+                                  >
+                                    去处理
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
+                            {/* 平台操作错误提示 */}
+                            {card.errorText && (
+                              <div
+                                role="alert"
+                                className="mt-2 sm:ml-12 rounded-lg bg-rose-50/90 border border-rose-200/70 px-3 py-1.5 text-[11.5px] text-rose-700 flex items-center justify-between gap-2"
                               >
-                                继续登录
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* 仅在子通道存在待验证告警时展示精简提示，避免所有卡片重复堆叠底栏 */}
-                      {warnProbes.length > 0 && accounts.length > 0 && (
-                        <div className="rounded-lg bg-amber-50/80 px-3 py-1.5 text-[11.5px] text-amber-800 flex items-center justify-between gap-2">
-                          <span className="truncate">
-                            {warnProbes.map(p => `${p.label}${p.statusText}`).join(' · ')}
-                          </span>
-                          {card.canManage && (
-                            <button
-                              type="button"
-                              disabled={Boolean(pendingAction)}
-                              onClick={() => void handleStartLogin(entry.key, true)}
-                              className="text-amber-700 hover:text-amber-950 font-semibold shrink-0 cursor-pointer"
-                            >
-                              去处理
-                            </button>
-                          )}
-                        </div>
-                      )}
-
-                      {card.errorText && (
-                        <div
-                          role="alert"
-                          className="rounded-lg bg-rose-50/90 border border-rose-200/70 px-3 py-1.5 text-[11.5px] text-rose-700 flex items-center justify-between gap-2"
-                        >
-                          <span>{card.errorText}</span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setErrors(prev => {
-                                const next = { ...prev };
-                                delete next[entry.key];
-                                return next;
-                              })
-                            }
-                            className="text-rose-500 hover:text-rose-800 shrink-0 cursor-pointer"
-                            aria-label="忽略错误提示"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
+                                <span>{card.errorText}</span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setErrors(prev => {
+                                      const next = { ...prev };
+                                      delete next[entry.key];
+                                      return next;
+                                    })
+                                  }
+                                  className="text-rose-500 hover:text-rose-800 shrink-0 cursor-pointer"
+                                  aria-label="忽略错误提示"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            )}
+                          </article>
+                        );
+                      })}
                     </div>
-                  </article>
-                );
-              })}
-            </div>
-          )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

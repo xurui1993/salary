@@ -44,10 +44,8 @@ def _json(session, path, params, log=None):
 
 
 def platform_cities(log, cancelled):
-    # 平台 /admin/base/project/cities 返回的是授权城市 ID 列表，名称需结合
-    # /admin/base/area/cities 参考表；统一由目录模块归一化为 {cityName, id, projectCode}。
-    from lanorange_mdr_directory import platform_rows
-    rows = platform_rows(log, cancelled)
+    with authenticated(SOURCE, log, cancelled) as session:
+        rows = _json(session, '/admin/base/project/cities', [], log)
     if not isinstance(rows, list):
         raise BillCollectionError('新蓝橙城市清单结构异常，未提交导出')
     return rows
@@ -57,12 +55,7 @@ def resolve_city(log, cancelled, city):
     rows = platform_cities(log, cancelled)
     matched = match_city(rows, city)
     if matched is None:
-        available = [str(row.get('cityName')) for row in rows
-                     if isinstance(row, dict) and row.get('cityName')]
-        hint = '、'.join(dict.fromkeys(available))[:160]
-        raise BillCollectionError(
-            f'新蓝橙未找到城市“{city}”，请确认平台授权范围'
-            + (f'（当前账号可用城市：{hint}）' if hint else ''))
+        raise BillCollectionError(f'新蓝橙未找到城市“{city}”，请确认平台授权范围')
     city_id, project_code = city_identity(matched)
     if city_id is None:
         raise BillCollectionError(f'新蓝橙城市“{city}”编号异常，未提交导出')

@@ -272,11 +272,8 @@ def validate_request(payload, today=None):
         chosen = list(dict.fromkeys(chosen))
         if not chosen:
             raise ValidationError('新蓝橙资料需要选择至少一个城市')
-        from lanorange_mdr_directory import cached_names as mdr_cached_names
-        dynamic_cities = mdr_cached_names()
-        allowed_cities = dynamic_cities if dynamic_cities else set(SELECTABLE_CITIES)
-        if any(not isinstance(city, str) or city not in allowed_cities for city in chosen):
-            raise ValidationError('新蓝橙城市不在平台可选范围，请从城市与站点目录中选择')
+        if any(not isinstance(city, str) or city not in SELECTABLE_CITIES for city in chosen):
+            raise ValidationError('新蓝橙城市不在可选范围，请从配置的城市列表中选择')
         today = today or dt.datetime.now(SHANGHAI).date()
         try:
             if payload.get('start') is None and payload.get('end') is None:
@@ -1154,8 +1151,8 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
         if baize_only or benlai_only:
             yield None
             return
-        if all(value['dataset'] in LANORANGE_DATASETS or value['dataset'] in MDR_DATASETS
-               or value['dataset'] == 'abnormal_riders' for value in requested):
+        if all(value['dataset'] in LANORANGE_DATASETS or value['dataset'] == 'abnormal_riders'
+               for value in requested):
             yield None
             return
         if requested and all(value['dataset'] == 'payment_binding' and
@@ -1346,12 +1343,7 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                 rows = platform_cities(progress_log, cancelled)
                 matched = match_city(rows, city)
                 if matched is None:
-                    available = [str(row.get('cityName')) for row in rows
-                                 if isinstance(row, dict) and row.get('cityName')]
-                    hint = '、'.join(dict.fromkeys(available))[:160]
-                    raise BillCollectionError(
-                        f'新蓝橙未找到城市“{city}”，请确认平台授权范围'
-                        + (f'（当前账号可用城市：{hint}）' if hint else ''))
+                    raise BillCollectionError(f'新蓝橙未找到城市“{city}”，请确认平台授权范围')
                 city_id, project_code = city_identity(matched)
                 if city_id is None:
                     raise BillCollectionError(f'新蓝橙城市“{city}”编号异常，未提交导出')

@@ -60,20 +60,6 @@ class BlueQrTests(unittest.TestCase):
         with patch('desktop_auth_page.inspect_login_page',side_effect=[(first,{'qr':mode,'sms':sms}),(self.meta,{})]):self.auth._capture_desktop('lanorange',self.page)
         mode.click.assert_called_once();sms.click.assert_not_called();self.assertTrue(self.auth.status('lanorange')['has_qr'])
 
-    def test_new_blue_clicks_dingtalk_entry_then_switches_to_scan_qr(self):
-        self.auth.states['lanorange_mdr']={'state':'waiting_login','session_id':'sid'}
-        self.page.url='https://mdr.lanchengsz.cn/login'
-        entry=Mock();mode=Mock()
-        start={**self.meta,'regions':{},'qr_state':'not_detected',
-               'controls':[{'id':'dd','kind':'other','label':'钉钉登录','enabled':True}]}
-        dingtalk={**self.meta,'regions':{},'qr_state':'not_detected',
-                  'controls':[{'id':'qr','kind':'mode','label':'扫码登录','enabled':True}]}
-        with patch('desktop_auth_page.inspect_login_page',
-                   side_effect=[(start,{'dd':entry}),(dingtalk,{'qr':mode}),(self.meta,{})]):
-            self.auth._capture_desktop('lanorange_mdr',self.page)
-        entry.click.assert_called_once();mode.click.assert_called_once()
-        self.assertTrue(self.auth.status('lanorange_mdr')['has_qr'])
-
     def test_blue_rejects_form_and_legacy_coordinate_commands(self):
         self.capture()
         for command in ({'action':'fill_fields','values':[]},{'action':'fill','text':'secret'},{'action':'click','x':.5,'y':.5},{'action':'key','key':'Enter'},{'action':'scroll','direction':'up'}):

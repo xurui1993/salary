@@ -12,8 +12,7 @@ export interface ShellNavState {
     | 'price-export'
     | 'pickup'
     | 'accounts'
-    | 'platform-auth'
-    | 'display-adaptation';
+    | 'platform-auth';
   taskKind: 'download' | 'generate' | 'payroll';
   downloadPlatform: DownloadPlatform;
   payrollSubView: PayrollSubView;
@@ -32,8 +31,7 @@ export type ShellCommandAction =
         | 'history'
         | 'pickup'
         | 'accounts'
-        | 'platform-auth'
-        | 'display-adaptation';
+        | 'platform-auth';
     }
   | { type: 'open-dock'; source?: string }
   | { type: 'open-logs' }
@@ -57,7 +55,6 @@ export type QuickTargetId =
   | 'workspace:history'
   | 'workspace:pickup'
   | 'workspace:platform-auth'
-  | 'workspace:display-adaptation'
   | 'workspace:accounts';
 
 export interface QuickTargetMeta {
@@ -247,8 +244,8 @@ export const QUICK_TARGETS: QuickTargetMeta[] = [
   {
     id: 'workspace:history',
     groupId: 'history',
-    label: '任务管理',
-    shortLabel: '任务',
+    label: '任务下载',
+    shortLabel: '下载',
     moduleLabel: '平台管理',
     hint: '进度追踪与打包领取',
     accent: 'slate',
@@ -275,22 +272,12 @@ export const QUICK_TARGETS: QuickTargetMeta[] = [
     action: { type: 'workspace', view: 'platform-auth' },
   },
   {
-    id: 'workspace:display-adaptation',
-    groupId: 'admin',
-    label: '界面适配',
-    shortLabel: '适配',
-    moduleLabel: '平台管理',
-    hint: '27寸办公大屏与15.6寸笔记本自动识别、缩放与紧凑排版适配',
-    accent: 'sapphire',
-    action: { type: 'workspace', view: 'display-adaptation' },
-  },
-  {
     id: 'workspace:accounts',
     groupId: 'admin',
-    label: '权限管理',
+    label: '用户权限分配',
     shortLabel: '权限',
     moduleLabel: '平台管理',
-    hint: '成员审批、独立空间与安全审计',
+    hint: '成员建号、模块权限分配与安全审计',
     accent: 'sapphire',
     action: { type: 'workspace', view: 'accounts' },
   },
@@ -307,8 +294,7 @@ export function getQuickTargetMeta(id: QuickTargetId): QuickTargetMeta | undefin
 export function getActiveNavGroup(state: Pick<ShellNavState, 'workspaceView' | 'taskKind'>): NavGroupId {
   if (
     state.workspaceView === 'accounts' ||
-    state.workspaceView === 'platform-auth' ||
-    state.workspaceView === 'display-adaptation'
+    state.workspaceView === 'platform-auth'
   ) {
     return 'admin';
   }
@@ -328,7 +314,6 @@ export function getCurrentQuickTargetId(state: ShellNavState): QuickTargetId {
   const groupId = getActiveNavGroup(state);
   if (groupId === 'admin') {
     if (state.workspaceView === 'platform-auth') return 'workspace:platform-auth';
-    if (state.workspaceView === 'display-adaptation') return 'workspace:display-adaptation';
     return 'workspace:accounts';
   }
   if (groupId === 'history') return state.workspaceView === 'pickup' ? 'workspace:pickup' : 'workspace:history';
@@ -492,7 +477,7 @@ export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
   const platformManagementSiblings: BreadcrumbSibling[] = [
     {
       id: 'history',
-      label: '任务管理',
+      label: '任务下载',
       hint: '全部历史任务与文件下载',
       active: state.workspaceView === 'history',
       action: { type: 'workspace', view: 'history' },
@@ -512,16 +497,9 @@ export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
       action: { type: 'workspace', view: 'platform-auth' },
     },
     {
-      id: 'display-adaptation',
-      label: '界面适配',
-      hint: '公司27寸大屏与家里15.6寸笔记本自动识别、缩放与紧凑排版适配',
-      active: state.workspaceView === 'display-adaptation',
-      action: { type: 'workspace', view: 'display-adaptation' },
-    },
-    {
       id: 'accounts',
-      label: '权限管理',
-      hint: '成员注册审批、独立空间隔离与安全审计日志',
+      label: '用户权限分配',
+      hint: '成员建号、模块权限分配与安全审计日志',
       active: state.workspaceView === 'accounts',
       action: { type: 'workspace', view: 'accounts' },
     },
@@ -671,9 +649,9 @@ export function buildShellCommands(
     {
       id: 'nav-history',
       group: '平台管理',
-      label: '任务管理',
+      label: '任务下载',
       subtitle: '查看跨平台任务执行记录并一键打包下载成果文件',
-      keywords: ['history', 'task', 'rw', '任务', '任务管理', '任务中心', '记录', '下载', '归档'],
+      keywords: ['history', 'task', 'rw', 'rwxz', '任务', '任务下载', '任务管理', '任务中心', '记录', '下载', '归档'],
       active: state.workspaceView === 'history',
       action: { type: 'workspace', view: 'history' },
     },
@@ -695,24 +673,15 @@ export function buildShellCommands(
       active: state.workspaceView === 'platform-auth',
       action: { type: 'workspace', view: 'platform-auth' },
     },
-    {
-      id: 'nav-display-adaptation',
-      group: '平台管理',
-      label: '界面适配',
-      subtitle: '公司27寸办公显示器与家里15.6寸笔记本跨屏缩放、满宽防截断与预设切换',
-      keywords: ['display', 'scale', 'zoom', 'screen', 'laptop', 'monitor', 'jm', 'sp', '界面适配', '页面适配', '27寸', '15.6寸', '笔记本', '缩放', '字号', '分辨率'],
-      active: state.workspaceView === 'display-adaptation',
-      action: { type: 'workspace', view: 'display-adaptation' },
-    },
   );
 
   if (options.isAdmin) {
     commands.push({
       id: 'nav-accounts',
       group: '平台管理',
-      label: '权限管理',
-      subtitle: '审批同事注册申请、配置模块权限与查看安全审计日志',
-      keywords: ['account', 'admin', 'perm', 'audit', 'zh', 'qx', '权限管理', '账户与权限', '账户', '权限', '审批', '审计'],
+      label: '用户权限分配',
+      subtitle: '新建成员账号、分配模块权限与查看安全审计日志',
+      keywords: ['account', 'admin', 'perm', 'audit', 'zh', 'qx', 'yhqxfp', '用户权限分配', '权限分配', '权限管理', '账户与权限', '账户', '权限', '审批', '审计'],
       active: state.workspaceView === 'accounts',
       action: { type: 'workspace', view: 'accounts' },
     });

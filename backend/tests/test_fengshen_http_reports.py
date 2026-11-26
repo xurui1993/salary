@@ -388,21 +388,6 @@ class ReportTests(unittest.TestCase):
         with self.assertRaises(BillCollectionError): self.collector.orders(self.plan, self.root, {"fraud"})
         self.client.request_json.assert_not_called()
 
-    def test_large_batch_adaptively_splits_and_recovers(self):
-        self.fixture.total = 300_000
-        self.plan.start = (dt.date.fromisoformat(self.plan.end) - dt.timedelta(days=6)).isoformat()
-        source = self.root / "split_source"
-        self.collector.export_interval = 0.02
-        self.fixture.hold_until_exports = 2
-        reports = list(self.collector.orders_stream(self.plan, source, {"problem"}, concurrency=2))
-        self.assertEqual(len(reports), 3)
-        self.assertEqual(sum(len(r["expected_waybills_by_date"]) for r in reports), 7)
-        self.assertEqual(reports[0]["start"], self.plan.start)
-        self.assertEqual(reports[-1]["end"], self.plan.end)
-        recovered = self.collector.resume_orders(self.plan, self.root / "split_recovered", {"problem"}, source)
-        self.assertEqual([(r["start"], r["end"]) for r in recovered],
-                         [(r["start"], r["end"]) for r in reports])
-
 
 class WaybillCreatedTests(unittest.TestCase):
     """运单数据按运单终态时间采集：请求键、回执口径、全城送筛选与空结果契约。"""

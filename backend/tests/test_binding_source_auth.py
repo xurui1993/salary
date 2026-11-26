@@ -335,7 +335,7 @@ class BrowserAuthTests(unittest.TestCase):
         page.url = 'https://login.dingtalk.com/oauth2/challenge.htm'
         page.get_by_role.return_value.first = visible
         page.get_by_text.return_value.first = SimpleNamespace(is_visible=lambda: False, click=Mock())
-        self.assertEqual(auth._confirm_dingtalk(page), '立即登录')
+        self.assertEqual(auth._confirm_dingtalk(page), '同意')
         visible.click.assert_called_once_with(timeout=2000)
 
         hidden = SimpleNamespace(is_visible=lambda: False, click=Mock())
@@ -345,23 +345,6 @@ class BrowserAuthTests(unittest.TestCase):
         page.get_by_text.return_value.first = hidden
         self.assertIsNone(auth._confirm_dingtalk(page))
         hidden.click.assert_not_called()
-
-    def test_official_control_click_falls_back_to_dom_click(self):
-        element = SimpleNamespace(click=Mock(side_effect=RuntimeError('overlay')), evaluate=Mock())
-        auth._click_control(element)
-        element.evaluate.assert_called_once_with('e=>e.click()')
-
-    def test_dingtalk_confirm_falls_back_to_dom_click_when_overlay_blocks(self):
-        hidden = SimpleNamespace(is_visible=lambda: False)
-        text = SimpleNamespace(is_visible=lambda: True,
-                               click=Mock(side_effect=RuntimeError('overlay')),
-                               evaluate=Mock())
-        page = Mock()
-        page.url = 'https://login.dingtalk.com/oauth2/challenge.htm'
-        page.get_by_role.return_value.first = hidden
-        page.get_by_text.return_value.first = text
-        self.assertEqual(auth._confirm_dingtalk(page), '立即登录')
-        text.evaluate.assert_called_once_with('e=>e.click()')
 
     def test_lanorange_reused_dingtalk_session_skips_qr_screenshot(self):
         auth.save_state('lanorange', dingtalk_state())

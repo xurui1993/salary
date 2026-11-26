@@ -6,7 +6,6 @@ from pathlib import Path
 import re
 import uuid
 from lanorange_catalog import DATASETS as LANORANGE_DATASETS, months_contiguous, platform_months
-from lanorange_mdr_catalog import DATASETS as MDR_DATASETS
 
 
 BEIJING = dt.timezone(dt.timedelta(hours=8), "Asia/Shanghai")
@@ -30,7 +29,6 @@ LABELS = {
     "payment_binding": "骑手支付绑定", "goods_rent": "物资租用登记",
     "abnormal_followup": "异常骑手跟进", "abnormal_riders": "异常骑手整理",
     **{key: '蓝橙' + value[0] for key, value in LANORANGE_DATASETS.items()},
-    **{key: '新蓝橙' + value['label'] for key, value in MDR_DATASETS.items()},
 }
 MONTHLY = frozenset({"rider_monthly", "receive_account", "abnormal_followup"})
 # 生成工作簿按「城市 + 业务月份 + 名称 + 生成日期MMDD」命名。
@@ -39,7 +37,7 @@ WORKBOOK_TITLES = {"abnormal_followup": "异常骑手跟进明细表",
 _MONTHLY_WORKBOOKS = MONTHLY | {"payment_binding"}
 _NO_PERIOD_WORKBOOKS = frozenset({"rider_info", "goods_rent", "invitation_records", "invitation_summary",
                                    "lanorange_summary", "abnormal_riders", "baize_employees", "benlai_employees",
-                                   "rider_archive"}) | frozenset(LANORANGE_DATASETS) | frozenset(MDR_DATASETS)
+                                   "rider_archive"}) | frozenset(LANORANGE_DATASETS)
 _DETAIL_WORKBOOKS = frozenset({"detail_orders", "detail_kesu", "detail_reviews"})
 _RANGE_WORKBOOKS = frozenset({"rider_order_detail", "xiaoxiang_attendance_detail"})
 _EXCEL_SUFFIXES = frozenset({".xlsx", ".xls"})
@@ -87,16 +85,9 @@ def archive_relative_dir(run_id, created_at, cities, label=None):
     return f"{created:%Y-%m}/{folder}"
 
 
-def _dataset_name(key):
-    label = LABELS.get(key, key)
-    if key.startswith('lcmdr_'):
-        return label.removeprefix('新蓝橙')
-    return label.replace('蓝橙', '').replace('风神', '')
-
-
 def delivery_label(datasets):
     """交付目录的业务名：仅数据集名称，不含平台前缀。"""
-    names = [_dataset_name(key) for key in datasets[:2]]
+    names = [LABELS.get(key, key).replace('蓝橙', '').replace('风神', '') for key in datasets[:2]]
     return ('_'.join(names) + ('等' if len(datasets) > 2 else ''))[:65]
 
 
@@ -121,12 +112,10 @@ def task_archive_label(datasets):
         if key == 'benlai_employees': return 'benlai'
         if key in ('rider_daily','detail_orders','detail_kesu','detail_reviews','rider_archive',
                    'rider_order_detail','xiaoxiang_attendance_detail'): return 'xiaoxiang'
-        if key.startswith('lcmdr_'): return 'lanorange_mdr'
         return 'lanorange' if key.startswith('lanorange_') or key == 'abnormal_riders' else 'fengshen'
-    platforms = {'fengshen':'风神', 'lanorange':'蓝橙', 'lanorange_mdr':'新蓝橙',
-                 'baize':'商翼', 'benlai':'本来人力', 'xiaoxiang':'灯塔'}
+    platforms = {'fengshen':'风神', 'lanorange':'蓝橙', 'baize':'商翼', 'benlai':'本来人力', 'xiaoxiang':'灯塔'}
     groups = list(dict.fromkeys(platforms[dataset_group(key)] for key in datasets))
-    names = [_dataset_name(key) for key in datasets[:2]]
+    names = [LABELS.get(key, key).replace('蓝橙', '').replace('风神', '') for key in datasets[:2]]
     return archive_component(('_'.join(groups) + '_' + '、'.join(names) + ('等' if len(datasets)>2 else ''))[:65])
 
 
@@ -158,9 +147,8 @@ def write_task_checklist(directory, run):
 
 def artifact_scope(item):
     key = item.get('dataset', '')
-    if key in LANORANGE_DATASETS or key in MDR_DATASETS or key in (
-            'lanorange_summary', 'abnormal_riders', 'baize_employees',
-            'benlai_employees', 'invitation_records'):
+    if key in LANORANGE_DATASETS or key in ('lanorange_summary','abnormal_riders','baize_employees',
+                                            'benlai_employees','invitation_records'):
         return '全量', ''
     if key in ('rider_info','goods_rent','rider_archive'):
         return '当前快照', ''
@@ -241,12 +229,12 @@ def archive_filename(city, dataset, start, end, suffix=".csv", stamp=None, varia
                 return f"{first.isoformat()}-{last.isoformat()}{title}{marker}{suffix}"
             return f"{first.isoformat()}{title}{marker}{suffix}"
         if dataset in _NO_PERIOD_WORKBOOKS:
-            if dataset in ('lanorange_part_price', 'lcmdr_part_price', 'lcmdr_commission_proxy') and months:
-                # 价格档案/佣金代领按月导出时文件名标注月份，避免与全量成品混淆。
+            if dataset == 'lanorange_part_price' and months:
+                # 价格档案按月筛选时文件名标注月份，避免与全量成品混淆。
                 return f"{city}{title}{marker}{_month_label(months)}_{generated}{suffix}"
             return f"{city}{title}{marker}{generated}{suffix}"
         return f"{city}{title}{first.isoformat()}至{last.isoformat()}{marker}_{generated}{suffix}"
-    if dataset in LANORANGE_DATASETS or dataset in MDR_DATASETS or dataset == 'lanorange_summary':
+    if dataset in LANORANGE_DATASETS or dataset == 'lanorange_summary':
         period = '城市批次原表' if dataset == 'lanorange_batch_quit' and city != '全部城市' else '全量'
     elif dataset in ("rider_info", "goods_rent"):
         period = "快照"

@@ -312,21 +312,6 @@ export function ReportBuilder(props: ReportBuilderProps) {
   const cityStepNumber = singleMode ? '01' : '02';
   const monthStepNumber = singleMode ? '02' : '03';
   const workbenchRef = useRef<HTMLElement | null>(null);
-  const selectedIdsKey = activeSelectedIds.join(',');
-  const lastReportSwitchKeyRef = useRef('');
-  useLayoutEffect(() => {
-    if (!lastReportSwitchKeyRef.current) {
-      lastReportSwitchKeyRef.current = selectedIdsKey;
-      return;
-    }
-    if (lastReportSwitchKeyRef.current === selectedIdsKey) return;
-    lastReportSwitchKeyRef.current = selectedIdsKey;
-    const el = workbenchRef.current;
-    if (!el) return;
-    el.classList.remove('is-entering');
-    void el.offsetWidth;
-    el.classList.add('is-entering');
-  }, [selectedIdsKey]);
 
   return (
     <section ref={workbenchRef} className={`rb-workbench wbx-route-stage${singleMode ? ' is-single-module' : ''}`} aria-label="业务报表生成">

@@ -27,10 +27,7 @@ from fengshen_orders import (
 )
 
 MONTHLY_SCOPE_ATTEMPTS = 3
-DEFAULT_ORDER_EXPORT_CONCURRENCY = 2
-ORDER_EXPORT_MIN_INTERVAL = 14.0
-ADAPTIVE_SPLIT_ROW_THRESHOLD = 160_000
-ADAPTIVE_TARGET_BATCH_ROWS = 120_000
+DEFAULT_ORDER_EXPORT_CONCURRENCY = 1
 # High-volume cities expand about 10x (7 days ~1.7GB); the default cap targets small bills.
 ORDER_WAYBILL_MAX_UNPACKED = 4 * 1024 ** 3
 
@@ -107,58 +104,9 @@ def file_info(path):
     return {"path": path.name, "bytes": path.stat().st_size, "sha256": checksum}
 
 
-def _split_date_range(first, last, parts):
-    start_date = dt.date.fromisoformat(first)
-    days = [(start_date + dt.timedelta(days=i)).isoformat()
-            for i in range((dt.date.fromisoformat(last) - start_date).days + 1)]
-    parts = max(1, min(len(days), int(parts)))
-    base, extra = divmod(len(days), parts)
-    result, cursor = [], 0
-    for idx in range(parts):
-        size = base + (1 if idx < extra else 0)
-        chunk = days[cursor:cursor + size]
-        result.append((chunk[0], chunk[-1]))
-        cursor += size
-    return result
-
-
-def _discovered_recovery_batches(start, end, source, *, max_days=60):
-    source = Path(source)
-    if not source.is_dir():
-        return None
-    first_day, last_day = dt.date.fromisoformat(start), dt.date.fromisoformat(end)
-    if not 0 <= (last_day - first_day).days < max_days:
-        return None
-    by_start = {}
-    for entry in source.iterdir():
-        if not entry.is_dir() or entry.is_symlink() or "_" not in entry.name:
-            continue
-        parts = entry.name.split("_")
-        if len(parts) != 2:
-            continue
-        try:
-            b_start, b_end = dt.date.fromisoformat(parts[0]), dt.date.fromisoformat(parts[1])
-        except ValueError:
-            continue
-        if 0 <= (b_end - b_start).days < ORDER_BATCH_SPAN:
-            by_start.setdefault(parts[0], []).append((parts[0], parts[1], b_end))
-    result, cursor = [], first_day
-    while cursor <= last_day:
-        candidates = by_start.get(cursor.isoformat(), ())
-        if len(candidates) != 1:
-            return None
-        b_first, b_last, b_end_date = candidates[0]
-        result.append((b_first, b_last))
-        cursor = b_end_date + dt.timedelta(days=1)
-    return result if result and result[-1][1] == end else None
-
-
 def order_recovery_batches(plan, source, *, max_days=60):
-    """Use actual contiguous batch directories if present, else standard spans."""
+    """Use the current span, falling back to legacy 5-day batch directories."""
     source = Path(source)
-    discovered = _discovered_recovery_batches(plan.start, plan.end, source, max_days=max_days)
-    if discovered is not None:
-        return discovered
     for span in (ORDER_BATCH_SPAN, 5):
         batches = date_batches(plan.start, plan.end, span=span, max_days=max_days)
         if all((source / (first + "_" + last)).is_dir() for first, last in batches):
@@ -206,10 +154,7 @@ def order_recovery_manifests(plan, source, selected):
             if (violation.get("submission_state") != "submitted" or violation.get("scope") != {
                     "agency_id": plan.agency_id, "start": first, "end": last, "dataset": "violations"}):
                 raise BillCollectionError("原服务奖惩报告提交回执不符")
-            files["violations"] = ("violations_empty.csv"
-                                   if not (directory / "violations.csv").is_file()
-                                   and (directory / "violations_empty.csv").is_file()
-                                   else "violations.csv")
+            files["violations"] = "violations.csv"
         checks = {}
         for kind, name in files.items():
             path = directory / name
@@ -231,14 +176,12 @@ class ReportHttpCollector:
             raise ValueError("超时和轮询间隔必须为正数")
         self.client, self.timeout, self.poll_interval, self.log = client, timeout, poll_interval, log
         self.scope_recheck_delay = 3.0
-        self.export_interval = ORDER_EXPORT_MIN_INTERVAL if poll_interval >= 1.0 else 0.0
-        self._last_export_at = None
 
     @measured("platform_poll_wait_seconds")
     def _wait(self, deadline, started=None):
         self.client.checkpoint()
         since = time.monotonic() - (started if started is not None else time.monotonic())
-        interval = min(self.poll_interval, 2.0) if since < 60 else self.poll_interval
+        interval = min(self.poll_interval, 2.0) if since < 30 else self.poll_interval
         self.client.cancelled.wait(min(interval, max(0, deadline - time.monotonic())))
         self.client.checkpoint()
 
@@ -356,11 +299,10 @@ class ReportHttpCollector:
     def _download_order_file(self, url, target):
         return self.client.download(url, target)
 
-    def _download_waybill_file(self, state, target, *, with_info=False):
-        """Fetch the completed export up to 4 times; large OSS downloads can truncate."""
+    def _download_waybill_file(self, state, target):
+        """Fetch the completed export twice at most; large downloads occasionally arrive truncated."""
         target = Path(target)
-        max_attempts = 4
-        for attempt in range(1, max_attempts + 1):
+        for attempt in (1, 2):
             state["failure_phase"] = "downloading"
             self.log("[下载] 正在获取本批运单原始文件")
             payload = self.client.request_json("POST", TASK_URL,
@@ -368,23 +310,14 @@ class ReportHttpCollector:
             file = self._download_order_file(nested_value(payload, ["result", "data"]), target)
             state["failure_phase"] = "validating"
             try:
-                proof = validate_bill_file(file, max_unpacked=ORDER_WAYBILL_MAX_UNPACKED)
-                if proof["format"] != "xlsx":
+                if validate_bill_file(file, max_unpacked=ORDER_WAYBILL_MAX_UNPACKED)["format"] != "xlsx":
                     raise BillCollectionError("运单导出不是有效 XLSX 文件")
-                if with_info:
-                    return file, {"path": Path(file).name, "bytes": proof["bytes"], "sha256": proof["sha256"]}
                 return file
             except BillCollectionError:
                 target.unlink(missing_ok=True)
-                files_session = getattr(self.client, "files_session", None)
-                if files_session is not None:
-                    files_session.close()
-                if attempt == max_attempts:
+                if attempt == 2:
                     raise
-                self.log(f"[下载] 本批运单文件校验未通过，正在重新获取（第 {attempt + 1}/{max_attempts} 次）")
-                if self.poll_interval >= 1.0:
-                    self.client.cancelled.wait(min(8.0, 2.0 * attempt))
-                    self.client.checkpoint()
+                self.log("[下载] 本批运单文件校验未通过，正在重新获取一次")
 
     @measured("order_counts_seconds")
     def _prepare_counts(self, request, created=False, product_id=None):
@@ -532,64 +465,17 @@ class ReportHttpCollector:
         atomic_json(item["path"], item["manifest"])
         item["settled"] = True
 
-    @measured("order_counts_seconds")
-    def _initial_counts(self, request):
-        self.client.select_city(request.agency_id)
-        total = self._count(request)
-        first, last = dt.date.fromisoformat(request.start), dt.date.fromisoformat(request.end)
-        days = [(first + dt.timedelta(days=n)).isoformat() for n in range((last - first).days + 1)]
-        if total == 0:
-            counts = {request.start: 0} if request.start == request.end else self._daily_counts(request)
-            if any(counts.values()):
-                raise BillCollectionError("运单批次查询为空但逐日查询非空，已停止导出")
-            return {"expected_waybills": 0, "expected_waybills_by_date": counts, "pending_days": []}
-        if request.start == request.end:
-            return {"expected_waybills": total, "expected_waybills_by_date": {request.start: total}, "pending_days": []}
-        counts = {}
-        today = dt.datetime.now(SHANGHAI).date().isoformat()
-        if request.start <= today <= request.end:
-            counts[today] = self._count(OrderRequest(today, today, request.agency_id))
-        pending = [day for day in days if day not in counts]
-        return {"expected_waybills": total, "expected_waybills_by_date": counts, "pending_days": pending}
-
-    @measured("order_counts_seconds")
-    def _step_daily_count(self, item):
-        pending = item.get("pending_days")
-        if not pending:
-            return False
+    def _prepare_batch(self, item, prepared, include_violations):
         request, directory, state = item["request"], item["directory"], item["state"]
-        day = pending[0]
         try:
             started = time.perf_counter()
-            self.client.select_city(request.agency_id)
-            count = self._count(OrderRequest(day, day, request.agency_id))
+            counts = prepared.pop(item["index"], None)
+            if counts is None:
+                counts = self._prepare_counts(request)
             self._mark(item, "counts", time.perf_counter() - started)
-            pending.pop(0)
-            state["expected_waybills_by_date"][day] = count
-            if not pending:
-                atomic_json(directory / "query_state.json", {
-                    "status": "success", "agency_id": request.agency_id,
-                    "start": request.start, "end": request.end, **state})
-            return True
-        except Exception as exc:
-            self._fail_item(item, exc)
-
-    def _finish_daily_counts(self, item):
-        while item.get("pending_days"):
-            self._step_daily_count(item)
-
-    def _prepare_batch(self, item, counts_info, include_violations):
-        request, directory, state = item["request"], item["directory"], item["state"]
-        try:
-            pending_days = list(counts_info.get("pending_days", ()))
-            item["pending_days"] = pending_days
-            state.update(
-                expected_waybills=counts_info["expected_waybills"],
-                expected_waybills_by_date=dict(counts_info["expected_waybills_by_date"]),
-            )
-            if not pending_days:
-                atomic_json(directory / "query_state.json", {"status": "success", "agency_id": request.agency_id,
-                            "start": request.start, "end": request.end, **state})
+            state.update(counts)
+            atomic_json(directory / "query_state.json", {"status": "success", "agency_id": request.agency_id,
+                        "start": request.start, "end": request.end, **state})
             if state["expected_waybills"] == 0:
                 files = {"waybills": self._empty_waybills(directory)}
                 if include_violations:
@@ -601,22 +487,14 @@ class ReportHttpCollector:
             baseline = self._tasks()
             self._mark(item, "baseline", time.perf_counter() - started)
             atomic_json(directory / "http_baseline.json", {"task_ids": [str(row["id"]) for row in baseline]})
-            if self._last_export_at is not None and self.export_interval > 0:
-                remaining = self.export_interval - (time.monotonic() - self._last_export_at)
-                if remaining > 0:
-                    self.client.cancelled.wait(remaining)
-                    self.client.checkpoint()
             self.client.assert_city(request.agency_id)
             state.update(failure_phase="submitting", submission_state="unknown")
             self.log("[账单] 运单完成日期和全城市范围已核对，正在提交导出")
             started = time.perf_counter()
-            try:
-                _, receipt = self.client.submit_once(EXPORT_URL, order_body(request, export=True),
-                                                    directory / "http_submission.json",
-                                                    {"agency_id": request.agency_id, "start": request.start,
-                                                     "end": request.end, "dataset": "issue_orders"})
-            finally:
-                self._last_export_at = time.monotonic()
+            _, receipt = self.client.submit_once(EXPORT_URL, order_body(request, export=True),
+                                                directory / "http_submission.json",
+                                                {"agency_id": request.agency_id, "start": request.start,
+                                                 "end": request.end, "dataset": "issue_orders"})
             self._mark(item, "submit", time.perf_counter() - started)
             state.update(failure_phase="waiting_export", submission_state="submitted")
             item.update(receipt=receipt, baseline_ids={str(row["id"]) for row in baseline},
@@ -678,23 +556,11 @@ class ReportHttpCollector:
                 self._fail_item(item, exc)
         return finished
 
-    def _prefetch_violations(self, item):
-        request, directory = item["request"], item["directory"]
-        v_state = {}
-        try:
-            started = time.perf_counter()
-            item["violations_info"] = self._violations(request, directory, v_state)
-            self._mark(item, "violations", time.perf_counter() - started)
-        except Exception as exc:
-            item["state"].update(v_state)
-            self._fail_item(item, exc)
-
     def _download_batch(self, item):
         request, directory, state = item["request"], item["directory"], item["state"]
         try:
-            self._finish_daily_counts(item)
             started = time.perf_counter()
-            _, waybill_info = self._download_waybill_file(state, directory / "waybills.xlsx", with_info=True)
+            file = self._download_waybill_file(state, directory / "waybills.xlsx")
             self._mark(item, "download", time.perf_counter() - started)
             started = time.perf_counter()
             snapshot = self._live_snapshot(request, state, item["receipt"]["started_at"],
@@ -705,14 +571,11 @@ class ReportHttpCollector:
                 atomic_json(directory / "query_state.json", {"status": "success",
                             "agency_id": request.agency_id, "start": request.start,
                             "end": request.end, **state})
-            files = {"waybills": waybill_info}
+            files = {"waybills": file_info(file)}
             if item["include_violations"]:
-                if "violations_info" in item:
-                    files["violations"] = item["violations_info"]
-                else:
-                    started = time.perf_counter()
-                    files["violations"] = self._violations(request, directory, state)
-                    self._mark(item, "violations", time.perf_counter() - started)
+                started = time.perf_counter()
+                files["violations"] = self._violations(request, directory, state)
+                self._mark(item, "violations", time.perf_counter() - started)
             return self._success(item, files)
         except Exception as exc:
             self._fail_item(item, exc)
@@ -739,81 +602,47 @@ class ReportHttpCollector:
             raise HttpTransportError("本目录已有运单导出记录，请查询原任务，不能重复提交",
                                      "waiting_export", "unknown")
         include_violations = "problem" in selected
-        queue = [[first, last, True] for first, last in batches]
-        active = {}
+        prepared, active = {}, {}
         next_index = 0
         try:
-            while next_index < len(queue) or active:
+            while next_index < len(batches) or active:
                 self.client.checkpoint()
-                while next_index < len(queue) and len(active) < concurrency:
-                    if (active and self.export_interval > 0 and self._last_export_at is not None
-                            and time.monotonic() - self._last_export_at < self.export_interval):
-                        break
+                while next_index < len(batches) and len(active) < concurrency:
                     index = next_index
-                    first, last, can_split = queue[index]
+                    first, last = batches[index]
                     request = OrderRequest(first, last, plan.agency_id)
                     directory = raw / (first + "_" + last)
+                    directory.mkdir(parents=True, exist_ok=False)
                     manifest = self._order_manifest(request)
                     path = directory / "manifest.json"
+                    atomic_json(path, manifest)
                     item = {"index": index, "request": request, "directory": directory,
                             "manifest": manifest, "path": path,
                             "state": {"failure_phase": "preparing",
                                       "submission_state": "not_submitted"},
                             "timings": {}, "settled": False,
                             "include_violations": include_violations}
-                    try:
-                        started = time.perf_counter()
-                        counts_info = self._initial_counts(request)
-                        self._mark(item, "counts", time.perf_counter() - started)
-                    except Exception as exc:
-                        directory.mkdir(parents=True, exist_ok=True)
-                        self._fail_item(item, exc)
-                    if can_split and first < last and counts_info["expected_waybills"] > ADAPTIVE_SPLIT_ROW_THRESHOLD:
-                        parts = math.ceil(counts_info["expected_waybills"] / ADAPTIVE_TARGET_BATCH_ROWS)
-                        sub_ranges = _split_date_range(first, last, parts)
-                        if len(sub_ranges) > 1:
-                            self.log(f"[分批] 周期 {first} 至 {last} 共 {counts_info['expected_waybills']} 单，"
-                                     f"自动拆分为 {len(sub_ranges)} 个子批次加速生成")
-                            queue[index:index + 1] = [[sf, sl, False] for sf, sl in sub_ranges]
-                            continue
-                    directory.mkdir(parents=True, exist_ok=False)
-                    manifest["total_stream_batches"] = len(queue)
-                    atomic_json(path, manifest)
-                    self.log(f"[资料] 正在通过接口采集运单第 {index + 1}/{len(queue)} 批：{first} 至 {last}")
+                    self.log(f"[资料] 正在通过接口采集运单第 {index + 1}/{len(batches)} 批：{first} 至 {last}")
                     next_index += 1
-                    completed = self._prepare_batch(item, counts_info, include_violations)
+                    completed = self._prepare_batch(item, prepared, include_violations)
                     if completed is not None:
-                        completed["total_stream_batches"] = len(queue)
                         yield completed
                     else:
                         active[index] = item
                         self._associate(item)
+                        if next_index < len(batches) and next_index not in prepared:
+                            first, last = batches[next_index]
+                            prepared[next_index] = self._prepare_counts(
+                                OrderRequest(first, last, plan.agency_id))
                 if active:
                     finished = self._poll_batches(active)
                     for index in finished:
                         item = active.pop(index)
-                        result_manifest = self._download_batch(item)
-                        result_manifest["total_stream_batches"] = len(queue)
-                        yield result_manifest
+                        yield self._download_batch(item)
                     if not finished:
-                        progressed = False
-                        for index in sorted(active):
-                            item = active[index]
-                            if item["include_violations"] and "violations_info" not in item:
-                                self._prefetch_violations(item)
-                                progressed = True
-                                break
-                        if not progressed:
-                            for index in sorted(active):
-                                item = active[index]
-                                if item.get("pending_days"):
-                                    self._step_daily_count(item)
-                                    progressed = True
-                                    break
-                        if not progressed:
-                            earliest = min(item["submitted_at"] for item in active.values())
-                            deadline = min(item["deadline"] for item in active.values())
-                            self._wait(deadline, earliest)
+                        earliest = min(item["submitted_at"] for item in active.values())
+                        deadline = min(item["deadline"] for item in active.values())
+                        self._wait(deadline, earliest)
         except BaseException:
             for item in active.values():
                 if not item["settled"]:

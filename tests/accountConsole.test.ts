@@ -247,7 +247,7 @@ test('buildShellCommands and shellNav helpers enforce admin & module permissions
   assert.equal(getCurrentQuickTargetId(baseState), 'workspace:accounts');
   const crumb = getBreadcrumbModel(baseState);
   assert.equal(crumb.moduleLabel, '平台管理');
-  assert.equal(crumb.viewLabel, '权限管理');
+  assert.equal(crumb.viewLabel, '用户权限分配');
 
   const adminCommands = buildShellCommands(baseState, {
     isAdmin: true,
