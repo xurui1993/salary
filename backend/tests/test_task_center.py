@@ -147,9 +147,24 @@ class SharedListTests(unittest.TestCase):
     def test_open_only_resolved_directory_no_user_supplied_path(self):
         folder=self.root/'allowed';folder.mkdir()
         with patch.object(center,'directory',return_value=folder),patch.object(center.os,'startfile',create=True) as opened,patch.object(center.os,'name','nt'):
-            center.open_directory({},request('POST'))
+            res = center.open_directory({},request('POST'))
+            self.assertTrue(res['opened'])
             opened.assert_called_once_with(str(folder))
             with self.assertRaises(HTTPException):center.open_directory({'path':'C:/arbitrary'},request('POST'))
+
+    def test_directory_falls_back_when_task_has_no_published_delivery(self):
+        from unittest.mock import Mock
+        run_folder = self.root / 'run_fallback'
+        run_folder.mkdir()
+        fake_manager = Mock()
+        fake_manager.deliveries.directory.return_value = None
+        fake_manager.publish_delivery.side_effect = RuntimeError('暂无可发布结果')
+        fake_manager._run_directory.return_value = run_folder
+        fake_manager.run_owner.return_value = 'download_shared'
+        with patch('download_jobs.get_manager', return_value=fake_manager), \
+             patch('download_records.get_record', return_value=record('failed_1', status='error')):
+            resolved = center.directory(request(), 'failed_1')
+            self.assertEqual(resolved, run_folder)
 
     def test_module_fengshen_includes_generate_records(self):
         rows = [

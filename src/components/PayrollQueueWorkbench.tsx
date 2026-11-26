@@ -994,8 +994,26 @@ export function FlashPayrollWorkbench({
 
   const directory = (task: PayrollQueueTask) =>
     void act(async () => {
-      await request('/api/workbench/task-center/directory/open', { record_id: 'payroll_' + task.batch_id });
-      pushToast('已打开本地结果目录');
+      const recordKey = 'payroll_' + task.batch_id;
+      const resp = await request(
+        `/api/workbench/task-center/directory?record_id=${encodeURIComponent(recordKey)}`,
+      );
+      const info = await resp.json();
+      if (info.exists && info.can_open) {
+        await request('/api/workbench/task-center/directory/open', { record_id: recordKey });
+        pushToast('已打开本地结果目录');
+        return;
+      }
+      if (info.path && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        try {
+          await navigator.clipboard.writeText(info.path);
+          pushToast(`已复制结果目录路径：${info.path}`);
+          return;
+        } catch {
+          // fallback below
+        }
+      }
+      pushToast(`结果目录路径：${info.path || '暂不可用'}`, 'info');
     });
 
   const restore = (entries: PayrollQueueTask[]) =>

@@ -1,10 +1,16 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertCircle, CheckCircle2, Info, X } from 'lucide-react';
 
 export interface ToastNotice {
   id: number;
   tone: 'success' | 'info' | 'error';
   text: string;
+}
+
+function getPortalRoot(): Element | null {
+  if (typeof document === 'undefined') return null;
+  return document.querySelector('.workbench-app') || document.body;
 }
 
 /**
@@ -25,7 +31,7 @@ export function WorkbenchToast({
 
   if (!toast) return null;
 
-  return (
+  const node = (
     <div
       className={`wbx-toast is-${toast.tone}`}
       role={toast.tone === 'error' ? 'alert' : 'status'}
@@ -51,6 +57,9 @@ export function WorkbenchToast({
       </button>
     </div>
   );
+
+  const root = getPortalRoot();
+  return root ? createPortal(node, root) : node;
 }
 
 /**
@@ -89,7 +98,7 @@ export function WorkbenchConfirmModal({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [busy, onCancel]);
 
-  return (
+  const modal = (
     <div
       className="wbx-modal-backdrop"
       role="presentation"
@@ -154,4 +163,7 @@ export function WorkbenchConfirmModal({
       </div>
     </div>
   );
+
+  const root = getPortalRoot();
+  return root ? createPortal(modal, root) : modal;
 }

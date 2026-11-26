@@ -752,64 +752,7 @@ export function PlatformAuthCenterPage({
   return (
     <>
       {active && (
-        <div className="w-full space-y-3 pb-6" data-testid="platform-auth-center-page">
-          {/* 1. 紧凑单行页头：标题 + 内联指标 + 唯一主操作 CTA */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5 px-0.5">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 min-w-0">
-              <h1 className="text-[17px] font-semibold text-[#18191C] tracking-tight leading-none">
-                授权管理
-              </h1>
-              <span
-                className="hidden sm:inline-block h-3.5 w-px bg-slate-200 self-center"
-                aria-hidden="true"
-              />
-              <p className="text-[12px] text-[#61666D] tabular-nums flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                <span>
-                  已就绪{' '}
-                  <strong className="font-semibold text-[#18191C]">
-                    {overview.readyCount}/{overview.totalCount}
-                  </strong>
-                </span>
-                <span className="text-slate-300" aria-hidden="true">·</span>
-                <span>
-                  已驻留{' '}
-                  <strong className="font-semibold text-[#18191C]">
-                    {overview.totalLoggedAccountsCount}
-                  </strong>{' '}
-                  个账户
-                </span>
-                {overview.attentionCount > 0 && (
-                  <>
-                    <span className="text-slate-300" aria-hidden="true">·</span>
-                    <button
-                      type="button"
-                      onClick={() => setStateFilter('attention')}
-                      className="text-amber-700 hover:underline font-medium cursor-pointer"
-                    >
-                      待验证 <strong className="font-semibold">{overview.attentionCount}</strong>
-                    </button>
-                  </>
-                )}
-                {lastInspectedAt && (
-                  <>
-                    <span className="text-slate-300" aria-hidden="true">·</span>
-                    <span className="text-[#9499A0]">上次巡检 {lastInspectedAt}</span>
-                  </>
-                )}
-              </p>
-            </div>
-
-            <button
-              type="button"
-              disabled={anyVerifying}
-              onClick={() => void handleCheckAllPlatforms()}
-              className="h-8 inline-flex items-center gap-1.5 rounded-lg bg-[#00AEEC] hover:bg-[#009CD6] text-white px-3.5 text-[12px] font-semibold shadow-xs transition cursor-pointer whitespace-nowrap disabled:opacity-60"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${anyVerifying ? 'animate-spin' : ''}`} />
-              <span>一键巡检全部</span>
-            </button>
-          </div>
-
+        <div className="w-full space-y-3.5 pb-6" data-testid="platform-auth-center-page">
           {/* 预检拦截引导横幅（仅在任务被授权阻塞时显示） */}
           {preflightItems.length > 0 && (
             <div
@@ -846,13 +789,75 @@ export function PlatformAuthCenterPage({
             </div>
           )}
 
-          {/* 2. 单层高纯净白一体化平台目录（融合筛选栏 + 分组通道列表，零重复浮卡与高饱和按钮轰炸） */}
-          <div className="rounded-xl bg-white border border-slate-200/85 overflow-hidden">
-            {/* 顶部统一工具条 */}
-            <div className="px-4 py-2 border-b border-slate-100 bg-slate-50/45 flex flex-wrap items-center justify-between gap-2.5">
+          {/* 一体化授权管理工作台容器：整合顶栏概览 + 筛选检索 + 分组双列平台卡片 */}
+          <div className="rounded-2xl bg-white border border-slate-200/85 shadow-[0_1px_3px_rgba(15,23,42,0.03)] overflow-hidden">
+            {/* 1. 顶栏标题与全局概览区 */}
+            <div className="px-5 py-3.5 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
+                <h1 className="text-[16px] font-bold text-[#18191C] tracking-tight leading-none">
+                  授权管理
+                </h1>
+                <span className="hidden sm:inline-block h-3.5 w-px bg-slate-200" aria-hidden="true" />
+                <div className="text-[12px] text-[#61666D] tabular-nums flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        overview.readyCount > 0 ? 'bg-emerald-500' : 'bg-slate-300'
+                      }`}
+                      aria-hidden="true"
+                    />
+                    <span>
+                      已就绪{' '}
+                      <strong className="font-semibold text-[#18191C]">
+                        {overview.readyCount}/{overview.totalCount}
+                      </strong>
+                    </span>
+                  </span>
+                  <span className="text-slate-300" aria-hidden="true">·</span>
+                  <span>
+                    已驻留{' '}
+                    <strong className="font-semibold text-[#18191C]">
+                      {overview.totalLoggedAccountsCount}
+                    </strong>{' '}
+                    个账户
+                  </span>
+                  {overview.attentionCount > 0 && (
+                    <>
+                      <span className="text-slate-300" aria-hidden="true">·</span>
+                      <button
+                        type="button"
+                        onClick={() => setStateFilter('attention')}
+                        className="text-amber-700 hover:underline font-medium cursor-pointer"
+                      >
+                        待验证 <strong className="font-semibold">{overview.attentionCount}</strong>
+                      </button>
+                    </>
+                  )}
+                  {lastInspectedAt && (
+                    <>
+                      <span className="text-slate-300" aria-hidden="true">·</span>
+                      <span className="text-[#9499A0]">上次巡检 {lastInspectedAt}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                disabled={anyVerifying}
+                onClick={() => void handleCheckAllPlatforms()}
+                className="h-8 inline-flex items-center gap-1.5 rounded-lg bg-[#00AEEC] hover:bg-[#009CD6] text-white px-3.5 text-[12px] font-semibold shadow-xs transition cursor-pointer whitespace-nowrap disabled:opacity-60"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${anyVerifying ? 'animate-spin' : ''}`} />
+                <span>一键巡检全部</span>
+              </button>
+            </div>
+
+            {/* 2. 融合式筛选与检索工具条 */}
+            <div className="px-5 py-2.5 border-b border-slate-100 bg-slate-50/55 flex flex-wrap items-center justify-between gap-2.5">
               <div className="flex flex-wrap items-center gap-2.5">
                 <div
-                  className="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-100/85 border border-slate-200/60"
+                  className="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-200/65"
                   role="group"
                   aria-label="按通道归属筛选"
                 >
@@ -899,8 +904,8 @@ export function PlatformAuthCenterPage({
                       onClick={() => setStateFilter(key)}
                       className={`h-7 px-2.5 rounded-md text-[12px] transition whitespace-nowrap cursor-pointer ${
                         stateFilter === key
-                          ? 'bg-sky-50/90 text-[#0086C4] font-semibold ring-1 ring-inset ring-[#00AEEC]/20'
-                          : 'text-[#61666D] hover:bg-slate-100/70 hover:text-[#18191C]'
+                          ? 'bg-sky-50 text-[#0086C4] font-semibold ring-1 ring-inset ring-[#00AEEC]/25'
+                          : 'text-[#61666D] hover:bg-slate-100 hover:text-[#18191C]'
                       }`}
                     >
                       {label}
@@ -909,7 +914,7 @@ export function PlatformAuthCenterPage({
                 </div>
               </div>
 
-              <div className="relative w-full sm:w-[220px]">
+              <div className="relative w-full sm:w-[230px]">
                 <Search className="w-3.5 h-3.5 text-[#9499A0] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
@@ -917,7 +922,7 @@ export function PlatformAuthCenterPage({
                   onChange={e => setSearchQuery(e.target.value)}
                   placeholder="搜索平台、业务或账号..."
                   aria-label="搜索平台或绑定账号"
-                  className="w-full h-8 rounded-lg border border-slate-200/85 bg-white pl-8 pr-7 text-[12px] text-[#18191C] placeholder:text-[#9499A0] transition focus:outline-none focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/15"
+                  className="w-full h-8 rounded-lg border border-slate-200/90 bg-white pl-8 pr-7 text-[12px] text-[#18191C] placeholder:text-[#9499A0] transition focus:outline-none focus:border-[#00AEEC] focus:ring-2 focus:ring-[#00AEEC]/15"
                 />
                 {searchQuery && (
                   <button
@@ -932,6 +937,7 @@ export function PlatformAuthCenterPage({
               </div>
             </div>
 
+            {/* 3. 分组双列平台授权卡片矩阵 */}
             {filteredCards.length === 0 ? (
               <div className="py-14 px-6 text-center space-y-2.5">
                 <div className="w-9 h-9 rounded-lg bg-slate-100 text-[#61666D] flex items-center justify-center mx-auto">
@@ -953,36 +959,36 @@ export function PlatformAuthCenterPage({
                 </button>
               </div>
             ) : (
-              <div role="list" aria-label="业务系统平台账户列表">
-                {/* 宽屏表头：让 15.6" 与 27" 下四列垂直基线完全对齐、视觉通透均衡 */}
-                <div
-                  className="hidden xl:grid xl:grid-cols-[minmax(220px,1.05fr)_minmax(215px,1fr)_minmax(240px,1.2fr)_212px] items-center gap-x-5 px-5 py-2 border-b border-slate-100 bg-white text-[11px] font-medium text-[#9499A0]"
-                  aria-hidden="true"
-                >
-                  <span>平台与系统</span>
-                  <span>认证方式与会话能力</span>
-                  <span>覆盖业务模块</span>
-                  <span className="text-right">连接状态与操作</span>
-                </div>
-
-                {groupedSections.map((section, sectionIndex) => (
-                  <div
-                    key={section.id}
-                    className={sectionIndex > 0 ? 'border-t border-slate-100' : ''}
-                  >
-                    {/* 轻量分组栏 */}
-                    <div className="px-4 sm:px-5 py-1.5 bg-slate-50/75 border-b border-slate-100 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2 text-[11.5px]">
-                        <span className="font-semibold text-slate-600">{section.title}</span>
-                        <span className="text-slate-400 tabular-nums">{section.items.length}</span>
+              <div
+                className="p-4 sm:p-5 space-y-5 bg-slate-50/35"
+                role="list"
+                aria-label="业务系统平台账户列表"
+              >
+                {groupedSections.map(section => (
+                  <section key={section.id} className="space-y-2.5">
+                    {/* 分组标题条 */}
+                    <div className="flex items-center justify-between gap-3 px-0.5">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`w-1 h-3.5 rounded-full ${
+                            section.id === 'personal' ? 'bg-[#00AEEC]' : 'bg-indigo-500'
+                          }`}
+                          aria-hidden="true"
+                        />
+                        <h2 className="text-[12.5px] font-bold text-[#18191C] tracking-tight">
+                          {section.title}
+                        </h2>
+                        <span className="text-[11.5px] text-[#86909C] tabular-nums">
+                          ({section.items.length})
+                        </span>
                       </div>
-                      <span className="hidden sm:inline text-[11px] text-slate-400">
+                      <span className="hidden sm:inline text-[11.5px] text-[#86909C]">
                         {section.caption}
                       </span>
                     </div>
 
-                    {/* 平台通道行列表 */}
-                    <div className="divide-y divide-slate-100">
+                    {/* 双列高密度精致卡片网格 */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
                       {section.items.map(card => {
                         const { entry, badge, accounts } = card;
                         const Icon = PLATFORM_ICONS[entry.key] || Compass;
@@ -995,78 +1001,59 @@ export function PlatformAuthCenterPage({
                             key={entry.key}
                             role="listitem"
                             data-platform-card={entry.key}
-                            className={`px-4 sm:px-5 py-3.5 transition-colors duration-150 ${
+                            className={`rounded-xl bg-white border p-4 flex flex-col justify-between transition-all duration-150 ${
                               isFocused
-                                ? 'bg-[#00AEEC]/[0.04]'
-                                : 'bg-white hover:bg-slate-50/55'
+                                ? 'border-[#00AEEC] ring-2 ring-[#00AEEC]/15 shadow-sm'
+                                : 'border-slate-200/90 hover:border-slate-300/95 shadow-[0_1px_2px_rgba(15,23,42,0.025)] hover:shadow-[0_4px_12px_rgba(15,23,42,0.04)]'
                             }`}
                           >
-                            {/* 主行：对齐四列网格（平台标识 / 认证与能力 / 覆盖业务 / 状态与克制操作） */}
-                            <div className="grid grid-cols-1 md:grid-cols-[minmax(210px,1.05fr)_minmax(210px,1.15fr)_auto] xl:grid-cols-[minmax(220px,1.05fr)_minmax(215px,1fr)_minmax(240px,1.2fr)_212px] items-center gap-x-5 gap-y-2.5">
-                              {/* 1. 平台标识 */}
-                              <div className="flex items-center gap-3 min-w-0">
+                            {/* 卡片上半部：平台标识 + 状态与克制主操作 */}
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-3 min-w-0">
                                 <span
-                                  className={`w-9 h-9 rounded-[10px] flex items-center justify-center shrink-0 ${
+                                  className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
                                     ACCENT_ICON_STYLES[entry.accent] || ACCENT_ICON_STYLES.sky
                                   }`}
                                   aria-hidden="true"
                                 >
-                                  <Icon size={17} />
+                                  <Icon size={18} />
                                 </span>
 
-                                <div className="min-w-0">
+                                <div className="min-w-0 pt-0.5">
                                   <div className="flex items-center gap-2 min-w-0">
-                                    <h3 className="text-[14px] font-semibold text-[#18191C] tracking-tight truncate">
+                                    <h3 className="text-[15px] font-bold text-[#18191C] tracking-tight truncate">
                                       {entry.displayName}
                                     </h3>
+                                    <span className="text-[11px] font-medium text-[#61666D] bg-slate-100 px-1.5 py-0.5 rounded shrink-0">
+                                      {entry.scope === 'personal' ? '个人独立' : '全局共享'}
+                                    </span>
                                     {accounts.length > 1 && (
-                                      <span className="text-[11px] font-medium text-[#0086C4] tabular-nums shrink-0">
+                                      <span className="text-[11px] font-semibold text-[#0086C4] bg-sky-50 px-1.5 py-0.5 rounded tabular-nums shrink-0">
                                         {accounts.length} 账户
                                       </span>
                                     )}
                                   </div>
-                                  <div className="text-[11.5px] text-[#86909C] mt-0.5 truncate">
-                                    {entry.businessLine}
+                                  <div className="text-[12px] text-[#61666D] mt-1 truncate">
+                                    <span>{entry.authMethodLabel}</span>
+                                    <span className="mx-1.5 text-slate-300" aria-hidden="true">
+                                      ·
+                                    </span>
+                                    <span className="text-[#86909C]">{entry.businessLine}</span>
                                   </div>
                                 </div>
                               </div>
 
-                              {/* 2. 认证方式与会话能力 */}
-                              <div className="hidden md:flex flex-col min-w-0">
-                                <div className="text-[12.5px] font-medium text-[#4E5969] truncate">
-                                  {entry.authMethodLabel}
-                                </div>
-                                <div className="text-[11.5px] text-[#9499A0] mt-0.5 truncate">
-                                  <span className="xl:hidden">{entry.usedByModules.join(' · ')}</span>
-                                  <span className="hidden xl:inline">
-                                    {card.probes.map(p => p.label).join(' · ')}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* 3. 覆盖业务模块（15.6" 及 27" 宽屏独立对齐列） */}
-                              <div className="hidden xl:flex flex-col min-w-0">
-                                <div className="text-[12.5px] text-[#4E5969] truncate">
-                                  {entry.usedByModules.join(' · ')}
-                                </div>
-                                <div className="text-[11.5px] text-[#9499A0] mt-0.5 truncate">
-                                  {entry.scope === 'personal'
-                                    ? '支持多账户驻留与一键切换'
-                                    : '主机统一授权 · 全员自动复用'}
-                                </div>
-                              </div>
-
-                              {/* 4. 状态与操作区 */}
-                              <div className="flex items-center justify-end gap-2 shrink-0">
+                              {/* 右侧：状态指示 + 连通性刷新 + 登录/添加按钮 */}
+                              <div className="flex items-center gap-1.5 shrink-0">
                                 <span
-                                  className={`inline-flex items-center justify-end gap-1.5 min-w-[66px] text-[12px] font-medium tabular-nums ${
+                                  className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[11.5px] font-medium tabular-nums ${
                                     badge.tone === 'ready'
-                                      ? 'text-emerald-700'
+                                      ? 'bg-emerald-50 text-emerald-700'
                                       : badge.tone === 'warn'
-                                        ? 'text-amber-700'
+                                        ? 'bg-amber-50 text-amber-700'
                                         : badge.tone === 'busy'
-                                          ? 'text-[#0086C4]'
-                                          : 'text-[#86909C]'
+                                          ? 'bg-sky-50 text-[#0086C4]'
+                                          : 'bg-slate-100/80 text-[#61666D]'
                                   }`}
                                 >
                                   <span
@@ -1077,7 +1064,7 @@ export function PlatformAuthCenterPage({
                                           ? 'bg-amber-500'
                                           : badge.tone === 'busy'
                                             ? 'bg-[#00AEEC]'
-                                            : 'bg-slate-300'
+                                            : 'bg-slate-400'
                                     }`}
                                     aria-hidden="true"
                                   />
@@ -1090,7 +1077,7 @@ export function PlatformAuthCenterPage({
                                   onClick={() => void handleCheckPlatform(entry.key)}
                                   title="检测该平台连通性"
                                   aria-label={`检测${entry.displayName}连接`}
-                                  className="w-8 h-8 rounded-lg border border-transparent hover:border-slate-200/80 text-[#9499A0] hover:text-[#18191C] hover:bg-white inline-flex items-center justify-center transition cursor-pointer disabled:opacity-45"
+                                  className="w-8 h-8 rounded-lg border border-slate-200/80 bg-white text-[#86909C] hover:text-[#18191C] hover:border-slate-300 hover:bg-slate-50 inline-flex items-center justify-center transition cursor-pointer disabled:opacity-45"
                                 >
                                   <RefreshCw
                                     className={`w-3.5 h-3.5 ${pendingAction === 'verify' ? 'animate-spin' : ''}`}
@@ -1103,17 +1090,17 @@ export function PlatformAuthCenterPage({
                                       type="button"
                                       disabled={Boolean(pendingAction)}
                                       onClick={() => void handleStartLogin(entry.key, true)}
-                                      className={`h-8 min-w-[92px] px-3 rounded-lg text-[12px] font-semibold inline-flex items-center justify-center gap-1.5 transition duration-150 cursor-pointer disabled:opacity-55 whitespace-nowrap ${
+                                      className={`h-8 px-3 rounded-lg text-[12px] font-semibold inline-flex items-center justify-center gap-1.5 transition duration-150 cursor-pointer disabled:opacity-55 whitespace-nowrap ${
                                         badge.tone === 'warn'
-                                          ? 'bg-amber-50 border border-amber-300/90 text-amber-800 hover:bg-amber-100/80'
-                                          : 'bg-white border border-slate-200/95 text-[#18191C] hover:border-[#00AEEC] hover:text-[#0086C4] hover:bg-sky-50/55 shadow-[0_1px_2px_rgba(15,23,42,0.03)]'
+                                          ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs'
+                                          : 'border border-[#00AEEC]/30 bg-sky-50/60 text-[#0077A8] hover:bg-[#00AEEC] hover:text-white hover:border-[#00AEEC]'
                                       }`}
                                     >
                                       <LogIn className="w-3.5 h-3.5" />
                                       <span>{badge.tone === 'warn' ? '重新验证' : '登录授权'}</span>
                                     </button>
                                   ) : (
-                                    <span className="min-w-[92px] text-right text-[11.5px] text-[#9499A0]">
+                                    <span className="px-2 text-[11.5px] text-[#9499A0]">
                                       管理员维护
                                     </span>
                                   )
@@ -1124,7 +1111,7 @@ export function PlatformAuthCenterPage({
                                       disabled={Boolean(pendingAction)}
                                       onClick={() => void handleAddNewAccount(card)}
                                       title="保留当前账户，继续登录另一个新账户"
-                                      className="h-8 min-w-[92px] px-3 rounded-lg border border-slate-200/90 bg-white hover:border-[#00AEEC]/70 hover:text-[#0086C4] hover:bg-sky-50/45 text-[#4E5969] text-[12px] font-medium inline-flex items-center justify-center gap-1 transition cursor-pointer disabled:opacity-50 whitespace-nowrap shadow-[0_1px_2px_rgba(15,23,42,0.025)]"
+                                      className="h-8 px-2.5 rounded-lg border border-slate-200/90 bg-white hover:border-[#00AEEC]/70 hover:text-[#0086C4] hover:bg-sky-50/45 text-[#4E5969] text-[12px] font-medium inline-flex items-center justify-center gap-1 transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
                                     >
                                       <Plus className="w-3.5 h-3.5" />
                                       <span>添加账户</span>
@@ -1134,10 +1121,10 @@ export function PlatformAuthCenterPage({
                               </div>
                             </div>
 
-                            {/* 已登录多账户驻留与一键切换子区（仅当该平台已登录至少 1 个账户时优雅展开） */}
+                            {/* 已登录多账户驻留与一键切换子区 */}
                             {accounts.length > 0 && (
                               <div
-                                className="mt-2.5 sm:ml-12 rounded-lg bg-slate-50/75 border border-slate-200/70 divide-y divide-slate-200/55 overflow-hidden"
+                                className="mt-3 rounded-lg bg-slate-50/85 border border-slate-200/75 divide-y divide-slate-200/60 overflow-hidden"
                                 role="list"
                                 aria-label={`${entry.displayName}已登录账户列表`}
                               >
@@ -1149,10 +1136,10 @@ export function PlatformAuthCenterPage({
                                     <div
                                       key={slot.slotId}
                                       role="listitem"
-                                      className={`px-3.5 py-2 transition-colors ${
+                                      className={`px-3 py-2 transition-colors ${
                                         slot.isActive
-                                          ? 'bg-sky-50/45'
-                                          : 'bg-transparent hover:bg-white/80'
+                                          ? 'bg-sky-50/50'
+                                          : 'bg-transparent hover:bg-white/85'
                                       }`}
                                     >
                                       {isEditingAlias ? (
@@ -1190,8 +1177,8 @@ export function PlatformAuthCenterPage({
                                           </button>
                                         </div>
                                       ) : (
-                                        <div className="flex items-center justify-between gap-3">
-                                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                        <div className="flex items-center justify-between gap-2.5">
+                                          <div className="flex items-center gap-2 min-w-0 flex-1">
                                             <span
                                               className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                                                 slot.isActive
@@ -1227,7 +1214,7 @@ export function PlatformAuthCenterPage({
                                               </span>
                                               {slot.subtitle && (
                                                 <span
-                                                  className="text-[11.5px] text-[#86909C] truncate max-w-[360px]"
+                                                  className="text-[11.5px] text-[#86909C] truncate max-w-[260px]"
                                                   title={slot.subtitle}
                                                 >
                                                   · {slot.subtitle}
@@ -1310,7 +1297,7 @@ export function PlatformAuthCenterPage({
                                 })}
 
                                 {card.pendingNewAccount && card.canManage && (
-                                  <div className="px-3.5 py-2 bg-sky-50/55 flex items-center justify-between gap-2">
+                                  <div className="px-3 py-2 bg-sky-50/55 flex items-center justify-between gap-2">
                                     <span className="text-[12px] text-[#0086C4]">
                                       等待登录新账户（已有账户已保留）
                                     </span>
@@ -1329,7 +1316,7 @@ export function PlatformAuthCenterPage({
 
                             {/* 子通道告警提示 */}
                             {warnProbes.length > 0 && accounts.length > 0 && (
-                              <div className="mt-2 sm:ml-12 rounded-lg bg-amber-50/85 border border-amber-200/70 px-3 py-1.5 text-[11.5px] text-amber-800 flex items-center justify-between gap-2">
+                              <div className="mt-2.5 rounded-lg bg-amber-50/85 border border-amber-200/70 px-3 py-1.5 text-[11.5px] text-amber-800 flex items-center justify-between gap-2">
                                 <span className="truncate">
                                   {warnProbes.map(p => `${p.label}${p.statusText}`).join(' · ')}
                                 </span>
@@ -1350,7 +1337,7 @@ export function PlatformAuthCenterPage({
                             {card.errorText && (
                               <div
                                 role="alert"
-                                className="mt-2 sm:ml-12 rounded-lg bg-rose-50/90 border border-rose-200/70 px-3 py-1.5 text-[11.5px] text-rose-700 flex items-center justify-between gap-2"
+                                className="mt-2.5 rounded-lg bg-rose-50/90 border border-rose-200/70 px-3 py-1.5 text-[11.5px] text-rose-700 flex items-center justify-between gap-2"
                               >
                                 <span>{card.errorText}</span>
                                 <button
@@ -1369,11 +1356,45 @@ export function PlatformAuthCenterPage({
                                 </button>
                               </div>
                             )}
+
+                            {/* 卡片底部结构化能力与关联业务信息栏（单行基线严格对齐，消除旧版空洞灰色「暂未登录」底框） */}
+                            <div className="mt-3.5 pt-2.5 border-t border-slate-100 flex items-center justify-between gap-3 text-[11.5px]">
+                              <div
+                                className="flex items-center gap-1 min-w-0 flex-1 text-[#61666D]"
+                                title={`关联业务模块：${entry.usedByModules.join(' / ')}`}
+                              >
+                                <span className="text-[#9499A0] shrink-0">关联模块：</span>
+                                <span className="font-medium text-[#4E5969] truncate">
+                                  {entry.usedByModules.join(' / ')}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2.5 shrink-0 text-[#86909C]">
+                                {card.probes.map(probe => (
+                                  <span
+                                    key={probe.id}
+                                    className="inline-flex items-center gap-1 whitespace-nowrap"
+                                    title={`${probe.label}：${probe.statusText}`}
+                                  >
+                                    <span
+                                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                        probe.tone === 'ready'
+                                          ? 'bg-emerald-500'
+                                          : probe.tone === 'warn'
+                                            ? 'bg-amber-500'
+                                            : 'bg-slate-300'
+                                      }`}
+                                      aria-hidden="true"
+                                    />
+                                    <span>{probe.label}</span>
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
                           </article>
                         );
                       })}
                     </div>
-                  </div>
+                  </section>
                 ))}
               </div>
             )}

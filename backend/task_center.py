@@ -438,7 +438,12 @@ def directory(request, record_id=None):
     from download_records import get_record
     user = require_account(request)
     if record_id is None:
-        return configured_output_root()
+        root = configured_output_root()
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        return root
     if record_id.startswith('payroll_'):
         match = re.fullmatch(r'payroll_([a-f0-9]{32})', record_id)
         if not match:
@@ -469,14 +474,33 @@ def directory(request, record_id=None):
         return approval_delivery(approvals(),scope(request),record_id.split(':',1)[1]).parent
     try:
         record = get_record(manager, owner, record_id)
-        run_id = record_id if record_id != record['id'] and record_id in record['member_ids'] else record['action_run_id'] or record['id']
-        run_owner = manager.run_owner(run_id) if owner is None else owner
-        published=manager.deliveries.directory(record['id'])
-        if published is not None and record['status'] not in ENDED:
-            return published
-        return manager.publish_delivery(owner,record['id'])
     except Exception:
         raise HTTPException(404, '任务目录不存在或不可访问') from None
+    run_id = record_id if record_id != record['id'] and record_id in record['member_ids'] else record['action_run_id'] or record['id']
+    run_owner = manager.run_owner(run_id) if owner is None else owner
+    published = manager.deliveries.directory(record['id'])
+    if published is not None and published.is_dir() and record['status'] not in ENDED:
+        return published
+    try:
+        target = manager.publish_delivery(owner, record['id'])
+        if target is not None:
+            return target
+    except Exception:
+        pass
+    if published is not None and published.is_dir():
+        return published
+    try:
+        run_dir = manager._run_directory(run_owner, run_id)
+        if run_dir is not None and run_dir.is_dir():
+            return run_dir
+    except Exception:
+        pass
+    root = configured_output_root()
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    return root
 
 
 @router.get('/directory')
@@ -501,7 +525,7 @@ def open_directory(payload: dict, request: Request):
     if os.name != 'nt':
         raise HTTPException(400, '当前主机不支持打开 Windows 目录，请复制路径')
     os.startfile(str(path))
-    return {'opened': True}
+    return {'opened': True, 'path': str(path)}
 
 
 @router.post('/bundle')

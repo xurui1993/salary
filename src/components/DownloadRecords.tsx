@@ -174,6 +174,8 @@ export function DownloadRecords({
     exists: boolean;
     can_open: boolean;
     record_id?: string;
+    auto_opened?: boolean;
+    fallback_root?: boolean;
   } | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [syncMs, setSyncMs] = useState(() => Date.now());
@@ -529,17 +531,83 @@ export function DownloadRecords({
     pushToast('请返回对应采集平台重新发起该任务。', 'info');
   };
 
-  const showDirectory = (r?: Task) =>
-    act(async () => {
-      const response = await request(`${API}/directory${r ? `?record_id=${encodeURIComponent(r.id)}` : ''}`);
-      const info = await response.json();
-      if (info.exists && info.can_open) {
-        await request(`${API}/directory/open`, { record_id: r?.id });
-        pushToast('已打开本地结果目录');
+  const copyPathText = async (text: string) => {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      try {
+        await navigator.clipboard.writeText(text);
         return;
+      } catch {
+        // fallback below for non-secure HTTP LAN contexts
       }
-      setDirectory({ ...info, record_id: r?.id });
-    });
+    }
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+  };
+
+  const showDirectory = async (r?: Task) => {
+    setError('');
+    try {
+      let info: { path: string; exists: boolean; can_open: boolean } | null = null;
+      let fallbackRoot = false;
+      let targetRecordId = r?.id;
+
+      try {
+        const response = await request(
+          `${API}/directory${r ? `?record_id=${encodeURIComponent(r.id)}` : ''}`,
+        );
+        info = await response.json();
+      } catch (err) {
+        if (r) {
+          const rootResp = await request(`${API}/directory`);
+          info = await rootResp.json();
+          fallbackRoot = true;
+          targetRecordId = undefined;
+        } else {
+          throw err;
+        }
+      }
+
+      if (!info) return;
+
+      let autoOpened = false;
+      if (info.exists && info.can_open) {
+        try {
+          await request(`${API}/directory/open`, { record_id: targetRecordId });
+          autoOpened = true;
+        } catch {
+          autoOpened = false;
+        }
+      }
+
+      setDirectory({
+        ...info,
+        record_id: targetRecordId,
+        auto_opened: autoOpened,
+        fallback_root: fallbackRoot,
+      });
+
+      if (autoOpened) {
+        pushToast(
+          fallbackRoot
+            ? '该任务尚无独立成品目录，已为您打开系统生成根目录'
+            : '已为您打开本地结果目录',
+        );
+      } else if (fallbackRoot) {
+        pushToast('该任务尚无独立成品目录，已为您定位至系统生成根目录', 'info');
+      }
+    } catch (e) {
+      const msg = downloadErrorMessage(e);
+      setError(msg);
+      pushToast(msg, 'error');
+    }
+  };
 
   const changeVisibility = (rows: Task[]) =>
     act(async () => {
@@ -1415,40 +1483,68 @@ export function DownloadRecords({
         {directory && (
           <WorkbenchDrawer title="生成文件目录" onClose={() => setDirectory(null)}>
             <p className="wb-muted">这是运行本系统的电脑上的目录，浏览器下载位置由浏览器设置决定。</p>
+            {directory.auto_opened && (
+              <p
+                className="wb-notice"
+                style={{
+                  background: '#ecfdf5',
+                  borderColor: '#a7f3d0',
+                  color: '#065f46',
+                  marginTop: '10px',
+                }}
+              >
+                已唤起系统资源管理器打开该目录；若文件夹窗口被浏览器遮挡，请查看底部任务栏，或直接复制下方路径。
+              </p>
+            )}
+            {directory.fallback_root && (
+              <p className="wb-notice" style={{ marginTop: '10px' }}>
+                当前任务尚未生成独立结果子目录，已为您定位到系统生成根目录。
+              </p>
+            )}
             <label className="tc-path">
               {directory.record_id ? '本次任务目录' : '生成根目录'}
               <textarea readOnly value={directory.path} onFocus={e => e.target.select()} />
             </label>
             {!directory.exists && <p className="wb-notice">目录尚未生成或已被移动。</p>}
             <div className="tc-detail-actions">
+              {directory.can_open && (
+                <button
+                  type="button"
+                  className="wbx-btn wbx-btn--primary wbx-btn--sm"
+                  disabled={busy || !directory.exists}
+                  onClick={() =>
+                    void act(async () => {
+                      await request(`${API}/directory/open`, { record_id: directory.record_id });
+                      pushToast('已打开资源管理器。');
+                    })
+                  }
+                >
+                  <FolderOpen size={14} />
+                  <span>{directory.auto_opened ? '再次打开文件夹' : '打开文件夹'}</span>
+                </button>
+              )}
               <button
                 type="button"
-                className="wbx-btn wbx-btn--primary wbx-btn--sm"
-                disabled={busy || !directory.exists || !directory.can_open}
+                className={`wbx-btn wbx-btn--sm ${!directory.can_open ? 'wbx-btn--primary' : ''}`}
                 onClick={() =>
-                  void act(async () => {
-                    await request(`${API}/directory/open`, { record_id: directory.record_id });
-                    pushToast('已打开资源管理器。');
-                  })
-                }
-              >
-                <FolderOpen size={14} />
-                <span>打开文件夹</span>
-              </button>
-              <button
-                type="button"
-                className="wbx-btn wbx-btn--sm"
-                onClick={() =>
-                  void act(async () => {
-                    await navigator.clipboard.writeText(directory.path);
-                    pushToast('目录路径已复制到剪贴板。');
-                  })
+                  void (async () => {
+                    try {
+                      await copyPathText(directory.path);
+                      pushToast('目录路径已复制到剪贴板。');
+                    } catch (e) {
+                      pushToast(downloadErrorMessage(e), 'error');
+                    }
+                  })()
                 }
               >
                 复制路径
               </button>
             </div>
-            {!directory.can_open && <p className="wb-muted">远程访问请下载文件，或使用管理员提供的共享路径。</p>}
+            {!directory.can_open && (
+              <p className="wb-muted">
+                当前运行环境不支持直接唤起本地资源管理器窗口，请复制上方路径或在列表中直接下载文件。
+              </p>
+            )}
             <details>
               <summary>新任务目录结构</summary>
               <pre className="tc-tree">
