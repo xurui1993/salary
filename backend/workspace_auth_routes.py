@@ -1,6 +1,7 @@
 """HTTP routes for login, self-registration, admin approval, permissions, and workspace switching."""
 
 import hmac
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -15,6 +16,7 @@ from download_accounts import (
     PERMISSION_LABELS,
     ROLE_TEMPLATES,
     SESSION_SECONDS,
+    _host_interface_addresses,
     _loopback,
     audit_event,
     bootstrap_allowed,
@@ -108,24 +110,34 @@ async def _read_json(request: Request) -> dict:
 
 
 def _self_registration_enabled() -> bool:
-    raw = os.environ.get("ALLOW_SELF_REGISTRATION", "1").strip().lower()
-    return raw not in ("0", "false", "off", "no")
+    raw = os.environ.get("ALLOW_SELF_REGISTRATION", "0").strip().lower()
+    return raw in ("1", "true", "on", "yes")
 
 
 def _session_payload(request: Request, user: dict | None) -> dict:
     store = get_account_store()
-    initialized = store.initialized()
     host_client = is_host_machine_request(request)
     local_loopback = bootstrap_allowed(request)
-    is_admin = bool(user and user.get("role") == "admin")
+    primary_host = store.get_primary_host_admin()
+    host_admin_id = primary_host["id"] if primary_host else None
+    authenticated = user is not None and user.get("id") != "shared"
+    is_admin = bool(authenticated and user and user.get("role") == "admin")
+    host_auto_login = bool(
+        authenticated and host_client and user and host_admin_id and user.get("id") == host_admin_id
+    )
+    can_switch_to_host = bool(
+        authenticated and host_client and user and (not host_admin_id or user.get("id") != host_admin_id)
+    )
     return {
-        "initialized": initialized,
-        "authenticated": user is not None and user.get("id") != "shared",
+        "initialized": True,
+        "authenticated": authenticated,
         "host_machine": host_client,
         "local_loopback": local_loopback,
-        "bootstrap_allowed": (not initialized) and host_client,
+        "host_auto_login": host_auto_login,
+        "can_switch_to_host": can_switch_to_host,
+        "bootstrap_allowed": False,
         "self_registration_enabled": _self_registration_enabled(),
-        "user": public_user(user) if (user and user.get("id") != "shared") else None,
+        "user": public_user(user) if (authenticated and user) else None,
         "role_templates": ROLE_TEMPLATES,
         "permission_keys": list(PERMISSION_KEYS),
         "permission_labels": PERMISSION_LABELS,
@@ -135,11 +147,15 @@ def _session_payload(request: Request, user: dict | None) -> dict:
 
 
 @auth_router.get("/session")
-def get_session(request: Request):
+def get_session(request: Request, response: Response):
     store = get_account_store()
     token = request.cookies.get(COOKIE_NAME, "")
     header_inspect = request.headers.get("x-inspect-workspace", "").strip() or None
     user = store.session_user(token, header_inspect=header_inspect) if token else None
+    if user is None and is_host_machine_request(request):
+        user = store.ensure_host_admin(header_inspect=header_inspect)
+        new_token = store.new_session(user["id"])
+        _set_session_cookie(response, request, new_token)
     return _session_payload(request, user)
 
 
@@ -152,22 +168,33 @@ def internal_resolve(request: Request):
     if not expected or not _loopback(peer) or not provided or not hmac.compare_digest(provided, expected):
         raise HTTPException(403, "内部鉴权通道拒绝访问")
     store = get_account_store()
-    initialized = store.initialized()
-    enforce = initialized or os.environ.get("REQUIRE_AUTH_SESSION") == "1"
     token = request.cookies.get(COOKIE_NAME, "")
     header_inspect = request.headers.get("x-inspect-workspace", "").strip() or None
     user = store.session_user(token, header_inspect=header_inspect) if token else None
+    claimed_addr = (request.headers.get("x-download-client-address") or "").strip()
+    host_client = False
+    if claimed_addr:
+        try:
+            parsed = ipaddress.ip_address(claimed_addr)
+            if parsed.version == 6 and parsed.ipv4_mapped:
+                parsed = parsed.ipv4_mapped
+            normalized = str(parsed)
+            host_client = _loopback(normalized) or normalized in _host_interface_addresses()
+        except ValueError:
+            host_client = False
+    if user is None and host_client:
+        user = store.ensure_host_admin(header_inspect=header_inspect)
     if user is None:
         return {
             "authenticated": False,
-            "initialized": initialized,
-            "enforce": enforce,
+            "initialized": True,
+            "enforce": True,
             "effective_workspace": PRIMARY_WORKSPACE,
             "user": None,
         }
     return {
         "authenticated": True,
-        "initialized": initialized,
+        "initialized": True,
         "enforce": True,
         "effective_workspace": user["effective_workspace"],
         "user": public_user(user),
@@ -176,24 +203,24 @@ def internal_resolve(request: Request):
 
 @auth_router.post("/bootstrap")
 async def bootstrap_admin(request: Request, response: Response):
-    payload = await _read_json(request)
-    store = get_account_store()
-    if store.initialized():
-        raise HTTPException(409, "主机管理员已初始化，请直接登录")
+    await _read_json(request)
+    raise HTTPException(410, "主机端已启用自动免登，无需手动创建主机管理员")
+
+
+@auth_router.post("/switch-host")
+async def switch_to_host_admin(request: Request, response: Response):
+    validate_write_request(request)
     if not is_host_machine_request(request):
-        raise HTTPException(403, "首次初始化主机管理员仅允许在运行服务的主机电脑上操作")
-    user = store.create_user(
-        payload.get("username", ""),
-        payload.get("password", ""),
-        role="admin",
-        bootstrap=True,
-        display_name=payload.get("display_name", ""),
-        note="主机超级管理员",
-    )
-    token = store.new_session(user["id"])
-    _set_session_cookie(response, request, token)
-    audit_event(user, "account.bootstrap", detail="admin")
-    return _session_payload(request, user)
+        raise HTTPException(403, "仅运行服务的主机电脑可切回主机管理员身份")
+    store = get_account_store()
+    token = request.cookies.get(COOKIE_NAME, "")
+    if token:
+        store.logout(token)
+    host_user = store.ensure_host_admin()
+    new_token = store.new_session(host_user["id"])
+    _set_session_cookie(response, request, new_token)
+    audit_event(host_user, "account.switch_host", detail="admin")
+    return _session_payload(request, host_user)
 
 
 @auth_router.post("/register")
@@ -202,6 +229,7 @@ async def register(request: Request):
     if not _self_registration_enabled():
         raise HTTPException(403, "系统已关闭公开注册，请联系系统管理员在后台创建账号")
     store = get_account_store()
+    store.ensure_host_admin()
     user = store.register_user(
         payload.get("username", ""),
         payload.get("password", ""),
@@ -222,8 +250,6 @@ async def register(request: Request):
 async def login(request: Request, response: Response):
     payload = await _read_json(request)
     store = get_account_store()
-    if not store.initialized():
-        raise HTTPException(409, "系统尚未初始化主机管理员，请先在主机完成管理员创建")
     addr = client_address(request)
     user = store.login(payload.get("username", ""), payload.get("password", ""), addr)
     token = store.new_session(user["id"])
@@ -263,14 +289,17 @@ async def change_own_password(request: Request):
 
 
 @auth_router.post("/inspect")
-async def switch_inspect_workspace(request: Request):
+async def switch_inspect_workspace(request: Request, response: Response):
     payload = await _read_json(request)
     admin = require_admin(request)
+    store = get_account_store()
     token = request.cookies.get(COOKIE_NAME, "")
+    if not token and is_host_machine_request(request):
+        token = store.new_session(admin["id"])
+        _set_session_cookie(response, request, token)
     target_wid = payload.get("workspace_id", "")
     if target_wid is not None and not isinstance(target_wid, str):
         raise HTTPException(400, "工作空间参数格式无效")
-    store = get_account_store()
     updated_user = store.set_session_inspect_workspace(token, target_wid)
     audit_event(admin, "account.inspect", run_id=updated_user["effective_workspace"], detail="inspect")
     return _session_payload(request, updated_user)

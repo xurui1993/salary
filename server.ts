@@ -1520,11 +1520,14 @@ async function startServer() {
 
   io.on("connection", (socket) => {
     socket.on("join", async (data) => {
+      const socketPeer =
+        socket.conn?.remoteAddress || socket.handshake.address || undefined;
       const resolved = await resolveCookieSession(
         socket.handshake.headers.cookie,
         undefined,
         backendUrl,
         proxySecret,
+        socketPeer,
       );
       if (resolved?.enforce && !resolved.authenticated) {
         socket.disconnect(true);

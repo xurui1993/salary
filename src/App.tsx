@@ -92,8 +92,10 @@ import { HeaderAccountBar, WorkspaceInspectBanner } from './components/HeaderAcc
 import {
   fetchWorkspaceSession,
   hasModulePermission,
+  loginWorkspaceAccount,
   logoutWorkspaceAccount,
   switchInspectWorkspace,
+  switchToHostAdmin,
   syncStoredWorkspaceId,
   type WorkspaceSessionState,
 } from './lib/workspaceAuth';
@@ -153,11 +155,13 @@ export default function App() {
       <AuthPortal
         session={
           session || {
-            initialized: false,
+            initialized: true,
             authenticated: false,
-            host_machine: true,
-            local_loopback: true,
-            bootstrap_allowed: true,
+            host_machine: false,
+            local_loopback: false,
+            host_auto_login: false,
+            can_switch_to_host: false,
+            bootstrap_allowed: false,
             user: null,
             role_templates: {},
             permission_keys: [],
@@ -174,7 +178,7 @@ export default function App() {
 
   return (
     <AuthenticatedWorkbench
-      key={session.user.effective_workspace}
+      key={`${session.user.id}:${session.user.effective_workspace}`}
       session={session}
       onSessionUpdate={setSession}
       onRefreshSession={refreshSession}
@@ -1650,6 +1654,9 @@ function AuthenticatedWorkbench({
                   <HeaderAccountBar
                     user={currentUser}
                     workspaces={session.workspaces}
+                    hostMachine={session.host_machine}
+                    hostAutoLogin={session.host_auto_login}
+                    canSwitchToHost={session.can_switch_to_host}
                     onSwitchWorkspace={async targetWid => {
                       try {
                         const updated = await switchInspectWorkspace(targetWid);
@@ -1663,6 +1670,19 @@ function AuthenticatedWorkbench({
                       } catch (err) {
                         showToast(err instanceof Error ? err.message : '切换空间失败', 'error');
                       }
+                    }}
+                    onSwitchAccount={async payload => {
+                      const updated = await loginWorkspaceAccount(payload);
+                      onSessionUpdate(updated);
+                      showToast(
+                        `已切换至账号：${updated.user?.display_name || payload.username}`,
+                        'success',
+                      );
+                    }}
+                    onSwitchToHost={async () => {
+                      const updated = await switchToHostAdmin();
+                      onSessionUpdate(updated);
+                      showToast('已一键切回主机管理员身份', 'success');
                     }}
                     onLogout={async () => {
                       await logoutWorkspaceAccount();

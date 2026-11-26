@@ -195,6 +195,7 @@ export interface AuditActionMeta {
 
 const AUDIT_ACTION_MAP: Record<string, AuditActionMeta> = {
   'account.bootstrap': { label: '初始化主机管理员', category: 'auth' },
+  'account.switch_host': { label: '一键切回主机管理员', category: 'auth' },
   'account.login': { label: '成员登录工作空间', category: 'auth' },
   'account.logout': { label: '成员退出登录', category: 'auth' },
   'account.register': { label: '提交注册申请', category: 'approval' },

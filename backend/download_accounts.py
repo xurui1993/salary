@@ -34,6 +34,8 @@ from workspace_context import (
 COOKIE_NAME = "fengshen_download_session"
 SESSION_SECONDS = 24 * 60 * 60
 PASSWORD_ITERATIONS = 600_000
+HOST_LOCAL_ONLY_HASH = "!host-local-only!"
+HOST_BUILTIN_USERNAME = "host_admin"
 LOGIN_WINDOW = 15 * 60
 LOGIN_LIMIT = 5
 REGISTER_WINDOW = 15 * 60
@@ -257,7 +259,13 @@ def _password_hash(password):
     return f"pbkdf2_sha256${PASSWORD_ITERATIONS}${salt.hex()}${value.hex()}"
 
 
+def has_usable_password(encoded) -> bool:
+    return isinstance(encoded, str) and encoded.startswith("pbkdf2_sha256$")
+
+
 def _password_matches(password, encoded):
+    if not has_usable_password(encoded):
+        return False
     try:
         algorithm, iterations, salt, expected = encoded.split("$")
         count = int(iterations)
@@ -278,6 +286,7 @@ def public_user(user):
         "role_template": user.get("role_template", "admin" if user["role"] == "admin" else "custom"),
         "status": user.get("status", "active" if user.get("enabled", True) else "disabled"),
         "enabled": bool(user.get("enabled", True)),
+        "has_password": bool(user.get("has_password", True)),
         "workspace_id": user.get("workspace_id", PRIMARY_WORKSPACE),
         "effective_workspace": user.get("effective_workspace", user.get("workspace_id", PRIMARY_WORKSPACE)),
         "inspecting": bool(user.get("inspecting", False)),
@@ -308,6 +317,7 @@ def _row_to_user(row) -> dict:
         PRIMARY_WORKSPACE if role == "admin" else f"ws_{row['id'][:12]}"
     )
     display_name = (row["display_name"] if "display_name" in keys and row["display_name"] else row["username"])
+    encoded_pw = row["password_hash"] if "password_hash" in keys else ""
     return {
         "id": row["id"],
         "username": row["username"],
@@ -316,6 +326,7 @@ def _row_to_user(row) -> dict:
         "role_template": "admin" if role == "admin" else role_template,
         "status": status,
         "enabled": enabled and status == "active",
+        "has_password": has_usable_password(encoded_pw),
         "workspace_id": wid,
         "effective_workspace": wid,
         "owner": wid,
@@ -403,6 +414,99 @@ class AccountStore:
             return connection.execute(
                 "SELECT 1 FROM accounts WHERE role = 'admin' AND enabled = 1 AND status = 'active' LIMIT 1"
             ).fetchone() is not None
+
+    def _apply_admin_inspect(self, connection, user: dict, candidate_workspace: str | None) -> dict:
+        if user.get("role") != "admin":
+            return user
+        candidate = (candidate_workspace or "").strip()
+        if candidate and candidate != user["workspace_id"]:
+            try:
+                valid_workspace_id(candidate)
+                target_row = connection.execute(
+                    "SELECT id, username, display_name, workspace_id, role FROM accounts WHERE workspace_id = ?",
+                    (candidate,),
+                ).fetchone()
+            except ValueError:
+                target_row = None
+            if target_row is not None:
+                user["effective_workspace"] = candidate
+                user["owner"] = candidate
+                user["inspecting"] = True
+                user["inspect_target"] = {
+                    "id": target_row["id"],
+                    "username": target_row["username"],
+                    "display_name": target_row["display_name"] or target_row["username"],
+                    "workspace_id": target_row["workspace_id"],
+                }
+        return user
+
+    def get_primary_host_admin(self) -> dict | None:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM accounts WHERE role = 'admin' AND enabled = 1 AND status = 'active' "
+                "ORDER BY CASE WHEN workspace_id = ? THEN 0 ELSE 1 END, created_at ASC, id ASC LIMIT 1",
+                (PRIMARY_WORKSPACE,),
+            ).fetchone()
+            return _row_to_user(row) if row is not None else None
+
+    def ensure_host_admin(self, *, header_inspect: str | None = None) -> dict:
+        """Return the primary active host admin, creating the built-in local super-admin on first run."""
+        now = time.time()
+        perms_json = json.dumps(normalize_permissions("admin", "admin"), ensure_ascii=False)
+        with self._lock, self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM accounts WHERE role = 'admin' AND enabled = 1 AND status = 'active' "
+                "ORDER BY CASE WHEN workspace_id = ? THEN 0 ELSE 1 END, created_at ASC, id ASC LIMIT 1",
+                (PRIMARY_WORKSPACE,),
+            ).fetchone()
+            if row is None:
+                existing_builtin = connection.execute(
+                    "SELECT * FROM accounts WHERE username_key = ?",
+                    (HOST_BUILTIN_USERNAME,),
+                ).fetchone()
+                if existing_builtin is not None:
+                    wid = existing_builtin["workspace_id"] or PRIMARY_WORKSPACE
+                    connection.execute(
+                        "UPDATE accounts SET role = 'admin', role_template = 'admin', permissions_json = ?, "
+                        "status = 'active', enabled = 1, workspace_id = ?, updated_at = ? WHERE id = ?",
+                        (perms_json, wid, now, existing_builtin["id"]),
+                    )
+                    row = connection.execute(
+                        "SELECT * FROM accounts WHERE id = ?",
+                        (existing_builtin["id"],),
+                    ).fetchone()
+                else:
+                    primary_taken = connection.execute(
+                        "SELECT 1 FROM accounts WHERE workspace_id = ? LIMIT 1",
+                        (PRIMARY_WORKSPACE,),
+                    ).fetchone() is not None
+                    user_id = uuid.uuid4().hex
+                    wid = PRIMARY_WORKSPACE if not primary_taken else f"ws_{user_id[:12]}"
+                    connection.execute(
+                        "INSERT INTO accounts (id, username, username_key, password_hash, role, enabled, created_at, "
+                        "display_name, status, workspace_id, role_template, permissions_json, note, updated_at) "
+                        "VALUES (?, ?, ?, ?, 'admin', 1, ?, ?, 'active', ?, 'admin', ?, ?, ?)",
+                        (
+                            user_id,
+                            HOST_BUILTIN_USERNAME,
+                            HOST_BUILTIN_USERNAME,
+                            HOST_LOCAL_ONLY_HASH,
+                            now,
+                            "主机管理员",
+                            wid,
+                            perms_json,
+                            "本机免登内置超级管理员",
+                            now,
+                        ),
+                    )
+                    row = connection.execute(
+                        "SELECT * FROM accounts WHERE id = ?",
+                        (user_id,),
+                    ).fetchone()
+            user = self._apply_admin_inspect(connection, _row_to_user(row), header_inspect)
+        initialize_workspace_storage(user["workspace_id"])
+        return user
 
     def create_user(
         self,
@@ -701,7 +805,11 @@ class AccountStore:
         with self._lock, self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute("SELECT * FROM accounts WHERE id = ?", (user_id,)).fetchone()
-            if row is None or not _password_matches(current_password, row["password_hash"]):
+            if row is None:
+                raise HTTPException(401, "当前原密码不正确")
+            if not has_usable_password(row["password_hash"]):
+                raise HTTPException(400, "当前本机免登管理员未设置远程密码，如需启用密码请在权限管理中设置")
+            if not _password_matches(current_password, row["password_hash"]):
                 raise HTTPException(401, "当前原密码不正确")
             connection.execute(
                 "UPDATE accounts SET password_hash = ?, updated_at = ? WHERE id = ?",
@@ -800,28 +908,7 @@ class AccountStore:
             if not row:
                 return None
             user = _row_to_user(row)
-            if user["role"] == "admin":
-                candidate = (header_inspect or row["inspect_workspace"] or "").strip()
-                if candidate and candidate != user["workspace_id"]:
-                    try:
-                        valid_workspace_id(candidate)
-                        target_row = connection.execute(
-                            "SELECT id, username, display_name, workspace_id, role FROM accounts WHERE workspace_id = ?",
-                            (candidate,),
-                        ).fetchone()
-                    except ValueError:
-                        target_row = None
-                    if target_row is not None:
-                        user["effective_workspace"] = candidate
-                        user["owner"] = candidate
-                        user["inspecting"] = True
-                        user["inspect_target"] = {
-                            "id": target_row["id"],
-                            "username": target_row["username"],
-                            "display_name": target_row["display_name"] or target_row["username"],
-                            "workspace_id": target_row["workspace_id"],
-                        }
-            return user
+            return self._apply_admin_inspect(connection, user, header_inspect or row["inspect_workspace"])
 
     def logout(self, value):
         digest = hashlib.sha256((value or "").encode()).hexdigest()
@@ -951,17 +1038,17 @@ def _extract_inspect_header(request) -> str | None:
 
 def optional_account(request):
     _request_origin(request)
-    client_address(request)
+    addr = client_address(request)
     store = get_account_store()
-    enforce = store.initialized() or os.environ.get("REQUIRE_AUTH_SESSION") == "1"
+    header_inspect = _extract_inspect_header(request)
     token = request.cookies.get(COOKIE_NAME, "")
     if token:
-        user = store.session_user(token, header_inspect=_extract_inspect_header(request))
+        user = store.session_user(token, header_inspect=header_inspect)
         if user:
             return user
-    if enforce:
-        return None
-    return _shared_fallback_user()
+    if _loopback(addr) or addr in _host_interface_addresses():
+        return store.ensure_host_admin(header_inspect=header_inspect)
+    return None
 
 
 def require_account(request):
@@ -969,9 +1056,6 @@ def require_account(request):
         validate_write_request(request)
     user = optional_account(request)
     if user is None:
-        store = get_account_store()
-        if not store.initialized():
-            raise HTTPException(401, "系统尚未初始化主机管理员账号，请先完成初始化")
         raise HTTPException(401, "尚未登录或登录状态已过期，请先登录工作空间账号")
     return user
 
@@ -1029,20 +1113,14 @@ def require_xiaoxiang_manage(request):
 
 @contextmanager
 def request_workspace_scope(request):
-    """Bind ContextVars if a valid user exists for this request."""
+    """Bind ContextVars if a valid user exists for this request (including host auto-login)."""
     try:
         token = request.cookies.get(COOKIE_NAME, "")
         store = get_account_store()
-        user = store.session_user(token, header_inspect=_extract_inspect_header(request)) if token else None
-        if user is None and not store.initialized() and os.environ.get("REQUIRE_AUTH_SESSION") != "1":
-            wid = request.headers.get("x-workspace-id", "").strip()
-            try:
-                wid = valid_workspace_id(unquote(wid)) if wid else PRIMARY_WORKSPACE
-            except Exception:
-                wid = PRIMARY_WORKSPACE
-            with bind_workspace(wid, _shared_fallback_user()):
-                yield
-            return
+        header_inspect = _extract_inspect_header(request)
+        user = store.session_user(token, header_inspect=header_inspect) if token else None
+        if user is None and is_host_machine_request(request):
+            user = store.ensure_host_admin(header_inspect=header_inspect)
         if user is not None:
             with bind_workspace(user["effective_workspace"], user):
                 yield

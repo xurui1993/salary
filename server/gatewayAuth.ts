@@ -33,8 +33,10 @@ export async function resolveCookieSession(
   inspectHeader: string | undefined,
   backendUrl: string,
   proxySecret: string,
+  clientAddress?: string,
 ): Promise<ResolvedGatewaySession | null> {
-  const key = `${cookieHeader || ""}::${inspectHeader || ""}`;
+  const normalizedAddr = (clientAddress || "").trim();
+  const key = `${normalizedAddr || "unknown"}::${cookieHeader || ""}::${inspectHeader || ""}`;
   const now = Date.now();
   const hit = sessionCache.get(key);
   if (hit && now - hit.at < CACHE_TTL_MS) {
@@ -44,6 +46,7 @@ export async function resolveCookieSession(
     const headers: Record<string, string> = {
       "x-download-proxy-secret": proxySecret,
     };
+    if (normalizedAddr) headers["x-download-client-address"] = normalizedAddr;
     if (cookieHeader) headers.cookie = cookieHeader;
     if (inspectHeader) headers["x-inspect-workspace"] = inspectHeader;
     const controller = new AbortController();
@@ -138,6 +141,7 @@ export function createGatewaySessionMiddleware(backendUrl: string, proxySecret: 
       req.header("x-inspect-workspace"),
       backendUrl,
       proxySecret,
+      req.socket?.remoteAddress,
     );
     if (!resolved) {
       res.status(503).json({ success: false, error: "核心认证服务正在启动中，请稍后重试" });

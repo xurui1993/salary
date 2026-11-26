@@ -29,6 +29,7 @@ export interface WorkspaceUser {
   role_template: string;
   status: 'active' | 'pending' | 'disabled' | 'rejected';
   enabled: boolean;
+  has_password?: boolean;
   workspace_id: string;
   effective_workspace: string;
   inspecting: boolean;
@@ -54,6 +55,8 @@ export interface WorkspaceSessionState {
   authenticated: boolean;
   host_machine: boolean;
   local_loopback: boolean;
+  host_auto_login?: boolean;
+  can_switch_to_host?: boolean;
   bootstrap_allowed: boolean;
   self_registration_enabled?: boolean;
   user: WorkspaceUser | null;
@@ -118,12 +121,8 @@ export async function fetchWorkspaceSession(): Promise<WorkspaceSessionState> {
   return state;
 }
 
-export async function bootstrapHostAdmin(payload: {
-  username: string;
-  display_name: string;
-  password: string;
-}): Promise<WorkspaceSessionState> {
-  const state = await authJson<WorkspaceSessionState>('/api/auth/bootstrap', 'POST', payload);
+export async function switchToHostAdmin(): Promise<WorkspaceSessionState> {
+  const state = await authJson<WorkspaceSessionState>('/api/auth/switch-host', 'POST', {});
   if (state.user) syncStoredWorkspaceId(state.user.effective_workspace);
   return state;
 }
