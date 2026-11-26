@@ -60,6 +60,7 @@ test('cross-platform cart preserves datasets across all 4 platforms and computes
   assert.deepEqual(grouped, {
     fengshen: ['delivery_fee'],
     lanorange: ['lanorange_rider_archive'],
+    lanorange_mdr: [],
     payout: ['baize_employees'],
     xiaoxiang: ['rider_daily'],
   });

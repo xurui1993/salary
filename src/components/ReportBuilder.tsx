@@ -7,6 +7,7 @@ import {
   MapPin,
   RefreshCw,
   Search,
+  Settings2,
   X,
 } from 'lucide-react';
 import {
@@ -65,6 +66,7 @@ export interface ReportBuilderProps {
   onRecollect: (value: boolean) => void;
   refreshing: boolean;
   onRefreshCities: () => void;
+  onOpenIssueRules?: () => void;
   singleReportMode?: boolean;
   bindingPlatforms?: Record<string, string>;
   onBindingPlatformsChange?: (next: Record<string, string>) => void;
@@ -692,6 +694,17 @@ export function ReportBuilder(props: ReportBuilderProps) {
                   >
                     {stationDirectory.data?.status === 'loading' ? '站点同步中…' : '刷新站点数'}
                   </button>
+                  {props.onOpenIssueRules && isProblemReport && (
+                    <button
+                      type="button"
+                      className="wb-city-preset-btn"
+                      disabled={locked}
+                      onClick={props.onOpenIssueRules}
+                    >
+                      <Settings2 size={12} />
+                      <span>判定规则</span>
+                    </button>
+                  )}
                 </div>
               </div>
 

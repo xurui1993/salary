@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BadgeDollarSign,
+  Building2,
   Check,
   Compass,
   CornerDownLeft,
@@ -34,6 +35,7 @@ function CommandIcon({ item }: { item: ShellCommandItem }) {
   const { action } = item;
   if (action.type === 'platform') {
     if (action.platform === 'lanorange') return <Layers size={15} />;
+    if (action.platform === 'lanorange_mdr') return <Building2 size={15} />;
     if (action.platform === 'payout') return <UsersRound size={15} />;
     if (action.platform === 'xiaoxiang') return <Radar size={15} />;
     return <Compass size={15} />;

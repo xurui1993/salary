@@ -500,6 +500,7 @@ export const SIDEBAR_NAV_GROUPS: SidebarNavGroupSpec[] = [
     items: [
       { id: 'fengshen', label: '风神数据', iconKey: 'compass' },
       { id: 'lanorange', label: '蓝橙数据', iconKey: 'layers' },
+      { id: 'lanorange_mdr', label: '新蓝橙', subLabel: '新蓝橙数据', iconKey: 'building-2' },
       { id: 'payout', label: '发薪平台', iconKey: 'users-round' },
       { id: 'xiaoxiang', label: '小象灯塔', iconKey: 'radar' },
     ],
@@ -617,7 +618,7 @@ export function getPrimaryHeaderContext(options: {
 export function getHeaderModuleContext(
   workspaceView: 'create' | 'history' | 'approval' | 'price-export' | 'pickup',
   taskKind: 'download' | 'generate' | 'payroll',
-  downloadPlatform: 'fengshen' | 'lanorange' | 'payout' | 'xiaoxiang',
+  downloadPlatform: 'fengshen' | 'lanorange' | 'lanorange_mdr' | 'payout' | 'xiaoxiang',
   historyAll: boolean,
 ): HeaderModuleContext {
   if (workspaceView === 'pickup') {
@@ -658,6 +659,14 @@ export function getHeaderModuleContext(
       title: '薪资核算',
       subtitle: '上传薪资申请表，自动识别范围、齐套资料并执行兼职核算',
       iconKey: 'wallet-cards',
+    };
+  }
+  if (downloadPlatform === 'lanorange_mdr') {
+    return {
+      groupLabel: '数据采集',
+      title: '新蓝橙数据',
+      subtitle: '新蓝橙骑手档案、离职请假、兼全职变更、佣金代领与兼职价格档案采集',
+      iconKey: 'building-2',
     };
   }
   if (downloadPlatform === 'lanorange') {
@@ -701,7 +710,7 @@ export interface StageHeaderMeta {
 
 export function getStageHeaderMeta(
   taskKind: 'download' | 'generate',
-  platform?: 'fengshen' | 'lanorange' | 'payout' | 'xiaoxiang',
+  platform?: 'fengshen' | 'lanorange' | 'lanorange_mdr' | 'payout' | 'xiaoxiang',
   view: 'create' | 'history' = 'create',
 ): StageHeaderMeta {
   if (taskKind === 'generate') {
@@ -715,9 +724,10 @@ export function getStageHeaderMeta(
           : '选择目标表，系统自动关联来源资料。',
     };
   }
-  const titleMap: Record<'fengshen' | 'lanorange' | 'payout' | 'xiaoxiang', string> = {
+  const titleMap: Record<'fengshen' | 'lanorange' | 'lanorange_mdr' | 'payout' | 'xiaoxiang', string> = {
     fengshen: '风神下载',
     lanorange: '蓝橙下载',
+    lanorange_mdr: '新蓝橙下载',
     payout: '发薪平台',
     xiaoxiang: '灯塔下载',
   };
@@ -741,8 +751,8 @@ export type PlatformDotTone = 'ready' | 'warn' | 'busy' | 'idle';
 export type PlatformStatusMap = Record<string, { state?: string; busy?: boolean; offline?: boolean } | undefined>;
 
 export interface PlatformStatusChip {
-  key: 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang' | 'benlai';
-  shortLabel: '风神' | '蓝橙' | '商翼' | '灯塔' | '本来';
+  key: 'fengshen' | 'lanorange' | 'lanorange_mdr' | 'baize' | 'xiaoxiang' | 'benlai';
+  shortLabel: '风神' | '蓝橙' | '新蓝橙' | '商翼' | '灯塔' | '本来';
   tone: PlatformDotTone;
   statusText: string;
 }

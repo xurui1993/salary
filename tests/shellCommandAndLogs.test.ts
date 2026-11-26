@@ -40,7 +40,7 @@ test('getBreadcrumbModel provides interactive sibling switchers for collection, 
   });
   assert.equal(collection.moduleLabel, '数据采集');
   assert.equal(collection.viewLabel, '蓝橙数据');
-  assert.equal(collection.siblings.length, 4);
+  assert.equal(collection.siblings.length, 5);
   assert.equal(collection.siblings.find(s => s.active)?.id, 'lanorange');
 
   const reports = getBreadcrumbModel({

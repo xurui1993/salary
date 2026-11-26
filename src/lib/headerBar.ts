@@ -144,6 +144,7 @@ export function resolveDispatchIslandState(input: DispatchIslandInput): Dispatch
 export const PLATFORM_MATRIX_GLYPHS: Record<string, { glyph: string; name: string }> = {
   fengshen: { glyph: '风', name: '风神' },
   lanorange: { glyph: '蓝', name: '蓝橙' },
+  lanorange_mdr: { glyph: '新', name: '新蓝橙' },
   baize: { glyph: '商', name: '商翼' },
   benlai: { glyph: '本', name: '本来' },
   xiaoxiang: { glyph: '象', name: '灯塔' },

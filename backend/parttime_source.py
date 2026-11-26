@@ -725,7 +725,13 @@ def prepare_inputs(folder, owner, log, cancelled, collector=None, notify=lambda 
                 manifest["datasets"]["骑手月账单"] = clean_rider_bill(path, inputs / ("UB骑手账单_cleaned_" + plan.month + ".csv"), plan)
         if set(manifest["datasets"]) != {"配送费", "违规扣款", "骑手月账单"}:
             raise SourceError("必要账单未准备齐全")
-        orders = prepare_order_files([download for download in downloads if download.get("dataset") == "issue_orders"], raw, inputs, plan, batches)
+        from issue_rules import IssueRuleError, config_for as issue_rule_config
+        try:
+            issue_rules_for_city = {plan.city: issue_rule_config(plan.city)}
+        except IssueRuleError as error:
+            raise SourceError(f"问题单判定规则无法读取：{error}") from None
+        orders = prepare_order_files([download for download in downloads if download.get("dataset") == "issue_orders"], raw, inputs, plan, batches,
+                                     issue_rules=issue_rules_for_city)
         manifest["order_batches"] = orders.pop("order_batches")
         if any(batch["batch_total_inconsistent"] for batch in manifest["order_batches"]):
             log("[校验提示] 平台跨日汇总数存在差异；全部逐日数量已与文件核对一致，详见采集清单")

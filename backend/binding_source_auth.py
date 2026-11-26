@@ -29,6 +29,10 @@ SOURCES = {
                   'label': '蓝橙', 'clientid': 'e5cd7e4891bf95d1d19206ce24a7b32e',
                   # 钉钉授权会话一并加密保存，令牌过期时可直接确认跳转，不必重新扫码
                   'state_hosts': ('login.dingtalk.com', 'dingtalk.com')},
+    'lanorange_mdr': {'host': 'mdr.lanchengsz.cn', 'entry': '/login', 'token': 'hr_admin_token',
+                      'label': '新蓝橙', 'cookie_auth': True, 'identity_path': '/api/admin/userInfo',
+                      'identity_codes': (200,), 'dingtalk_qr': True,
+                      'state_hosts': ('login.dingtalk.com', 'dingtalk.com')},
     'baize': {'host': 'merchant.shangyiworker.com', 'entry': '/freelancer/merchantFreelancer',
               'token': 'Yunke-Mer-Token', 'label': '白泽'},
     # 本来人力把登录态放在浏览器会话里：官方前端用 Cookies.get('fengxin-saas')
@@ -409,12 +413,13 @@ def client(source, token=None, state=None):
         session.headers['Authorization'] = 'Bearer ' + token
     if config.get('clientid'):
         session.headers['clientid'] = config['clientid']
-    if source == 'benlai':
-        session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
-            'Accept-Language': 'zh-CN,zh;q=0.9',
-            'Referer': 'https://' + config['host'] + '/staff',
-        })
+    if config.get('cookie_auth'):
+        if source == 'benlai':
+            session.headers.update({
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+                'Accept-Language': 'zh-CN,zh;q=0.9',
+                'Referer': 'https://' + config['host'] + '/staff',
+            })
         if state is None:
             try:
                 state = load_state(source) if state_path(source).exists() else None
@@ -494,7 +499,7 @@ def identity(source, session, timeout=20):
         location = response.headers.get('Location', '')
         parsed = urlparse(urljoin('https://' + config['host'], location))
         own_login = parsed.hostname == config['host'] and (parsed.path.rstrip('/').endswith('/login') or parsed.fragment.rstrip('/').endswith('/login'))
-        dingtalk_login = source == 'lanorange' and parsed.hostname == 'login.dingtalk.com'
+        dingtalk_login = bool(config.get('dingtalk_qr')) and (parsed.hostname or '').endswith('dingtalk.com')
         if parsed.scheme == 'https' and (own_login or dingtalk_login):
             raise SourceAuthenticationRequired('官方身份接口要求重新登录')
     if response.status_code != 200:
@@ -560,7 +565,7 @@ class SourceAuth:
         self.auto_login_failed_until = {}
 
     def login_mode(self, source):
-        return 'qr' if source == 'lanorange' else 'sms'
+        return 'qr' if SOURCES[source].get('dingtalk_qr') else 'sms'
 
     def sms_key(self,source,control_id=None):
         control=next((c for c in self.desktop.get(source,{}).get('controls',[]) if c.get('kind')=='sms' and (control_id is None or c.get('id')==control_id)),{})
@@ -590,8 +595,8 @@ class SourceAuth:
         if not isinstance(command, dict):
             raise HTTPException(400, '认证操作格式无效')
         action = command.get('action')
-        if source=='lanorange' and (action not in ('inspect','control') or command.get('values')):
-            raise HTTPException(400,'蓝橙仅支持扫码登录')
+        if SOURCES[source].get('dingtalk_qr') and (action not in ('inspect','control') or command.get('values')):
+            raise HTTPException(400, SOURCES[source]['label'] + '仅支持扫码登录')
         if action == 'click':
             if any(type(command.get(k)) not in (int, float) or not 0 <= command[k] <= 1 for k in ('x', 'y')):
                 raise HTTPException(400, '点击位置无效')
@@ -651,8 +656,8 @@ class SourceAuth:
                         or (payload.get('submit_id') and controls.get(payload['submit_id']) != 'submit')
                         or (action == 'control' and payload.get('id') not in controls)):
                     raise HTTPException(400, '认证表单操作类型无效')
-                if source=='lanorange' and controls.get(payload.get('id'))!='qr_refresh':
-                    raise HTTPException(400,'蓝橙仅支持扫码和刷新二维码')
+                if SOURCES[source].get('dingtalk_qr') and controls.get(payload.get('id'))!='qr_refresh':
+                    raise HTTPException(400, SOURCES[source]['label'] + '仅支持扫码和刷新二维码')
                 # 记录用户对协议勾选的明确选择；取消后不再自动勾选。
                 consent_ids={f['id'] for f in desktop.get('fields',[]) if f.get('role')=='consent'}
                 for value in payload.get('values',[]):
@@ -847,6 +852,16 @@ class SourceAuth:
                         desktop['submitted'] = {'account': retry_state['account']}
                     else:
                         self.retry_forms.pop(source, None)
+            if source=='lanorange_mdr' and desktop.get('qr_state') not in ('visible', 'expired'):
+                attempted = self.mode_attempts.setdefault(source, set())
+                choice = next((c for c in desktop.get('controls', [])
+                               if c.get('enabled', True) and '钉钉' in str(c.get('label', ''))
+                               and (page.url, c.get('label')) not in attempted), None)
+                if choice is not None:
+                    attempted.add((page.url, choice.get('label')))
+                    bindings[choice['id']].click(timeout=2500)
+                    desktop,bindings=inspect_login_page(source,page,desktop)
+                    desktop.pop('_challenge',None);desktop.pop('_qr_element',None)
             if source=='lanorange':
                 preferred=self.login_mode(source)
                 # 小象灯塔的官方 SSO 入口默认就是美团App扫码页，保持扫码视图；
@@ -865,7 +880,7 @@ class SourceAuth:
                         desktop,bindings=inspect_login_page(source,page,desktop)
                         challenge=desktop.pop('_challenge',None)
                         qr_element=desktop.pop('_qr_element',None)
-            if source=='lanorange':
+            if SOURCES[source].get('dingtalk_qr'):
                 from desktop_auth_page import trusted
                 preferred=self.login_mode(source);desktop['login_mode']=preferred
                 region=desktop.get('regions',{}).get('qr')
@@ -941,8 +956,8 @@ class SourceAuth:
             transition = self.transitions.get(source)
             if transition is not None and time.monotonic() - transition['started'] <= 30:
                 desktop.update(transitioning=True, submitted={'account': transition['account']})
-            if source in ('lanorange','xiaoxiang'):
-                if source=='lanorange':desktop['login_mode']=self.login_mode(source)
+            if source in ('lanorange','lanorange_mdr','xiaoxiang'):
+                if source in ('lanorange','lanorange_mdr'):desktop['login_mode']=self.login_mode(source)
                 with self.lock:self.states.setdefault(source,{}).pop('image',None)
         with self.lock:
             self.desktop[source], self.form_bindings[source] = desktop, bindings
@@ -978,7 +993,7 @@ class SourceAuth:
             if (self.workers.get(source) and self.workers[source].is_alive()) or self.states.get(source, {}).get('state') in ('starting', 'waiting_login', 'refreshing'):
                 return self.status(source)
             from auth_browser_runtime import phase_fields
-            self.states[source] = {'state': 'starting', 'message': '正在检查已保存会话，必要时准备钉钉扫码' if source=='lanorange' else '正在打开官方认证入口', **phase_fields('connecting')}
+            self.states[source] = {'state': 'starting', 'message': '正在检查已保存会话，必要时准备钉钉扫码' if SOURCES[source].get('dingtalk_qr') else '正在打开官方认证入口', **phase_fields('connecting')}
             self.cancelled[source] = threading.Event()
             self.epochs[source] = self.epochs.get(source, 0) + 1
             self.inputs.pop(source, None)
@@ -1373,8 +1388,8 @@ class SourceAuth:
                 getattr(context,'set_default_timeout',lambda _:None)(2000)
                 page = context.new_page()
                 navigate(page, entry, cancelled)
-                if source == 'lanorange':
-                    # 有效的已保存会话会被 /admin/login 直接放行到首页，页面上没有「钉钉登录」按钮，
+                if SOURCES[source].get('dingtalk_qr'):
+                    # 有效的已保存会话会被登录页直接放行到首页，页面上没有「钉钉登录」按钮，
                     # 无条件点击只会等到动作超时；先校验会话，失效才丢弃并重建干净的上下文再点击。
                     if self._reuse_context(source, context, cancelled):
                         authenticated = True
@@ -1470,7 +1485,7 @@ class SourceAuth:
                         self._capture_desktop(source,page)
                         self._apply_inputs(source,page,viewport)
                     image, confirmed = None, False
-                    if source == 'lanorange' and urlparse(page.url).scheme == 'https' and urlparse(page.url).hostname == 'login.dingtalk.com':
+                    if SOURCES[source].get('dingtalk_qr') and urlparse(page.url).scheme == 'https' and (urlparse(page.url).hostname or '').endswith('dingtalk.com'):
                         # 钉钉授权会话仍在时会停在确认步骤，自动点一次即可跳回；确认成功就不再截图，
                         # 没有会话才会落到扫码页，那时才需要把二维码送回前端。
                         if time.monotonic() - last_confirm > 4:
@@ -1481,8 +1496,8 @@ class SourceAuth:
                         last_image = time.monotonic()
                     with self.lock:
                         entry = self.states.setdefault(source, {})
-                        entry.update(state='waiting_login', session_id=session_id, message='请使用手机钉钉扫码，确认后自动连接蓝橙'
-                                     if source == 'lanorange'
+                        entry.update(state='waiting_login', session_id=session_id, message='请使用手机钉钉扫码，确认后自动连接' + SOURCES[source]['label']
+                                     if SOURCES[source].get('dingtalk_qr')
                                      else '请在内部表单完成本来人力登录' if source == 'benlai'
                                      else '请在内部表单完成白泽登录')
                         if image: entry['image'] = image

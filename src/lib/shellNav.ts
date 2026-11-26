@@ -24,6 +24,7 @@ export type ShellCommandAction =
 export type QuickTargetId =
   | 'platform:fengshen'
   | 'platform:lanorange'
+  | 'platform:lanorange_mdr'
   | 'platform:payout'
   | 'platform:xiaoxiang'
   | 'report:payment_binding'
@@ -142,6 +143,16 @@ export const QUICK_TARGETS: QuickTargetMeta[] = [
     hint: '原雷神人事与兼职价格',
     accent: 'amber',
     action: { type: 'platform', platform: 'lanorange' },
+  },
+  {
+    id: 'platform:lanorange_mdr',
+    groupId: 'collection',
+    label: '新蓝橙数据',
+    shortLabel: '新蓝橙',
+    moduleLabel: '数据采集',
+    hint: '新系统人事与兼职价格',
+    accent: 'amber',
+    action: { type: 'platform', platform: 'lanorange_mdr' },
   },
   {
     id: 'platform:payout',
@@ -350,6 +361,7 @@ export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
     const platforms: { id: DownloadPlatform; label: string; hint: string }[] = [
       { id: 'fengshen', label: '风神数据', hint: '配送费、违规扣款与考勤源表' },
       { id: 'lanorange', label: '蓝橙数据', hint: '人事档案、离职请假与价格表' },
+      { id: 'lanorange_mdr', label: '新蓝橙数据', hint: '新系统骑手档案、离职请假与价格表' },
       { id: 'payout', label: '发薪平台', hint: '白泽商翼与本来人力' },
       { id: 'xiaoxiang', label: '小象灯塔', hint: '商配送日维度分析与订单明细' },
     ];
@@ -506,6 +518,15 @@ export function buildShellCommands(
         keywords: ['lanorange', 'lc', '蓝橙', '雷神', '离职', '请假', '骑手档案'],
         active: isCollection && state.downloadPlatform === 'lanorange',
         action: { type: 'platform', platform: 'lanorange' },
+      },
+      {
+        id: 'nav-lanorange-mdr',
+        group: '数据采集',
+        label: '新蓝橙数据',
+        subtitle: '新蓝橙系统骑手档案、离职请假、兼全职变更、佣金代领与价格档案采集',
+        keywords: ['lanorange_mdr', 'lcmdr', '新蓝橙', '蓝橙新系统', 'mdr', '离职', '请假', '骑手档案'],
+        active: isCollection && state.downloadPlatform === 'lanorange_mdr',
+        action: { type: 'platform', platform: 'lanorange_mdr' },
       },
       {
         id: 'nav-payout',

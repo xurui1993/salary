@@ -321,7 +321,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 logger = logging.getLogger(__name__)
 
 class DataCleaner:
-    def __init__(self, waybill_path, bad_unit_path):
+    def __init__(self, waybill_path, bad_unit_path, issue_rules=None):
         # 处理逻辑：类实例对象的属性及配置初始化构建
         self.waybill_data = pd.read_excel(waybill_path,engine="openpyxl",converters={"运单id":str,"订单号":str})
         self.bad_unit_data = pd.read_excel(bad_unit_path,converters={"运单号":str})
@@ -329,9 +329,11 @@ class DataCleaner:
         self.bad_unit_data =  self.bad_unit_data.loc[
                             ( self.bad_unit_data["违规状态"]!="不成立") &
                             ( self.bad_unit_data["申诉状态"]!="申诉成功")]
+        self.issue_rules = issue_rules
+        self.rule_warnings = set()
 
     @classmethod
-    def from_frames(cls, waybills, violations, *, copy=True):
+    def from_frames(cls, waybills, violations, *, copy=True, issue_rules=None):
         cleaner = cls.__new__(cls)
         cleaner.waybill_data = waybills.copy() if copy else waybills
         cleaner.bad_unit_data = violations.copy() if copy else violations
@@ -339,9 +341,13 @@ class DataCleaner:
         cleaner.bad_unit_data = cleaner.bad_unit_data.loc[
             (cleaner.bad_unit_data["违规状态"] != "不成立") &
             (cleaner.bad_unit_data["申诉状态"] != "申诉成功")]
+        cleaner.issue_rules = issue_rules
+        cleaner.rule_warnings = set()
         return cleaner
 
-    def notpunctual_period(self,waybill_data):  ##不准时单判断逻辑 
+    def notpunctual_period(self,waybill_data,config=None):  ##不准时单判断逻辑 
+        import issue_rules
+        config = config or issue_rules.default_config()
         data = waybill_data.loc[waybill_data["运单状态"].str.contains("配送成功")].copy()
         if data.empty:
             return data
@@ -359,9 +365,10 @@ class DataCleaner:
         if simple.any():
             deadline = dates.parse(expected.loc[simple])
             normalized.loc[simple] = deadline.astype(object)
-            strict = preorder | data["配送标品"].eq("星专送") | data["订单来源"].eq("开放平台")
+            strict = issue_rules.conditions_any_mask(data.loc[simple], config.get("strict_conditions", []),
+                                                     self.rule_warnings)
             delay = (finish.loc[simple] - deadline).dt.total_seconds()
-            selected.loc[simple] = delay.gt(0).where(strict.loc[simple], delay.gt(480))
+            selected.loc[simple] = delay.gt(0).where(strict.loc[simple], delay.gt(config["grace_seconds"]))
         windows = preorder & ranged & ~blank
         if windows.any():
             parts = expected.loc[windows].str.split("~", expand=True)
@@ -470,15 +477,22 @@ class DataCleaner:
         return loginfo_data   
 
     def notpunctual(self):#不准时
-        # 处理逻辑：notpunctual 的主要执行逻辑
+        # 处理逻辑：基础筛选 + 用户配置的排除/计入条件（默认配置与原写死逻辑一致）
+        import issue_rules
+        config = self.issue_rules or issue_rules.default_config()
         not_pun_data = self.waybill_data[(self.waybill_data["运单类型"]!="即时单") | (self.waybill_data["是否超平台期望时间"]!="否")]
-        not_pun_data = not_pun_data.loc[~not_pun_data["站点名称"].str.contains("大润发")]
-        not_pun_data = self.notpunctual_period(not_pun_data) #不准时单判断逻辑
+        excluded = issue_rules.exclude_mask(not_pun_data, config, self.rule_warnings)
+        not_pun_data = not_pun_data.loc[~excluded]
+        not_pun_data = self.notpunctual_period(not_pun_data, config) #不准时单判断逻辑
         logger.info(f"notpunctual initial rows: {len(not_pun_data)}")
-        if not_pun_data["站点名称"].str.contains("三亚", na=False).any():
-            time_outCarrierT_data = self.waybill_data[(self.waybill_data["是否超骑手T"]=="是") & (self.waybill_data["站点名称"].str.contains("大润发"))]
-            logger.info(f"Adding time_outCarrierT_data rows: {len(time_outCarrierT_data)} to notpunctual result")
-            not_pun_data = pd.concat([not_pun_data,time_outCarrierT_data],ignore_index=True)
+        included = issue_rules.include_mask(self.waybill_data, not_pun_data, config, self.rule_warnings)
+        if included.any():
+            extra = self.waybill_data.loc[included]
+            extra = extra.loc[~extra.index.isin(not_pun_data.index)]
+            logger.info(f"Adding rule-matched rows: {len(extra)} to notpunctual result")
+            not_pun_data = pd.concat([not_pun_data,extra],ignore_index=True)
+        if self.rule_warnings:
+            logger.warning("不准时单判定字段缺失，相关规则未生效：%s", "、".join(sorted(self.rule_warnings)))
         logger.info(f"notpunctual final rows: {len(not_pun_data)}")
         return not_pun_data
 

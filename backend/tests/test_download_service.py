@@ -709,7 +709,7 @@ class DownloadServiceTests(unittest.TestCase):
         self.assertEqual(options['baize_employees'], '白泽员工资料（全量）')
         self.assertEqual(options['benlai_employees'], '本来人力灵工资料（全量）')
         self.assertEqual(options['delivery_waybill'], '运单数据')
-        self.assertEqual(len(options), 32)
+        self.assertEqual(len(options), 40)
         monthly = self.config(["receive_account"], end="2026-10-31")
         self.assertEqual(monthly["months"], ["2026-09", "2026-10"])
         for datasets in (["receive_account", "rider_detail"], ["rider_detail"]):
@@ -1023,6 +1023,7 @@ class DownloadServiceTests(unittest.TestCase):
         generated = ('payment_binding', 'abnormal_followup', 'abnormal_riders')
         original_datasets = [kind for kind in service.DATASETS
                              if kind not in generated and kind not in service.LANORANGE_DATASETS
+                             and kind not in service.MDR_DATASETS
                              and kind not in (service.BAIZE_DATASET, service.BENLAI_DATASET)
                              and kind not in service.XIAOXIANG_SELECTION
                              and kind not in service.MERCHANT_DATASETS]

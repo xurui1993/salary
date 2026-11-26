@@ -10,16 +10,16 @@
  */
 
 /** 平台字典键：6 个，`dengta` 与 `xiaoxiang` 是两个独立 key，禁止合并。 */
-export type SystemKey = 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang' | 'benlai' | 'dengta';
+export type SystemKey = 'fengshen' | 'lanorange' | 'lanorange_mdr' | 'baize' | 'xiaoxiang' | 'benlai' | 'dengta';
 
 /** 出现在采集侧（列表 / 卡片 / 状态灯）的 5 个 key，不含 `dengta`。 */
-export type ConnectionChipKey = 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang' | 'benlai';
+export type ConnectionChipKey = 'fengshen' | 'lanorange' | 'lanorange_mdr' | 'baize' | 'xiaoxiang' | 'benlai';
 
 /** 平台所属业务面：采集侧还是核算侧。 */
 export type PlatformSurface = 'collection' | 'payroll';
 
 /** 头部状态灯 / 徽标短名联合，保持字面量类型以约束调用方。 */
-export type ConnectionShortName = '风神' | '蓝橙' | '商翼' | '灯塔' | '本来';
+export type ConnectionShortName = '风神' | '蓝橙' | '新蓝橙' | '商翼' | '灯塔' | '本来';
 
 /** 单个平台的完整字典条目。 */
 export interface SystemMetaItem {
@@ -55,7 +55,7 @@ export interface ConnectionChip {
 }
 
 /** 采集页 4 个下载模块（`payout` 为合成项，不对应单个 key）。 */
-export type DownloadModuleId = 'fengshen' | 'lanorange' | 'payout' | 'xiaoxiang';
+export type DownloadModuleId = 'fengshen' | 'lanorange' | 'lanorange_mdr' | 'payout' | 'xiaoxiang';
 
 /** 下载模块标签派生结果。 */
 export interface DownloadModuleLabel {
@@ -84,6 +84,15 @@ export const SYSTEM_META: SystemMetaItem[] = [
     label: '蓝橙',
     businessLine: '原雷神',
     description: '原雷神 · 骑手人事档案、兼职价格档案、离职/批量离职、请假等内部人事数据源。',
+    surface: 'collection',
+  },
+  {
+    key: 'lanorange_mdr',
+    displayName: '新蓝橙',
+    shortName: '新蓝橙',
+    label: '新蓝橙',
+    businessLine: '蓝橙新系统',
+    description: '蓝橙新系统 · 骑手档案、离职请假、兼全职变更、佣金代领与兼职价格档案原始导出。',
     surface: 'collection',
   },
   {
@@ -129,18 +138,20 @@ export const SYSTEM_META: SystemMetaItem[] = [
 const CHIP_SHORT_NAMES: Record<ConnectionChipKey, ConnectionShortName> = {
   fengshen: '风神',
   lanorange: '蓝橙',
+  lanorange_mdr: '新蓝橙',
   baize: '商翼',
   xiaoxiang: '灯塔',
   benlai: '本来',
 };
 
 /** 头部状态灯顺序（5 个，`dengta` 不参与）。 */
-const CHIP_KEYS: ConnectionChipKey[] = ['fengshen', 'lanorange', 'baize', 'xiaoxiang', 'benlai'];
+const CHIP_KEYS: ConnectionChipKey[] = ['fengshen', 'lanorange', 'lanorange_mdr', 'baize', 'xiaoxiang', 'benlai'];
 
 /** 采集侧 4 个下载模块的标题对（`payout` 为合成项）。 */
 const DOWNLOAD_MODULE_LABELS: DownloadModuleLabel[] = [
   { id: 'fengshen', label: '风神', navLabel: '风神数据' },
   { id: 'lanorange', label: '蓝橙', navLabel: '蓝橙数据' },
+  { id: 'lanorange_mdr', label: '新蓝橙', navLabel: '新蓝橙数据' },
   { id: 'payout', label: '发薪平台', navLabel: '发薪平台' },
   { id: 'xiaoxiang', label: '灯塔', navLabel: '小象灯塔' },
 ];

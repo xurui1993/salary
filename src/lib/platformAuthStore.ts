@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 
-export type PlatformKey = 'fengshen' | 'lanorange' | 'baize' | 'xiaoxiang' | 'benlai';
+export type PlatformKey = 'fengshen' | 'lanorange' | 'lanorange_mdr' | 'baize' | 'xiaoxiang' | 'benlai';
 
 export const PLATFORM_KEYS: readonly PlatformKey[] = [
   'fengshen',
   'lanorange',
+  'lanorange_mdr',
   'baize',
   'xiaoxiang',
   'benlai',

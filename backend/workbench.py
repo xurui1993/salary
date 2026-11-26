@@ -210,6 +210,59 @@ async def update_problem_rules(platform: str, request: Request):
         raise HTTPException(409, str(error)) from None
 
 
+@router.get('/issue-rules')
+async def get_issue_rules(request: Request):
+    from download_accounts import require_account
+    from order_sources import OPTIONAL_WAYBILL_COLUMNS, WAYBILL_COLUMNS
+    import issue_rules
+    require_account(request)
+    try:
+        data = await asyncio.to_thread(issue_rules.load)
+        default = issue_rules.default_config()
+    except issue_rules.IssueRuleError as error:
+        raise HTTPException(400, str(error)) from None
+    return {'category': issue_rules.CATEGORY, 'default': default, 'cities': data['cities'],
+            'fields': sorted(WAYBILL_COLUMNS | OPTIONAL_WAYBILL_COLUMNS)}
+
+
+@router.put('/issue-rules')
+async def update_issue_rules(request: Request):
+    from download_accounts import require_permission
+    import issue_rules
+    require_permission(request, 'payroll')
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(400, '判定规则格式无效')
+    city = payload.get('city')
+    try:
+        if payload.get('reset') is True:
+            await asyncio.to_thread(issue_rules.reset_city, city)
+            saved = issue_rules.default_config()
+        else:
+            saved = await asyncio.to_thread(issue_rules.save_city, city, payload.get('rules'))
+    except issue_rules.IssueRuleError as error:
+        raise HTTPException(400, str(error)) from None
+    return {'city': city, 'rules': saved}
+
+
+@router.post('/issue-rules/preview')
+async def preview_issue_rules(request: Request):
+    from download_accounts import require_account
+    from fengshen_bill import BillCollectionError
+    import issue_rules
+    user = require_account(request)
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(400, '判定规则格式无效')
+    try:
+        return await asyncio.to_thread(issue_rules.preview_sample, user['owner'],
+                                       payload.get('rules'), payload.get('city'))
+    except issue_rules.IssueRuleError as error:
+        raise HTTPException(400, str(error)) from None
+    except BillCollectionError as error:
+        raise HTTPException(400, str(error)) from None
+
+
 @router.get('/batches/{key}/deduction-review')
 async def deduction_review(key: str, request: Request, city_id: str = '', refresh: bool = False):
     from download_accounts import require_account

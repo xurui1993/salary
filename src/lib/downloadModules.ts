@@ -2,7 +2,7 @@ import { isBaize, isBenlai, datasetGroup } from './downloadCenterLogic';
 import { inferTaskKind, isGenerator } from './taskCatalog';
 import { downloadModuleLabels, type DownloadModuleId } from './platformCatalog';
 
-export type DownloadPlatform = 'fengshen' | 'lanorange' | 'payout' | 'xiaoxiang';
+export type DownloadPlatform = 'fengshen' | 'lanorange' | 'lanorange_mdr' | 'payout' | 'xiaoxiang';
 export type RecordModule = DownloadPlatform | 'generate';
 
 /**
@@ -40,6 +40,13 @@ export const DOWNLOAD_PLATFORMS: Array<{
     iconKey: 'layers',
   },
   {
+    id: 'lanorange_mdr',
+    ...moduleLabels('lanorange_mdr'),
+    badgeLabel: '蓝橙新系统',
+    desc: '骑手档案、离职请假、兼全职变更、佣金代领与兼职价格档案原始导出',
+    iconKey: 'building-2',
+  },
+  {
     id: 'payout',
     ...moduleLabels('payout'),
     badgeLabel: '白泽商翼 + 本来人力',
@@ -64,6 +71,7 @@ export function moduleAcceptsDataset(id: string, platform: DownloadPlatform): bo
 export function inferDatasetPlatform(id: string): DownloadPlatform {
   if (isBaize(id) || isBenlai(id)) return 'payout';
   if (datasetGroup(id) === 'xiaoxiang') return 'xiaoxiang';
+  if (!isGenerator(id) && datasetGroup(id) === 'lanorange_mdr') return 'lanorange_mdr';
   if (!isGenerator(id) && datasetGroup(id) === 'lanorange') return 'lanorange';
   return 'fengshen';
 }
@@ -79,6 +87,7 @@ export function groupDatasetsByPlatform(datasetIds: string[]): Record<DownloadPl
   const grouped: Record<DownloadPlatform, string[]> = {
     fengshen: [],
     lanorange: [],
+    lanorange_mdr: [],
     payout: [],
     xiaoxiang: [],
   };
@@ -130,6 +139,21 @@ export function computeDynamicScopeRequirements(
       needsSeparationRule: false,
       autoScopeBadge: '全站全城 · 实时全量快照',
       autoScopeDesc: '白泽商翼与本来人力均按账号授权范围全量直采最新档案，无需配置城市或月份账期。',
+    };
+  }
+
+  if (platform === 'lanorange_mdr') {
+    const needsDate = platformDatasets.some(id => id === 'lcmdr_part_price' || id === 'lcmdr_commission_proxy');
+    return {
+      hasSelection: true,
+      needsCity: true,
+      cityOptional: false,
+      needsDate,
+      needsSeparationRule: false,
+      autoScopeBadge: needsDate ? null : '账号授权范围 · 城市必选',
+      autoScopeDesc: needsDate
+        ? null
+        : '新蓝橙所选资料按账号授权范围导出：请选择城市；价格档案与佣金代领按月份筛选，其余资料导出最新全量。',
     };
   }
 

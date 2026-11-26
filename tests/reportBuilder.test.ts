@@ -683,3 +683,22 @@ test('problem city_range report preserves exact dates, order window bounds, refr
   assert.match(expiredHtml, /role="alert"/);
   assert.match(expiredHtml, /2026-08-27 至 2026-11-24/);
 });
+
+test('problem report exposes the issue-rule entry only when wired and only for the problem report', () => {
+  const problem: ReportDefinition = {
+    ...monthly,
+    id: 'problem',
+    label: '问题单',
+    scope: 'city_range',
+    station_rule: 'separation',
+  };
+  const withEntry = renderToStaticMarkup(
+    React.createElement(ReportBuilder, { ...props(problem), onOpenIssueRules: () => {} }),
+  );
+  assert.match(withEntry, /判定规则/);
+  assert.doesNotMatch(renderToStaticMarkup(React.createElement(ReportBuilder, props(problem))), /判定规则/);
+  assert.doesNotMatch(
+    renderToStaticMarkup(React.createElement(ReportBuilder, { ...props(monthly), onOpenIssueRules: () => {} })),
+    /判定规则/,
+  );
+});

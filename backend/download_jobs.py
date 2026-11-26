@@ -1032,6 +1032,36 @@ class DownloadManager:
                         pass
             return runs
 
+    def order_sample_dir(self, owner, city):
+        """Locate the newest retained waybill sample for issue-rule previews."""
+        from download_archive import archive_component
+        with self._lock, self._connection() as connection:
+            rows = connection.execute(
+                'SELECT state_json FROM download_runs WHERE owner=? ORDER BY created_at DESC', (owner,)).fetchall()
+        for row in rows:
+            run = json.loads(row['state_json'])
+            if run.get('status') not in ('success', 'partial'):
+                continue
+            if 'problem' not in (run.get('datasets') or []) and run.get('generation_target') != 'problem':
+                continue
+            if city not in (run.get('cities') or []):
+                continue
+            try:
+                root = self._archive_directory(run).resolve()
+                files = []
+                for directory in root.rglob('issue_orders'):
+                    if not directory.is_dir() or directory.parent.name != archive_component(city):
+                        continue
+                    if not directory.resolve().is_relative_to(root):
+                        continue
+                    files.extend(path for path in directory.glob('*/waybills.*') if path.is_file())
+            except (OSError, ValueError, DownloadNotFound, DownloadRootError, DownloadArchiveError):
+                continue
+            if files:
+                latest = max(files, key=lambda path: path.stat().st_mtime)
+                return {'run_id': run['id'], 'start': run.get('start'), 'end': run.get('end'), 'path': latest}
+        raise DownloadNotFound('暂无可用于试算的问题单采集样本')
+
     def record_snapshots(self, owner):
         """Include ancestors beyond the recent-task limit; never expose paths."""
         with self._lock, self._connection() as connection:

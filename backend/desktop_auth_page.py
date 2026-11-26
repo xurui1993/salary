@@ -8,8 +8,11 @@ from urllib.parse import urlparse
 
 _log = logging.getLogger(__name__)
 
-ROOTS = {'lanorange': ('madouren.cdevelopment.cn', 'login.dingtalk.com'), 'baize': ('merchant.shangyiworker.com',),
+ROOTS = {'lanorange': ('madouren.cdevelopment.cn', 'login.dingtalk.com'),
+         'lanorange_mdr': ('mdr.lanchengsz.cn', 'login.dingtalk.com', 'dingtalk.com'),
+         'baize': ('merchant.shangyiworker.com',),
          'xiaoxiang': ('meituan.com', 'sankuai.com'), 'benlai': ('b.icp88.com',)}
+QR_SOURCES = {'lanorange', 'lanorange_mdr'}
 MODES = {'账号登录','扫码登录','短信登录','密码登录','二维码登录','验证码登录','手机验证码登录','手机号登录','短信验证码登录','手机动态码登录','动态码登录','账号密码登录','通过手机号登录','通过邮箱登录'}
 SUBMITS = {'登录', '登 录', '立即登录', '确认登录', '验证并登录','下一步','验证'}
 OTHER = {'获取验证码','发送验证码','获取短信验证码','发送短信验证码','获取动态码','发送动态码','获取手机动态码','发送手机动态码','刷新二维码','刷新','点击刷新'}
@@ -182,7 +185,7 @@ def inspect_login_page(source, page, previous=None):
         x, y = min(1099, max(0, box['x'] - padding)), min(849, max(0, box['y'] - padding))
         right, bottom = min(1100, box['x'] + box['width'] + padding), min(850, box['y'] + box['height'] + padding)
         return {'x': x, 'y': y, 'width': max(1, right - x), 'height': max(1, bottom - y)}
-    if source=='lanorange':
+    if source in QR_SOURCES:
         for control in controls:
             if control['label']=='刷新二维码' or (control['label'] in ('刷新','点击刷新') and qr_expired):control['kind']='qr_refresh'
     regions = {}

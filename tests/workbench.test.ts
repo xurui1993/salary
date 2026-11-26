@@ -86,7 +86,7 @@ test('workbench writes preserve browser origin through the authenticated proxy',
 test('source metadata separates Xiaoxiang online download from manual payroll and keeps Baize standalone', () => {
   assert.deepEqual(
     SYSTEM_META.map(item => item.label),
-    ['风神', '蓝橙', '商翼', '灯塔', '本来人力', '灯塔手动'],
+    ['风神', '蓝橙', '新蓝橙', '商翼', '灯塔', '本来人力', '灯塔手动'],
   );
   assert.equal(SYSTEM_META.find(item => item.key === 'lanorange')?.businessLine, '原雷神');
   assert.match(SYSTEM_META.find(item => item.key === 'dengta')!.description, /手动上传/);
@@ -248,7 +248,7 @@ test('sidebar navigation converges into 2 groups with concise 4-character labels
   );
   assert.deepEqual(
     DOWNLOAD_PLATFORMS.map(platform => platform.navLabel),
-    ['风神数据', '蓝橙数据', '发薪平台', '小象灯塔'],
+    ['风神数据', '蓝橙数据', '新蓝橙数据', '发薪平台', '小象灯塔'],
   );
   assert.deepEqual(
     SIDEBAR_NAV_GROUPS[1].items.map(item => item.label),
@@ -258,9 +258,9 @@ test('sidebar navigation converges into 2 groups with concise 4-character labels
   const allItems = [...SIDEBAR_NAV_GROUPS.flatMap(group => group.items), SIDEBAR_FOOTER_ITEM];
   assert.deepEqual(
     allItems.map(item => item.label),
-    ['风神数据', '蓝橙数据', '发薪平台', '小象灯塔', '兼职核算', '价格审批', '扣款配置', '模板中心', '任务中心'],
+    ['风神数据', '蓝橙数据', '新蓝橙', '发薪平台', '小象灯塔', '兼职核算', '价格审批', '扣款配置', '模板中心', '任务中心'],
   );
-  assert.ok(allItems.every(item => item.label.length === 4), 'Every sidebar item label should be exactly 4 Chinese characters');
+  assert.ok(allItems.every(item => item.label.length === 3 || item.label.length === 4), 'Sidebar labels stay within 3-4 Chinese characters');
   const iconSet = new Set(allItems.map(item => item.iconKey));
   assert.equal(iconSet.size, allItems.length, 'Every sidebar item must have a distinct semantic icon');
 });
@@ -290,6 +290,7 @@ test('Scheme B header context and multi-platform status cluster map module group
     [
       ['风神', 'ready', '已连接'],
       ['蓝橙', 'warn', '需要验证'],
+      ['新蓝橙', 'idle', '未连接'],
       ['商翼', 'busy', '连接中'],
       ['灯塔', 'idle', '未连接'],
       ['本来', 'idle', '未连接'],

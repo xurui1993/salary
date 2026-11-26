@@ -443,7 +443,7 @@ export function buildTaskTimelineSteps(task: TaskDisplayRecord, platformName: st
   return steps;
 }
 
-export type TaskAuthSystem = 'fengshen' | 'baize' | 'benlai' | 'xiaoxiang' | 'lanorange';
+export type TaskAuthSystem = 'fengshen' | 'baize' | 'benlai' | 'xiaoxiang' | 'lanorange' | 'lanorange_mdr';
 
 const XIAOXIANG_DATASETS = new Set([
   'rider_daily',
@@ -467,6 +467,7 @@ export function resolveTaskAuthSystem(
   const sets = task.datasets || [];
   if (sets.some(id => id === 'baize_employees')) return 'baize';
   if (sets.some(id => id === 'benlai_employees')) return 'benlai';
+  if (sets.some(id => id.startsWith('lcmdr_'))) return 'lanorange_mdr';
   if (sets.some(id => id === 'lanorange_summary')) return 'lanorange';
   if (sets.some(id => XIAOXIANG_DATASETS.has(id))) return 'xiaoxiang';
   return 'fengshen';

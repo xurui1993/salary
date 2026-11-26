@@ -50,6 +50,7 @@ function getCapabilitySummary(source: string, status: any) {
 const PLATFORM_DEFS = [
   { key: 'fengshen', label: systemLabel('fengshen'), icon: Compass },
   { key: 'lanorange', label: systemLabel('lanorange'), icon: Layers },
+  { key: 'lanorange_mdr', label: systemLabel('lanorange_mdr'), icon: Layers },
   { key: 'baize', label: systemLabel('baize'), icon: UsersRound },
   { key: 'xiaoxiang', label: systemLabel('xiaoxiang'), icon: Radar },
   { key: 'benlai', label: systemLabel('benlai'), icon: Building2 },

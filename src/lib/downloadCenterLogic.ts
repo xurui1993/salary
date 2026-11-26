@@ -21,8 +21,9 @@ export function toggleDownloadDataset(values:string[],id:string){
   if(isXiaoxiang(id))return [...values.filter(isXiaoxiang), id];
   return [...values.filter(value=>!isPayoutPlatform(value)&&!isXiaoxiang(value)),id];
 }
+export const isMdr = (id: string) => id.startsWith('lcmdr_');
 export const isGlobalDataset = (id: string) => isBaize(id) || isBenlai(id) || isLanorange(id);
-export const datasetGroup = (id: string) => isBaize(id) ? 'baize' : isBenlai(id) ? 'benlai' : isXiaoxiang(id) ? 'xiaoxiang' : isLanorange(id) ? 'lanorange' : 'fengshen';
+export const datasetGroup = (id: string) => isBaize(id) ? 'baize' : isBenlai(id) ? 'benlai' : isXiaoxiang(id) ? 'xiaoxiang' : isMdr(id) ? 'lanorange_mdr' : isLanorange(id) ? 'lanorange' : 'fengshen';
 export const isLanorange = (id: string) => id.startsWith('lanorange_') || id === 'abnormal_riders';
 
 export const PHASE_LABELS: Record<string, string> = {
@@ -41,6 +42,14 @@ export function selectionKey(value: CreateSelection) {
   if (value.datasets.length === 1 && isBenlai(value.datasets[0])) return JSON.stringify({datasets: ['benlai_employees'], scope: 'all'});
   if (value.datasets.length > 1 && value.datasets.every(isPayoutPlatform)) return JSON.stringify({datasets: [...value.datasets].sort(), scope: 'all'});
   if (value.datasets.length && value.datasets.every(isXiaoxiang)) return JSON.stringify({datasets: [...value.datasets].sort(), scope: 'all', start: value.start, end: value.end, ...(value.xiaoxiang_all_dates ? {xiaoxiang_all_dates: true} : {})});
+  if (value.datasets.length && value.datasets.every(isMdr)) {
+    return JSON.stringify({
+      datasets: [...value.datasets].sort(),
+      scope: 'city',
+      cities: [...value.cities].sort(),
+      ...(value.lanorange_months?.length ? {lanorange_months: [...value.lanorange_months].sort()} : {}),
+    });
+  }
   if (value.datasets.length && value.datasets.every(isLanorange)) {
     if (value.lanorange_full_delivery) {
       return JSON.stringify({

@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   BadgeDollarSign,
+  Building2,
   Compass,
   CreditCard,
   FileSpreadsheet,
@@ -116,6 +117,14 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
       active: activeGroup === 'collection' && downloadPlatform === 'lanorange',
       action: { type: 'platform', platform: 'lanorange' },
       channel: getPlatformChannelStatus('lanorange', platformStatuses),
+    },
+    {
+      id: 'platform:lanorange_mdr',
+      label: '新蓝橙数据',
+      icon: <Building2 size={15.5} />,
+      active: activeGroup === 'collection' && downloadPlatform === 'lanorange_mdr',
+      action: { type: 'platform', platform: 'lanorange_mdr' },
+      channel: getPlatformChannelStatus('lanorange_mdr', platformStatuses),
     },
     {
       id: 'platform:payout',

@@ -22,6 +22,7 @@ WAYBILL_COLUMNS = {
     "订单来源", "超平台期望送达时长", "是否超骑手T", "骑手考核时间",
     "是否超用户T", "用户期望时间",
 }
+OPTIONAL_WAYBILL_COLUMNS = {"是否二呼单"}
 VIOLATION_COLUMNS = {
     "违规编号", "违规时间", "运单号", "团队名称", "骑手ID", "骑手名称",
     "违规分类", "违规类型", "违规原因", "违规状态", "申诉状态", "处罚",
@@ -100,7 +101,7 @@ def _large_xlsx_is_simple(path):
     return True
 
 
-def _read_xlsx_polars(path, required, checkpoint=None):
+def _read_xlsx_polars(path, required, checkpoint=None, optional=()):
     """Read only the agreed columns through Rust calamine.
 
     Every value stays text: IDs and timestamps must not be coerced by Excel
@@ -117,7 +118,7 @@ def _read_xlsx_polars(path, required, checkpoint=None):
         return None
     if isinstance(sheets, pl.DataFrame):
         sheets = {"sheet": sheets}
-    selected_columns = set(required) | SCOPE_COLUMNS
+    selected_columns = set(required) | SCOPE_COLUMNS | set(optional)
     matched = []
     for frame in sheets.values():
         if not set(required).issubset(frame.columns):
@@ -138,7 +139,7 @@ def _read_xlsx_polars(path, required, checkpoint=None):
 
 
 @measured("source_read_seconds")
-def read_table(path, required, *, checkpoint=None, columns_only=False):
+def read_table(path, required, *, checkpoint=None, columns_only=False, optional=()):
     path = Path(path)
     if not path.is_file() or not 0 < path.stat().st_size <= MAX_BYTES:
         raise BillCollectionError("运单或服务奖惩原始文件缺失、为空或超过大小限制")
@@ -153,7 +154,7 @@ def read_table(path, required, *, checkpoint=None, columns_only=False):
                 except UnicodeDecodeError:
                     continue
         elif path.suffix.lower() == ".xlsx":
-            polars_frame = (_read_xlsx_polars(path, required, checkpoint)
+            polars_frame = (_read_xlsx_polars(path, required, checkpoint, optional)
                             if path.stat().st_size > POLARS_MIN_FILE_BYTES else None)
             if polars_frame is not None:
                 candidates = [polars_frame]
@@ -180,7 +181,7 @@ def read_table(path, required, *, checkpoint=None, columns_only=False):
         frame = matched[0]
         if columns_only:
             selected = sorted(column for column in frame.columns
-                              if column in required or column in SCOPE_COLUMNS)
+                              if column in required or column in SCOPE_COLUMNS or column in optional)
             if not set(required).issubset(selected):
                 raise BillCollectionError("导出文件缺少约定表头")
             frame = frame[selected]
@@ -306,7 +307,8 @@ def prepare_order_slice(download, raw, plan, start, end, include_violations, *, 
         if (not isinstance(proof, dict) or proof.get("path") != paths[key] or not path.is_file()
                 or proof.get("bytes") != path.stat().st_size or proof.get("sha256") != file_hash(path)):
             raise BillCollectionError("本批原始文件完整性校验失败")
-        frame, frame_dates = validate_slice(read_table(path, required, checkpoint=checkpoint, columns_only=True),
+        frame, frame_dates = validate_slice(read_table(path, required, checkpoint=checkpoint, columns_only=True,
+                                                       optional=OPTIONAL_WAYBILL_COLUMNS if key == "waybills" else ()),
                                             request, date_column, id_columns, with_dates=True)
         frames.append(frame)
         if key == "waybills":
@@ -334,7 +336,7 @@ def prepare_order_slice(download, raw, plan, start, end, include_violations, *, 
 
 @measured("finalize_seconds")
 def prepare_order_files(downloads, raw, inputs, plan, batches, selected_kinds=None, *,
-                        prepared_slices=None, separation_include=None):
+                        prepared_slices=None, separation_include=None, issue_rules=None):
     from fengshen_orders import OrderRequest
     from order_dates import natural_dates
     if isinstance(selected_kinds, str):
@@ -378,7 +380,8 @@ def prepare_order_files(downloads, raw, inputs, plan, batches, selected_kinds=No
         penalties = clean_violations(pd.DataFrame(columns=sorted(VIOLATION_COLUMNS)))
     if any(value not in ("是", "否") for value in orders["欺诈是否成立"]):
         raise BillCollectionError("欺诈是否成立出现未确认状态，核算已停止")
-    cleaner = DataCleaner.from_frames(orders, penalties, copy=False)
+    cleaner = DataCleaner.from_frames(orders, penalties, copy=False,
+                                      issue_rules=(issue_rules or {}).get(plan.city))
     # 问题单汇总依然需要在内存识别欺诈运单，避免把同一运单重复列入问题单。
     kinds = cleaner.run(issue_types(plan.city) if include_violations else ["欺诈单"])
     fraud = kinds["欺诈单"]

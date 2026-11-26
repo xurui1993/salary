@@ -28,6 +28,9 @@ from fengshen_bill import (BILL_URL, RIDER_BILL_URL, WAYBILL_URL, BillCollection
 from fengshen_orders import OrderPageCollector, date_batches, validate_order_profile, SHANGHAI
 from order_sources import prepare_order_files, problem_paths
 from lanorange_catalog import DATASETS as LANORANGE_DATASETS, ALL_CITIES, city_scoped, source_key, source_directory, platform_months, months_contiguous
+from lanorange_mdr_catalog import (DATASETS as MDR_DATASETS, MONTH_DATASETS as MDR_MONTH_DATASETS,
+                                   PRICE_DATASETS as MDR_PRICE_DATASETS, city_identity, match_city,
+                                   source_directory as mdr_source_directory, validate_scope as mdr_validate_scope)
 from parttime_source import (COLLECTION_LOCK, unpack_daily, validate_daily,
                              clean_rider_bill, format_rider_monthly_workbook)
 import separation_filter
@@ -67,6 +70,7 @@ DATASETS = {
     "abnormal_followup": "异常骑手跟进（生成表）",
     "abnormal_riders": "异常骑手整理（生成表）",
     **{key: '蓝橙' + value[0] for key, value in LANORANGE_DATASETS.items()},
+    **{key: '新蓝橙' + value['label'] for key, value in MDR_DATASETS.items()},
 }
 MONTHLY_DATASETS = frozenset({"rider_monthly", "receive_account"})
 SNAPSHOT_DATASETS = frozenset({"rider_info", "goods_rent"})
@@ -139,7 +143,7 @@ def get_options():
                        for name, code in snapshot["cities"].items()],
             "cities_source": snapshot["source"], "cities_updated_at": snapshot["updated_at"],
             "datasets": [{"id": key, "label": LANORANGE_DATASETS[key][0] if key in LANORANGE_DATASETS else label,
-                          "group": 'baize' if key == BAIZE_DATASET else 'benlai' if key == BENLAI_DATASET else 'xiaoxiang' if key in XIAOXIANG_SELECTION else 'lanorange' if key in LANORANGE_DATASETS or key == 'abnormal_riders' else 'fengshen',
+                          "group": 'baize' if key == BAIZE_DATASET else 'benlai' if key == BENLAI_DATASET else 'xiaoxiang' if key in XIAOXIANG_SELECTION else 'lanorange' if key in LANORANGE_DATASETS or key == 'abnormal_riders' else 'lanorange_mdr' if key in MDR_DATASETS else 'fengshen',
                           "scope": 'all' if key in (BAIZE_DATASET, BENLAI_DATASET) or key in XIAOXIANG_SELECTION or key in LANORANGE_DATASETS or key == 'abnormal_riders' else 'city'}
                          for key, label in DATASETS.items()],
             "generators": generators(), "timezone": "Asia/Shanghai", "order_window_days": 60, "problem_window_days": 90}
@@ -177,6 +181,12 @@ def validate_request(payload, today=None):
         from lanorange_catalog import clean_months
         try:
             payload = {**payload, "lanorange_months": clean_months(payload["lanorange_months"])}
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from None
+    def mdr_clean(values):
+        from lanorange_catalog import clean_months
+        try:
+            return clean_months(values)
         except ValueError as exc:
             raise ValidationError(str(exc)) from None
     selected_cities, selected = payload.get("cities"), payload.get("datasets")
@@ -250,6 +260,47 @@ def validate_request(payload, today=None):
         today = today or dt.datetime.now(SHANGHAI).date()
         return {**task_intent, 'cities': [ALL_CITIES], 'datasets': [selected[0]],
                 'start': today.isoformat(), 'end': today.isoformat(), 'months': [today.strftime('%Y-%m')]}
+    mdr_only = isinstance(selected, list) and bool(selected) and all(
+        isinstance(key, str) and key in MDR_DATASETS for key in selected)
+    if mdr_only:
+        if task_intent.get('task_kind', 'download') != 'download':
+            raise ValidationError('新蓝橙原始资料只支持资料下载任务')
+        from lanorange_catalog import SELECTABLE_CITIES
+        chosen = payload.get('cities') if isinstance(payload.get('cities'), list) else []
+        chosen = [city.removesuffix('市') if isinstance(city, str) else city
+                  for city in chosen if city not in (ALL_CITIES, '全部城市')]
+        chosen = list(dict.fromkeys(chosen))
+        if not chosen:
+            raise ValidationError('新蓝橙资料需要选择至少一个城市')
+        if any(not isinstance(city, str) or city not in SELECTABLE_CITIES for city in chosen):
+            raise ValidationError('新蓝橙城市不在可选范围，请从配置的城市列表中选择')
+        today = today or dt.datetime.now(SHANGHAI).date()
+        try:
+            if payload.get('start') is None and payload.get('end') is None:
+                first = last = today
+            else:
+                if any(not isinstance(payload.get(field), str)
+                       or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', payload[field]) for field in ('start', 'end')):
+                    raise ValueError()
+                first, last = dt.date.fromisoformat(payload['start']), dt.date.fromisoformat(payload['end'])
+                if first > last:
+                    raise ValueError()
+        except ValueError:
+            raise ValidationError('请选择有效的开始和结束日期') from None
+        keys = [key for key in DATASETS if key in selected]
+        months = mdr_clean(payload.get('lanorange_months'))
+        if not months and any(key in MDR_PRICE_DATASETS or key in MDR_MONTH_DATASETS for key in keys):
+            months = covered_months(first, last)
+        try:
+            for key in keys:
+                if key in MDR_PRICE_DATASETS or key in MDR_MONTH_DATASETS:
+                    mdr_validate_scope(key, months)
+        except ValueError as error:
+            raise ValidationError(str(error)) from None
+        return {**task_intent, 'cities': chosen, 'datasets': keys,
+                'start': first.isoformat(), 'end': last.isoformat(),
+                'months': months or covered_months(first, first),
+                **({'lanorange_months': months} if months else {})}
     global_only = isinstance(selected, list) and bool(selected) and all(
         isinstance(key, str) and (key in LANORANGE_DATASETS or key == 'abnormal_riders') for key in selected)
     selected_months = payload.get("lanorange_months") or []
@@ -699,7 +750,7 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
     config = dict(config)
     config['datasets'] = expand_followup_datasets(config.get('datasets', ()))
     selected = set(config['datasets'])
-    mapping = cities() if config.get('merchant_by_city') or any(kind not in LANORANGE_DATASETS and kind not in MERCHANT_DATASETS and kind not in ('abnormal_riders', BAIZE_DATASET, BENLAI_DATASET, RIDER_DAILY_DATASET, RIDER_ARCHIVE_DATASET, RIDER_ORDER_DETAIL_DATASET, XIAOXIANG_ATTENDANCE_DATASET)
+    mapping = cities() if config.get('merchant_by_city') or any(kind not in LANORANGE_DATASETS and kind not in MDR_DATASETS and kind not in MERCHANT_DATASETS and kind not in ('abnormal_riders', BAIZE_DATASET, BENLAI_DATASET, RIDER_DAILY_DATASET, RIDER_ARCHIVE_DATASET, RIDER_ORDER_DETAIL_DATASET, XIAOXIANG_ATTENDANCE_DATASET)
                               for kind in selected) else {}
     requested = _requested_items(config)
     if config.get('payroll_agencies'):
@@ -1274,6 +1325,36 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
             blue_sources.append((description, source))
             return [publish(source, root, description)]
         run_step([description], blue_download)
+    mdr_sources = []
+    mdr_city_cache = {}
+    for description in requested:
+        if description['dataset'] not in MDR_DATASETS: continue
+        def mdr_download(description=description):
+            from lanorange_mdr_download import collect as mdr_collect, platform_cities
+            kind = description['dataset']
+            city = description['city']
+            resume = config.get('resume_lanorange_sources', {}).get(source_key(city, kind))
+            directory = mdr_source_directory(root, city, kind)
+            context.update(raw=directory, kind=kind)
+            months = None
+            if kind in MDR_PRICE_DATASETS or kind in MDR_MONTH_DATASETS:
+                months = config.get('lanorange_months') or None
+            if city not in mdr_city_cache:
+                rows = platform_cities(progress_log, cancelled)
+                matched = match_city(rows, city)
+                if matched is None:
+                    raise BillCollectionError(f'新蓝橙未找到城市“{city}”，请确认平台授权范围')
+                city_id, project_code = city_identity(matched)
+                if city_id is None:
+                    raise BillCollectionError(f'新蓝橙城市“{city}”编号异常，未提交导出')
+                mdr_city_cache[city] = (city_id, project_code)
+            city_id, project_code = mdr_city_cache[city]
+            description['delivery_kind'] = 'platform_original'
+            source = mdr_collect(kind, directory, progress_log, cancelled, resume,
+                                 city=city, city_id=city_id, project_code=project_code, months=months)
+            mdr_sources.append((description, source))
+            return [publish(source, root, description)]
+        run_step([description], mdr_download)
     if config.get('lanorange_by_city') and len(config['cities']) > 1 and blue_sources:
         from lanorange_summary import build_summary
         from download_pipeline import reserve_local_work
@@ -1477,7 +1558,7 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
             for city in config["cities"]:
                 _checkpoint(cancelled)
                 city_selected = {value["dataset"] for value in requested if value["city"] == city}
-                city_selected.difference_update(LANORANGE_DATASETS)
+                city_selected.difference_update(LANORANGE_DATASETS, MDR_DATASETS)
                 if not city_selected:
                     continue
                 plan = SimpleNamespace(city=city, agency_id=mapping[city], start=config["start"], end=config["end"])
@@ -1751,11 +1832,17 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                         from order_metrics import measurements
                         timings = pipeline.metrics.setdefault("timings", {}) if pipeline is not None else {}
                         separation_include = separation_filter.filter_direction(config)
+                        from issue_rules import IssueRuleError, config_for as issue_rule_config
+                        try:
+                            issue_rules_for_city = {city: issue_rule_config(city)}
+                        except IssueRuleError as error:
+                            raise BillCollectionError(f"问题单判定规则无法读取：{error}") from None
                         with measurements(timings):
                             result = prepare_order_files(
                                 downloads, raw, generated, plan, batches,
                                 selected_kinds={DATASETS[k] for k in order_selected},
                                 separation_include=separation_include,
+                                issue_rules=issue_rules_for_city,
                                 **({"prepared_slices": prepared} if prepared is not None else {}))
                         if pipeline is not None:
                             pipeline.complete()

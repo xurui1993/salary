@@ -88,6 +88,7 @@ const KINDS: Record<string, string> = {
 const SYSTEMS: Record<string, string> = {
   fengshen: '风神',
   lanorange: '蓝橙',
+  lanorange_mdr: '新蓝橙',
   baize: '商翼',
   benlai: '本来人力',
   xiaoxiang: '灯塔',

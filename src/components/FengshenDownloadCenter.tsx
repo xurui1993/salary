@@ -2,7 +2,7 @@ import {useStationDirectory} from '../lib/useStationDirectory';
 import {CityStationCount} from './CityStationCount';
 import { recoverySummary } from '../lib/downloadCenterLogic';
 import { readDownloadResponse, saveDownloadBlob, downloadOutput, downloadErrorMessage } from '../lib/outputDownload';
-import { isBaize, isBenlai, isPayoutPlatform, isXiaoxiang, isRiderArchive, isGlobalDataset, datasetGroup,isMerchant,isMerchantSnapshot,toggleDownloadDataset } from '../lib/downloadCenterLogic';
+import { isBaize, isBenlai, isPayoutPlatform, isXiaoxiang, isRiderArchive, isGlobalDataset, datasetGroup,isMerchant,isMerchantSnapshot,toggleDownloadDataset,isMdr } from '../lib/downloadCenterLogic';
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AlertCircle, Calendar, CheckCircle2, CloudDownload, Download, FileSpreadsheet, KeyRound, Loader2, Plus, RefreshCw, Square, X, XCircle, Pencil, Trash2, AlertTriangle, UsersRound, Building2, History, ArrowUpRight, Compass, Layers, Radar } from 'lucide-react';
 import { DownloadAccountPanel } from './DownloadAccountPanel';
@@ -12,6 +12,7 @@ import type { CreateSelection, DownloadUser, ItemSelection, Recovery, RequestAtt
 import { WorkbenchDrawer } from './WorkbenchDrawer';
 import { DownloadRecords } from './DownloadRecords';
 import { ReportBuilder } from './ReportBuilder';
+import { IssueRuleEditor } from './IssueRuleEditor';
 import type { TaskReturnTarget } from '../lib/taskWorkflow';
 import { buildTaskListFingerprint, computeAdaptivePollDelay } from '../lib/perfUtils';
 import {
@@ -314,6 +315,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const [optionsLoading, setOptionsLoading] = useState(false);
   const [optionVersion, setOptionVersion] = useState(0);
   const [cities, setCities] = useState<string[]>([]);
+  const [issueRulesOpen, setIssueRulesOpen] = useState(false);
   const [bindingPlatforms, setBindingPlatforms] = useState<Record<string, BindingPlatform>>({});
   const [bindingPlatformsBusy, setBindingPlatformsBusy] = useState(false);
   const authSnapshot = usePlatformAuthSnapshot();
@@ -489,7 +491,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     }
   };
 
-  const [systemFilter, setSystemFilter] = useState<'all' | 'fengshen' | 'lanorange' | 'baize' | 'benlai' | 'xiaoxiang'>('all');
+  const [systemFilter, setSystemFilter] = useState<'all' | 'fengshen' | 'lanorange' | 'lanorange_mdr' | 'baize' | 'benlai' | 'xiaoxiang'>('all');
   const [historyFocusId,setHistoryFocusId]=useState('');
   const [submittedTaskInfo, setSubmittedTaskInfo] = useState<{ id: string; name: string } | null>(null);
   useEffect(() => {
@@ -839,7 +841,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     : '本地配置';
   const activePlatform: DownloadPlatform = platform || 'fengshen';
   const groupedByPlatform = groupDatasetsByPlatform(datasets);
-  const activePlatformList = (['fengshen', 'lanorange', 'payout', 'xiaoxiang'] as const).filter(
+  const activePlatformList = (['fengshen', 'lanorange', 'lanorange_mdr', 'payout', 'xiaoxiang'] as const).filter(
     plat => groupedByPlatform[plat].length > 0,
   );
   const activePlatformCount = activePlatformList.length;
@@ -866,7 +868,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
 
   const toggle = (value: string, values: string[], setter: (next: string[]) => void) => setter(values.includes(value) ? values.filter(item => item !== value) : [...values, value]);
   const validDates = DATE_PATTERN.test(start) && DATE_PATTERN.test(end) && start <= end;
-  const recentReportMonthCodes = buildRecentMonths(shanghaiToday(), 3);
+  const recentReportMonthCodes = buildRecentMonths(shanghaiToday(), (platform === 'lanorange_mdr' || (!platform && activeDatasets.length > 0 && activeDatasets.every(isMdr))) ? 12 : 3);
   const rawSelectedDatasets = activeDatasets.filter(id => !isGenerator(id));
   const selectedGeneratorIds = activeDatasets.filter(isGenerator);
   const abnormalRidersOnly =
@@ -892,6 +894,11 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const blueOnly: boolean =
     platform === 'lanorange' ||
     (!platform && !payoutOnly && !xiaoxiangOnly && !abnormalRidersOnly && activeDatasets.length > 0 && activeDatasets.every(isGlobalDataset));
+  const mdrOnly: boolean =
+    platform === 'lanorange_mdr' ||
+    (!platform && !payoutOnly && !xiaoxiangOnly && !abnormalRidersOnly && activeDatasets.length > 0 && activeDatasets.every(isMdr));
+  const mdrNeedsMonths = mdrOnly && rawSelectedDatasets.some(id => id === 'lcmdr_part_price' || id === 'lcmdr_commission_proxy');
+  const mdrCommissionOnly = mdrOnly && rawSelectedDatasets.includes('lcmdr_commission_proxy');
   const merchantOnly: boolean =
     rawSelectedDatasets.length > 0 &&
     selectedGeneratorIds.length === 0 &&
@@ -1034,6 +1041,11 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const canSubmit = platform
     ? datasets.length > 0 &&
       !fengshenMissingCities &&
+      (activePlatform !== 'lanorange_mdr' || groupedByPlatform.lanorange_mdr.length === 0 || (
+        blueCities.length > 0
+        && (!mdrNeedsMonths || activeSelectedMonths.length > 0 || lanorangeMonths.length > 0)
+        && (!mdrCommissionOnly || (activeSelectedMonths.length > 0 ? activeSelectedMonths.length : lanorangeMonths.length) === 1)
+      )) &&
       (activePlatform !== 'fengshen' || groupedByPlatform.fengshen.length === 0 || (
         !invalidMerchantMix &&
         (abnormalRidersOnly || (activeSelectedMonths.length > 0 ? monthRunChunks.length > 0 : validDates))
@@ -1051,7 +1063,8 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
         ? cities.length > 0 && merchantDateValid
         : archiveOnly || blueOnly || payoutOnly || abnormalRidersOnly ||
           (xiaoxiangDated && xiaoxiangDateValid) ||
-          (cities.length > 0 && (activeSelectedMonths.length > 0 ? monthRunChunks.length > 0 : validDates)));
+          (cities.length > 0 && (activeSelectedMonths.length > 0 ? monthRunChunks.length > 0 : validDates))) &&
+      (groupedByPlatform.lanorange_mdr.length === 0 || blueCities.length > 0);
 
   const monthlyDatasets = rawSelectedDatasets.filter(dataset => MONTHLY_DATASETS.has(dataset));
   const periodDatasets = rawSelectedDatasets.filter(dataset => !isLanorange(dataset) && !MONTHLY_DATASETS.has(dataset) && !SNAPSHOT_DATASETS.has(dataset));
@@ -1081,7 +1094,9 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     task_kind: 'download',
     cities: blueOnly
       ? (blueCities.length && !hasAbnormalRiders ? blueCities : ['全部城市'])
-      : payoutOnly
+      : mdrOnly
+        ? blueCities
+        : payoutOnly
         ? ['全部城市']
         : xiaoxiangOnly
           ? (cities.length > 0 ? cities : ['全部城市'])
@@ -1094,7 +1109,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
         ? xiaoxiangFirst
         : xiaoxiangDated
           ? (monthRunChunks[0]?.start || start)
-          : blueOnly || payoutOnly || merchantSnapshotOnly
+          : blueOnly || mdrOnly || payoutOnly || merchantSnapshotOnly
             ? shanghaiToday()
             : (monthRunChunks[0]?.start || start),
     end: archiveOnly
@@ -1103,13 +1118,14 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
         ? dailyDate
         : xiaoxiangDated
           ? (monthRunChunks[monthRunChunks.length - 1]?.end || end)
-          : blueOnly || payoutOnly || merchantSnapshotOnly
+          : blueOnly || mdrOnly || payoutOnly || merchantSnapshotOnly
             ? shanghaiToday()
             : (monthRunChunks[monthRunChunks.length - 1]?.end || end),
     ...(xiaoxiangAllDatesActive ? { xiaoxiang_all_dates: true } : {}),
     ...(refreshHistory && rawSelectedDatasets.some(dataset => ['fraud', 'problem'].includes(dataset)) ? { refresh_history: true } : {}),
     ...(waybillAllCitySend && rawSelectedDatasets.includes('delivery_waybill') ? { waybill_all_city_send: true } : {}),
     ...(blueOnly && rawSelectedDatasets.includes('lanorange_part_price') ? { lanorange_months: resolvedLanorangeMonths } : {}),
+    ...(mdrNeedsMonths ? { lanorange_months: resolvedLanorangeMonths } : {}),
     ...(rawSelectedDatasets.some(isMerchant) ? { merchant_by_city: true } : {}),
     ...(!noCity && !rawSelectedDatasets.every(isMerchant) && !xiaoxiangOnly ? { exclude_separation: excludeSeparation } : {}),
   };
@@ -1131,10 +1147,24 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const buildCrossPlatformPayloads = (): CreateSelection[] => {
     const allPayloads: CreateSelection[] = [];
     const today = shanghaiToday();
-    for (const plat of ['fengshen', 'lanorange', 'payout', 'xiaoxiang'] as const) {
+    for (const plat of ['fengshen', 'lanorange', 'lanorange_mdr', 'payout', 'xiaoxiang'] as const) {
       const platDatasets = groupedByPlatform[plat];
       if (!platDatasets.length) continue;
       const pScope = getPlatformScope(plat);
+
+      if (plat === 'lanorange_mdr') {
+        if (!blueCities.length) continue;
+        allPayloads.push({
+          task_kind: 'download',
+          cities: blueCities,
+          datasets: platDatasets,
+          start: today,
+          end: today,
+          ...(platDatasets.some(id => id === 'lcmdr_part_price' || id === 'lcmdr_commission_proxy')
+            ? { lanorange_months: resolvedLanorangeMonths } : {}),
+        });
+        continue;
+      }
 
       if (plat === 'payout') {
         for (const datasetId of platDatasets) {
@@ -1796,7 +1826,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
     railXiaoxiangOnly && datasets.length > 0 && datasets.every(isRiderArchive);
   const railXiaoxiangDated = railXiaoxiangOnly && !railArchiveOnly;
   const railBlueOnly =
-    effectiveRailPlatform === 'lanorange' ||
+    effectiveRailPlatform === 'lanorange' || effectiveRailPlatform === 'lanorange_mdr' ||
     (!effectiveRailPlatform && !railPayoutOnly && !railXiaoxiangOnly && !abnormalRidersOnly && datasets.length > 0 && datasets.every(isGlobalDataset));
   const railNoCity = railBlueOnly || railPayoutOnly || abnormalRidersOnly;
   const railNoDate = railPayoutOnly || abnormalRidersOnly;
@@ -1804,7 +1834,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   const submitReady = !!uncertainCreate || canSubmit;
   const railSummary = buildExecutionRailSummary({
     datasetsCount: datasets.length,
-    cities: railPayoutOnly || abnormalRidersOnly ? [] : railBlueOnly ? (hasAbnormalRiders ? [] : blueCities) : cities,
+    cities: railPayoutOnly || abnormalRidersOnly ? [] : (railBlueOnly || mdrOnly) ? (hasAbnormalRiders ? [] : blueCities) : cities,
     start,
     end,
     selectedMonths: activeSelectedMonths,
@@ -1856,6 +1886,30 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
    * 文案/样式只此一套，`run` 存在时整行可点击定位。
    */
   const railHint: {text: string; tone: 'warn'; title?: string; run?: () => void} | null = (() => {
+    if (!canSubmit && !uncertainCreate && !creating && !platform && groupedByPlatform.lanorange_mdr.length > 0 && blueCities.length === 0) {
+      return {
+        text: '请为新蓝橙资料选择至少 1 个城市',
+        tone: 'warn',
+        title: '点击定位至城市选择',
+        run: goToCitiesStep,
+      };
+    }
+    if (!canSubmit && !uncertainCreate && !creating && mdrOnly && blueCities.length === 0) {
+      return {
+        text: '请为新蓝橙资料选择至少 1 个城市',
+        tone: 'warn',
+        title: '点击定位至城市选择',
+        run: goToCitiesStep,
+      };
+    }
+    if (!canSubmit && !uncertainCreate && !creating && mdrCommissionOnly && resolvedLanorangeMonths.length > 1) {
+      return {
+        text: '佣金代领一次只能导出一个月份，请只勾选 1 个月',
+        tone: 'warn',
+        title: '点击定位至月份选择',
+        run: () => scrollToStep('period'),
+      };
+    }
     if (!submitReady && datasets.length === 0) {
       return {
         text: '请先在左侧勾选至少 1 项待采集资料',
@@ -1993,6 +2047,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                     setRefreshHistory(value);
                     setDuplicateApproval('');
                   }}
+                  onOpenIssueRules={() => setIssueRulesOpen(true)}
                   orderWindowDays={activeReport?.id === 'problem' ? problemWindowDays : orderWindowDays}
                   platformStatuses={(() => {
                     const sysSet = new Set(activeReport?.systems || []);
@@ -2092,7 +2147,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                         全部系统
                       </button>
                       {SYSTEM_META.map(sys => {
-                        const isSelectableGroup = sys.key === 'fengshen' || sys.key === 'lanorange' || sys.key === 'baize' || sys.key === 'benlai' || sys.key === 'xiaoxiang';
+                        const isSelectableGroup = sys.key === 'fengshen' || sys.key === 'lanorange' || sys.key === 'lanorange_mdr' || sys.key === 'baize' || sys.key === 'benlai' || sys.key === 'xiaoxiang';
                         const count = isSelectableGroup
                           ? datasets.filter(id => datasetGroup(id) === sys.key).length
                           : 0;
@@ -2103,7 +2158,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                               type="button"
                               aria-pressed={systemFilter === sys.key}
                               title={`${sys.label}（${sys.businessLine}）：${sys.description}`}
-                              onClick={() => setSystemFilter(prev => prev === sys.key ? 'all' : sys.key as 'fengshen' | 'lanorange' | 'baize' | 'benlai' | 'xiaoxiang')}
+                              onClick={() => setSystemFilter(prev => prev === sys.key ? 'all' : sys.key as 'fengshen' | 'lanorange' | 'lanorange_mdr' | 'baize' | 'benlai' | 'xiaoxiang')}
                               className={`wb-system-filter-btn ${systemFilter === sys.key ? 'is-active' : ''}`}
                             >
                               <span>{sys.label}</span>
@@ -2272,7 +2327,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                       </div>
                     )}
 
-                    {(['fengshen', 'lanorange', 'baize', 'benlai', 'xiaoxiang'] as const).filter(group => platform ? group === platform : systemFilter === 'all' || systemFilter === group).map(group => {
+                    {(['fengshen', 'lanorange', 'lanorange_mdr', 'baize', 'benlai', 'xiaoxiang'] as const).filter(group => platform ? group === platform : systemFilter === 'all' || systemFilter === group).map(group => {
                       const filteredDatasets = visibleDatasets.filter(value =>
                         group === 'fengshen'
                           ? moduleAcceptsDataset(value.id, 'fengshen')
@@ -2294,7 +2349,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                             <div className={platform ? 'wb-step-badge' : 'wb-source-title'}>
                               {platform && <span className="wb-step-number">01</span>}
                               {!platform && (
-                                <span className={`wb-sys-badge is-${group}`}>{group === 'baize' ? '商翼' : group === 'benlai' ? '本来人力' : group === 'xiaoxiang' ? '灯塔' : group === 'lanorange' ? '蓝橙' : '风神'}</span>
+                                <span className={`wb-sys-badge is-${group}`}>{group === 'baize' ? '商翼' : group === 'benlai' ? '本来人力' : group === 'xiaoxiang' ? '灯塔' : group === 'lanorange' ? '蓝橙' : group === 'lanorange_mdr' ? '新蓝橙' : '风神'}</span>
                               )}
                               <span id={platform ? 'download-datasets-label' : undefined} className={platform ? 'wb-step-title' : ''}>
                                 {platform
@@ -2307,7 +2362,9 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                         ? '选择资料 · 灯塔资料'
                                         : group === 'lanorange'
                                           ? '选择资料 · 蓝橙资料'
-                                          : '选择资料 · 风神资料'}
+                                          : group === 'lanorange_mdr'
+                                            ? '选择资料 · 新蓝橙资料'
+                                            : '选择资料 · 风神资料'}
                               </span>
                               <span className="wb-step-count-pill tabular-nums">已选 {selectedCount} / {filteredDatasets.length}</span>
                             </div>
@@ -2599,7 +2656,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                           <div className="wb-step-badge">
                             <span className="wb-step-number">02</span>
                             <span id="download-cities-label" className="wb-step-title">处理城市与站点</span>
-                            {blueOnly ? (
+                            {(blueOnly || mdrOnly) ? (
                               <span className="wb-step-count-pill tabular-nums">
                                 {blueCities.length > 0
                                   ? `已选 ${blueCities.length} / ${LANORANGE_CITIES.length}`
@@ -2618,7 +2675,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                           </div>
 
                           <div className="wb-inline-city-toolbar flex-wrap">
-                            {blueOnly ? (
+                            {(blueOnly || mdrOnly) ? (
                               <>
                                 <button
                                   type="button"
@@ -2843,7 +2900,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                           </div>
                         </div>
 
-                        {blueOnly ? (
+                        {(blueOnly || mdrOnly) ? (
                           <div className="wb-inline-city-grid" role="group" aria-label="处理城市列表">
                             {LANORANGE_CITIES.map(city => {
                               const selected = blueCities.includes(city);
@@ -3022,7 +3079,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                                   )}
                                 </div>
                               </div>
-                              {!blueOnly && !xiaoxiangAllDatesActive && (
+                              {!blueOnly && !mdrOnly && !xiaoxiangAllDatesActive && (
                                 <div className="wbx-period-rangebar">
                                   <span className="wbx-period-rangebar__label">自定义区间</span>
                                   <WorkbenchDatePicker
@@ -3709,6 +3766,15 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
         );
       })()}
 
+    {issueRulesOpen && (
+      <IssueRuleEditor
+        open
+        apiFetch={apiFetch}
+        cities={cities}
+        onClose={() => setIssueRulesOpen(false)}
+      />
+    )}
+
     {/* 预设新建 / 修改 / 删除通用弹窗 */}
     {presetModal && (
       <div
@@ -3742,18 +3808,18 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                   {presetModal.mode === 'create' ? '将包含以下已选城市：' : '当前预设所含城市：'}
                 </div>
                 <div className="text-xs text-slate-600 break-words leading-relaxed">
-                  {(presetModal.mode === 'create' ? (blueOnly ? blueCities : cities) : (presetModal.cities || [])).join('、') || '（未选城市）'}
+                  {(presetModal.mode === 'create' ? ((blueOnly || mdrOnly) ? blueCities : cities) : (presetModal.cities || [])).join('、') || '（未选城市）'}
                 </div>
                 {presetModal.mode === 'edit' && (
                   <label className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-200 text-xs text-sky-700 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={!!presetModal.syncWithCurrentSelection}
-                      disabled={!(blueOnly ? blueCities : cities).length}
+                      disabled={!((blueOnly || mdrOnly) ? blueCities : cities).length}
                       onChange={e => setPresetModal(prev => prev ? { ...prev, syncWithCurrentSelection: e.target.checked } : null)}
                       className="rounded text-sky-600 focus:ring-sky-500"
                     />
-                    <span>以当前已勾选的 {(blueOnly ? blueCities : cities).length} 个城市覆盖更新此预设</span>
+                    <span>以当前已勾选的 {((blueOnly || mdrOnly) ? blueCities : cities).length} 个城市覆盖更新此预设</span>
                   </label>
                 )}
               </div>
@@ -3799,7 +3865,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                   if (!trimmed) return;
                   if (presetModal.mode === 'create') {
                     if (presetModal.type === 'region') {
-                      const cur = blueOnly ? blueCities : cities;
+                      const cur = (blueOnly || mdrOnly) ? blueCities : cities;
                       const next = [...regionPresets, { id: `custom_reg_${Date.now()}`, label: trimmed, cities: [...cur] }];
                       saveRegionPresetsToStorage(next);
                     } else {
@@ -3808,7 +3874,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                     }
                   } else if (presetModal.id) {
                     if (presetModal.type === 'region') {
-                      const cur = blueOnly ? blueCities : cities;
+                      const cur = (blueOnly || mdrOnly) ? blueCities : cities;
                       const targetCities = presetModal.syncWithCurrentSelection && cur.length > 0
                         ? [...cur]
                         : (presetModal.cities || []);
@@ -3865,7 +3931,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                 if (!trimmed) return;
                 if (presetModal.mode === 'create') {
                   if (presetModal.type === 'region') {
-                    const cur = blueOnly ? blueCities : cities;
+                    const cur = (blueOnly || mdrOnly) ? blueCities : cities;
                     const next = [...regionPresets, { id: `custom_reg_${Date.now()}`, label: trimmed, cities: [...cur] }];
                     saveRegionPresetsToStorage(next);
                   } else {
@@ -3874,7 +3940,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                   }
                 } else if (presetModal.id) {
                   if (presetModal.type === 'region') {
-                    const cur = blueOnly ? blueCities : cities;
+                    const cur = (blueOnly || mdrOnly) ? blueCities : cities;
                     const targetCities = presetModal.syncWithCurrentSelection && cur.length > 0
                       ? [...cur]
                       : (presetModal.cities || []);

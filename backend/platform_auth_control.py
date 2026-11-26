@@ -20,7 +20,7 @@ from download_accounts import (
 from fengshen_auth import BROKER
 import binding_source_auth as sources
 
-KEYS = ('fengshen', 'lanorange', 'baize', 'xiaoxiang', 'benlai')
+KEYS = ('fengshen', 'lanorange', 'lanorange_mdr', 'baize', 'xiaoxiang', 'benlai')
 SHARED_SOURCES = frozenset({'xiaoxiang', 'benlai'})
 _LOCKS_GUARD = threading.Lock()
 LOCKS = {}

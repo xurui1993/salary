@@ -7,16 +7,19 @@ from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import HTTPException
 
-LABELS = {'fengshen': '风神', 'lanorange': '蓝橙', 'baize': '商翼', 'benlai': '本来人力',
-          'xiaoxiang': '灯塔'}
+LABELS = {'fengshen': '风神', 'lanorange': '蓝橙', 'lanorange_mdr': '新蓝橙', 'baize': '商翼',
+          'benlai': '本来人力', 'xiaoxiang': '灯塔'}
 
 
 def platforms_for_datasets(datasets):
     from download_service import expand_followup_datasets, XIAOXIANG_SELECTION, BAIZE_DATASET, BENLAI_DATASET
     from lanorange_catalog import DATASETS as lanorange
+    from lanorange_mdr_catalog import DATASETS as lanorange_mdr
     platforms = set()
     for kind in expand_followup_datasets(datasets or ()):
-        if kind in lanorange:
+        if kind in lanorange_mdr:
+            platforms.add('lanorange_mdr')
+        elif kind in lanorange:
             platforms.add('lanorange')
         elif kind in XIAOXIANG_SELECTION:
             platforms.add('xiaoxiang')
