@@ -50,8 +50,8 @@ class HeadlessFallback(RuntimeError):
 
 
 class XiangAuth(SourceAuth):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, wid=None):
+        super().__init__(wid=wid)
         self.lock = threading.RLock()
         self.states = {}
         self.stages = {'lighthouse': 'pending', 'board': 'pending'}
@@ -76,7 +76,7 @@ class XiangAuth(SourceAuth):
     def status(self):
         with self.lock:
             state = self.states.get(SOURCE, {})
-        saved = xiaoxiang_lighthouse.SESSION_FILE.exists()
+        saved = xiaoxiang_lighthouse.session_file().exists()
         return {'source': SOURCE, 'sms_retry_after':self.sms_delay(SOURCE), 'busy': bool(self.workers.get(SOURCE) and self.workers[SOURCE].is_alive()), **self.releases.get(SOURCE, {}), 'state': state.get('state') or ('saved' if saved else 'signed_out'),
                 'stages': dict(self.stages),
                 **{key: state[key] for key in ('input_seq', 'input_completed', 'input_pending', 'checked_at', 'verified_at', 'cancelling', 'phase', 'phase_started_at') if key in state},
@@ -196,7 +196,7 @@ class XiangAuth(SourceAuth):
                 try:
                     xiaoxiang_board.board_probe(stored,timeout=(3,8))
                     if cancelled.is_set():
-                        self._set('saved' if xiaoxiang_lighthouse.SESSION_FILE.exists() else 'signed_out', '认证已取消，原会话保留')
+                        self._set('saved' if xiaoxiang_lighthouse.session_file().exists() else 'signed_out', '认证已取消，原会话保留')
                         return
                     if resume is not None:
                         xiaoxiang_lighthouse.save_state(stored)
@@ -296,7 +296,7 @@ class XiangAuth(SourceAuth):
                     self._set('error', '官方认证未完成或连接中断，请重新打开认证入口')
         finally:
             if cancelled.is_set():
-                self._set('saved' if xiaoxiang_lighthouse.SESSION_FILE.exists() else 'signed_out', '认证已取消，原会话保留')
+                self._set('saved' if xiaoxiang_lighthouse.session_file().exists() else 'signed_out', '认证已取消，原会话保留')
                 if self.stages.get('lighthouse') != 'ready':
                     self.stages = {'lighthouse': 'pending', 'board': 'pending'}
             with self.lock:
@@ -331,7 +331,7 @@ class XiangAuth(SourceAuth):
         self.resume_until = time.monotonic() + TIMEOUT
         if self.cancelled.get(SOURCE) and self.cancelled[SOURCE].is_set():
             self._persist_resume()
-            self._set('saved' if xiaoxiang_lighthouse.SESSION_FILE.exists() else 'signed_out', '认证已取消，原会话保留')
+            self._set('saved' if xiaoxiang_lighthouse.session_file().exists() else 'signed_out', '认证已取消，原会话保留')
             return
         self._set('waiting_login', '灯塔会话仍有效，已跳过美团扫码；请用大象扫码完成商配送数据看板（知了）登录' if self.lighthouse_reused else
                   '灯塔登录成功；正在使用本机保留的看板登录态连接知了看板，无需再扫大象' if self.board_reused else
@@ -343,7 +343,7 @@ class XiangAuth(SourceAuth):
             return
         if self.cancelled.get(SOURCE) and self.cancelled[SOURCE].is_set():
             self._persist_resume()
-            self._set('saved' if xiaoxiang_lighthouse.SESSION_FILE.exists() else 'signed_out', '认证已取消，原会话保留')
+            self._set('saved' if xiaoxiang_lighthouse.session_file().exists() else 'signed_out', '认证已取消，原会话保留')
             return
         xiaoxiang_lighthouse.save_state(context.storage_state())
         self.resume_state = None
@@ -365,7 +365,7 @@ class XiangAuth(SourceAuth):
         session_id = secrets.token_urlsafe(24)
         while time.monotonic() < deadline:
             if self.cancelled.get(SOURCE) and self.cancelled[SOURCE].is_set():
-                self._set('saved' if xiaoxiang_lighthouse.SESSION_FILE.exists() else 'signed_out', '认证已取消，原会话保留')
+                self._set('saved' if xiaoxiang_lighthouse.session_file().exists() else 'signed_out', '认证已取消，原会话保留')
                 return False
             page = self._active_page(SOURCE, context, page)
             self._capture_desktop(SOURCE, page)
@@ -436,8 +436,8 @@ class XiangAuth(SourceAuth):
     def keepalive(self):
         """轻量 HTTPS 探活：及时发现会话过期，不启动浏览器、不写入任何凭据。"""
         try:
-            from platform_auth_control import LOCKS
-            lock = LOCKS[SOURCE]
+            from platform_auth_control import _source_lock
+            lock = _source_lock(SOURCE)
         except Exception:
             lock = None
         if lock is not None and not lock.acquire(blocking=False):
@@ -497,12 +497,59 @@ class XiangAuth(SourceAuth):
             self._keepalive.start()
 
     def _keepalive_loop(self):
+        from global_workbench_config import is_shared_source
+        from workspace_context import bind_workspace
         while True:
-            time.sleep(KEEPALIVE_SECONDS)
             try:
-                self.keepalive()
+                with bind_workspace(self._wid):
+                    self.keepalive()
             except Exception as exc:
                 _log.warning('小象灯塔会话保活失败 error=%s: %s', type(exc).__name__, exc)
+            if not is_shared_source(SOURCE):
+                for wid, ws_auth in list(_WORKSPACE_AUTHS.items()):
+                    try:
+                        with bind_workspace(wid):
+                            ws_auth.keepalive()
+                    except Exception as exc:
+                        _log.warning('空间小象灯塔会话保活失败 wid=%s error=%s: %s', wid, type(exc).__name__, exc)
+            time.sleep(KEEPALIVE_SECONDS)
 
 
-AUTH = XiangAuth()
+_PRIMARY_AUTH = XiangAuth()
+_WORKSPACE_AUTHS: dict[str, XiangAuth] = {}
+_AUTHS_LOCK = threading.RLock()
+
+
+def get_xiang_auth(wid: str | None = None) -> XiangAuth:
+    from global_workbench_config import is_shared_source
+    from workspace_context import current_workspace, is_isolated_workspace
+    if is_shared_source(SOURCE):
+        return _PRIMARY_AUTH
+    resolved = wid or current_workspace()
+    if not is_isolated_workspace(resolved):
+        return _PRIMARY_AUTH
+    with _AUTHS_LOCK:
+        inst = _WORKSPACE_AUTHS.get(resolved)
+        if inst is None:
+            inst = XiangAuth(wid=resolved)
+            _WORKSPACE_AUTHS[resolved] = inst
+        return inst
+
+
+class _WorkspaceXiangAuthProxy:
+    """Routes xiaoxiang auth calls to shared host manager or isolated workspace manager."""
+
+    def start_keepalive(self):
+        return _PRIMARY_AUTH.start_keepalive()
+
+    def _inst(self) -> XiangAuth:
+        return get_xiang_auth()
+
+    def __getattr__(self, name):
+        return getattr(self._inst(), name)
+
+    def __setattr__(self, name, value):
+        setattr(self._inst(), name, value)
+
+
+AUTH = _WorkspaceXiangAuthProxy()

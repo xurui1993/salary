@@ -128,9 +128,14 @@ from task_center import router as task_center_router
 app.include_router(task_center_router)
 from file_pickup import router as file_pickup_router
 app.include_router(file_pickup_router)
-from workspace_auth_routes import auth_router as workspace_auth_router, admin_router as workspace_admin_router
+from workspace_auth_routes import (
+    auth_router as workspace_auth_router,
+    admin_router as workspace_admin_router,
+    workbench_config_router,
+)
 app.include_router(workspace_auth_router)
 app.include_router(workspace_admin_router)
+app.include_router(workbench_config_router)
 
 
 class ConfigRequest(BaseModel):
@@ -646,8 +651,11 @@ async def run_calculation(config: ConfigRequest, request: Request):
         require_permission(request, "reports", "payroll", any_of=True)
     else:
         require_permission(request, "payroll")
-        if config.payrollSourceMode == "xiaoxiang":
+        from global_workbench_config import is_shared_source
+        if config.payrollSourceMode == "xiaoxiang" and is_shared_source("xiaoxiang"):
             require_permission(request, "xiaoxiang_use")
+        elif config.payrollSourceMode != "xiaoxiang" and is_shared_source("fengshen"):
+            require_permission(request, "fengshen_use")
     if wid and config.sourcePath and wid not in config.sourcePath:
        # For security
        pass 

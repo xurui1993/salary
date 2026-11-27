@@ -37,6 +37,13 @@ export function connectionSummary(systems: {state?: string; offline?: boolean}[]
 }
 
 import { connectionChips, systemLabel, systemShortLabel } from './platformCatalog';
+import {
+  getGlobalWorkbenchConfig,
+  resolveDatasetCardCopy,
+  resolveModuleGroupLabel,
+  resolveSubmoduleLabel,
+  type GlobalWorkbenchConfig,
+} from './workbenchConfig';
 
 // 平台字典已迁移至 `./platformCatalog`（单一数据源），此处仅做兼容再导出，
 // 保证既有 `import { SYSTEM_META } from '../lib/workbench'` 无需改动。
@@ -524,7 +531,7 @@ export const SIDEBAR_FOOTER_ITEM: SidebarNavItemSpec = {
 };
 
 export interface HeaderModuleContext {
-  groupLabel: '数据采集' | '业务报表' | '核算与业务' | '任务记录' | '薪资核算' | '价格审批';
+  groupLabel: string;
   title: string;
   subtitle: string;
   description?: string;
@@ -620,19 +627,23 @@ export function getHeaderModuleContext(
   taskKind: 'download' | 'generate' | 'payroll',
   downloadPlatform: 'fengshen' | 'lanorange' | 'lanorange_mdr' | 'payout' | 'xiaoxiang',
   historyAll: boolean,
+  cfg: GlobalWorkbenchConfig = getGlobalWorkbenchConfig(),
 ): HeaderModuleContext {
+  const collectionGroupLabel = resolveModuleGroupLabel('collection', cfg);
+  const reportsGroupLabel = resolveModuleGroupLabel('reports', cfg);
+  const payrollGroupLabel = resolveModuleGroupLabel('payroll', cfg);
   if (workspaceView === 'pickup') {
     return {
       groupLabel: '任务记录',
-      title: '文件领取',
+      title: resolveSubmoduleLabel('workspace:pickup', '文件领取', cfg),
       subtitle: '按任务领取本机成品，或浏览局域网共享电脑的成品文件',
       iconKey: 'folder-check',
     };
   }
   if (workspaceView === 'approval' || workspaceView === 'price-export') {
     return {
-      groupLabel: '薪资核算',
-      title: '价格审批',
+      groupLabel: payrollGroupLabel,
+      title: resolveSubmoduleLabel('workspace:approval', '价格审批', cfg),
       subtitle: '筛选本人价格提审，跨页勾选后预览并批量审批',
       iconKey: 'badge-dollar-sign',
     };
@@ -647,8 +658,8 @@ export function getHeaderModuleContext(
   }
   if (taskKind === 'generate') {
     return {
-      groupLabel: '业务报表',
-      title: '业务报表',
+      groupLabel: reportsGroupLabel,
+      title: reportsGroupLabel,
       subtitle: '支付绑定、异常跟进、异常名单、问题单自动关联生成',
       iconKey: 'bar-chart-3',
     };
@@ -656,46 +667,46 @@ export function getHeaderModuleContext(
   if (taskKind === 'payroll') {
     return {
       groupLabel: '核算与业务',
-      title: '薪资核算',
+      title: payrollGroupLabel,
       subtitle: '上传薪资申请表，自动识别范围、齐套资料并执行兼职核算',
       iconKey: 'wallet-cards',
     };
   }
   if (downloadPlatform === 'lanorange_mdr') {
     return {
-      groupLabel: '数据采集',
-      title: '新蓝橙数据',
+      groupLabel: collectionGroupLabel,
+      title: resolveSubmoduleLabel('platform:lanorange_mdr', '新蓝橙数据', cfg),
       subtitle: '新蓝橙骑手档案、离职请假、兼全职变更、佣金代领与兼职价格档案采集',
       iconKey: 'building-2',
     };
   }
   if (downloadPlatform === 'lanorange') {
     return {
-      groupLabel: '数据采集',
-      title: '蓝橙数据',
+      groupLabel: collectionGroupLabel,
+      title: resolveSubmoduleLabel('platform:lanorange', '蓝橙数据', cfg),
       subtitle: '原雷神骑手档案、兼职价格、离职与请假全量资料采集',
       iconKey: 'layers',
     };
   }
   if (downloadPlatform === 'payout') {
     return {
-      groupLabel: '数据采集',
-      title: '发薪平台',
+      groupLabel: collectionGroupLabel,
+      title: resolveSubmoduleLabel('platform:payout', '发薪平台', cfg),
       subtitle: '白泽商翼员工档案与本来人力灵工档案统一采集、授权巡检与结果领取',
       iconKey: 'users-round',
     };
   }
   if (downloadPlatform === 'xiaoxiang') {
     return {
-      groupLabel: '数据采集',
-      title: '小象灯塔',
+      groupLabel: collectionGroupLabel,
+      title: resolveSubmoduleLabel('platform:xiaoxiang', '小象灯塔', cfg),
       subtitle: '灯塔商配送日维度骑手分析、骑手档案与订单明细采集',
       iconKey: 'radar',
     };
   }
   return {
-    groupLabel: '数据采集',
-    title: '风神数据',
+    groupLabel: collectionGroupLabel,
+    title: resolveSubmoduleLabel('platform:fengshen', '风神数据', cfg),
     subtitle: '按城市与账期采集配送费、违规扣款、UB账单与考勤源表',
     iconKey: 'compass',
   };
@@ -712,10 +723,11 @@ export function getStageHeaderMeta(
   taskKind: 'download' | 'generate',
   platform?: 'fengshen' | 'lanorange' | 'lanorange_mdr' | 'payout' | 'xiaoxiang',
   view: 'create' | 'history' = 'create',
+  cfg: GlobalWorkbenchConfig = getGlobalWorkbenchConfig(),
 ): StageHeaderMeta {
   if (taskKind === 'generate') {
     return {
-      title: '业务报表',
+      title: resolveModuleGroupLabel('reports', cfg),
       createTabLabel: '生成报表',
       historyTabLabel: '本模块记录',
       subtitle:
@@ -731,7 +743,8 @@ export function getStageHeaderMeta(
     payout: '发薪平台',
     xiaoxiang: '灯塔下载',
   };
-  const title = platform ? titleMap[platform] : '资料下载';
+  const customPlatformName = platform ? cfg.module_names.items[`platform:${platform}`]?.trim() : '';
+  const title = customPlatformName || (platform ? titleMap[platform] : '资料下载');
   return {
     title,
     createTabLabel: '新建下载',
@@ -1107,6 +1120,55 @@ const DATASET_CARD_META_MAP: Record<string, Omit<DatasetCardMeta, 'id'>> = {
     tone: 'city',
     desc: '按运单终态时间导出城市运单明细，支持全城送标品筛选',
   },
+  // 新蓝橙数据
+  lcmdr_archive: {
+    title: '骑手档案',
+    scopeTag: '城市·全量',
+    tone: 'full',
+    desc: '新蓝橙系统骑手在职与离职人事档案明细',
+  },
+  lcmdr_exit: {
+    title: '骑手离职',
+    scopeTag: '城市·全量',
+    tone: 'full',
+    desc: '新蓝橙系统骑手离职审批与结算明细',
+  },
+  lcmdr_batch_exit: {
+    title: '批量离职',
+    scopeTag: '城市·全量',
+    tone: 'full',
+    desc: '新蓝橙系统批量离职处理归档明细',
+  },
+  lcmdr_exit_report: {
+    title: '离职报备',
+    scopeTag: '城市·全量',
+    tone: 'full',
+    desc: '新蓝橙系统站点上报离职报备记录',
+  },
+  lcmdr_leave: {
+    title: '骑手请假',
+    scopeTag: '城市·全量',
+    tone: 'full',
+    desc: '新蓝橙系统骑手请假与休假审批明细',
+  },
+  lcmdr_type_change: {
+    title: '骑手兼全职变更',
+    scopeTag: '城市·全量',
+    tone: 'full',
+    desc: '新蓝橙系统兼职与全职身份转换记录',
+  },
+  lcmdr_commission_proxy: {
+    title: '佣金代领',
+    scopeTag: '城市·按月',
+    tone: 'monthly',
+    desc: '新蓝橙系统按月佣金代发代领明细表',
+  },
+  lcmdr_part_price: {
+    title: '兼职价格档案',
+    scopeTag: '城市·按月',
+    tone: 'monthly',
+    desc: '新蓝橙系统各城市站点兼职阶梯单价表',
+  },
   // 发薪平台（白泽商翼 + 本来人力）
   baize_employees: {
     title: '商翼员工资料',
@@ -1165,37 +1227,44 @@ const DATASET_CARD_META_MAP: Record<string, Omit<DatasetCardMeta, 'id'>> = {
   },
 };
 
-export function getDatasetCardMeta(datasetId: string, rawLabel?: string): DatasetCardMeta {
+export function getDatasetCardMeta(
+  datasetId: string,
+  rawLabel?: string,
+  cfg: GlobalWorkbenchConfig = getGlobalWorkbenchConfig(),
+): DatasetCardMeta {
   const cleanLabel = (rawLabel || datasetId)
     .replaceAll('白泽', '商翼')
     .replaceAll('小象灯塔', systemShortLabel('xiaoxiang'))
     .replaceAll('小象', '灯塔')
     .replace(/（灯塔）$/, '');
   const known = DATASET_CARD_META_MAP[datasetId];
-  if (known) {
-    return {
-      id: datasetId,
-      title: known.title || cleanLabel,
-      scopeTag: known.scopeTag,
-      tone: known.tone,
-      desc: known.desc,
-    };
-  }
-  if (datasetId.startsWith('lanorange_')) {
-    return {
-      id: datasetId,
-      title: cleanLabel,
-      scopeTag: '全城·全量',
-      tone: 'full',
-      desc: '蓝橙系统全量人事与业务归档数据表',
-    };
-  }
+  const baseMeta = known
+    ? {
+        title: known.title || cleanLabel,
+        scopeTag: known.scopeTag,
+        tone: known.tone,
+        desc: known.desc,
+      }
+    : datasetId.startsWith('lanorange_') || datasetId.startsWith('lcmdr_')
+      ? {
+          title: cleanLabel,
+          scopeTag: '全城·全量',
+          tone: 'full' as DatasetCardTone,
+          desc: '蓝橙系统全量人事与业务归档数据表',
+        }
+      : {
+          title: cleanLabel,
+          scopeTag: '城市·账期',
+          tone: 'city' as DatasetCardTone,
+          desc: '按所选城市与业务账期采集导出原表',
+        };
+  const resolved = resolveDatasetCardCopy(datasetId, baseMeta.title, baseMeta.desc, cfg);
   return {
     id: datasetId,
-    title: cleanLabel,
-    scopeTag: '城市·账期',
-    tone: 'city',
-    desc: '按所选城市与业务账期采集导出原表',
+    title: resolved.title,
+    scopeTag: baseMeta.scopeTag,
+    tone: baseMeta.tone,
+    desc: resolved.desc,
   };
 }
 

@@ -364,7 +364,10 @@ def call(fn):
 
 
 def scope(request):
+    from global_workbench_config import is_shared_source
     require_permission(request, 'approval')
+    if is_shared_source('lanorange'):
+        require_permission(request, 'lanorange_use')
     return workspace_owner(request)
 
 

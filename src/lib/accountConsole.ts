@@ -1,14 +1,16 @@
-import type {
-  AuditEvent,
-  PermissionKey,
-  RoleTemplateDef,
-  WorkspaceUser,
-} from './workspaceAuth';
+import type { AuditEvent, PermissionKey, WorkspaceUser } from './workspaceAuth';
+import {
+  DEFAULT_GLOBAL_WORKBENCH_CONFIG,
+  getDynamicPermissionGroups,
+  getGlobalWorkbenchConfig,
+  type GlobalWorkbenchConfig,
+} from './workbenchConfig';
 
 export interface PermissionMetaItem {
   key: PermissionKey;
   label: string;
   description: string;
+  globallyPaused?: boolean;
 }
 
 export interface PermissionGroupDef {
@@ -18,36 +20,57 @@ export interface PermissionGroupDef {
   items: PermissionMetaItem[];
 }
 
-export const PERMISSION_GROUPS: PermissionGroupDef[] = [
-  {
-    id: 'business',
-    title: '业务模块',
-    subtitle: '控制左侧业务导航入口及对应后台接口操作权',
-    items: [
-      { key: 'collection', label: '数据采集', description: '风神、蓝橙、发薪等原始资料采集' },
-      { key: 'reports', label: '业务报表', description: '支付绑定、异常跟进、异常名单与问题单' },
-      { key: 'payroll', label: '薪资核算', description: '兼职核算队列、扣款配置与模板中心' },
-      { key: 'approval', label: '价格审批', description: '蓝橙待办审批列表与每日价格导出' },
-    ],
-  },
-  {
-    id: 'shared',
-    title: '共享通道',
-    subtitle: '小象灯塔与本来人力采用全局共享登录态，按需分配使用与维护权',
-    items: [
-      { key: 'xiaoxiang_use', label: '共享小象', description: '复用主机小象灯塔连接执行数据采集' },
-      { key: 'benlai_use', label: '共享本来', description: '复用主机本来人力连接拉取灵工档案' },
-      { key: 'shared_auth_manage', label: '维护共享连接', description: '允许扫码登录或断开小象灯塔与本来人力' },
-    ],
-  },
+export const ALL_PERMISSION_KEYS: PermissionKey[] = [
+  'collection',
+  'reports',
+  'payroll',
+  'approval',
+  'fengshen_use',
+  'lanorange_use',
+  'lanorange_mdr_use',
+  'baize_use',
+  'xiaoxiang_use',
+  'benlai_use',
+  'shared_auth_manage',
 ];
 
-export const ALL_PERMISSION_KEYS: PermissionKey[] = PERMISSION_GROUPS.flatMap(g =>
-  g.items.map(i => i.key),
+export function getPermissionGroups(
+  cfg: GlobalWorkbenchConfig = getGlobalWorkbenchConfig(),
+): PermissionGroupDef[] {
+  const dynamic = getDynamicPermissionGroups(cfg);
+  return dynamic.map(group => {
+    if (group.id === 'modules') {
+      return {
+        id: 'business',
+        title: group.title,
+        subtitle: '控制左侧业务导航入口及对应后台接口操作权',
+        items: group.items.map(item => ({
+          key: item.key as PermissionKey,
+          label: item.label,
+          description: item.desc,
+          globallyPaused: item.globallyPaused,
+        })),
+      };
+    }
+    return {
+      id: 'shared',
+      title: group.title,
+      subtitle: '主机设为共享模式的平台将集中出现在此，按需分配同事使用与维护权',
+      items: group.items.map(item => ({
+        key: item.key as PermissionKey,
+        label: item.label,
+        description: item.desc,
+      })),
+    };
+  });
+}
+
+export const PERMISSION_GROUPS: PermissionGroupDef[] = getPermissionGroups(
+  DEFAULT_GLOBAL_WORKBENCH_CONFIG,
 );
 
 export interface UserPermissionDraft {
-  role_template: string;
+  role: 'admin' | 'member';
   permissions: Record<PermissionKey, boolean>;
 }
 
@@ -61,30 +84,30 @@ export function buildFullPermissions(enabled: boolean): Record<PermissionKey, bo
   );
 }
 
+export function buildDefaultNewMemberPermissions(
+  cfg: GlobalWorkbenchConfig = getGlobalWorkbenchConfig(),
+): Record<PermissionKey, boolean> {
+  const perms = buildFullPermissions(false);
+  perms.collection = true;
+  perms.reports = true;
+  for (const [plat, mode] of Object.entries(cfg.channel_modes)) {
+    if (mode === 'shared') {
+      const useKey = `${plat}_use` as PermissionKey;
+      if (useKey in perms) {
+        perms[useKey] = plat === 'xiaoxiang' || plat === 'benlai';
+      }
+    }
+  }
+  return perms;
+}
+
 export function createDraftFromUser(user: WorkspaceUser): UserPermissionDraft {
   const perms = buildFullPermissions(false);
   for (const key of ALL_PERMISSION_KEYS) {
     perms[key] = user.role === 'admin' ? true : Boolean(user.permissions?.[key]);
   }
   return {
-    role_template: user.role === 'admin' ? 'admin' : user.role_template || 'custom',
-    permissions: perms,
-  };
-}
-
-export function applyTemplateToDraft(
-  templateKey: string,
-  templates: Record<string, RoleTemplateDef>,
-): UserPermissionDraft {
-  const tpl = templates[templateKey];
-  const perms = buildFullPermissions(templateKey === 'admin');
-  if (tpl?.permissions) {
-    for (const key of ALL_PERMISSION_KEYS) {
-      perms[key] = templateKey === 'admin' ? true : Boolean(tpl.permissions[key]);
-    }
-  }
-  return {
-    role_template: templateKey,
+    role: user.role === 'admin' ? 'admin' : 'member',
     permissions: perms,
   };
 }
@@ -94,8 +117,7 @@ export function hasDraftChanges(
   draft: UserPermissionDraft | undefined,
 ): boolean {
   if (!draft) return false;
-  const savedTemplate = user.role === 'admin' ? 'admin' : user.role_template || 'custom';
-  if (draft.role_template !== savedTemplate) return true;
+  if (draft.role !== user.role) return true;
   for (const key of ALL_PERMISSION_KEYS) {
     const savedVal = user.role === 'admin' ? true : Boolean(user.permissions?.[key]);
     if (Boolean(draft.permissions?.[key]) !== savedVal) {
@@ -113,11 +135,18 @@ export function countEnabledPermissions(
   return keys.reduce((total, key) => total + (permissions[key] ? 1 : 0), 0);
 }
 
+export function getVisiblePermissionKeys(
+  cfg: GlobalWorkbenchConfig = getGlobalWorkbenchConfig(),
+): PermissionKey[] {
+  return getPermissionGroups(cfg).flatMap(g => g.items.map(i => i.key));
+}
+
 export function getEnabledPermissionLabels(
   permissions: Record<string, boolean> | undefined,
   isAdmin = false,
+  cfg: GlobalWorkbenchConfig = getGlobalWorkbenchConfig(),
 ): string[] {
-  const allItems = PERMISSION_GROUPS.flatMap(g => g.items);
+  const allItems = getPermissionGroups(cfg).flatMap(g => g.items);
   if (isAdmin) {
     return allItems.map(item => item.label);
   }
@@ -145,25 +174,14 @@ export function resolveAuditTargetLabel(
   return getWorkspaceDisplayLabel(clean);
 }
 
-export function getRoleTemplateLabel(
-  role: 'admin' | 'member',
-  roleTemplate: string,
-  templates: Record<string, RoleTemplateDef>,
-): string {
-  if (role === 'admin') return '系统管理员';
-  return templates[roleTemplate]?.label || '自定义权限';
-}
-
 export function getStatusLabel(status: WorkspaceUser['status']): string {
   if (status === 'active') return '正常启用';
-  if (status === 'pending') return '待审批';
-  if (status === 'disabled') return '已停用';
-  return '已驳回';
+  return '已停用';
 }
 
 export interface ManagedUserFilterOptions {
   query: string;
-  status: 'all' | 'active' | 'disabled' | 'rejected';
+  status: 'all' | 'active' | 'disabled';
   role: 'all' | 'admin' | 'member';
 }
 
@@ -173,10 +191,7 @@ export function filterManagedUsers(
 ): WorkspaceUser[] {
   const q = options.query.trim().toLowerCase();
   return users.filter(user => {
-    if (user.status === 'pending') return false;
-    if (options.status === 'all') {
-      if (user.status === 'rejected') return false;
-    } else if (user.status !== options.status) {
+    if (options.status !== 'all' && user.status !== options.status) {
       return false;
     }
     if (options.role !== 'all' && user.role !== options.role) return false;
@@ -186,7 +201,7 @@ export function filterManagedUsers(
   });
 }
 
-export type AuditCategory = 'all' | 'auth' | 'approval' | 'permission' | 'workspace' | 'security';
+export type AuditCategory = 'all' | 'auth' | 'permission' | 'workspace' | 'security';
 
 export interface AuditActionMeta {
   label: string;
@@ -198,15 +213,13 @@ const AUDIT_ACTION_MAP: Record<string, AuditActionMeta> = {
   'account.switch_host': { label: '一键切回主机管理员', category: 'auth' },
   'account.login': { label: '成员登录工作空间', category: 'auth' },
   'account.logout': { label: '成员退出登录', category: 'auth' },
-  'account.register': { label: '提交注册申请', category: 'approval' },
-  'account.approve': { label: '批准注册并开通空间', category: 'approval' },
-  'account.reject': { label: '驳回注册申请', category: 'approval' },
   'account.create': { label: '管理员新建成员', category: 'permission' },
   'account.update': { label: '调整成员权限或状态', category: 'permission' },
   'account.password.change': { label: '修改个人密码', category: 'security' },
   'account.password.reset': { label: '管理员重置成员密码', category: 'security' },
   'account.inspect': { label: '切换跨空间巡检', category: 'workspace' },
   'account.config.sync': { label: '同步标准默认扣款表', category: 'workspace' },
+  'workbench.global_config': { label: '更新全局名称与通道配置', category: 'workspace' },
 };
 
 export function formatAuditAction(action: string): AuditActionMeta {
@@ -218,11 +231,8 @@ const AUDIT_DETAIL_MAP: Record<string, string> = {
   failed: '执行失败',
   enabled: '启用状态',
   disabled: '停用状态',
-  admin: '管理员角色',
-  member: '普通成员',
-  approved: '已批准开通',
-  rejected: '已驳回申请',
-  registered: '等待审批',
+  admin: '管理员',
+  member: '团队成员',
   inspect: '巡检进入',
   cancelled: '已取消',
   partial: '部分完成',

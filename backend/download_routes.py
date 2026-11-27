@@ -178,10 +178,11 @@ async def create(request: Request):
     else:
         check_user_permission(user, "collection")
     datasets = payload.get("datasets") if isinstance(payload.get("datasets"), list) else []
-    if any(isinstance(ds, str) and (ds.startswith("xiaoxiang") or ds in ("rider_daily", "detail_orders", "detail_kesu", "detail_reviews", "rider_archive")) for ds in datasets):
-        check_user_permission(user, "xiaoxiang_use")
-    if any(isinstance(ds, str) and (ds.startswith("benlai") or ds == "payment_binding") for ds in datasets):
-        check_user_permission(user, "benlai_use")
+    from auth_preflight import platforms_for_datasets
+    from global_workbench_config import is_shared_source
+    for src in sorted(platforms_for_datasets(datasets)):
+        if is_shared_source(src):
+            check_user_permission(user, f"{src}_use")
     request_id = _request_id(payload)
     try:
         service = importlib.import_module("download_service")

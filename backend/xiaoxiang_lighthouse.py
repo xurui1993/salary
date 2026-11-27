@@ -30,8 +30,22 @@ LIST_PATH = '/api/s/peisong/rideroms/supplier/notice/record/list'
 DETAIL_PATH = '/api/s/peisong/rideroms/supplier/notice/record/detail'
 SUPPLIER_ID = 106
 PROJECT = Path(__file__).resolve().parent.parent
-SESSION_FILE = Path(__file__).resolve().parent / '.local_auth' / 'xiaoxiang_lighthouse.dpapi'
+_DEFAULT_SESSION_FILE = Path(__file__).resolve().parent / '.local_auth' / 'xiaoxiang_lighthouse.dpapi'
+SESSION_FILE = _DEFAULT_SESSION_FILE
 SESSION_ENTROPY = b'aegis-xiaoxiang-lighthouse-v1'
+
+
+def session_file() -> Path:
+    if SESSION_FILE != _DEFAULT_SESSION_FILE:
+        return SESSION_FILE
+    from global_workbench_config import is_shared_source
+    if is_shared_source('xiaoxiang'):
+        return SESSION_FILE
+    from workspace_context import current_workspace, is_isolated_workspace, workspace_auth_dir
+    wid = current_workspace()
+    if is_isolated_workspace(wid):
+        return workspace_auth_dir(wid) / 'xiaoxiang_lighthouse.dpapi'
+    return SESSION_FILE
 STATE_LIMIT = 256 * 1024
 REQUIRED_COLUMNS = {'合作商id', '骑手id', '站点id', '业务日期', '配送方', '配送单量'}
 HEADERS = {
@@ -115,8 +129,8 @@ def scoped_state(state):
     return {'cookies': cookies, 'origins': origins}
 
 
-def load_state(path=SESSION_FILE):
-    path = Path(path)
+def load_state(path=None):
+    path = Path(path) if path is not None else session_file()
     if not path.exists():
         return None
     if path.is_symlink() or path.stat().st_size > STATE_LIMIT:
@@ -132,8 +146,8 @@ def load_state(path=SESSION_FILE):
         raise LighthouseError('本机会话无法解密，请删除后重新登录') from None
 
 
-def save_state(state, path=SESSION_FILE):
-    path = Path(path)
+def save_state(state, path=None):
+    path = Path(path) if path is not None else session_file()
     payload = json.dumps({'source': 'xiaoxiang_lighthouse', 'state': scoped_state(state)},
                          ensure_ascii=True, separators=(',', ':')).encode('utf-8')
     if len(payload) > STATE_LIMIT:

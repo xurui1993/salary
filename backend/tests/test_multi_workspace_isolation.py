@@ -17,6 +17,7 @@ import binding_source_auth as bsa
 import download_accounts as accounts
 import download_routes
 import fengshen_auth
+import global_workbench_config as gcfg
 import lanorange_approvals
 import platform_auth_control as pac
 import workbench
@@ -81,6 +82,8 @@ class MultiWorkspaceIsolationTests(unittest.TestCase):
             patch.object(auth_routes, "PROJECT_ROOT", self.root),
             patch.object(wctx, "PROJECT_ROOT", self.root),
             patch.object(wctx, "LOCAL_AUTH_ROOT", self.auth_dir),
+            patch.object(gcfg, "_CONFIG_PATH", self.root / "data" / "workbench_global_config.json"),
+            patch.object(gcfg, "_CACHE", None),
             patch.object(bsa, "_DEFAULT_AUTH_ROOT", self.auth_dir),
             patch.object(bsa, "ROOT", self.auth_dir),
             patch.object(workbench, "ROOT", self.root),
@@ -90,72 +93,41 @@ class MultiWorkspaceIsolationTests(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
 
-    def test_bootstrap_registration_approval_and_config_isolation(self):
-        # 1. Remote LAN client cannot bootstrap host admin
-        remote_req = make_request(
-            "POST",
-            "/api/auth/bootstrap",
-            client="192.168.1.88",
-            body={"username": "hacker", "password": "password123"},
-        )
-        with self.assertRaises(HTTPException) as ctx:
-            asyncio.run(auth_routes.bootstrap_admin(remote_req, Response()))
-        self.assertEqual(ctx.exception.status_code, 403)
+    def test_admin_created_member_workspace_and_config_isolation(self):
+        # 1. Host auto-creates primary admin in download_shared; bootstrap endpoint is retired (410)
+        admin = self.store.ensure_host_admin()
+        self.assertEqual(admin["workspace_id"], "download_shared")
+        admin_token = self.store.new_session(admin["id"])
 
-        # 2. Host loopback client bootstraps primary admin -> inherits download_shared & existing config.json
-        host_req = make_request(
-            "POST",
-            "/api/auth/bootstrap",
-            host="127.0.0.1:3000",
-            client="127.0.0.1",
-            body={"username": "hostadmin", "display_name": "主机管理员", "password": "adminPassword123"},
-        )
-        host_res = Response()
-        boot = asyncio.run(auth_routes.bootstrap_admin(host_req, host_res))
-        self.assertTrue(boot["authenticated"])
-        self.assertEqual(boot["user"]["workspace_id"], "download_shared")
-        admin_token = self.store.new_session(boot["user"]["id"])
+        # Public registration / approval endpoints are completely removed
+        self.assertFalse(hasattr(auth_routes, "register"))
+        self.assertFalse(hasattr(auth_routes, "admin_approve_account"))
+        self.assertFalse(hasattr(auth_routes, "admin_reject_account"))
 
-        # 3. Public self-registration is enabled by default (creates pending account awaiting admin approval)
-        reg_req = make_request(
+        # 2. Admin creates Lisi directly with explicit boolean permissions (no role templates)
+        create_req = make_request(
             "POST",
-            "/api/auth/register",
-            body={"username": "lisi", "display_name": "李四", "password": "lisiPassword123", "note": "深圳核算"},
-        )
-        reg = asyncio.run(auth_routes.register(reg_req))
-        self.assertEqual(reg["status"], "pending")
-        self.assertEqual(self.store.pending_count(), 1)
-
-        # Explicitly disabling via ALLOW_SELF_REGISTRATION=0 blocks new public registrations with 403
-        with patch.dict(os.environ, {"ALLOW_SELF_REGISTRATION": "0"}):
-            blocked_reg_req = make_request(
-                "POST",
-                "/api/auth/register",
-                body={"username": "wangwu", "display_name": "王五", "password": "wangwuPassword123"},
-            )
-            with self.assertRaises(HTTPException) as reg_err:
-                asyncio.run(auth_routes.register(blocked_reg_req))
-            self.assertEqual(reg_err.exception.status_code, 403)
-
-        login_pending_req = make_request(
-            "POST",
-            "/api/auth/login",
-            body={"username": "lisi", "password": "lisiPassword123"},
-        )
-        with self.assertRaises(HTTPException) as pending_err:
-            asyncio.run(auth_routes.login(login_pending_req, Response()))
-        self.assertEqual(pending_err.exception.status_code, 403)
-
-        # 4. Admin approves Lisi as payroll_specialist (payroll=True, approval=False, shared_auth_manage=False)
-        lisi_id = next(u["id"] for u in self.store.users() if u["username"] == "lisi")
-        approve_req = make_request(
-            "POST",
-            f"/api/admin/accounts/{lisi_id}/approve",
+            "/api/admin/accounts",
             token=admin_token,
-            body={"role_template": "payroll_specialist"},
+            body={
+                "username": "lisi",
+                "display_name": "李四",
+                "password": "lisiPassword123",
+                "note": "深圳核算",
+                "permissions": {
+                    "collection": True,
+                    "reports": True,
+                    "payroll": True,
+                    "approval": False,
+                    "xiaoxiang_use": True,
+                    "benlai_use": True,
+                    "shared_auth_manage": False,
+                },
+            },
         )
-        approved = asyncio.run(auth_routes.admin_approve_account(lisi_id, approve_req))
-        lisi_wid = approved["user"]["workspace_id"]
+        created = asyncio.run(auth_routes.admin_create_account(create_req))
+        lisi_id = created["user"]["id"]
+        lisi_wid = created["user"]["workspace_id"]
         self.assertTrue(lisi_wid.startswith("ws_"))
 
         # Verify Lisi's workspace received an independent copy of default config.json
@@ -163,7 +135,7 @@ class MultiWorkspaceIsolationTests(unittest.TestCase):
         self.assertTrue(lisi_cfg_path.is_file())
         self.assertEqual(json.loads(lisi_cfg_path.read_text("utf-8")), self.template_rows)
 
-        # 5. Lisi logs in and modifies her own deduction config -> Admin's config remains unchanged!
+        # 3. Lisi logs in and modifies her own deduction config -> Admin's config remains unchanged!
         lisi_token = self.store.new_session(lisi_id)
         lisi_get_req = make_request("GET", "/api/workbench/deductions", token=lisi_token)
         current_cfg = workbench.get_defaults(lisi_get_req)
@@ -180,7 +152,7 @@ class MultiWorkspaceIsolationTests(unittest.TestCase):
         self.assertEqual(json.loads(lisi_cfg_path.read_text("utf-8"))[0]["投诉"], 999)
         self.assertEqual(json.loads((self.root / "data" / "config.json").read_text("utf-8"))[0]["投诉"], 50)
 
-        # 6. Spoofing x-workspace-id header cannot escape Lisi's workspace
+        # 4. Spoofing x-workspace-id header cannot escape Lisi's workspace
         spoof_req = make_request(
             "GET",
             "/api/fengshen-downloads/runs",
@@ -189,19 +161,19 @@ class MultiWorkspaceIsolationTests(unittest.TestCase):
         )
         self.assertEqual(download_routes.workspace_owner(spoof_req), lisi_wid)
 
-        # 7. Permission enforcement: Lisi lacks 'approval' permission -> 403 on Lanorange approval scope
+        # 5. Permission enforcement: Lisi lacks 'approval' permission -> 403 on Lanorange approval scope
         with self.assertRaises(HTTPException) as perm_err:
             lanorange_approvals.scope(make_request("GET", "/api/lanorange/pending", token=lisi_token))
         self.assertEqual(perm_err.exception.status_code, 403)
 
-        # 8. Admin cross-workspace inspection -> switches into Lisi's workspace and sees 999, then exits back to 50
+        # 6. Admin cross-workspace inspection -> switches into Lisi's workspace and sees 999, then exits back to 50
         inspect_req = make_request(
             "POST",
             "/api/auth/inspect",
             token=admin_token,
             body={"workspace_id": lisi_wid},
         )
-        inspected = asyncio.run(auth_routes.switch_inspect_workspace(inspect_req))
+        inspected = asyncio.run(auth_routes.switch_inspect_workspace(inspect_req, Response()))
         self.assertTrue(inspected["user"]["inspecting"])
         self.assertEqual(inspected["user"]["effective_workspace"], lisi_wid)
 
@@ -209,16 +181,26 @@ class MultiWorkspaceIsolationTests(unittest.TestCase):
         self.assertEqual(admin_inspect_cfg["rows"][0]["投诉"], 999)
 
         exit_req = make_request("POST", "/api/auth/inspect", token=admin_token, body={"workspace_id": ""})
-        exited = asyncio.run(auth_routes.switch_inspect_workspace(exit_req))
+        exited = asyncio.run(auth_routes.switch_inspect_workspace(exit_req, Response()))
         self.assertFalse(exited["user"]["inspecting"])
         self.assertEqual(exited["user"]["effective_workspace"], "download_shared")
         admin_own_cfg = workbench.get_defaults(make_request("GET", "/api/workbench/deductions", token=admin_token))
         self.assertEqual(admin_own_cfg["rows"][0]["投诉"], 50)
 
     def test_shared_xiaoxiang_benlai_vs_isolated_personal_platforms(self):
-        admin = self.store.create_user("admin", "adminPass123", role="admin", bootstrap=True)
-        alice = self.store.create_user("alice", "alicePass123", role="member", role_template="payroll_specialist")
-        bob = self.store.create_user("bob", "bobPass123", role="member", role_template="ops_specialist")
+        admin = self.store.create_user("admin", "adminPass123", role="admin")
+        alice = self.store.create_user(
+            "alice",
+            "alicePass123",
+            role="member",
+            permissions={"collection": True, "payroll": True, "shared_auth_manage": False},
+        )
+        bob = self.store.create_user(
+            "bob",
+            "bobPass123",
+            role="member",
+            permissions={"collection": True, "reports": True, "shared_auth_manage": False},
+        )
 
         admin_tok = self.store.new_session(admin["id"])
         alice_tok = self.store.new_session(alice["id"])
@@ -317,59 +299,27 @@ class MultiWorkspaceIsolationTests(unittest.TestCase):
             self.assertIn("secure", clear_cookie)
             self.assertIn("partitioned", clear_cookie)
 
-    def test_public_registration_rate_limit_and_lan_pending_approval(self):
-        # Remote LAN client cannot initialize host admin (403)
-        remote_boot_req = make_request(
+    def test_remote_member_cannot_create_accounts_or_bootstrap(self):
+        admin = self.store.ensure_host_admin()
+        member = self.store.create_user("alice", "alicePass123", role="member")
+        member_tok = self.store.new_session(member["id"])
+
+        # Remote LAN client cannot create member accounts (403)
+        forged_create = make_request(
             "POST",
-            "/api/auth/bootstrap",
+            "/api/admin/accounts",
             host="192.168.1.10:3000",
             client="192.168.1.55",
-            body={"username": "host_admin", "display_name": "主机管理员", "password": "StrongAdminPassword1!"},
+            token=member_tok,
+            body={"username": "lan_user_1", "display_name": "局域网成员1", "password": "LanUser123456"},
         )
-        with self.assertRaises(HTTPException) as remote_boot_err:
-            asyncio.run(auth_routes.bootstrap_admin(remote_boot_req, Response()))
-        self.assertEqual(remote_boot_err.exception.status_code, 403)
-
-        # Host machine (loopback) can initialize host admin
-        boot_req = make_request(
-            "POST",
-            "/api/auth/bootstrap",
-            host="127.0.0.1:3000",
-            client="127.0.0.1",
-            body={"username": "host_admin", "display_name": "主机管理员", "password": "StrongAdminPassword1!"},
-        )
-        boot = asyncio.run(auth_routes.bootstrap_admin(boot_req, Response()))
-        self.assertTrue(boot["self_registration_enabled"])
-        self.assertTrue(self.store.initialized())
-
-        # LAN client can submit public registration and receives pending status; rate limit enforces ceiling
-        with patch.dict(os.environ, {"REGISTER_RATE_LIMIT": "2"}):
-            for idx in range(2):
-                lan_req = make_request(
-                    "POST",
-                    "/api/auth/register",
-                    host="192.168.1.10:3000",
-                    client="192.168.1.55",
-                    body={"username": f"lan_user_{idx}", "display_name": f"局域网成员{idx}", "password": "LanUser123456"},
-                )
-                res = asyncio.run(auth_routes.register(lan_req))
-                self.assertEqual(res["status"], "pending")
-
-            # 3rd registration from same LAN IP within window hits 429 rate limit
-            throttled_req = make_request(
-                "POST",
-                "/api/auth/register",
-                host="192.168.1.10:3000",
-                client="192.168.1.55",
-                body={"username": "lan_user_2", "display_name": "局域网成员2", "password": "LanUser123456"},
-            )
-            with self.assertRaises(HTTPException) as limit_err:
-                asyncio.run(auth_routes.register(throttled_req))
-            self.assertEqual(limit_err.exception.status_code, 429)
-            self.assertEqual(self.store.pending_count(), 2)
+        with self.assertRaises(HTTPException) as create_err:
+            asyncio.run(auth_routes.admin_create_account(forged_create))
+        self.assertEqual(create_err.exception.status_code, 403)
+        self.assertEqual(admin["workspace_id"], "download_shared")
 
     def test_admin_self_reset_preserves_caller_session(self):
-        admin = self.store.create_user("admin", "adminPass123", role="admin", bootstrap=True)
+        admin = self.store.create_user("admin", "adminPass123", role="admin")
         tok_current = self.store.new_session(admin["id"])
         tok_other = self.store.new_session(admin["id"])
 

@@ -21,6 +21,7 @@ from fastapi.responses import Response
 from download_accounts import can_manage_shared_auth, require_admin, require_account, require_shared_auth_manage
 from fengshen_auth import dpapi
 from fengshen_bill import BillCollectionError
+from global_workbench_config import is_shared_source
 
 _log = logging.getLogger(__name__)
 
@@ -45,7 +46,6 @@ SOURCES = {
 DINGTALK_CONFIRM_LABELS = ('同意', '确认登录', '确认授权', '继续登录')
 _DEFAULT_AUTH_ROOT = Path(__file__).parent / '.local_auth'
 ROOT = _DEFAULT_AUTH_ROOT
-SHARED_SOURCES = frozenset({'benlai'})
 STATE_LIMIT = 256 * 1024
 KEEPALIVE_SECONDS = 300
 CONSENT_TOGGLE = """(e,want)=>{
@@ -76,7 +76,7 @@ WAIT_TIMEOUT_SECONDS = _configured_wait_timeout()
 
 
 def _source_root(source: str) -> Path:
-    if ROOT != _DEFAULT_AUTH_ROOT or source in SHARED_SOURCES:
+    if ROOT != _DEFAULT_AUTH_ROOT or is_shared_source(source):
         return ROOT
     from workspace_context import workspace_auth_dir
     return workspace_auth_dir()
@@ -1281,7 +1281,7 @@ class SourceAuth:
                                  source, type(exc).__name__, _safe_detail(exc))
             for wid, ws_auth in list(_WORKSPACE_AUTHS.items()):
                 for source in SOURCES:
-                    if source in SHARED_SOURCES:
+                    if is_shared_source(source):
                         continue
                     try:
                         with bind_workspace(wid):
@@ -1621,7 +1621,7 @@ _AUTHS_LOCK = threading.RLock()
 
 
 def get_source_auth(source: str | None = None, wid: str | None = None) -> SourceAuth:
-    if source in SHARED_SOURCES:
+    if source and is_shared_source(source):
         return _PRIMARY_AUTH
     from workspace_context import current_workspace, is_isolated_workspace
     resolved = wid or current_workspace()
@@ -1710,21 +1710,20 @@ router = APIRouter(prefix='/api/fengshen-downloads/source-auth')
 
 
 def _require_source_operator(request: Request, source: str):
-    if source == 'xiaoxiang':
-        return require_shared_auth_manage(request, '小象灯塔')
-    if source in SHARED_SOURCES:
-        return require_shared_auth_manage(request, SOURCES[source]['label'])
+    if is_shared_source(source):
+        label = '小象灯塔' if source == 'xiaoxiang' else SOURCES.get(source, {}).get('label', source)
+        return require_shared_auth_manage(request, label)
     return require_account(request)
 
 
 @router.get('/{source}')
 def status(source: str, request: Request):
     user = require_account(request)
-    is_shared = source == 'xiaoxiang' or source in SHARED_SOURCES
+    is_shared = is_shared_source(source)
     can_manage = can_manage_shared_auth(user) if is_shared else True
     if source == 'xiaoxiang':
         from xiaoxiang_source_auth import AUTH as xiang
-        return {**xiang.status(), 'shared': True, 'can_manage': can_manage}
+        return {**xiang.status(), 'shared': is_shared, 'can_manage': can_manage}
     if source not in SOURCES: raise HTTPException(404, '资料来源不存在')
     return {**get_source_auth(source).status(source), 'shared': is_shared, 'can_manage': can_manage}
 

@@ -60,6 +60,11 @@ import {
   type FengshenDatasetCategoryId,
 } from '../lib/workbench';
 import { usePlatformAuthSnapshot } from '../lib/demoMode';
+import {
+  resolveDatasetCardCopy,
+  resolveSubmoduleLabel,
+  useGlobalWorkbenchConfig,
+} from '../lib/workbenchConfig';
 
 interface DownloadOptions {
   generators?: ReportDefinition[];
@@ -323,6 +328,7 @@ export function FengshenDownloadCenter(props: Props) {
 function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, onNavigatePayroll, onActiveCountChange, fengshenAuthStatus, user, embedded, navigation, taskKind = 'download', platform, recordModule, activeReportId, hideNavigation, onSelectPlatform, onSelectReport, onTaskKindChange, onViewChange, onFormLock, onNavigateGenerate, onOpenPrice, prefill, autoJumpTaskCenter = true, onAutoJumpTaskCenterChange, focusTaskId, onFocusTaskHandled, highlightTaskId, onHighlightHandled, returnTarget, onReturnSource, onTaskSubmitted, isVisible = true }: Props & { user: DownloadUser }) {
   const apiRef = useRef(apiFetch);
   apiRef.current = apiFetch;
+  const globalConfig = useGlobalWorkbenchConfig();
   const [options, setOptions] = useState<DownloadOptions | null>(null);
   const [optionsError, setOptionsError] = useState('');
   const [optionsLoading, setOptionsLoading] = useState(false);
@@ -349,7 +355,19 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   }, [datasets.length, onlySelectedShown]);
   const [payoutAuthStatuses, setPayoutAuthStatuses] = useState<Record<string, any>>({});
   const isGenerateMode = taskKind === 'generate';
-  const availableReports = mergeAvailableReports(options?.generators || []);
+  const availableReports = mergeAvailableReports(options?.generators || []).map(report => {
+    const resolved = resolveDatasetCardCopy(
+      report.id,
+      report.label,
+      report.description || '',
+      globalConfig,
+    );
+    return {
+      ...report,
+      label: resolved.title,
+      description: resolved.desc,
+    };
+  });
   const currentReportId =
     activeReportId && availableReports.some(report => report.id === activeReportId)
       ? activeReportId
@@ -882,7 +900,8 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
 
   const datasetLabel = (id: string) => {
     const raw = options?.datasets.find(dataset => dataset.id === id)?.label || DATASET_LABELS[id] || id;
-    return raw.replaceAll('白泽', '商翼').replaceAll('小象灯塔', '灯塔').replaceAll('小象', '灯塔');
+    const cleaned = raw.replaceAll('白泽', '商翼').replaceAll('小象灯塔', '灯塔').replaceAll('小象', '灯塔');
+    return getDatasetCardMeta(id, cleaned, globalConfig).title;
   };
   const citySyncedAt = options?.cities_updated_at ? new Date(options.cities_updated_at) : null;
   const citySourceLabel = options?.cities_source === 'fengshen'
@@ -2014,7 +2033,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       {uncertainCreate && view === 'history' && <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800"><span>原下载请求仍待确认，请先完成确认。</span><button type="button" className={smallButton} onClick={() => setView('create')}>返回确认原请求</button></div>}
 
       {(() => {
-        const stageMeta = getStageHeaderMeta(taskKind === 'generate' ? 'generate' : 'download', platform, view);
+        const stageMeta = getStageHeaderMeta(taskKind === 'generate' ? 'generate' : 'download', platform, view, globalConfig);
         const reportSubmitLabel = creating
           ? '提交中…'
           : uncertainCreate
@@ -2158,7 +2177,9 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                             className={`wbx-dc-tab is-${p.id}${isPlatActive ? ' is-active' : ''}${platSelectedCount > 0 ? ' has-selection' : ''}`}
                           >
                             <PlatIcon size={14.5} className="wbx-dc-tab__icon" aria-hidden="true" />
-                            <span className="wbx-dc-tab__name">{p.navLabel}</span>
+                            <span className="wbx-dc-tab__name">
+                              {resolveSubmoduleLabel(`platform:${p.id}`, p.navLabel, globalConfig)}
+                            </span>
                             {platSelectedCount > 0 && (
                               <span className="wbx-dc-tab__count tabular-nums" title={`该平台已选 ${platSelectedCount} 项`}>
                                 {platSelectedCount}
@@ -2546,10 +2567,12 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                           {(() => {
                             const renderDatasetCard = (dataset: { id: string; label: string }) => {
                               const selected = datasets.includes(dataset.id);
-                              const cardMeta = getDatasetCardMeta(dataset.id, dataset.label);
+                              const cardMeta = getDatasetCardMeta(dataset.id, dataset.label, globalConfig);
                               const showExceptionTag = Boolean(cardMeta.scopeTag);
-                              const descText =
-                                group === 'baize'
+                              const hasCustomDesc = Boolean(globalConfig.dataset_overrides[dataset.id]?.desc?.trim());
+                              const descText = hasCustomDesc
+                                ? cardMeta.desc
+                                : group === 'baize'
                                   ? '含员工工号、姓名、身份证号、所属站点、入离职日期及当前在职状态，导出全站原始档案并独立归档'
                                   : group === 'benlai'
                                     ? '含姓名、证件号、手机号、城市与签约状态；导出全站原始档案，签约城市在每次任务开始时实时读取'
@@ -3445,7 +3468,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
                     {datasets.length > 0 ? (
                       <ul className="wbx-rail__list">
                         {datasets.map((id, index) => {
-                          const cardMeta = getDatasetCardMeta(id, datasetLabel(id));
+                          const cardMeta = getDatasetCardMeta(id, datasetLabel(id), globalConfig);
                           const itemPlat = inferDatasetPlatform(id);
                           return (
                             <li key={id} className="wbx-rail__item">
@@ -3593,7 +3616,7 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
       })()}
 
       {historyMounted && (() => {
-        const stageMeta = getStageHeaderMeta(taskKind === 'generate' ? 'generate' : 'download', platform, 'history');
+        const stageMeta = getStageHeaderMeta(taskKind === 'generate' ? 'generate' : 'download', platform, 'history', globalConfig);
         const historyHidden = view !== 'history';
         const historyActive = isVisible && !historyHidden;
         return (

@@ -272,5 +272,121 @@ class PlatformControlTests(unittest.TestCase):
                 control._activate_account_sync('fengshen', slot1_id, user)
             self.assertEqual(caught.exception.status_code, 409)
 
+    def test_slow_probe_does_not_block_status_or_cause_409_on_switch(self):
+        user = {'owner': 'admin', 'role': 'admin'}
+        with patch.object(control, 'probe', return_value={'account_label': '商翼主号'}):
+            st1 = control.check('baize')
+        slot1_id = st1['active_account_id']
+
+        probe_entered = threading.Event()
+        probe_release = threading.Event()
+        probe_errors = []
+
+        def slow_probe(src):
+            probe_entered.set()
+            probe_release.wait(3)
+            return {'account_label': '过时检测结果'}
+
+        def run_check():
+            try:
+                control.check('baize', force=True)
+            except Exception as exc:
+                probe_errors.append(exc)
+
+        with patch.object(control, 'probe', side_effect=slow_probe), \
+             patch.object(control, 'idle_guard', contextlib.nullcontext), \
+             patch.object(control, 'require_account', return_value=user):
+            worker = threading.Thread(target=run_check)
+            worker.start()
+            self.assertTrue(probe_entered.wait(2))
+
+            # status() and get_summary() stay non-blocking while probe() is in flight
+            summary = control.get_summary(Mock())
+            self.assertIn('baize', summary['statuses'])
+
+            # Switching / preparing new account mid-probe must NOT fail with 409
+            pending = control._prepare_add_account_sync('baize', user)
+            self.assertTrue(pending['pending_new_account'])
+            switched = control._activate_account_sync('baize', slot1_id, user)
+            self.assertEqual(switched['active_account_id'], slot1_id)
+            self.assertFalse(switched['pending_new_account'])
+
+            probe_release.set()
+            worker.join(3)
+
+        self.assertEqual(probe_errors, [])
+        # Stale probe result must not clobber the switched slot state
+        latest = control.status('baize', user=user)
+        self.assertEqual(latest['active_account_id'], slot1_id)
+        self.assertEqual(latest['account_label'], '商翼主号')
+
+    def test_concurrent_checks_coalesce_without_409(self):
+        entered = threading.Event()
+        release = threading.Event()
+        calls = 0
+
+        def slow_probe(src):
+            nonlocal calls
+            calls += 1
+            entered.set()
+            release.wait(2)
+            return {'account_label': '并发复用账号'}
+
+        results = []
+        errors = []
+
+        def worker():
+            try:
+                results.append(control.check('baize', force=True))
+            except Exception as exc:
+                errors.append(exc)
+
+        with patch.object(control, 'probe', side_effect=slow_probe):
+            t1 = threading.Thread(target=worker)
+            t1.start()
+            self.assertTrue(entered.wait(2))
+            t2 = threading.Thread(target=worker)
+            t2.start()
+            release.set()
+            t1.join(3)
+            t2.join(3)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(len(results), 2)
+        self.assertEqual(calls, 1)
+        self.assertEqual(results[0]['state'], 'ready')
+        self.assertEqual(results[1]['state'], 'ready')
+
+    def test_activate_account_cancels_busy_login_outside_source_lock(self):
+        import platform_account_pool as pool
+        user = {'owner': 'admin', 'role': 'admin'}
+        with patch.object(control, 'probe', return_value={'account_label': '商翼账号A'}):
+            st1 = control.check('baize')
+        slot1_id = st1['active_account_id']
+        pool.prepare_add_account('baize', control.files('baize'), st1)
+        control._reset_controller_for_new_account('baize')
+
+        self.auth.states['baize'] = {'state': 'waiting_login'}
+        lock_acquired_by_other_thread = []
+
+        def fake_cancel(src):
+            def probe_lock():
+                lock = control._source_lock(src)
+                got = lock.acquire(blocking=False)
+                if got:
+                    lock.release()
+                lock_acquired_by_other_thread.append(got)
+            t = threading.Thread(target=probe_lock)
+            t.start()
+            t.join(2)
+            self.auth.states[src] = {'state': 'signed_out'}
+
+        with patch.object(control, 'idle_guard', contextlib.nullcontext), \
+             patch.object(self.auth, 'cancel', side_effect=fake_cancel):
+            switched = control._activate_account_sync('baize', slot1_id, user)
+
+        self.assertEqual(lock_acquired_by_other_thread, [True])
+        self.assertEqual(switched['active_account_id'], slot1_id)
+
 
 if __name__ == '__main__': unittest.main()

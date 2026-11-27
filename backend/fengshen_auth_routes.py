@@ -104,11 +104,24 @@ def auth_owner(request):
     return _workspace_owner(request)
 
 
+def _enforce_fengshen_shared_policy(request: Request, *, manage: bool = False):
+    from download_accounts import optional_account, require_permission, require_shared_auth_manage
+    from global_workbench_config import is_shared_source
+    user = optional_account(request)
+    if is_shared_source("fengshen"):
+        if manage:
+            return require_shared_auth_manage(request, "风神")
+        return require_permission(request, "fengshen_use", "shared_auth_manage", any_of=True)
+    return user
+
+
 @router.get("/status")
 def status(request: Request):
-    result = BROKER.status(auth_owner(request))
+    owner = auth_owner(request)
+    user = _enforce_fengshen_shared_policy(request, manage=False)
+    result = BROKER.status(owner)
     from platform_auth_control import status as platform_status
-    identity = platform_status('fengshen')
+    identity = platform_status('fengshen', user=user)
     result.update({key: identity[key] for key in ('session_version', 'account_label', 'organization') if key in identity})
     # Idle login always uses the in-page HTTP flow. Preserve an existing active
     # operation's real transport rather than mislabelling a legacy challenge.
@@ -122,6 +135,7 @@ def status(request: Request):
 @router.post("/start")
 def start(request: Request):
     owner = auth_owner(request)
+    _enforce_fengshen_shared_policy(request, manage=True)
     from platform_auth_control import operation, discard_meta
     with operation('fengshen'):
         discard_meta('fengshen')
@@ -134,6 +148,7 @@ def start(request: Request):
 @router.post("/clear")
 def clear(request: Request, data: dict = Body(default=None)):
     owner = auth_owner(request)
+    _enforce_fengshen_shared_policy(request, manage=True)
     if BROKER.active:
         raise HTTPException(409, '风神认证或采集正在进行，请结束后再退出连接')
     if not isinstance(data, dict) or not isinstance(data.get('session_version'), str) or data.get('confirm') is not True:
@@ -146,6 +161,7 @@ def clear(request: Request, data: dict = Body(default=None)):
 @router.post("/{action}")
 async def command(action: str, request: Request):
     owner = auth_owner(request)
+    _enforce_fengshen_shared_policy(request, manage=True)
     try:
         data = await request.json()
         if not isinstance(data, dict):

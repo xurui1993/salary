@@ -26,8 +26,22 @@ from xiaoxiang_lighthouse import LighthouseError, SessionExpired
 BOARD_BASE = 'https://zl.meituan.com'
 BOARD_ENTRY = BOARD_BASE + '/board/delivery.html'
 BOARD_QUERY_PATH = '/api/m/mustang/one/app/query'
-BOARD_SESSION_FILE = Path(__file__).resolve().parent / '.local_auth' / 'xiaoxiang_board.dpapi'
+_DEFAULT_BOARD_SESSION_FILE = Path(__file__).resolve().parent / '.local_auth' / 'xiaoxiang_board.dpapi'
+BOARD_SESSION_FILE = _DEFAULT_BOARD_SESSION_FILE
 BOARD_SESSION_ENTROPY = b'aegis-xiaoxiang-board-v1'
+
+
+def board_session_file() -> Path:
+    if BOARD_SESSION_FILE != _DEFAULT_BOARD_SESSION_FILE:
+        return BOARD_SESSION_FILE
+    from global_workbench_config import is_shared_source
+    if is_shared_source('xiaoxiang'):
+        return BOARD_SESSION_FILE
+    from workspace_context import current_workspace, is_isolated_workspace, workspace_auth_dir
+    wid = current_workspace()
+    if is_isolated_workspace(wid):
+        return workspace_auth_dir(wid) / 'xiaoxiang_board.dpapi'
+    return BOARD_SESSION_FILE
 BOARD_STATE_LIMIT = 256 * 1024
 APPLICATION_ID = 1741336293230
 MODULE_ID = 'um82vmwflyey8'
@@ -110,9 +124,9 @@ def scoped_board_state(state):
     return {'cookies': cookies, 'origins': origins}
 
 
-def load_board_state(path=BOARD_SESSION_FILE):
+def load_board_state(path=None):
     """读本机保留的看板 SSO 会话；缺失或异常时返回 None，不影响登录流程。"""
-    path = Path(path)
+    path = Path(path) if path is not None else board_session_file()
     if not path.exists():
         return None
     try:
@@ -127,11 +141,11 @@ def load_board_state(path=BOARD_SESSION_FILE):
         return None
 
 
-def save_board_state(state, path=BOARD_SESSION_FILE):
+def save_board_state(state, path=None):
     scoped = scoped_board_state(state)
     if not scoped['cookies']:
         raise LighthouseError('看板会话缺少 Cookie，未保存')
-    path = Path(path)
+    path = Path(path) if path is not None else board_session_file()
     payload = json.dumps({'source': 'xiaoxiang_board_session', 'state': scoped},
                          ensure_ascii=True, separators=(',', ':')).encode('utf-8')
     if len(payload) > BOARD_STATE_LIMIT:
@@ -148,9 +162,10 @@ def save_board_state(state, path=BOARD_SESSION_FILE):
             temporary.unlink(missing_ok=True)
 
 
-def discard_board_state(path=BOARD_SESSION_FILE):
+def discard_board_state(path=None):
     try:
-        Path(path).unlink(missing_ok=True)
+        resolved = Path(path) if path is not None else board_session_file()
+        resolved.unlink(missing_ok=True)
     except OSError:
         pass
 

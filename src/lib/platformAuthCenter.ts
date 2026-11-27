@@ -1,5 +1,11 @@
 import { getPlatformCardBadge, type PlatformDotTone } from './workbench';
 import { systemLabel, type ConnectionChipKey } from './platformCatalog';
+import {
+  getGlobalWorkbenchConfig,
+  resolveChannelMode,
+  resolveSubmoduleLabel,
+  type GlobalWorkbenchConfig,
+} from './workbenchConfig';
 
 export type PlatformAuthScope = 'personal' | 'shared';
 export type PlatformScopeFilter = 'all' | PlatformAuthScope;
@@ -488,6 +494,56 @@ function buildPlatformAccountSlots(options: {
   ];
 }
 
+export function resolveDynamicUsedByModules(
+  key: ConnectionChipKey,
+  cfg: GlobalWorkbenchConfig,
+): string[] {
+  if (key === 'fengshen') {
+    return [
+      resolveSubmoduleLabel('platform:fengshen', '风神数据', cfg),
+      resolveSubmoduleLabel('report:payment_binding', '支付绑定', cfg),
+      resolveSubmoduleLabel('report:abnormal_followup', '异常跟进', cfg),
+      resolveSubmoduleLabel('report:problem', '问题单', cfg),
+      resolveSubmoduleLabel('payroll:batches', '兼职核算', cfg),
+    ];
+  }
+  if (key === 'lanorange') {
+    return [
+      resolveSubmoduleLabel('platform:lanorange', '蓝橙数据', cfg),
+      resolveSubmoduleLabel('report:abnormal_riders', '异常名单', cfg),
+      resolveSubmoduleLabel('report:payment_binding', '支付绑定', cfg),
+      resolveSubmoduleLabel('workspace:approval', '价格审批', cfg),
+    ];
+  }
+  if (key === 'lanorange_mdr') {
+    return [
+      resolveSubmoduleLabel('platform:lanorange_mdr', '新蓝橙数据', cfg),
+      '骑手档案',
+      '兼全职变更',
+      '佣金代领',
+    ];
+  }
+  if (key === 'baize') {
+    return [
+      resolveSubmoduleLabel('platform:payout', '发薪平台', cfg),
+      resolveSubmoduleLabel('report:payment_binding', '支付绑定', cfg),
+      resolveSubmoduleLabel('payroll:batches', '兼职核算', cfg),
+    ];
+  }
+  if (key === 'xiaoxiang') {
+    return [
+      resolveSubmoduleLabel('platform:xiaoxiang', '小象灯塔', cfg),
+      resolveSubmoduleLabel('payroll:batches', '兼职核算', cfg),
+      resolveSubmoduleLabel('payroll:deductions', '扣款配置', cfg),
+    ];
+  }
+  return [
+    resolveSubmoduleLabel('platform:payout', '发薪平台', cfg),
+    resolveSubmoduleLabel('report:payment_binding', '支付绑定', cfg),
+    resolveSubmoduleLabel('report:abnormal_followup', '异常跟进', cfg),
+  ];
+}
+
 export function buildPlatformAuthCardViewModels(options: {
   statuses: Record<string, PlatformRawAuthStatus | undefined>;
   fengshenFallback?: PlatformRawAuthStatus | null;
@@ -496,6 +552,7 @@ export function buildPlatformAuthCardViewModels(options: {
   errors?: Record<string, string | undefined>;
   isAdmin?: boolean;
   canManageSharedAuth?: boolean;
+  globalConfig?: GlobalWorkbenchConfig;
 }): PlatformAuthCardViewModel[] {
   const {
     statuses,
@@ -505,9 +562,17 @@ export function buildPlatformAuthCardViewModels(options: {
     errors = {},
     isAdmin = false,
     canManageSharedAuth = false,
+    globalConfig = getGlobalWorkbenchConfig(),
   } = options;
 
-  return PLATFORM_AUTH_REGISTRY.map(entry => {
+  return PLATFORM_AUTH_REGISTRY.map(baseEntry => {
+    const scope = resolveChannelMode(baseEntry.key, globalConfig);
+    const entry: PlatformRegistryEntry = {
+      ...baseEntry,
+      scope,
+      scopeLabel: scope === 'shared' ? '全局共享' : '个人独立',
+      usedByModules: resolveDynamicUsedByModules(baseEntry.key, globalConfig),
+    };
     const raw: PlatformRawAuthStatus =
       statuses[entry.key] || (entry.key === 'fengshen' && fengshenFallback ? fengshenFallback : {}) || {};
     const pendingAction = pendingActions[entry.key];

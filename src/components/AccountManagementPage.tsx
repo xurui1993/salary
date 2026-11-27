@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  AlertTriangle,
+  Building2,
   Calculator,
-  Check,
-  ChevronDown,
   ChevronRight,
   Clock,
+  Compass,
   CopyCheck,
   Download,
   Eye,
@@ -13,38 +14,37 @@ import {
   FileCheck2,
   FileSpreadsheet,
   KeyRound,
+  Layers,
   Lock,
   RefreshCw,
   RotateCcw,
   Save,
   Search,
-  ShieldAlert,
   ShieldCheck,
   ShoppingBag,
   Store,
   UserPlus,
   Users,
+  UsersRound,
   X,
 } from 'lucide-react';
 import {
-  adminApproveAccount,
   adminCreateAccount,
-  adminRejectAccount,
   adminResetPassword,
   adminSyncDefaultConfig,
   adminUpdateAccount,
   fetchAdminAccounts,
   fetchAdminAuditLogs,
+  resetGlobalWorkbenchConfig,
+  updateGlobalWorkbenchConfig,
   type AuditEvent,
   type PermissionKey,
-  type RoleTemplateDef,
   type WorkspaceDirectoryEntry,
   type WorkspaceUser,
 } from '../lib/workspaceAuth';
 import {
   ALL_PERMISSION_KEYS,
-  PERMISSION_GROUPS,
-  applyTemplateToDraft,
+  buildDefaultNewMemberPermissions,
   buildFullPermissions,
   countEnabledPermissions,
   createDraftFromUser,
@@ -54,22 +54,38 @@ import {
   formatAuditDetail,
   formatAuditTime,
   getEnabledPermissionLabels,
-  getRoleTemplateLabel,
+  getPermissionGroups,
   getStatusLabel,
+  getVisiblePermissionKeys,
   getWorkspaceDisplayLabel,
   hasDraftChanges,
   resolveAuditTargetLabel,
   type AuditCategory,
   type UserPermissionDraft,
 } from '../lib/accountConsole';
+import {
+  PLATFORM_CHANNEL_CATALOG,
+  applyBusinessModuleEnabled,
+  applyPlatformChannelMode,
+  countGlobalConfigCustomizations,
+  resolveModuleGroupLabel,
+  resolveSubmoduleLabel,
+  setGlobalWorkbenchConfig,
+  useGlobalWorkbenchConfig,
+  type BusinessModuleKey,
+  type ChannelMode,
+  type GlobalWorkbenchConfig,
+  type PlatformChannelKey,
+} from '../lib/workbenchConfig';
+import { ChannelModuleAllocationPanel } from './ChannelModuleAllocationPanel';
 
-export type AccountConsoleTab = 'members' | 'pending' | 'audit';
+export type AccountConsoleTab = 'members' | 'allocations' | 'audit';
 
 interface AccountManagementPageProps {
   currentUserId: string;
   requestedTab?: AccountConsoleTab | null;
   requestedTabVersion?: number;
-  onAccountsChanged: (pendingCount: number, workspaces: WorkspaceDirectoryEntry[]) => void;
+  onAccountsChanged: (workspaces: WorkspaceDirectoryEntry[]) => void;
   onToast: (msg: string, type?: 'info' | 'success' | 'error') => void;
 }
 
@@ -81,6 +97,10 @@ const PERMISSION_ICONS: Record<PermissionKey, React.ComponentType<{ className?: 
   reports: FileSpreadsheet,
   payroll: Calculator,
   approval: FileCheck2,
+  fengshen_use: Compass,
+  lanorange_use: Layers,
+  lanorange_mdr_use: Building2,
+  baize_use: UsersRound,
   xiaoxiang_use: Store,
   benlai_use: ShoppingBag,
   shared_auth_manage: ShieldCheck,
@@ -90,7 +110,6 @@ const AUDIT_CATEGORY_OPTIONS: { key: AuditCategory; label: string }[] = [
   { key: 'all', label: '全部' },
   { key: 'auth', label: '登录' },
   { key: 'permission', label: '权限' },
-  { key: 'approval', label: '审批' },
   { key: 'workspace', label: '空间' },
   { key: 'security', label: '安全' },
 ];
@@ -98,19 +117,17 @@ const AUDIT_CATEGORY_OPTIONS: { key: AuditCategory; label: string }[] = [
 const AUDIT_CATEGORY_TONE: Record<Exclude<AuditCategory, 'all'>, string> = {
   auth: 'text-sky-700',
   permission: 'text-indigo-700',
-  approval: 'text-amber-700',
   workspace: 'text-emerald-700',
   security: 'text-rose-700',
 };
 
 const MEMBER_STATUS_OPTIONS: {
-  key: 'all' | 'active' | 'disabled' | 'rejected';
+  key: 'all' | 'active' | 'disabled';
   label: string;
 }[] = [
   { key: 'all', label: '全部' },
   { key: 'active', label: '启用' },
   { key: 'disabled', label: '停用' },
-  { key: 'rejected', label: '驳回' },
 ];
 
 function CompactSwitch({
@@ -147,6 +164,7 @@ function CompactSwitch({
 
 interface PermissionMatrixProps {
   permissions: Record<PermissionKey, boolean>;
+  globalConfig: GlobalWorkbenchConfig;
   disabled?: boolean;
   columns?: 1 | 2;
   onChange: (key: PermissionKey, next: boolean) => void;
@@ -154,13 +172,16 @@ interface PermissionMatrixProps {
 
 function PermissionMatrix({
   permissions,
+  globalConfig,
   disabled = false,
   columns = 1,
   onChange,
 }: PermissionMatrixProps) {
+  const groups = useMemo(() => getPermissionGroups(globalConfig), [globalConfig]);
+
   return (
     <div className="space-y-3">
-      {PERMISSION_GROUPS.map(group => {
+      {groups.map(group => {
         const groupKeys = group.items.map(i => i.key);
         const groupEnabled = countEnabledPermissions(permissions, groupKeys);
         return (
@@ -182,7 +203,7 @@ function PermissionMatrix({
             >
               {group.items.map(item => {
                 const enabled = Boolean(permissions[item.key]);
-                const Icon = PERMISSION_ICONS[item.key];
+                const Icon = PERMISSION_ICONS[item.key] || ShieldCheck;
                 return (
                   <button
                     key={item.key}
@@ -211,12 +232,19 @@ function PermissionMatrix({
                         <Icon className="w-3.5 h-3.5" />
                       </span>
                       <div className="min-w-0">
-                        <div
-                          className={`text-[12.5px] font-semibold leading-tight truncate ${
-                            enabled ? 'text-[#18191C]' : 'text-slate-600'
-                          }`}
-                        >
-                          {item.label}
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span
+                            className={`text-[12.5px] font-semibold leading-tight truncate ${
+                              enabled ? 'text-[#18191C]' : 'text-slate-600'
+                            }`}
+                          >
+                            {item.label}
+                          </span>
+                          {item.globallyPaused && (
+                            <span className="text-[10px] font-medium text-amber-600 shrink-0">
+                              全局已暂停
+                            </span>
+                          )}
                         </div>
                         <div className="text-[11px] text-slate-400 leading-tight truncate mt-0.5">
                           {item.description}
@@ -253,8 +281,8 @@ export function AccountManagementPage({
   onAccountsChanged,
   onToast,
 }: AccountManagementPageProps) {
+  const globalConfig = useGlobalWorkbenchConfig();
   const [users, setUsers] = useState<WorkspaceUser[]>([]);
-  const [roleTemplates, setRoleTemplates] = useState<Record<string, RoleTemplateDef>>({});
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -262,7 +290,10 @@ export function AccountManagementPage({
 
   const [activeTab, setActiveTab] = useState<AccountConsoleTab>('members');
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'disabled' | 'rejected'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'disabled'>('all');
+  const [allocationQuery, setAllocationQuery] = useState('');
+  const [allocationSaving, setAllocationSaving] = useState(false);
+  const [confirmResetAllocations, setConfirmResetAllocations] = useState(false);
   const [auditQuery, setAuditQuery] = useState('');
   const [auditCategory, setAuditCategory] = useState<AuditCategory>('all');
 
@@ -274,10 +305,6 @@ export function AccountManagementPage({
   const [resetPwdValue, setResetPwdValue] = useState('');
   const [resetPwdVisible, setResetPwdVisible] = useState(false);
 
-  // Pending approval expanded row
-  const [expandedPendingId, setExpandedPendingId] = useState<string>('');
-  const [rejectConfirmUser, setRejectConfirmUser] = useState<WorkspaceUser | null>(null);
-
   // Create member modal
   const [createOpen, setCreateOpen] = useState(false);
   const [createUsername, setCreateUsername] = useState('');
@@ -285,9 +312,8 @@ export function AccountManagementPage({
   const [createPassword, setCreatePassword] = useState('');
   const [createPasswordVisible, setCreatePasswordVisible] = useState(false);
   const [createNote, setCreateNote] = useState('');
-  const [createTemplate, setCreateTemplate] = useState('payroll_specialist');
   const [createPermissions, setCreatePermissions] = useState<Record<PermissionKey, boolean>>(() =>
-    buildFullPermissions(false),
+    buildDefaultNewMemberPermissions(),
   );
   const [createError, setCreateError] = useState('');
 
@@ -296,14 +322,17 @@ export function AccountManagementPage({
   const onToastRef = useRef(onToast);
   onToastRef.current = onToast;
 
+  const visiblePermissionKeys = useMemo(
+    () => getVisiblePermissionKeys(globalConfig),
+    [globalConfig],
+  );
+
   const syncDraftsFromUsers = useCallback((list: WorkspaceUser[]) => {
-    setDrafts(prev => {
+    setDrafts(() => {
       const next: Record<string, UserPermissionDraft> = {};
       for (const u of list) {
         next[u.id] = createDraftFromUser(u);
       }
-      // Preserve unsaved edits only if user still exists and isn't being freshly synced after save
-      void prev;
       return next;
     });
   }, []);
@@ -318,12 +347,13 @@ export function AccountManagementPage({
           fetchAdminAuditLogs().catch(() => ({ events: [] as AuditEvent[] })),
         ]);
         const nextUsers = acctRes.users || [];
-        const nextTemplates = acctRes.role_templates || {};
+        if (acctRes.global_config) {
+          setGlobalWorkbenchConfig(acctRes.global_config);
+        }
         setUsers(nextUsers);
-        setRoleTemplates(nextTemplates);
         setAuditEvents(auditRes.events || []);
         syncDraftsFromUsers(nextUsers);
-        onAccountsChangedRef.current(acctRes.pending_count || 0, acctRes.workspaces || []);
+        onAccountsChangedRef.current(acctRes.workspaces || []);
       } catch (err) {
         onToastRef.current(
           err instanceof Error ? err.message : '加载用户权限数据失败',
@@ -347,25 +377,30 @@ export function AccountManagementPage({
     }
   }, [requestedTab, requestedTabVersion]);
 
-  const pendingUsers = useMemo(
-    () => users.filter(u => u.status === 'pending'),
-    [users],
-  );
-
-  const managedUsers = useMemo(
-    () => users.filter(u => u.status !== 'pending' && u.status !== 'rejected'),
-    [users],
-  );
-
   const activeMemberCount = useMemo(
-    () => managedUsers.filter(u => u.status === 'active').length,
-    [managedUsers],
+    () => users.filter(u => u.status === 'active').length,
+    [users],
   );
 
   const disabledMemberCount = useMemo(
-    () => managedUsers.filter(u => u.status === 'disabled').length,
-    [managedUsers],
+    () => users.filter(u => u.status === 'disabled').length,
+    [users],
   );
+
+  const sharedPlatformCount = useMemo(
+    () =>
+      PLATFORM_CHANNEL_CATALOG.filter(
+        p => globalConfig.channel_modes[p.key] === 'shared',
+      ).length,
+    [globalConfig.channel_modes],
+  );
+
+  const allocCustomStats = useMemo(
+    () => countGlobalConfigCustomizations(globalConfig),
+    [globalConfig],
+  );
+  const hasCustomAllocations =
+    allocCustomStats.channels > 0 || allocCustomStats.modules > 0;
 
   const filteredMembers = useMemo(
     () =>
@@ -387,7 +422,6 @@ export function AccountManagementPage({
     [auditEvents, auditQuery, auditCategory, users],
   );
 
-  // Keep right inspector always populated with a valid selected member
   useEffect(() => {
     if (filteredMembers.length === 0) {
       return;
@@ -413,36 +447,13 @@ export function AccountManagementPage({
     selectedUser && selectedDraft && hasDraftChanges(selectedUser, selectedDraft),
   );
 
-  const editableTemplates = useMemo(
-    () =>
-      Object.entries(roleTemplates).filter(
-        ([key, tpl]) => key !== 'admin' && tpl.role !== 'admin',
-      ),
-    [roleTemplates],
-  );
-
-  const allTemplateEntries = useMemo(
-    () => Object.entries(roleTemplates),
-    [roleTemplates],
-  );
-
-  // Initialize default create modal permissions once templates arrive
   const openCreateModal = () => {
-    const defaultKey =
-      roleTemplates.payroll_specialist
-        ? 'payroll_specialist'
-        : editableTemplates[0]?.[0] || 'custom';
-    const nextDraft =
-      defaultKey !== 'custom' && roleTemplates[defaultKey]
-        ? applyTemplateToDraft(defaultKey, roleTemplates)
-        : { role_template: 'custom', permissions: buildFullPermissions(false) };
     setCreateUsername('');
     setCreateDisplayName('');
     setCreatePassword('');
     setCreatePasswordVisible(false);
     setCreateNote('');
-    setCreateTemplate(nextDraft.role_template);
-    setCreatePermissions(nextDraft.permissions);
+    setCreatePermissions(buildDefaultNewMemberPermissions(globalConfig));
     setCreateError('');
     setCreateOpen(true);
   };
@@ -461,7 +472,7 @@ export function AccountManagementPage({
       return {
         ...prev,
         [userId]: {
-          role_template: 'custom',
+          ...base,
           permissions: {
             ...base.permissions,
             [key]: nextVal,
@@ -471,22 +482,25 @@ export function AccountManagementPage({
     });
   };
 
-  const applyTemplateToUser = (userId: string, templateKey: string) => {
-    const applied = applyTemplateToDraft(templateKey, roleTemplates);
-    setDrafts(prev => ({
-      ...prev,
-      [userId]: applied,
-    }));
-  };
-
   const batchSetUserPermissions = (userId: string, enabled: boolean) => {
-    setDrafts(prev => ({
-      ...prev,
-      [userId]: {
-        role_template: 'custom',
-        permissions: buildFullPermissions(enabled),
-      },
-    }));
+    const targetUser = users.find(u => u.id === userId);
+    if (!targetUser) return;
+    setDrafts(prev => {
+      const base = prev[userId] || createDraftFromUser(targetUser);
+      const nextPerms = { ...base.permissions };
+      for (const key of ALL_PERMISSION_KEYS) {
+        if (visiblePermissionKeys.includes(key)) {
+          nextPerms[key] = enabled;
+        }
+      }
+      return {
+        ...prev,
+        [userId]: {
+          ...base,
+          permissions: nextPerms,
+        },
+      };
+    });
   };
 
   const resetUserDraft = (user: WorkspaceUser) => {
@@ -501,7 +515,7 @@ export function AccountManagementPage({
     setBusyKey(`save:${user.id}`);
     try {
       const res = await adminUpdateAccount(user.id, {
-        role_template: draft.role_template,
+        role: draft.role,
         permissions: draft.permissions,
       });
       setUsers(res.users);
@@ -509,7 +523,7 @@ export function AccountManagementPage({
         ...prev,
         [user.id]: createDraftFromUser(res.user),
       }));
-      onAccountsChanged(res.pending_count, res.workspaces);
+      onAccountsChanged(res.workspaces);
       onToast(`已保存 ${user.display_name} 的模块权限`, 'success');
       fetchAdminAuditLogs()
         .then(r => setAuditEvents(r.events || []))
@@ -526,7 +540,7 @@ export function AccountManagementPage({
     try {
       const res = await adminUpdateAccount(user.id, { enabled: nextEnabled });
       setUsers(res.users);
-      onAccountsChanged(res.pending_count, res.workspaces);
+      onAccountsChanged(res.workspaces);
       onToast(
         nextEnabled ? `已启用账号：${user.display_name}` : `已停用账号：${user.display_name}`,
         'success',
@@ -579,64 +593,6 @@ export function AccountManagementPage({
     }
   };
 
-  const handleApprovePending = async (user: WorkspaceUser) => {
-    const draft = drafts[user.id] || createDraftFromUser(user);
-    setBusyKey(`approve:${user.id}`);
-    try {
-      const res = await adminApproveAccount(user.id, {
-        role_template: draft.role_template,
-        permissions: draft.permissions,
-        display_name: user.display_name,
-        note: user.note,
-      });
-      setUsers(res.users);
-      setDrafts(prev => ({
-        ...prev,
-        [user.id]: createDraftFromUser(res.user),
-      }));
-      onAccountsChanged(res.pending_count, res.workspaces);
-      onToast(`已批准开通 ${user.display_name}`, 'success');
-      fetchAdminAuditLogs()
-        .then(r => setAuditEvents(r.events || []))
-        .catch(() => {});
-    } catch (err) {
-      onToast(err instanceof Error ? err.message : '批准开通失败', 'error');
-    } finally {
-      setBusyKey('');
-    }
-  };
-
-  const handleConfirmReject = async () => {
-    if (!rejectConfirmUser) return;
-    const target = rejectConfirmUser;
-    setBusyKey(`reject:${target.id}`);
-    try {
-      const res = await adminRejectAccount(target.id);
-      setUsers(res.users);
-      setRejectConfirmUser(null);
-      onAccountsChanged(
-        res.pending_count,
-        users
-          .filter(u => u.status === 'active')
-          .map(u => ({
-            workspace_id: u.workspace_id,
-            user_id: u.id,
-            username: u.username,
-            display_name: u.display_name,
-            role: u.role,
-            status: u.status,
-            is_primary: u.workspace_id === 'download_shared',
-          })),
-      );
-      onToast(`已驳回 ${target.display_name} 的申请`, 'info');
-      void loadData(true);
-    } catch (err) {
-      onToast(err instanceof Error ? err.message : '驳回失败', 'error');
-    } finally {
-      setBusyKey('');
-    }
-  };
-
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const uname = createUsername.trim();
@@ -657,8 +613,8 @@ export function AccountManagementPage({
         username: uname,
         display_name: dname,
         password: pwd,
-        role_template: createTemplate,
-        permissions: createTemplate === 'admin' ? buildFullPermissions(true) : createPermissions,
+        role: 'member',
+        permissions: createPermissions,
         note: createNote.trim(),
       });
       setUsers(res.users);
@@ -671,10 +627,7 @@ export function AccountManagementPage({
       setStatusFilter('all');
       setSearchQuery('');
       setCreateOpen(false);
-      onAccountsChanged(
-        res.users.filter(u => u.status === 'pending').length,
-        res.workspaces,
-      );
+      onAccountsChanged(res.workspaces);
       onToast(`已新建成员：${res.user.display_name}`, 'success');
       fetchAdminAuditLogs()
         .then(r => setAuditEvents(r.events || []))
@@ -685,6 +638,105 @@ export function AccountManagementPage({
       setBusyKey('');
     }
   };
+
+  const handleMovePlatform = useCallback(
+    async (key: PlatformChannelKey, nextMode: ChannelMode) => {
+      if (allocationSaving) return;
+      const prev = globalConfig;
+      if (prev.channel_modes[key] === nextMode) return;
+      const nextModes = applyPlatformChannelMode(prev, key, nextMode);
+      const platformLabel =
+        PLATFORM_CHANNEL_CATALOG.find(item => item.key === key)?.defaultLabel || key;
+      setGlobalWorkbenchConfig({
+        ...prev,
+        channel_modes: nextModes,
+      });
+      setAllocationSaving(true);
+      try {
+        const res = await updateGlobalWorkbenchConfig({
+          channel_modes: nextModes,
+        });
+        setGlobalWorkbenchConfig(res.config);
+        onToastRef.current(
+          `已将「${platformLabel}」设为${nextMode === 'shared' ? '全局共享通道' : '个人独立通道'}并全局同步`,
+          'success',
+        );
+        fetchAdminAuditLogs()
+          .then(r => setAuditEvents(r.events || []))
+          .catch(() => {});
+      } catch (err) {
+        setGlobalWorkbenchConfig(prev);
+        onToastRef.current(
+          err instanceof Error ? err.message : '更新平台通道归属失败',
+          'error',
+        );
+      } finally {
+        setAllocationSaving(false);
+      }
+    },
+    [allocationSaving, globalConfig],
+  );
+
+  const handleMoveModule = useCallback(
+    async (key: BusinessModuleKey, nextEnabled: boolean) => {
+      if (allocationSaving) return;
+      const prev = globalConfig;
+      if (Boolean(prev.module_permissions[key]) === nextEnabled) return;
+      const nextModules = applyBusinessModuleEnabled(prev, key, nextEnabled);
+      const moduleLabel =
+        key === 'approval'
+          ? resolveSubmoduleLabel('workspace:approval', '价格审批', prev)
+          : resolveModuleGroupLabel(key, prev);
+      setGlobalWorkbenchConfig({
+        ...prev,
+        module_permissions: nextModules,
+      });
+      setAllocationSaving(true);
+      try {
+        const res = await updateGlobalWorkbenchConfig({
+          module_permissions: nextModules,
+        });
+        setGlobalWorkbenchConfig(res.config);
+        onToastRef.current(
+          `已将「${moduleLabel}」设为${nextEnabled ? '全局开放' : '全局暂停'}并全局同步`,
+          'success',
+        );
+        fetchAdminAuditLogs()
+          .then(r => setAuditEvents(r.events || []))
+          .catch(() => {});
+      } catch (err) {
+        setGlobalWorkbenchConfig(prev);
+        onToastRef.current(
+          err instanceof Error ? err.message : '更新业务模块状态失败',
+          'error',
+        );
+      } finally {
+        setAllocationSaving(false);
+      }
+    },
+    [allocationSaving, globalConfig],
+  );
+
+  const handleConfirmResetAllocations = useCallback(async () => {
+    if (allocationSaving) return;
+    setAllocationSaving(true);
+    try {
+      const res = await resetGlobalWorkbenchConfig('channels');
+      setGlobalWorkbenchConfig(res.config);
+      setConfirmResetAllocations(false);
+      onToastRef.current('已恢复默认通道与模块分配', 'success');
+      fetchAdminAuditLogs()
+        .then(r => setAuditEvents(r.events || []))
+        .catch(() => {});
+    } catch (err) {
+      onToastRef.current(
+        err instanceof Error ? err.message : '恢复默认分配失败',
+        'error',
+      );
+    } finally {
+      setAllocationSaving(false);
+    }
+  }, [allocationSaving]);
 
   const canResetSelectedPwd = Boolean(
     selectedUser &&
@@ -708,7 +760,7 @@ export function AccountManagementPage({
           <span className="hidden sm:inline-block h-3.5 w-px bg-slate-200 self-center" aria-hidden="true" />
           <p className="text-[12px] text-[#61666D] tabular-nums flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <span>
-              成员 <strong className="font-semibold text-[#18191C]">{managedUsers.length}</strong>
+              成员 <strong className="font-semibold text-[#18191C]">{users.length}</strong>
             </span>
             <span className="text-slate-300" aria-hidden="true">·</span>
             <span>
@@ -722,18 +774,13 @@ export function AccountManagementPage({
                 </span>
               </>
             )}
-            {pendingUsers.length > 0 && (
-              <>
-                <span className="text-slate-300" aria-hidden="true">·</span>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('pending')}
-                  className="text-amber-700 hover:underline font-medium cursor-pointer"
-                >
-                  待审 <strong className="font-semibold">{pendingUsers.length}</strong>
-                </button>
-              </>
-            )}
+            <span className="text-slate-300" aria-hidden="true">·</span>
+            <span>
+              共享通道{' '}
+              <strong className="font-semibold text-[#0086C4]">
+                {sharedPlatformCount}/{PLATFORM_CHANNEL_CATALOG.length}
+              </strong>
+            </span>
             <span className="text-slate-300" aria-hidden="true">·</span>
             <span>
               审计 <strong className="font-semibold text-[#18191C]">{auditEvents.length}</strong>
@@ -747,7 +794,7 @@ export function AccountManagementPage({
             disabled={refreshing || loading}
             onClick={() => void loadData(true)}
             aria-label="刷新用户权限数据"
-            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-slate-200/90 bg-white hover:bg-slate-50 text-[12px] font-medium text-[#4E5969] transition cursor-pointer disabled:opacity-55"
+            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-slate-200/90 bg-white hover:bg-slate-50 text-[12px] font-medium text-[#4E5969] transition cursor-pointer disabled:opacity-55 whitespace-nowrap shrink-0"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
             刷新
@@ -755,7 +802,7 @@ export function AccountManagementPage({
           <button
             type="button"
             onClick={openCreateModal}
-            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-[#00AEEC] hover:bg-[#009CD6] text-white text-[12px] font-semibold transition cursor-pointer shadow-xs"
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-[#00AEEC] hover:bg-[#009CD6] text-white text-[12px] font-semibold transition cursor-pointer shadow-xs whitespace-nowrap shrink-0"
           >
             <UserPlus className="w-3.5 h-3.5" />
             新建成员
@@ -763,10 +810,14 @@ export function AccountManagementPage({
         </div>
       </div>
 
-      {/* 单层高纯净白主容器（发丝线分区，零嵌套卡片堆叠） */}
-      <div className="rounded-xl border border-slate-200/85 bg-white overflow-hidden">
-        {/* 合并工具栏：左侧视图切换 + 右侧情境搜索/筛选 */}
-        <div className="px-3.5 py-2 border-b border-slate-100 bg-slate-50/45 flex flex-wrap items-center justify-between gap-2.5">
+      {/* 单层高纯净白主容器 */}
+      <div
+        className={`rounded-xl border border-slate-200/85 bg-white ${
+          activeTab === 'allocations' ? 'overflow-visible' : 'overflow-hidden'
+        }`}
+      >
+        {/* 合并工具栏：成员权限 / 通道与模块分配 / 审计日志 + 搜索筛选 */}
+        <div className="px-3.5 py-2 border-b border-slate-100 bg-slate-50/45 rounded-t-xl flex flex-wrap items-center justify-between gap-2.5">
           <div
             className="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-100/85 border border-slate-200/60"
             role="tablist"
@@ -777,7 +828,7 @@ export function AccountManagementPage({
               role="tab"
               aria-selected={activeTab === 'members'}
               onClick={() => setActiveTab('members')}
-              className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium transition cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium transition cursor-pointer whitespace-nowrap shrink-0 ${
                 activeTab === 'members'
                   ? 'bg-white text-[#18191C] shadow-xs font-semibold'
                   : 'text-[#61666D] hover:text-[#18191C]'
@@ -785,35 +836,31 @@ export function AccountManagementPage({
             >
               成员权限
               <span className="text-[11px] tabular-nums text-slate-400">
-                {managedUsers.length}
+                {users.length}
               </span>
             </button>
             <button
               type="button"
               role="tab"
-              aria-selected={activeTab === 'pending'}
-              onClick={() => setActiveTab('pending')}
-              className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium transition cursor-pointer ${
-                activeTab === 'pending'
+              aria-selected={activeTab === 'allocations'}
+              onClick={() => setActiveTab('allocations')}
+              className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium transition cursor-pointer whitespace-nowrap shrink-0 ${
+                activeTab === 'allocations'
                   ? 'bg-white text-[#18191C] shadow-xs font-semibold'
                   : 'text-[#61666D] hover:text-[#18191C]'
               }`}
             >
-              待审批
-              {pendingUsers.length > 0 ? (
-                <span className="text-[11px] tabular-nums font-semibold text-amber-600">
-                  {pendingUsers.length}
-                </span>
-              ) : (
-                <span className="text-[11px] tabular-nums text-slate-400">0</span>
-              )}
+              通道与模块分配
+              <span className="text-[11px] tabular-nums text-slate-400">
+                {sharedPlatformCount}/{PLATFORM_CHANNEL_CATALOG.length}
+              </span>
             </button>
             <button
               type="button"
               role="tab"
               aria-selected={activeTab === 'audit'}
               onClick={() => setActiveTab('audit')}
-              className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium transition cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-[12px] font-medium transition cursor-pointer whitespace-nowrap shrink-0 ${
                 activeTab === 'audit'
                   ? 'bg-white text-[#18191C] shadow-xs font-semibold'
                   : 'text-[#61666D] hover:text-[#18191C]'
@@ -869,6 +916,42 @@ export function AccountManagementPage({
             </div>
           )}
 
+          {activeTab === 'allocations' && (
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative w-48 sm:w-56">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={allocationQuery}
+                  onChange={e => setAllocationQuery(e.target.value)}
+                  placeholder="搜索平台或业务模块..."
+                  aria-label="搜索通道与业务模块"
+                  className={`${INPUT_BASE} pl-8 pr-7`}
+                />
+                {allocationQuery && (
+                  <button
+                    type="button"
+                    aria-label="清空通道搜索"
+                    onClick={() => setAllocationQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                disabled={allocationSaving || !hasCustomAllocations}
+                onClick={() => setConfirmResetAllocations(true)}
+                className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-slate-200/90 bg-white hover:bg-slate-50 text-[12px] font-medium text-[#4E5969] transition cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed whitespace-nowrap shrink-0"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                恢复默认分配
+              </button>
+            </div>
+          )}
+
           {activeTab === 'audit' && (
             <div className="flex flex-wrap items-center gap-2">
               <div className="relative w-48 sm:w-56">
@@ -910,14 +993,6 @@ export function AccountManagementPage({
                 ))}
               </div>
             </div>
-          )}
-
-          {activeTab === 'pending' && (
-            <span className="text-[12px] text-slate-500">
-              {pendingUsers.length > 0
-                ? `共 ${pendingUsers.length} 条待审批注册申请`
-                : '当前无待处理申请'}
-            </span>
           )}
         </div>
 
@@ -973,15 +1048,14 @@ export function AccountManagementPage({
                       const draft = drafts[user.id] || createDraftFromUser(user);
                       const dirty = hasDraftChanges(user, draft);
                       const enabledCount = isAdmin
-                        ? ALL_PERMISSION_KEYS.length
-                        : countEnabledPermissions(draft.permissions);
-                      const enabledLabels = getEnabledPermissionLabels(draft.permissions, isAdmin);
-                      const roleLabel = getRoleTemplateLabel(
-                        user.role,
-                        draft.role_template,
-                        roleTemplates,
+                        ? visiblePermissionKeys.length
+                        : countEnabledPermissions(draft.permissions, visiblePermissionKeys);
+                      const enabledLabels = getEnabledPermissionLabels(
+                        draft.permissions,
+                        isAdmin,
+                        globalConfig,
                       );
-                      const canToggle = !isSelf && user.username !== 'host_admin' && user.status !== 'rejected';
+                      const canToggle = !isSelf && user.username !== 'host_admin';
                       const toggling = busyKey === `toggle:${user.id}`;
 
                       return (
@@ -994,7 +1068,7 @@ export function AccountManagementPage({
                               : 'hover:bg-slate-50/75'
                           }`}
                         >
-                          {/* 成员账号 */}
+                          {/* 成员账号（无角色预设标签） */}
                           <td className="py-2.5 pl-4 pr-2 align-middle">
                             <div className="flex items-center gap-2.5 min-w-0">
                               <div
@@ -1022,15 +1096,6 @@ export function AccountManagementPage({
                                   >
                                     {user.display_name}
                                   </button>
-                                  {user.display_name.trim() !== roleLabel.trim() && (
-                                    <span
-                                      className={`text-[11px] font-medium shrink-0 ${
-                                        isAdmin ? 'text-[#008EC4]' : 'text-slate-400'
-                                      }`}
-                                    >
-                                      · {roleLabel}
-                                    </span>
-                                  )}
                                   {isSelf && (
                                     <span className="text-[10.5px] font-medium text-emerald-600 shrink-0">
                                       当前
@@ -1055,12 +1120,12 @@ export function AccountManagementPage({
                             <div className="space-y-1 min-w-[140px]">
                               <div className="flex items-center gap-2">
                                 <div className="flex items-center gap-0.5 shrink-0" aria-hidden="true">
-                                  {ALL_PERMISSION_KEYS.map((k, idx) => (
+                                  {visiblePermissionKeys.map((k, idx) => (
                                     <span
                                       key={k}
                                       className={`h-1.5 w-2 rounded-[2px] ${
                                         idx < enabledCount
-                                          ? enabledCount === ALL_PERMISSION_KEYS.length
+                                          ? enabledCount === visiblePermissionKeys.length
                                             ? 'bg-emerald-500'
                                             : 'bg-[#00AEEC]'
                                           : 'bg-slate-200/90'
@@ -1069,7 +1134,7 @@ export function AccountManagementPage({
                                   ))}
                                 </div>
                                 <span className="text-[11.5px] font-semibold tabular-nums text-slate-600">
-                                  {enabledCount}/{ALL_PERMISSION_KEYS.length}
+                                  {enabledCount}/{visiblePermissionKeys.length}
                                 </span>
                                 {dirty && (
                                   <span className="text-[10.5px] font-medium text-amber-600">
@@ -1152,9 +1217,7 @@ export function AccountManagementPage({
                             className={`w-1.5 h-1.5 rounded-full ${
                               selectedUser.status === 'active'
                                 ? 'bg-emerald-500'
-                                : selectedUser.status === 'disabled'
-                                  ? 'bg-slate-400'
-                                  : 'bg-rose-400'
+                                : 'bg-slate-400'
                             }`}
                           />
                           {getStatusLabel(selectedUser.status)}
@@ -1256,30 +1319,13 @@ export function AccountManagementPage({
                     </form>
                   )}
 
-                  {/* 快捷角色模板与全选/清空条（普通成员可见） */}
+                  {/* 纯权限开关快捷栏：全选 / 清空（已移除角色预设标签） */}
                   {isSelectedEditable ? (
-                    <div className="px-4 py-2 bg-slate-50/60 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-1">
-                        {editableTemplates.map(([tplKey, tpl]) => {
-                          const active = selectedDraft.role_template === tplKey;
-                          return (
-                            <button
-                              key={tplKey}
-                              type="button"
-                              onClick={() => applyTemplateToUser(selectedUser.id, tplKey)}
-                              title={tpl.description}
-                              className={`h-6 px-2 rounded-md text-[11px] font-medium border transition cursor-pointer ${
-                                active
-                                  ? 'bg-sky-50 border-sky-200 text-[#0086C4] font-semibold'
-                                  : 'bg-white border-slate-200/80 text-slate-600 hover:border-slate-300'
-                              }`}
-                            >
-                              {tpl.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <div className="flex items-center gap-2 text-[11px]">
+                    <div className="px-4 py-2 bg-slate-50/60 border-b border-slate-100 flex items-center justify-between gap-2">
+                      <span className="text-[11.5px] font-medium text-slate-500">
+                        自由勾选该成员可访问的模块与共享通道
+                      </span>
+                      <div className="flex items-center gap-2 text-[11px] shrink-0">
                         <button
                           type="button"
                           onClick={() => batchSetUserPermissions(selectedUser.id, true)}
@@ -1300,7 +1346,9 @@ export function AccountManagementPage({
                   ) : (
                     <div className="px-4 py-2 bg-sky-50/40 border-b border-sky-100/70 flex items-center gap-2 text-[11.5px] text-[#007BB5]">
                       <Lock className="w-3.5 h-3.5 shrink-0" />
-                      <span>系统管理员默认拥有全部 7 项模块与共享通道权限</span>
+                      <span>
+                        主机管理员默认拥有全部 {visiblePermissionKeys.length} 项模块与共享通道权限
+                      </span>
                     </div>
                   )}
 
@@ -1312,6 +1360,7 @@ export function AccountManagementPage({
                           ? selectedDraft.permissions
                           : buildFullPermissions(true)
                       }
+                      globalConfig={globalConfig}
                       disabled={!isSelectedEditable}
                       columns={1}
                       onChange={(key, nextVal) =>
@@ -1326,10 +1375,13 @@ export function AccountManagementPage({
                       已开通{' '}
                       <strong className="font-semibold text-[#18191C]">
                         {isSelectedEditable
-                          ? countEnabledPermissions(selectedDraft.permissions)
-                          : ALL_PERMISSION_KEYS.length}
+                          ? countEnabledPermissions(
+                              selectedDraft.permissions,
+                              visiblePermissionKeys,
+                            )
+                          : visiblePermissionKeys.length}
                       </strong>
-                      /{ALL_PERMISSION_KEYS.length} 项
+                      /{visiblePermissionKeys.length} 项
                       {selectedDirty && (
                         <span className="ml-2 text-amber-600 font-medium">· 待保存</span>
                       )}
@@ -1365,113 +1417,19 @@ export function AccountManagementPage({
               )}
             </div>
           )
-        ) : activeTab === 'pending' ? (
-          /* ===================== 视图二：待审批申请列表 ===================== */
-          pendingUsers.length === 0 ? (
-            <div className="py-14 px-6 text-center space-y-2">
-              <div className="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
-                <Check className="w-4.5 h-4.5" />
-              </div>
-              <div className="text-[13px] font-medium text-[#18191C]">暂无待审批申请</div>
-              <p className="text-[12px] text-slate-400">
-                如需为同事直接开通账号，可点击右上角「新建成员」统一建号并分配权限。
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {pendingUsers.map(applicant => {
-                const draft = drafts[applicant.id] || createDraftFromUser(applicant);
-                const expanded = expandedPendingId === applicant.id;
-                const enabledCount = countEnabledPermissions(draft.permissions);
-                const approving = busyKey === `approve:${applicant.id}`;
-
-                return (
-                  <div key={applicant.id} className="px-4 py-3 space-y-2.5">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[13.5px] font-semibold text-[#18191C]">
-                            {applicant.display_name}
-                          </span>
-                          <span className="font-mono text-[11.5px] text-slate-400">
-                            @{applicant.username}
-                          </span>
-                          <span className="text-[11px] text-slate-400 tabular-nums">
-                            · {formatAuditTime(applicant.created_at)}
-                          </span>
-                        </div>
-                        {applicant.note && (
-                          <p className="text-[12px] text-slate-500 mt-0.5">{applicant.note}</p>
-                        )}
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-2">
-                        <select
-                          aria-label={`为 ${applicant.display_name} 选择初始角色模板`}
-                          value={draft.role_template}
-                          onChange={e => applyTemplateToUser(applicant.id, e.target.value)}
-                          className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-[12px] text-[#18191C] focus:outline-none focus:border-[#00AEEC]"
-                        >
-                          {editableTemplates.map(([key, tpl]) => (
-                            <option key={key} value={key}>
-                              {tpl.label}
-                            </option>
-                          ))}
-                          <option value="custom">自定义权限（{enabledCount}/7）</option>
-                        </select>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExpandedPendingId(prev =>
-                              prev === applicant.id ? '' : applicant.id,
-                            )
-                          }
-                          className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-[12px] text-slate-600 cursor-pointer"
-                        >
-                          微调权限
-                          <ChevronDown
-                            className={`w-3.5 h-3.5 transition-transform ${
-                              expanded ? 'rotate-180' : ''
-                            }`}
-                          />
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={Boolean(busyKey)}
-                          onClick={() => setRejectConfirmUser(applicant)}
-                          className="h-8 px-3 rounded-lg border border-rose-200 bg-white hover:bg-rose-50 text-[12px] font-medium text-rose-600 transition cursor-pointer disabled:opacity-50"
-                        >
-                          驳回
-                        </button>
-                        <button
-                          type="button"
-                          disabled={approving}
-                          onClick={() => void handleApprovePending(applicant)}
-                          className="h-8 px-3 rounded-lg bg-[#00AEEC] hover:bg-[#009CD6] text-white text-[12px] font-semibold transition cursor-pointer disabled:opacity-50"
-                        >
-                          {approving ? '开通中…' : '批准开通'}
-                        </button>
-                      </div>
-                    </div>
-
-                    {expanded && (
-                      <div className="pt-2.5 border-t border-slate-100">
-                        <PermissionMatrix
-                          permissions={draft.permissions}
-                          columns={2}
-                          onChange={(key, nextVal) =>
-                            updateUserDraftPermission(applicant.id, key, nextVal)
-                          }
-                        />
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )
+        ) : activeTab === 'allocations' ? (
+          /* ===================== 视图二：通道与模块双泳道分配（类支付绑定） ===================== */
+          <ChannelModuleAllocationPanel
+            globalConfig={globalConfig}
+            searchQuery={allocationQuery}
+            saving={allocationSaving}
+            onMovePlatform={(key, nextMode) => {
+              void handleMovePlatform(key, nextMode);
+            }}
+            onMoveModule={(key, nextEnabled) => {
+              void handleMoveModule(key, nextEnabled);
+            }}
+          />
         ) : (
           /* ===================== 视图三：紧凑安全审计日志表 ===================== */
           filteredAuditEvents.length === 0 ? (
@@ -1534,7 +1492,7 @@ export function AccountManagementPage({
         )}
       </div>
 
-      {/* ===================== 新建成员弹窗（紧凑双栏表单） ===================== */}
+      {/* ===================== 新建成员弹窗（仅设账号密码与权限开关） ===================== */}
       {createOpen &&
         createPortal(
           <div
@@ -1548,7 +1506,7 @@ export function AccountManagementPage({
                 <div>
                   <h3 className="text-[14.5px] font-semibold text-[#18191C]">新建成员账号</h3>
                   <p className="text-[11.5px] text-slate-400 mt-0.5">
-                    创建后自动开通独立工作空间，并按所选权限生效
+                    设置登录账号与初始密码，并直接勾选开放的业务模块与共享通道权限
                   </p>
                 </div>
                 <button
@@ -1624,82 +1582,43 @@ export function AccountManagementPage({
                       </div>
                     </label>
                     <label className="space-y-1 block">
-                      <span className="text-[11.5px] font-medium text-slate-600">角色模板</span>
-                      <select
-                        value={createTemplate}
-                        onChange={e => {
-                          const tplKey = e.target.value;
-                          setCreateTemplate(tplKey);
-                          if (tplKey === 'admin') {
-                            setCreatePermissions(buildFullPermissions(true));
-                          } else if (roleTemplates[tplKey]) {
-                            setCreatePermissions(
-                              applyTemplateToDraft(tplKey, roleTemplates).permissions,
-                            );
-                          }
-                        }}
+                      <span className="text-[11.5px] font-medium text-slate-600">岗位备注（可选）</span>
+                      <input
+                        type="text"
+                        value={createNote}
+                        onChange={e => setCreateNote(e.target.value)}
+                        placeholder="例如：负责华南区资料采集"
                         className={INPUT_BASE}
-                      >
-                        {allTemplateEntries.map(([key, tpl]) => (
-                          <option key={key} value={key}>
-                            {tpl.label}
-                          </option>
-                        ))}
-                        <option value="custom">自定义权限</option>
-                      </select>
+                      />
                     </label>
                   </div>
-
-                  <label className="space-y-1 block">
-                    <span className="text-[11.5px] font-medium text-slate-600">岗位备注（可选）</span>
-                    <input
-                      type="text"
-                      value={createNote}
-                      onChange={e => setCreateNote(e.target.value)}
-                      placeholder="例如：负责华南区薪资核算与蓝橙审批"
-                      className={INPUT_BASE}
-                    />
-                  </label>
 
                   <div className="pt-2 border-t border-slate-100">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-[12px] font-semibold text-[#18191C]">初始模块权限</span>
-                      {createTemplate !== 'admin' && (
-                        <div className="flex items-center gap-2 text-[11px]">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setCreateTemplate('custom');
-                              setCreatePermissions(buildFullPermissions(true));
-                            }}
-                            className="text-[#0086C4] hover:underline font-medium cursor-pointer"
-                          >
-                            全选
-                          </button>
-                          <span className="text-slate-300">/</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setCreateTemplate('custom');
-                              setCreatePermissions(buildFullPermissions(false));
-                            }}
-                            className="text-slate-500 hover:text-slate-800 hover:underline font-medium cursor-pointer"
-                          >
-                            清空
-                          </button>
-                        </div>
-                      )}
+                      <div className="flex items-center gap-2 text-[11px]">
+                        <button
+                          type="button"
+                          onClick={() => setCreatePermissions(buildFullPermissions(true))}
+                          className="text-[#0086C4] hover:underline font-medium cursor-pointer"
+                        >
+                          全选
+                        </button>
+                        <span className="text-slate-300">/</span>
+                        <button
+                          type="button"
+                          onClick={() => setCreatePermissions(buildFullPermissions(false))}
+                          className="text-slate-500 hover:text-slate-800 hover:underline font-medium cursor-pointer"
+                        >
+                          清空
+                        </button>
+                      </div>
                     </div>
                     <PermissionMatrix
-                      permissions={
-                        createTemplate === 'admin'
-                          ? buildFullPermissions(true)
-                          : createPermissions
-                      }
-                      disabled={createTemplate === 'admin'}
+                      permissions={createPermissions}
+                      globalConfig={globalConfig}
                       columns={2}
                       onChange={(key, nextVal) => {
-                        setCreateTemplate('custom');
                         setCreatePermissions(prev => ({ ...prev, [key]: nextVal }));
                       }}
                     />
@@ -1729,43 +1648,51 @@ export function AccountManagementPage({
           document.body,
         )}
 
-      {/* ===================== 驳回注册申请确认弹窗 ===================== */}
-      {rejectConfirmUser &&
+      {/* ===================== 恢复默认通道与模块分配确认弹窗 ===================== */}
+      {confirmResetAllocations &&
         createPortal(
           <div
             className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-900/40 backdrop-blur-[2px] p-4"
             role="dialog"
             aria-modal="true"
-            aria-label="确认驳回注册申请"
+            aria-label="确认恢复默认通道与模块分配"
+            onClick={() => {
+              if (!allocationSaving) setConfirmResetAllocations(false);
+            }}
           >
-            <div className="w-full max-w-sm rounded-2xl bg-white border border-slate-200/90 shadow-xl p-5 space-y-4">
-              <div className="flex items-start gap-3">
-                <div className="w-9 h-9 rounded-lg bg-rose-50 border border-rose-200/80 text-rose-600 flex items-center justify-center shrink-0">
-                  <ShieldAlert className="w-4.5 h-4.5" />
+            <div
+              className="w-full max-w-[400px] rounded-2xl bg-white border border-slate-200/90 shadow-xl overflow-hidden"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="px-5 pt-5 pb-4 flex items-start gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-200/80 text-amber-600 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-4.5 h-4.5" />
                 </div>
-                <div className="space-y-1">
-                  <h3 className="text-[14px] font-semibold text-[#18191C]">确认驳回此注册申请？</h3>
-                  <p className="text-[12px] text-slate-500 leading-relaxed">
-                    驳回后，{rejectConfirmUser.display_name}（@{rejectConfirmUser.username}）将无法登录系统。
+                <div className="min-w-0">
+                  <h3 className="text-[14.5px] font-semibold text-[#18191C]">
+                    恢复默认通道与模块分配？
+                  </h3>
+                  <p className="text-[12px] text-slate-500 leading-relaxed mt-1">
+                    将把 6 个数据源恢复为默认通道归属（仅小象灯塔、本来人力为共享通道），并将全部 4 个业务模块恢复为全局开放状态，同时全局同步。不会影响「全局配置」中的自定义名称。
                   </p>
                 </div>
               </div>
-              <div className="flex items-center justify-end gap-2 pt-1">
+              <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  disabled={Boolean(busyKey)}
-                  onClick={() => setRejectConfirmUser(null)}
-                  className="h-8 px-3.5 rounded-lg border border-slate-200 text-[12px] font-medium text-slate-600 hover:bg-slate-50 cursor-pointer"
+                  disabled={allocationSaving}
+                  onClick={() => setConfirmResetAllocations(false)}
+                  className="h-8 px-3.5 rounded-lg border border-slate-200 bg-white text-[12px] font-medium text-slate-600 hover:bg-slate-50 cursor-pointer disabled:opacity-50"
                 >
                   取消
                 </button>
                 <button
                   type="button"
-                  disabled={busyKey === `reject:${rejectConfirmUser.id}`}
-                  onClick={() => void handleConfirmReject()}
-                  className="h-8 px-4 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[12px] font-semibold transition cursor-pointer disabled:opacity-55"
+                  disabled={allocationSaving}
+                  onClick={() => void handleConfirmResetAllocations()}
+                  className="h-8 px-4 rounded-lg bg-[#00AEEC] hover:bg-[#009CD6] text-white text-[12px] font-semibold transition cursor-pointer disabled:opacity-55"
                 >
-                  {busyKey === `reject:${rejectConfirmUser.id}` ? '处理中…' : '确认驳回'}
+                  {allocationSaving ? '恢复中…' : '确认恢复'}
                 </button>
               </div>
             </div>

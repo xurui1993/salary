@@ -1,18 +1,17 @@
+import type { GlobalWorkbenchConfig } from './workbenchConfig';
+
 export type PermissionKey =
   | 'collection'
   | 'reports'
   | 'payroll'
   | 'approval'
+  | 'fengshen_use'
+  | 'lanorange_use'
+  | 'lanorange_mdr_use'
+  | 'baize_use'
   | 'xiaoxiang_use'
   | 'benlai_use'
   | 'shared_auth_manage';
-
-export interface RoleTemplateDef {
-  label: string;
-  description: string;
-  role: 'admin' | 'member';
-  permissions: Record<PermissionKey, boolean>;
-}
 
 export interface InspectTargetInfo {
   id: string;
@@ -26,8 +25,7 @@ export interface WorkspaceUser {
   username: string;
   display_name: string;
   role: 'admin' | 'member';
-  role_template: string;
-  status: 'active' | 'pending' | 'disabled' | 'rejected';
+  status: 'active' | 'disabled';
   enabled: boolean;
   has_password?: boolean;
   workspace_id: string;
@@ -58,13 +56,11 @@ export interface WorkspaceSessionState {
   host_auto_login?: boolean;
   can_switch_to_host?: boolean;
   bootstrap_allowed: boolean;
-  self_registration_enabled?: boolean;
   user: WorkspaceUser | null;
-  role_templates: Record<string, RoleTemplateDef>;
   permission_keys: PermissionKey[];
   permission_labels: Record<PermissionKey, string>;
   workspaces: WorkspaceDirectoryEntry[];
-  pending_count: number;
+  global_config?: GlobalWorkbenchConfig;
 }
 
 export function hasModulePermission(
@@ -159,11 +155,10 @@ export async function switchInspectWorkspace(
 
 export interface AdminAccountsResponse {
   users: WorkspaceUser[];
-  pending_count: number;
   workspaces: WorkspaceDirectoryEntry[];
-  role_templates: Record<string, RoleTemplateDef>;
   permission_keys: PermissionKey[];
   permission_labels: Record<PermissionKey, string>;
+  global_config?: GlobalWorkbenchConfig;
 }
 
 export async function fetchAdminAccounts(): Promise<AdminAccountsResponse> {
@@ -174,42 +169,18 @@ export async function adminCreateAccount(payload: {
   username: string;
   display_name: string;
   password: string;
-  role_template: string;
+  role?: 'admin' | 'member';
   permissions: Record<string, boolean>;
   note?: string;
 }): Promise<{ ok: boolean; user: WorkspaceUser; users: WorkspaceUser[]; workspaces: WorkspaceDirectoryEntry[] }> {
   return authJson('/api/admin/accounts', 'POST', payload);
 }
 
-export async function adminApproveAccount(
-  userId: string,
-  payload: {
-    role_template: string;
-    permissions: Record<string, boolean>;
-    display_name?: string;
-    note?: string;
-  },
-): Promise<{
-  ok: boolean;
-  user: WorkspaceUser;
-  users: WorkspaceUser[];
-  pending_count: number;
-  workspaces: WorkspaceDirectoryEntry[];
-}> {
-  return authJson(`/api/admin/accounts/${encodeURIComponent(userId)}/approve`, 'POST', payload);
-}
-
-export async function adminRejectAccount(
-  userId: string,
-): Promise<{ ok: boolean; user: WorkspaceUser; users: WorkspaceUser[]; pending_count: number }> {
-  return authJson(`/api/admin/accounts/${encodeURIComponent(userId)}/reject`, 'POST', {});
-}
-
 export async function adminUpdateAccount(
   userId: string,
   payload: {
     display_name?: string;
-    role_template?: string;
+    role?: 'admin' | 'member';
     permissions?: Record<string, boolean>;
     enabled?: boolean;
     note?: string;
@@ -218,7 +189,6 @@ export async function adminUpdateAccount(
   ok: boolean;
   user: WorkspaceUser;
   users: WorkspaceUser[];
-  pending_count: number;
   workspaces: WorkspaceDirectoryEntry[];
 }> {
   return authJson(`/api/admin/accounts/${encodeURIComponent(userId)}`, 'PUT', payload);
@@ -241,6 +211,22 @@ export async function adminSyncDefaultConfig(
     'POST',
     {},
   );
+}
+
+export async function fetchGlobalWorkbenchConfig(): Promise<{ ok: boolean; config: GlobalWorkbenchConfig }> {
+  return authJson('/api/workbench/global-config');
+}
+
+export async function updateGlobalWorkbenchConfig(
+  patch: Partial<GlobalWorkbenchConfig>,
+): Promise<{ ok: boolean; config: GlobalWorkbenchConfig }> {
+  return authJson('/api/admin/workbench/global-config', 'PUT', patch);
+}
+
+export async function resetGlobalWorkbenchConfig(
+  section: 'all' | 'channels' | 'module_names' | 'datasets' | 'naming' = 'all',
+): Promise<{ ok: boolean; config: GlobalWorkbenchConfig }> {
+  return authJson('/api/admin/workbench/global-config/reset', 'POST', { section });
 }
 
 export interface AuditEvent {

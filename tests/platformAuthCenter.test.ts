@@ -198,11 +198,15 @@ test('shellNav places workspace:platform-auth under 平台管理 for all users',
   const breadcrumb = getBreadcrumbModel(state);
   assert.equal(breadcrumb.moduleLabel, '平台管理');
   assert.equal(breadcrumb.viewLabel, '授权管理');
-  assert.equal(breadcrumb.siblings.length, 3);
+  assert.equal(breadcrumb.siblings.length, 4);
+
+  const memberBreadcrumb = getBreadcrumbModel(state, undefined, false);
+  assert.equal(memberBreadcrumb.siblings.length, 2);
 
   const memberCommands = buildShellCommands(state, { isAdmin: false });
   assert.ok(memberCommands.some(c => c.id === 'nav-platform-auth' && c.group === '平台管理' && c.label === '授权管理'));
   assert.ok(!memberCommands.some(c => c.id === 'nav-accounts'));
+  assert.ok(!memberCommands.some(c => c.id === 'nav-global-config'));
 });
 
 test('shouldCancelAuthOnModalClose cancels only active non-fengshen auth sessions', () => {

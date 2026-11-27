@@ -9,6 +9,7 @@ from unittest.mock import patch
 from fastapi import HTTPException, Request, Response
 
 import download_accounts as da
+import global_workbench_config as gcfg
 import workspace_auth_routes as auth_routes
 import workspace_context as wctx
 
@@ -85,6 +86,8 @@ class HostAutoLoginTests(unittest.TestCase):
             patch.object(auth_routes, "get_account_store", return_value=self.store),
             patch.object(auth_routes, "PROJECT_ROOT", self.root),
             patch.object(wctx, "PROJECT_ROOT", self.root),
+            patch.object(gcfg, "_CONFIG_PATH", self.root / "data" / "workbench_global_config.json"),
+            patch.object(gcfg, "_CACHE", None),
             patch.object(da, "_host_interface_addresses", return_value={"127.0.0.1", "::1", self.host_lan_ip}),
             patch.object(auth_routes, "_host_interface_addresses", return_value={"127.0.0.1", "::1", self.host_lan_ip}),
             patch.dict(os.environ, {"FENGSHEN_DOWNLOAD_PROXY_SECRET": self.proxy_secret}, clear=False),
@@ -214,7 +217,7 @@ class HostAutoLoginTests(unittest.TestCase):
             asyncio.run(auth_routes.login(login_builtin_req, Response()))
         self.assertEqual(login_err.exception.status_code, 401)
 
-        # Bootstrap route is retired (410) and self-registration is disabled by default (403)
+        # Bootstrap route is retired (410) and registration/approval routes have been removed completely
         boot_req = make_request(
             "POST",
             "/api/auth/bootstrap",
@@ -225,17 +228,9 @@ class HostAutoLoginTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as boot_err:
             asyncio.run(auth_routes.bootstrap_admin(boot_req, Response()))
         self.assertEqual(boot_err.exception.status_code, 410)
-
-        reg_req = make_request(
-            "POST",
-            "/api/auth/register",
-            host=f"{self.host_lan_ip}:3000",
-            client=self.remote_lan_ip,
-            body={"username": "guest1", "password": "password123"},
-        )
-        with self.assertRaises(HTTPException) as reg_err:
-            asyncio.run(auth_routes.register(reg_req))
-        self.assertEqual(reg_err.exception.status_code, 403)
+        self.assertFalse(hasattr(auth_routes, "register"))
+        self.assertFalse(hasattr(auth_routes, "admin_approve_account"))
+        self.assertFalse(hasattr(auth_routes, "admin_reject_account"))
 
     def test_host_switch_account_and_one_click_return_and_remote_login(self):
         # Host admin creates member account directly without prior manual login
@@ -248,7 +243,12 @@ class HostAutoLoginTests(unittest.TestCase):
                 "username": "alice",
                 "display_name": "爱丽丝",
                 "password": "alicePassword123",
-                "role_template": "payroll_specialist",
+                "permissions": {
+                    "collection": True,
+                    "reports": True,
+                    "payroll": True,
+                    "approval": False,
+                },
             },
         )
         created = asyncio.run(auth_routes.admin_create_account(create_req))

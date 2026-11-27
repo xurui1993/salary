@@ -73,11 +73,8 @@ import {
 } from './lib/taskWorkflow';
 import { arePlatformStatusMapsEqual } from './lib/perfUtils';
 import { AuthLoadingSplash, AuthPortal } from './components/AuthPortal';
-import {
-  AccountManagementPage,
-  NoModuleAccessNotice,
-  type AccountConsoleTab,
-} from './components/AccountManagementPage';
+import { AccountManagementPage, NoModuleAccessNotice } from './components/AccountManagementPage';
+import { GlobalConfigPage } from './components/GlobalConfigPage';
 import { PlatformAuthCenterPage } from './components/PlatformAuthCenterPage';
 import {
   DEFAULT_DISPLAY_CONFIG,
@@ -95,6 +92,12 @@ import {
   syncStoredWorkspaceId,
   type WorkspaceSessionState,
 } from './lib/workspaceAuth';
+import {
+  getGlobalWorkbenchConfig,
+  isBusinessModuleEnabled,
+  setGlobalWorkbenchConfig,
+  useGlobalWorkbenchConfig,
+} from './lib/workbenchConfig';
 
 const EMPTY_SHELL_COMMANDS: ShellCommandItem[] = [];
 
@@ -136,6 +139,12 @@ export default function App() {
   const refreshSession = async () => {
     try {
       const next = await fetchWorkspaceSession();
+      if (next?.global_config) {
+        const cur = getGlobalWorkbenchConfig();
+        if (next.global_config.version !== cur.version || next.global_config.updated_at !== cur.updated_at) {
+          setGlobalWorkbenchConfig(next.global_config);
+        }
+      }
       setSession(next);
     } catch {
       // keep previous or null on transient startup delay
@@ -148,16 +157,27 @@ export default function App() {
     void refreshSession();
   }, []);
 
-  // Poll pending approvals lightly when logged in as admin
   useEffect(() => {
-    if (!session?.authenticated || session.user?.role !== 'admin') return;
+    if (!session?.global_config) return;
+    const cur = getGlobalWorkbenchConfig();
+    if (
+      session.global_config.version !== cur.version ||
+      session.global_config.updated_at !== cur.updated_at
+    ) {
+      setGlobalWorkbenchConfig(session.global_config);
+    }
+  }, [session?.global_config]);
+
+  // Poll session lightly so LAN members receive global config and account changes
+  useEffect(() => {
+    if (!session?.authenticated) return;
     const timer = setInterval(() => {
       if (document.visibilityState === 'visible') {
         void refreshSession();
       }
     }, 25000);
     return () => clearInterval(timer);
-  }, [session?.authenticated, session?.user?.role]);
+  }, [session?.authenticated]);
 
   if (loadingSession && !session) {
     return <AuthLoadingSplash />;
@@ -176,14 +196,17 @@ export default function App() {
             can_switch_to_host: false,
             bootstrap_allowed: false,
             user: null,
-            role_templates: {},
             permission_keys: [],
             permission_labels: {} as any,
             workspaces: [],
-            pending_count: 0,
           }
         }
-        onAuthenticated={next => setSession(next)}
+        onAuthenticated={next => {
+          if (next?.global_config) {
+            setGlobalWorkbenchConfig(next.global_config);
+          }
+          setSession(next);
+        }}
         onRefreshSession={refreshSession}
       />
     );
@@ -209,10 +232,8 @@ function AuthenticatedWorkbench({
   onRefreshSession: () => Promise<void>;
 }) {
   const currentUser = session.user!;
-  const [accountsTabReq, setAccountsTabReq] = useState<{
-    tab: AccountConsoleTab | null;
-    version: number;
-  }>({ tab: null, version: 0 });
+  const globalConfig = useGlobalWorkbenchConfig();
+  const isAdmin = currentUser.role === 'admin';
   const theme = THEMES[0];
 
   const [missingCityTeams, setMissingCityTeams] = useState<string[]>([]);
@@ -392,6 +413,7 @@ function AuthenticatedWorkbench({
     | 'pickup'
     | 'accounts'
     | 'platform-auth'
+    | 'global-config'
   >('create');
   const [downloadPlatform,setDownloadPlatform]=useState<DownloadPlatform>(()=>{
     try{
@@ -415,10 +437,18 @@ function AuthenticatedWorkbench({
   const [approvalActiveCount,setApprovalActiveCount]=useState(0);
   const [approvalPendingCount,setApprovalPendingCount]=useState(0);
   const [priceRecordId,setPriceRecordId]=useState<string|undefined>();
-  const canApproval = hasModulePermission(currentUser, 'approval');
-  const canCollection = hasModulePermission(currentUser, 'collection');
-  const canReports = hasModulePermission(currentUser, 'reports');
-  const canPayroll = hasModulePermission(currentUser, 'payroll');
+  const canApproval =
+    hasModulePermission(currentUser, 'approval') &&
+    (isAdmin || isBusinessModuleEnabled('approval', globalConfig));
+  const canCollection =
+    hasModulePermission(currentUser, 'collection') &&
+    (isAdmin || isBusinessModuleEnabled('collection', globalConfig));
+  const canReports =
+    hasModulePermission(currentUser, 'reports') &&
+    (isAdmin || isBusinessModuleEnabled('reports', globalConfig));
+  const canPayroll =
+    hasModulePermission(currentUser, 'payroll') &&
+    (isAdmin || isBusinessModuleEnabled('payroll', globalConfig));
   const canManageSharedAuth = hasModulePermission(currentUser, 'shared_auth_manage');
 
   useEffect(()=>{
@@ -510,10 +540,11 @@ function AuthenticatedWorkbench({
       | 'price-export'
       | 'pickup'
       | 'accounts'
-      | 'platform-auth',
+      | 'platform-auth'
+      | 'global-config',
   ) => {
-    if (view === 'accounts' && currentUser.role !== 'admin') {
-      showToast('仅系统管理员可访问用户权限分配', 'error');
+    if ((view === 'accounts' || view === 'global-config') && !isAdmin) {
+      showToast('仅系统管理员可访问该管理页面', 'error');
       return;
     }
     setWorkspaceView(view);
@@ -569,6 +600,7 @@ function AuthenticatedWorkbench({
     priceExport: false,
     pickup: false,
     accounts: false,
+    globalConfig: false,
   });
   if (workspaceView === 'create' && taskKind === 'payroll' && canPayroll) {
     if (payrollSubView === 'batches') mountedPanelsRef.current.batches = true;
@@ -580,8 +612,10 @@ function AuthenticatedWorkbench({
     mountedPanelsRef.current.priceExport = true;
   } else if (workspaceView === 'pickup') {
     mountedPanelsRef.current.pickup = true;
-  } else if (workspaceView === 'accounts' && currentUser.role === 'admin') {
+  } else if (workspaceView === 'accounts' && isAdmin) {
     mountedPanelsRef.current.accounts = true;
+  } else if (workspaceView === 'global-config' && isAdmin) {
+    mountedPanelsRef.current.globalConfig = true;
   }
   const mountedPanels = mountedPanelsRef.current;
 
@@ -1555,18 +1589,21 @@ function AuthenticatedWorkbench({
           onCloseMobile={() => setMobileNavOpen(false)}
           onOpenPlatformDock={() => setDockOpen(true)}
           permissions={currentUser.permissions}
-          isAdmin={currentUser.role === 'admin'}
-          pendingAccountCount={session.pending_count}
+          isAdmin={isAdmin}
         />
         <div className="wb-viewport wbx-workspace">
           {(() => {
-            const breadcrumbModel = getBreadcrumbModel({
-              workspaceView,
-              taskKind,
-              downloadPlatform,
-              payrollSubView,
-              reportId: activeReportId,
-            });
+            const breadcrumbModel = getBreadcrumbModel(
+              {
+                workspaceView,
+                taskKind,
+                downloadPlatform,
+                payrollSubView,
+                reportId: activeReportId,
+              },
+              globalConfig,
+              isAdmin,
+            );
             const errorLogCount = logs.filter(entry => entry.level === 'ERROR').length;
             const totalActiveCount =
               activeDownloadCount + (isRunning ? 1 : 0) + approvalActiveCount;
@@ -1814,6 +1851,7 @@ function AuthenticatedWorkbench({
                 workspaceView === 'pickup' ||
                 workspaceView === 'accounts' ||
                 workspaceView === 'platform-auth' ||
+                workspaceView === 'global-config' ||
                 (workspaceView === 'create' &&
                   ((taskKind === 'download' && !canCollection) ||
                     (taskKind === 'generate' && !canReports))) ||
@@ -1917,26 +1955,35 @@ function AuthenticatedWorkbench({
                 />
               </KeepAliveStage>
             </section>
-            {mountedPanels.accounts && currentUser.role === 'admin' && (
+            {mountedPanels.accounts && isAdmin && (
               <section
                 className="wbx-route-stage"
                 hidden={workspaceView !== 'accounts'}
                 aria-hidden={workspaceView !== 'accounts' || undefined}
                 aria-label="用户权限分配"
               >
-                <KeepAliveStage
-                  active={workspaceView === 'accounts'}
-                  watchKey={accountsTabReq.version}
-                >
+                <KeepAliveStage active={workspaceView === 'accounts'}>
                   <AccountManagementPage
                     currentUserId={currentUser.id}
-                    requestedTab={accountsTabReq.tab}
-                    requestedTabVersion={accountsTabReq.version}
-                    onAccountsChanged={(nextPending, nextWorkspaces) => {
+                    onAccountsChanged={nextWorkspaces => {
                       onSessionUpdate(prev =>
-                        prev ? { ...prev, pending_count: nextPending, workspaces: nextWorkspaces } : prev,
+                        prev ? { ...prev, workspaces: nextWorkspaces } : prev,
                       );
                     }}
+                    onToast={(msg, type) => showToast(msg, type || 'info')}
+                  />
+                </KeepAliveStage>
+              </section>
+            )}
+            {mountedPanels.globalConfig && isAdmin && (
+              <section
+                className="wbx-route-stage"
+                hidden={workspaceView !== 'global-config'}
+                aria-hidden={workspaceView !== 'global-config' || undefined}
+                aria-label="全局配置"
+              >
+                <KeepAliveStage active={workspaceView === 'global-config'}>
+                  <GlobalConfigPage
                     onToast={(msg, type) => showToast(msg, type || 'info')}
                   />
                 </KeepAliveStage>
@@ -2088,8 +2135,9 @@ function AuthenticatedWorkbench({
                 },
                 {
                   sidebarCollapsed: sidebarIsCollapsed,
-                  isAdmin: currentUser.role === 'admin',
+                  isAdmin,
                   permissions: currentUser.permissions,
+                  globalConfig,
                 },
               )
             : EMPTY_SHELL_COMMANDS

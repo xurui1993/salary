@@ -1,6 +1,15 @@
 import type { DownloadPlatform } from './downloadModules';
 import type { PayrollSubView, PlatformDotTone, PlatformStatusMap } from './workbench';
 import { getPlatformStatusCluster } from './workbench';
+import {
+  getGlobalWorkbenchConfig,
+  isBusinessModuleEnabled,
+  isPlatformShared,
+  resolveModuleGroupLabel,
+  resolveSubmoduleLabel,
+  type GlobalWorkbenchConfig,
+  type PlatformChannelKey,
+} from './workbenchConfig';
 
 export type NavGroupId = 'collection' | 'reports' | 'payroll' | 'approval' | 'history' | 'admin';
 
@@ -12,7 +21,8 @@ export interface ShellNavState {
     | 'price-export'
     | 'pickup'
     | 'accounts'
-    | 'platform-auth';
+    | 'platform-auth'
+    | 'global-config';
   taskKind: 'download' | 'generate' | 'payroll';
   downloadPlatform: DownloadPlatform;
   payrollSubView: PayrollSubView;
@@ -31,7 +41,8 @@ export type ShellCommandAction =
         | 'history'
         | 'pickup'
         | 'accounts'
-        | 'platform-auth';
+        | 'platform-auth'
+        | 'global-config';
     }
   | { type: 'open-dock'; source?: string }
   | { type: 'open-logs' }
@@ -55,7 +66,8 @@ export type QuickTargetId =
   | 'workspace:history'
   | 'workspace:pickup'
   | 'workspace:platform-auth'
-  | 'workspace:accounts';
+  | 'workspace:accounts'
+  | 'workspace:global-config';
 
 export interface QuickTargetMeta {
   id: QuickTargetId;
@@ -85,7 +97,7 @@ export interface BreadcrumbModel {
 
 export interface ShellCommandItem {
   id: string;
-  group: '数据采集' | '业务报表' | '薪资核算' | '价格审批' | '平台管理';
+  group: string;
   label: string;
   subtitle: string;
   keywords: string[];
@@ -277,9 +289,19 @@ export const QUICK_TARGETS: QuickTargetMeta[] = [
     label: '用户权限分配',
     shortLabel: '权限',
     moduleLabel: '平台管理',
-    hint: '成员建号、模块权限分配与安全审计',
+    hint: '成员建号、通道与模块分配、权限勾选与安全审计',
     accent: 'sapphire',
     action: { type: 'workspace', view: 'accounts' },
+  },
+  {
+    id: 'workspace:global-config',
+    groupId: 'admin',
+    label: '全局配置',
+    shortLabel: '配置',
+    moduleLabel: '平台管理',
+    hint: '一二级模块名称与数据采集资料主副标题自定义',
+    accent: 'sapphire',
+    action: { type: 'workspace', view: 'global-config' },
   },
 ];
 
@@ -294,7 +316,8 @@ export function getQuickTargetMeta(id: QuickTargetId): QuickTargetMeta | undefin
 export function getActiveNavGroup(state: Pick<ShellNavState, 'workspaceView' | 'taskKind'>): NavGroupId {
   if (
     state.workspaceView === 'accounts' ||
-    state.workspaceView === 'platform-auth'
+    state.workspaceView === 'platform-auth' ||
+    state.workspaceView === 'global-config'
   ) {
     return 'admin';
   }
@@ -315,6 +338,7 @@ export function getCurrentQuickTargetId(state: ShellNavState): QuickTargetId {
   const groupId = getActiveNavGroup(state);
   if (groupId === 'admin') {
     if (state.workspaceView === 'platform-auth') return 'workspace:platform-auth';
+    if (state.workspaceView === 'global-config') return 'workspace:global-config';
     return 'workspace:accounts';
   }
   if (state.workspaceView === 'history') return 'workspace:history';
@@ -391,19 +415,56 @@ export function getPlatformChannelStatus(
   return { tone: chip.tone, statusText: chip.statusText };
 }
 
-export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
+export function canMemberAccessDownloadPlatform(
+  platformId: DownloadPlatform,
+  options: {
+    isAdmin?: boolean;
+    permissions?: Record<string, boolean>;
+    globalConfig?: GlobalWorkbenchConfig;
+  } = {},
+): boolean {
+  const cfg = options.globalConfig || getGlobalWorkbenchConfig();
+  if (!options.isAdmin && !isBusinessModuleEnabled('collection', cfg)) {
+    return false;
+  }
+  if (options.isAdmin || !options.permissions) {
+    return true;
+  }
+  if (options.permissions.collection === false) {
+    return false;
+  }
+  if (platformId === 'payout') {
+    const baizeShared = isPlatformShared('baize', cfg);
+    const benlaiShared = isPlatformShared('benlai', cfg);
+    const baizeOk = !baizeShared || options.permissions.baize_use !== false;
+    const benlaiOk = !benlaiShared || options.permissions.benlai_use !== false;
+    return baizeOk || benlaiOk;
+  }
+  const chKey = platformId as PlatformChannelKey;
+  if (!isPlatformShared(chKey, cfg)) {
+    return true;
+  }
+  return options.permissions[`${chKey}_use`] !== false;
+}
+
+export function getBreadcrumbModel(
+  state: ShellNavState,
+  cfg: GlobalWorkbenchConfig = getGlobalWorkbenchConfig(),
+  isAdmin = true,
+): BreadcrumbModel {
   const groupId = getActiveNavGroup(state);
 
   if (groupId === 'collection') {
     const isHistory = state.workspaceView === 'history';
     const platforms: { id: DownloadPlatform; label: string; hint: string }[] = [
-      { id: 'fengshen', label: '风神数据', hint: '配送费、违规扣款与考勤源表' },
-      { id: 'lanorange', label: '蓝橙数据', hint: '人事档案、离职请假与价格表' },
-      { id: 'lanorange_mdr', label: '新蓝橙数据', hint: '新系统骑手档案、离职请假与价格表' },
-      { id: 'payout', label: '发薪平台', hint: '白泽商翼与本来人力' },
-      { id: 'xiaoxiang', label: '小象灯塔', hint: '商配送日维度分析与订单明细' },
+      { id: 'fengshen', label: resolveSubmoduleLabel('platform:fengshen', '风神数据', cfg), hint: '配送费、违规扣款与考勤源表' },
+      { id: 'lanorange', label: resolveSubmoduleLabel('platform:lanorange', '蓝橙数据', cfg), hint: '人事档案、离职请假与价格表' },
+      { id: 'lanorange_mdr', label: resolveSubmoduleLabel('platform:lanorange_mdr', '新蓝橙数据', cfg), hint: '新系统骑手档案、离职请假与价格表' },
+      { id: 'payout', label: resolveSubmoduleLabel('platform:payout', '发薪平台', cfg), hint: '白泽商翼与本来人力' },
+      { id: 'xiaoxiang', label: resolveSubmoduleLabel('platform:xiaoxiang', '小象灯塔', cfg), hint: '商配送日维度分析与订单明细' },
     ];
     const current = platforms.find(item => item.id === state.downloadPlatform) || platforms[0];
+    const historyLabel = resolveSubmoduleLabel('workspace:history', '任务下载', cfg);
     const siblings: BreadcrumbSibling[] = [
       ...platforms.map(item => ({
         id: item.id,
@@ -414,7 +475,7 @@ export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
       })),
       {
         id: 'history',
-        label: '任务下载',
+        label: historyLabel,
         hint: '全部历史任务与文件下载',
         active: isHistory,
         action: { type: 'workspace' as const, view: 'history' as const },
@@ -422,8 +483,8 @@ export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
     ];
     return {
       groupId,
-      moduleLabel: '数据采集',
-      viewLabel: isHistory ? '任务下载' : current.label,
+      moduleLabel: resolveModuleGroupLabel('collection', cfg),
+      viewLabel: isHistory ? historyLabel : current.label,
       siblings,
     };
   }
@@ -434,11 +495,11 @@ export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
       SPECIAL_REPORT_SUBMODULES[0];
     return {
       groupId,
-      moduleLabel: '业务报表',
-      viewLabel: current.label,
+      moduleLabel: resolveModuleGroupLabel('reports', cfg),
+      viewLabel: resolveSubmoduleLabel(`report:${current.id}`, current.label, cfg),
       siblings: SPECIAL_REPORT_SUBMODULES.map(item => ({
         id: item.id,
-        label: item.label,
+        label: resolveSubmoduleLabel(`report:${item.id}`, item.label, cfg),
         hint: item.hint,
         active: item.id === current.id,
         action: { type: 'report', reportId: item.id },
@@ -451,28 +512,28 @@ export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
     const subViews: { id: string; label: string; hint: string; active: boolean; action: ShellCommandAction }[] = [
       {
         id: 'batches',
-        label: '兼职核算',
+        label: resolveSubmoduleLabel('payroll:batches', '兼职核算', cfg),
         hint: '上传申请表与自动化核算',
         active: !isApproval && state.payrollSubView === 'batches',
         action: { type: 'payroll', subView: 'batches' },
       },
       {
         id: 'deductions',
-        label: '扣款配置',
+        label: resolveSubmoduleLabel('payroll:deductions', '扣款配置', cfg),
         hint: '站点默认扣款与关键词配置',
         active: !isApproval && state.payrollSubView === 'deductions',
         action: { type: 'payroll', subView: 'deductions' },
       },
       {
         id: 'templates',
-        label: '模板中心',
+        label: resolveSubmoduleLabel('payroll:templates', '模板中心', cfg),
         hint: '闪购与小象标准核算模板',
         active: !isApproval && state.payrollSubView === 'templates',
         action: { type: 'payroll', subView: 'templates' },
       },
       {
         id: 'approval',
-        label: '价格审批',
+        label: resolveSubmoduleLabel('workspace:approval', '价格审批', cfg),
         hint: '筛选本人提审并跨页批量审批',
         active: isApproval,
         action: { type: 'workspace', view: 'approval' },
@@ -481,7 +542,7 @@ export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
     const current = subViews.find(item => item.active) || subViews[0];
     return {
       groupId: 'payroll',
-      moduleLabel: '薪资核算',
+      moduleLabel: resolveModuleGroupLabel('payroll', cfg),
       viewLabel: current.label,
       siblings: subViews,
     };
@@ -490,25 +551,36 @@ export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
   const platformManagementSiblings: BreadcrumbSibling[] = [
     {
       id: 'pickup',
-      label: '组内共享',
+      label: resolveSubmoduleLabel('workspace:pickup', '组内共享', cfg),
       hint: '本机成品与局域网组内共享文件一键获取',
       active: state.workspaceView === 'pickup',
       action: { type: 'workspace', view: 'pickup' },
     },
     {
       id: 'platform-auth',
-      label: '授权管理',
-      hint: '五大业务平台系统账户绑定、切换与连通性深度巡检',
+      label: resolveSubmoduleLabel('workspace:platform-auth', '授权管理', cfg),
+      hint: '业务平台系统账户绑定、切换与连通性深度巡检',
       active: state.workspaceView === 'platform-auth',
       action: { type: 'workspace', view: 'platform-auth' },
     },
-    {
-      id: 'accounts',
-      label: '用户权限分配',
-      hint: '成员建号、模块权限分配与安全审计日志',
-      active: state.workspaceView === 'accounts',
-      action: { type: 'workspace', view: 'accounts' },
-    },
+    ...(isAdmin
+      ? [
+          {
+            id: 'accounts',
+            label: resolveSubmoduleLabel('workspace:accounts', '用户权限分配', cfg),
+            hint: '成员建号、通道与模块分配、权限勾选与安全审计日志',
+            active: state.workspaceView === 'accounts',
+            action: { type: 'workspace' as const, view: 'accounts' as const },
+          },
+          {
+            id: 'global-config',
+            label: resolveSubmoduleLabel('workspace:global-config', '全局配置', cfg),
+            hint: '自定义一二级模块名称及资料下载项名称与副标题',
+            active: state.workspaceView === 'global-config',
+            action: { type: 'workspace' as const, view: 'global-config' as const },
+          },
+        ]
+      : []),
   ];
 
   const currentPlatformSibling =
@@ -516,7 +588,7 @@ export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
 
   return {
     groupId: groupId === 'admin' ? 'admin' : 'history',
-    moduleLabel: '平台管理',
+    moduleLabel: resolveModuleGroupLabel('admin', cfg),
     viewLabel: currentPlatformSibling.label,
     siblings: platformManagementSiblings,
   };
@@ -528,64 +600,86 @@ export function buildShellCommands(
     sidebarCollapsed?: boolean;
     isAdmin?: boolean;
     permissions?: Record<string, boolean>;
+    globalConfig?: GlobalWorkbenchConfig;
   } = {},
 ): ShellCommandItem[] {
+  const cfg = options.globalConfig || getGlobalWorkbenchConfig();
   const groupId = getActiveNavGroup(state);
   const isCollection = groupId === 'collection';
   const isReports = groupId === 'reports';
   const activeReportId = state.reportId || SPECIAL_REPORT_SUBMODULES[0].id;
   const isPayroll = groupId === 'payroll' && state.workspaceView === 'create';
-  const hasPermissionFilter = Boolean(options.permissions) && !options.isAdmin;
-  const canUse = (key: string) =>
-    !hasPermissionFilter || options.permissions?.[key] !== false;
+  const isAdmin = Boolean(options.isAdmin);
+  const hasPermissionFilter = Boolean(options.permissions) && !isAdmin;
+  const canUseModule = (mod: 'collection' | 'reports' | 'payroll' | 'approval') => {
+    if (!isAdmin && !isBusinessModuleEnabled(mod, cfg)) return false;
+    return !hasPermissionFilter || options.permissions?.[mod] !== false;
+  };
+  const canUsePlatform = (platformId: DownloadPlatform) =>
+    canMemberAccessDownloadPlatform(platformId, {
+      isAdmin,
+      permissions: options.permissions,
+      globalConfig: cfg,
+    });
+
+  const collectionGroupName = resolveModuleGroupLabel('collection', cfg);
+  const reportsGroupName = resolveModuleGroupLabel('reports', cfg);
+  const payrollGroupName = resolveModuleGroupLabel('payroll', cfg);
+  const adminGroupName = resolveModuleGroupLabel('admin', cfg);
 
   const commands: ShellCommandItem[] = [];
 
   const isCollectionPlatform = isCollection && state.workspaceView === 'create';
-  if (canUse('collection')) {
-    commands.push(
-      {
+  if (canUseModule('collection')) {
+    if (canUsePlatform('fengshen')) {
+      commands.push({
         id: 'nav-fengshen',
-        group: '数据采集',
-        label: '风神数据',
+        group: collectionGroupName,
+        label: resolveSubmoduleLabel('platform:fengshen', '风神数据', cfg),
         subtitle: '配送费、违规扣款、UB账单、风控运单与考勤源表采集',
         keywords: ['fengshen', 'fs', '风神', '闪购', '配送费', '扣款', '考勤'],
         active: isCollectionPlatform && state.downloadPlatform === 'fengshen',
         action: { type: 'platform', platform: 'fengshen' },
-      },
-      {
+      });
+    }
+    if (canUsePlatform('lanorange')) {
+      commands.push({
         id: 'nav-lanorange',
-        group: '数据采集',
-        label: '蓝橙数据',
+        group: collectionGroupName,
+        label: resolveSubmoduleLabel('platform:lanorange', '蓝橙数据', cfg),
         subtitle: '骑手档案、兼职价格、离职报备与请假全量采集',
         keywords: ['lanorange', 'lc', '蓝橙', '雷神', '离职', '请假', '骑手档案'],
         active: isCollectionPlatform && state.downloadPlatform === 'lanorange',
         action: { type: 'platform', platform: 'lanorange' },
-      },
-      {
+      });
+    }
+    if (canUsePlatform('lanorange_mdr')) {
+      commands.push({
         id: 'nav-lanorange-mdr',
-        group: '数据采集',
-        label: '新蓝橙数据',
+        group: collectionGroupName,
+        label: resolveSubmoduleLabel('platform:lanorange_mdr', '新蓝橙数据', cfg),
         subtitle: '新蓝橙系统骑手档案、离职请假、兼全职变更、佣金代领与价格档案采集',
         keywords: ['lanorange_mdr', 'lcmdr', '新蓝橙', '蓝橙新系统', 'mdr', '离职', '请假', '骑手档案'],
         active: isCollectionPlatform && state.downloadPlatform === 'lanorange_mdr',
         action: { type: 'platform', platform: 'lanorange_mdr' },
-      },
-      {
+      });
+    }
+    if (canUsePlatform('payout')) {
+      commands.push({
         id: 'nav-payout',
-        group: '数据采集',
-        label: '发薪平台（白泽商翼 + 本来人力）',
+        group: collectionGroupName,
+        label: resolveSubmoduleLabel('platform:payout', '发薪平台', cfg),
         subtitle: '商翼员工总表与本来人力灵工档案实时直采',
         keywords: ['payout', 'fx', 'baize', 'shangyi', 'benlai', '发薪', '白泽', '商翼', '本来'],
         active: isCollectionPlatform && state.downloadPlatform === 'payout',
         action: { type: 'platform', platform: 'payout' },
-      },
-    );
-    if (canUse('xiaoxiang_use')) {
+      });
+    }
+    if (canUsePlatform('xiaoxiang')) {
       commands.push({
         id: 'nav-xiaoxiang',
-        group: '数据采集',
-        label: '小象灯塔',
+        group: collectionGroupName,
+        label: resolveSubmoduleLabel('platform:xiaoxiang', '小象灯塔', cfg),
         subtitle: '商配送日维度骑手分析、档案与订单客诉明细',
         keywords: ['xiaoxiang', 'xx', 'dengta', 'dt', '小象', '灯塔', '美团'],
         active: isCollectionPlatform && state.downloadPlatform === 'xiaoxiang',
@@ -596,20 +690,20 @@ export function buildShellCommands(
 
   commands.push({
     id: 'nav-history',
-    group: '数据采集',
-    label: '任务下载',
+    group: collectionGroupName,
+    label: resolveSubmoduleLabel('workspace:history', '任务下载', cfg),
     subtitle: '查看跨平台任务执行记录并一键打包下载成果文件',
     keywords: ['history', 'task', 'rw', 'rwxz', '任务', '任务下载', '任务管理', '任务中心', '记录', '下载', '归档'],
     active: state.workspaceView === 'history',
     action: { type: 'workspace', view: 'history' },
   });
 
-  if (canUse('reports')) {
+  if (canUseModule('reports')) {
     commands.push(
       ...SPECIAL_REPORT_SUBMODULES.map(report => ({
         id: `nav-report-${report.id}`,
-        group: '业务报表' as const,
-        label: report.label,
+        group: reportsGroupName,
+        label: resolveSubmoduleLabel(`report:${report.id}`, report.label, cfg),
         subtitle: report.subtitle,
         keywords: report.keywords,
         active: isReports && activeReportId === report.id,
@@ -618,12 +712,12 @@ export function buildShellCommands(
     );
   }
 
-  if (canUse('payroll')) {
+  if (canUseModule('payroll')) {
     commands.push(
       {
         id: 'nav-payroll-batches',
-        group: '薪资核算',
-        label: '兼职核算',
+        group: payrollGroupName,
+        label: resolveSubmoduleLabel('payroll:batches', '兼职核算', cfg),
         subtitle: '上传兼职薪资申请表，自动齐套资料并执行核算',
         keywords: ['payroll', 'xz', 'hs', '薪资', '核算', '兼职', '工资'],
         active: isPayroll && state.payrollSubView === 'batches',
@@ -631,8 +725,8 @@ export function buildShellCommands(
       },
       {
         id: 'nav-payroll-deductions',
-        group: '薪资核算',
-        label: '扣款配置',
+        group: payrollGroupName,
+        label: resolveSubmoduleLabel('payroll:deductions', '扣款配置', cfg),
         subtitle: '按城市与团队维护站点默认扣款金额及关键词',
         keywords: ['deduction', 'kk', '扣款', '站点', '规则', '配置'],
         active: isPayroll && state.payrollSubView === 'deductions',
@@ -640,8 +734,8 @@ export function buildShellCommands(
       },
       {
         id: 'nav-payroll-templates',
-        group: '薪资核算',
-        label: '标准模板中心',
+        group: payrollGroupName,
+        label: resolveSubmoduleLabel('payroll:templates', '模板中心', cfg),
         subtitle: '下载与管理淘宝闪购、美团小象标准 Excel 模板',
         keywords: ['template', 'mb', '模板', 'excel', '下载'],
         active: isPayroll && state.payrollSubView === 'templates',
@@ -650,11 +744,11 @@ export function buildShellCommands(
     );
   }
 
-  if (canUse('approval')) {
+  if (canUseModule('approval')) {
     commands.push({
       id: 'nav-approval',
-      group: '薪资核算',
-      label: '价格审批',
+      group: payrollGroupName,
+      label: resolveSubmoduleLabel('workspace:approval', '价格审批', cfg),
       subtitle: '筛选本人待审单据，跨页勾选并批量审批',
       keywords: ['approval', 'sp', '审批', '价格', '蓝橙'],
       active: state.workspaceView === 'approval',
@@ -665,8 +759,8 @@ export function buildShellCommands(
   commands.push(
     {
       id: 'nav-pickup',
-      group: '平台管理',
-      label: '组内共享',
+      group: adminGroupName,
+      label: resolveSubmoduleLabel('workspace:pickup', '组内共享', cfg),
       subtitle: '按任务领取本机成品，或浏览局域网组内共享电脑的文件',
       keywords: ['pickup', 'lingqu', 'lq', 'zn', 'gx', '组内共享', '文件', '领取', '共享', '局域网', 'ip'],
       active: state.workspaceView === 'pickup',
@@ -674,8 +768,8 @@ export function buildShellCommands(
     },
     {
       id: 'nav-platform-auth',
-      group: '平台管理',
-      label: '授权管理',
+      group: adminGroupName,
+      label: resolveSubmoduleLabel('workspace:platform-auth', '授权管理', cfg),
       subtitle: '管理风神、蓝橙、商翼、小象灯塔、本来人力系统账号与连接巡检',
       keywords: ['auth', 'login', 'platform', 'dl', 'pt', 'sq', '授权管理', '平台授权', '平台', '登录', '授权', '通道', '扫码', '换号', '切换'],
       active: state.workspaceView === 'platform-auth',
@@ -683,22 +777,33 @@ export function buildShellCommands(
     },
   );
 
-  if (options.isAdmin) {
-    commands.push({
-      id: 'nav-accounts',
-      group: '平台管理',
-      label: '用户权限分配',
-      subtitle: '新建成员账号、分配模块权限与查看安全审计日志',
-      keywords: ['account', 'admin', 'perm', 'audit', 'zh', 'qx', 'yhqxfp', '用户权限分配', '权限分配', '权限管理', '账户与权限', '账户', '权限', '审批', '审计'],
-      active: state.workspaceView === 'accounts',
-      action: { type: 'workspace', view: 'accounts' },
-    });
+  if (isAdmin) {
+    commands.push(
+      {
+        id: 'nav-accounts',
+        group: adminGroupName,
+        label: resolveSubmoduleLabel('workspace:accounts', '用户权限分配', cfg),
+        subtitle: '新建成员账号、通道与模块双泳道分配、模块权限勾选及安全审计',
+        keywords: ['account', 'admin', 'perm', 'audit', 'zh', 'qx', 'yhqxfp', '用户权限分配', '权限分配', '通道分配', '模块分配', '权限管理', '账户', '权限', '审计'],
+        active: state.workspaceView === 'accounts',
+        action: { type: 'workspace', view: 'accounts' },
+      },
+      {
+        id: 'nav-global-config',
+        group: adminGroupName,
+        label: resolveSubmoduleLabel('workspace:global-config', '全局配置', cfg),
+        subtitle: '修改一二级模块显示名称及数据采集/报表资料名称与副标题',
+        keywords: ['config', 'global', 'pz', 'qjpz', '全局配置', '模块名称', '副标题', '名称配置'],
+        active: state.workspaceView === 'global-config',
+        action: { type: 'workspace', view: 'global-config' },
+      },
+    );
   }
 
   commands.push(
     {
       id: 'act-log-drawer',
-      group: '平台管理',
+      group: adminGroupName,
       label: '打开运行日志终端',
       subtitle: '实时检索、按级别筛选、复制与导出引擎运行日志',
       keywords: ['log', 'rz', 'console', 'terminal', '日志', '终端', '调试', '排查'],
@@ -708,7 +813,7 @@ export function buildShellCommands(
     },
     {
       id: 'act-toggle-sidebar',
-      group: '平台管理',
+      group: adminGroupName,
       label: options.sidebarCollapsed ? '展开左侧情境导航栏' : '收起为极简命令轨',
       subtitle: '在双轨导航舱与 56px 极简深空图标轨之间切换工作区视野',
       keywords: ['sidebar', 'ce', 'nav', '侧栏', '折叠', '收起', '展开'],

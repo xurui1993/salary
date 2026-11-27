@@ -165,7 +165,7 @@ test('shellNav removes 界面适配 submodule and moves 任务下载 under 数�
   assert.equal(pickupBreadcrumb.moduleLabel, '平台管理');
   assert.deepEqual(
     pickupBreadcrumb.siblings.map(s => s.label),
-    ['组内共享', '授权管理', '用户权限分配'],
+    ['组内共享', '授权管理', '用户权限分配', '全局配置'],
   );
 
   const commands = buildShellCommands(state, { isAdmin: true });

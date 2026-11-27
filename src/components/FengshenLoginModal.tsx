@@ -181,9 +181,18 @@ export function FengshenLoginModal({
       setOpen(true);
       void refresh().catch(() => {});
     };
+    const cancelLogin = () => {
+      if (statusRef.current?.purpose !== 'export') {
+        snooze();
+      }
+    };
     window.addEventListener('workbench:fengshen-verification', openVerification);
-    return () => window.removeEventListener('workbench:fengshen-verification', openVerification);
-  }, [enabled, refresh]);
+    window.addEventListener('workbench:fengshen-cancel-login', cancelLogin);
+    return () => {
+      window.removeEventListener('workbench:fengshen-verification', openVerification);
+      window.removeEventListener('workbench:fengshen-cancel-login', cancelLogin);
+    };
+  }, [enabled, refresh, snooze]);
 
   useEffect(() => {
     if (!enabled) return;

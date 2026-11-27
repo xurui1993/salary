@@ -1,4 +1,4 @@
-"""HTTP routes for login, self-registration, admin approval, permissions, and workspace switching."""
+"""HTTP routes for workspace login, admin member management, permissions, and global workbench config."""
 
 import hmac
 import ipaddress
@@ -14,7 +14,6 @@ from download_accounts import (
     COOKIE_NAME,
     PERMISSION_KEYS,
     PERMISSION_LABELS,
-    ROLE_TEMPLATES,
     SESSION_SECONDS,
     _host_interface_addresses,
     _loopback,
@@ -29,10 +28,16 @@ from download_accounts import (
     require_admin,
     validate_write_request,
 )
+from global_workbench_config import (
+    get_global_config,
+    reset_global_config,
+    update_global_config,
+)
 from workspace_context import PRIMARY_WORKSPACE, PROJECT_ROOT, is_isolated_workspace, workspace_config_path
 
 auth_router = APIRouter(prefix="/api/auth")
 admin_router = APIRouter(prefix="/api/admin/accounts")
+workbench_config_router = APIRouter()
 
 
 def _is_secure_iframe_context(request: Request) -> bool:
@@ -109,11 +114,6 @@ async def _read_json(request: Request) -> dict:
     return payload
 
 
-def _self_registration_enabled() -> bool:
-    raw = os.environ.get("ALLOW_SELF_REGISTRATION", "0").strip().lower()
-    return raw in ("1", "true", "on", "yes")
-
-
 def _session_payload(request: Request, user: dict | None) -> dict:
     store = get_account_store()
     host_client = is_host_machine_request(request)
@@ -136,13 +136,11 @@ def _session_payload(request: Request, user: dict | None) -> dict:
         "host_auto_login": host_auto_login,
         "can_switch_to_host": can_switch_to_host,
         "bootstrap_allowed": False,
-        "self_registration_enabled": _self_registration_enabled(),
         "user": public_user(user) if (authenticated and user) else None,
-        "role_templates": ROLE_TEMPLATES,
         "permission_keys": list(PERMISSION_KEYS),
         "permission_labels": PERMISSION_LABELS,
         "workspaces": store.workspace_directory_list() if is_admin else [],
-        "pending_count": store.pending_count() if is_admin else 0,
+        "global_config": get_global_config(),
     }
 
 
@@ -223,29 +221,6 @@ async def switch_to_host_admin(request: Request, response: Response):
     return _session_payload(request, host_user)
 
 
-@auth_router.post("/register")
-async def register(request: Request):
-    payload = await _read_json(request)
-    if not _self_registration_enabled():
-        raise HTTPException(403, "系统已关闭公开注册，请联系系统管理员在后台创建账号")
-    store = get_account_store()
-    store.ensure_host_admin()
-    user = store.register_user(
-        payload.get("username", ""),
-        payload.get("password", ""),
-        display_name=payload.get("display_name", ""),
-        note=payload.get("note", ""),
-        address=client_address(request),
-    )
-    audit_event(user, "account.register", detail="registered")
-    return {
-        "ok": True,
-        "status": "pending",
-        "message": "注册申请已提交，请等待系统管理员审批并分配权限后即可登录使用。",
-        "username": user["username"],
-    }
-
-
 @auth_router.post("/login")
 async def login(request: Request, response: Response):
     payload = await _read_json(request)
@@ -311,11 +286,10 @@ def list_accounts(request: Request):
     store = get_account_store()
     return {
         "users": store.users(),
-        "pending_count": store.pending_count(),
         "workspaces": store.workspace_directory_list(),
-        "role_templates": ROLE_TEMPLATES,
         "permission_keys": list(PERMISSION_KEYS),
         "permission_labels": PERMISSION_LABELS,
+        "global_config": get_global_config(),
     }
 
 
@@ -324,55 +298,21 @@ async def admin_create_account(request: Request):
     payload = await _read_json(request)
     admin = require_admin(request)
     store = get_account_store()
-    role_template = payload.get("role_template", "payroll_specialist")
-    role = "admin" if role_template == "admin" else "member"
+    role = "admin" if payload.get("role") == "admin" else "member"
     created = store.create_user(
         payload.get("username", ""),
         payload.get("password", ""),
         role=role,
         display_name=payload.get("display_name", ""),
-        role_template=role_template,
         permissions=payload.get("permissions"),
         note=payload.get("note", ""),
     )
     audit_event(admin, "account.create", run_id=created["workspace_id"], detail=created["role"])
-    return {"ok": True, "user": public_user(created), "users": store.users(), "workspaces": store.workspace_directory_list()}
-
-
-@admin_router.post("/{user_id}/approve")
-async def admin_approve_account(user_id: str, request: Request):
-    payload = await _read_json(request)
-    admin = require_admin(request)
-    store = get_account_store()
-    approved = store.approve_user(
-        user_id,
-        role_template=payload.get("role_template", "payroll_specialist"),
-        permissions=payload.get("permissions"),
-        display_name=payload.get("display_name"),
-        note=payload.get("note"),
-    )
-    audit_event(admin, "account.approve", run_id=approved["workspace_id"], detail="approved")
     return {
         "ok": True,
-        "user": public_user(approved),
+        "user": public_user(created),
         "users": store.users(),
-        "pending_count": store.pending_count(),
         "workspaces": store.workspace_directory_list(),
-    }
-
-
-@admin_router.post("/{user_id}/reject")
-async def admin_reject_account(user_id: str, request: Request):
-    await _read_json(request)
-    admin = require_admin(request)
-    store = get_account_store()
-    rejected = store.reject_user(user_id)
-    audit_event(admin, "account.reject", run_id=rejected["workspace_id"], detail="rejected")
-    return {
-        "ok": True,
-        "user": public_user(rejected),
-        "users": store.users(),
-        "pending_count": store.pending_count(),
     }
 
 
@@ -384,7 +324,7 @@ async def admin_update_account(user_id: str, request: Request):
     updated = store.update_user_access(
         user_id,
         display_name=payload.get("display_name"),
-        role_template=payload.get("role_template"),
+        role=payload.get("role"),
         permissions=payload.get("permissions"),
         enabled=payload.get("enabled"),
         note=payload.get("note"),
@@ -394,7 +334,6 @@ async def admin_update_account(user_id: str, request: Request):
         "ok": True,
         "user": public_user(updated),
         "users": store.users(),
-        "pending_count": store.pending_count(),
         "workspaces": store.workspace_directory_list(),
     }
 
@@ -457,3 +396,28 @@ async def admin_sync_default_config(user_id: str, request: Request):
 def admin_audit_logs(request: Request):
     require_admin(request)
     return {"events": get_account_store().audit_events()}
+
+
+@workbench_config_router.get("/api/workbench/global-config")
+def get_workbench_global_config(request: Request):
+    require_account(request)
+    return {"ok": True, "config": get_global_config()}
+
+
+@workbench_config_router.put("/api/admin/workbench/global-config")
+async def update_workbench_global_config(request: Request):
+    payload = await _read_json(request)
+    admin = require_admin(request)
+    updated = update_global_config(payload)
+    audit_event(admin, "workbench.global_config", detail="success")
+    return {"ok": True, "config": updated}
+
+
+@workbench_config_router.post("/api/admin/workbench/global-config/reset")
+async def reset_workbench_global_config(request: Request):
+    payload = await _read_json(request)
+    admin = require_admin(request)
+    section = payload.get("section", "all")
+    updated = reset_global_config(section if isinstance(section, str) else "all")
+    audit_event(admin, "workbench.global_config", detail="success")
+    return {"ok": True, "config": updated}

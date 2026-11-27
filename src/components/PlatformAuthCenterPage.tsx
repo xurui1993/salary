@@ -39,6 +39,13 @@ import {
   type PlatformStateFilter,
 } from '../lib/platformAuthCenter';
 import type { ConnectionChipKey } from '../lib/platformCatalog';
+import {
+  isPlatformShared,
+  setGlobalWorkbenchConfig,
+  useGlobalWorkbenchConfig,
+  type PlatformChannelKey,
+} from '../lib/workbenchConfig';
+import { fetchGlobalWorkbenchConfig } from '../lib/workspaceAuth';
 import { isPlatformStatusRecordEqual } from '../lib/perfUtils';
 import { SourceLoginPanel } from './SourceLoginPanel';
 import { UnifiedPlatformAuthModal } from './UnifiedPlatformAuthModal';
@@ -82,6 +89,9 @@ export function PlatformAuthCenterPage({
   canManageSharedAuth = false,
   onToast,
 }: PlatformAuthCenterPageProps) {
+  const globalConfig = useGlobalWorkbenchConfig();
+  const globalConfigRef = useRef(globalConfig);
+  globalConfigRef.current = globalConfig;
   const fetchRef = useRef(apiFetch);
   fetchRef.current = apiFetch;
   const onNavigateRef = useRef(onNavigateToSelf);
@@ -103,21 +113,49 @@ export function PlatformAuthCenterPage({
   const [editingSlotKey, setEditingSlotKey] = useState<string>('');
   const [editingAliasValue, setEditingAliasValue] = useState<string>('');
 
-  const locksRef = useRef(new Set<string>());
+  const locksRef = useRef(new Map<string, string>());
+  const verifyControllersRef = useRef(new Map<string, AbortController>());
   const checkedVersionsRef = useRef(new Set<string>());
   const lastVersionRef = useRef<Record<string, string>>({});
 
+  function abortBackgroundVerify(source: string) {
+    const controller = verifyControllersRef.current.get(source);
+    if (controller) {
+      controller.abort();
+      verifyControllersRef.current.delete(source);
+    }
+    if (locksRef.current.get(source) === 'verify') {
+      locksRef.current.delete(source);
+    }
+  }
+
   function acquireLock(source: string, action: string) {
-    if (locksRef.current.has(source)) return false;
-    locksRef.current.add(source);
+    const existing = locksRef.current.get(source);
+    if (existing) {
+      if (action !== 'verify' && existing === 'verify') {
+        abortBackgroundVerify(source);
+      } else {
+        return false;
+      }
+    }
+    locksRef.current.set(source, action);
     setPendingActions(prev => ({ ...prev, [source]: action }));
-    setErrors(prev => ({ ...prev, [source]: '' }));
+    if (action !== 'verify') {
+      setErrors(prev => ({ ...prev, [source]: '' }));
+    }
     return true;
   }
 
-  function releaseLock(source: string) {
+  function releaseLock(source: string, action?: string) {
+    const existing = locksRef.current.get(source);
+    if (action && existing && existing !== action) {
+      return;
+    }
     locksRef.current.delete(source);
     setPendingActions(prev => {
+      if (action && prev[source] && prev[source] !== action) {
+        return prev;
+      }
       const next = { ...prev };
       delete next[source];
       return next;
@@ -274,6 +312,16 @@ export function PlatformAuthCenterPage({
             10000,
           );
           if (!disposed && data && typeof data.statuses === 'object' && data.statuses !== null) {
+            if (
+              typeof data.global_config_version === 'number' &&
+              data.global_config_version !== globalConfigRef.current.version
+            ) {
+              void fetchGlobalWorkbenchConfig()
+                .then(res => {
+                  if (!disposed && res?.config) setGlobalWorkbenchConfig(res.config);
+                })
+                .catch(() => {});
+            }
             for (const { key } of PLATFORM_AUTH_REGISTRY) {
               const item = data.statuses[key];
               if (item && typeof item === 'object') {
@@ -380,19 +428,54 @@ export function PlatformAuthCenterPage({
         acquireLock(key, 'verify')
       ) {
         checkedVersionsRef.current.add(key + version);
-        fetchPlatformAuthJson(
-          fetchRef.current,
-          `/api/fengshen-downloads/platform-auth/${key}/check${key === 'xiaoxiang' ? '?deep=true' : ''}`,
-          {},
+        const controller = new AbortController();
+        verifyControllersRef.current.set(key, controller);
+        const timeoutId = setTimeout(
+          () => controller.abort(),
           key === 'xiaoxiang' ? 45000 : 20000,
-        )
+        );
+        fetchRef
+          .current(`/api/fengshen-downloads/platform-auth/${key}/check${key === 'xiaoxiang' ? '?deep=true' : ''}`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+            signal: controller.signal,
+          })
+          .then(async response => {
+            const payload = await response.json().catch(() => null);
+            if (!response.ok || !payload || typeof payload !== 'object') {
+              const detail =
+                payload && typeof payload.detail === 'string' ? payload.detail : '';
+              const err = new Error(detail || '操作未完成，请稍候再试。') as Error & {
+                status?: number;
+              };
+              err.status = response.status;
+              throw err;
+            }
+            return payload;
+          })
           .then(res =>
             setStatuses(prev =>
               prev[key]?.session_version === version ? { ...prev, [key]: res } : prev,
             ),
           )
-          .catch(err => recordError(key, err))
-          .finally(() => releaseLock(key));
+          .catch(err => {
+            const isAbort = err instanceof Error && err.name === 'AbortError';
+            const status = (err as { status?: number } | null)?.status;
+            const msg = err instanceof Error ? err.message : '';
+            if (isAbort || status === 409 || msg.includes('正在检测或切换')) {
+              return;
+            }
+            recordError(key, err);
+          })
+          .finally(() => {
+            clearTimeout(timeoutId);
+            if (verifyControllersRef.current.get(key) === controller) {
+              verifyControllersRef.current.delete(key);
+            }
+            releaseLock(key, 'verify');
+          });
       }
     }
   }, [statuses]);
@@ -413,7 +496,7 @@ export function PlatformAuthCenterPage({
     setFocusedPlatformKey(source);
     try {
       const cached = statuses[source] || {};
-      if ((source === 'xiaoxiang' || source === 'benlai') && cached.can_manage === false) {
+      if (isPlatformShared(source as PlatformChannelKey, globalConfigRef.current) && cached.can_manage === false) {
         recordError(
           source,
           new Error('该平台为全局共享连接，请联系系统管理员或授权维护人操作'),
@@ -461,7 +544,7 @@ export function PlatformAuthCenterPage({
     } catch (err) {
       recordError(source, err);
     } finally {
-      releaseLock(source);
+      releaseLock(source, 'login');
     }
   }
 
@@ -493,7 +576,7 @@ export function PlatformAuthCenterPage({
     } catch (err) {
       recordError(source, err);
     } finally {
-      releaseLock(source);
+      releaseLock(source, 'add-account');
     }
   }
 
@@ -506,6 +589,9 @@ export function PlatformAuthCenterPage({
     setFocusedPlatformKey(source);
     if (activeSessionKey === source) {
       setActiveSessionKey('');
+    }
+    if (source === 'fengshen') {
+      window.dispatchEvent(new CustomEvent('workbench:fengshen-cancel-login'));
     }
     setErrors(prev => {
       if (!prev[source]) return prev;
@@ -520,6 +606,9 @@ export function PlatformAuthCenterPage({
         {},
         20000,
       );
+      if (res?.session_version) {
+        checkedVersionsRef.current.add(source + res.session_version);
+      }
       updateStatus(source, { ...res, offline: false });
       window.dispatchEvent(
         new CustomEvent('workbench:platform-session-changed', { detail: { source } }),
@@ -528,7 +617,7 @@ export function PlatformAuthCenterPage({
     } catch (err) {
       recordError(source, err);
     } finally {
-      releaseLock(source);
+      releaseLock(source, 'switch-account');
     }
   }
 
@@ -548,7 +637,7 @@ export function PlatformAuthCenterPage({
     } catch (err) {
       recordError(source, err);
     } finally {
-      releaseLock(source);
+      releaseLock(source, 'alias');
     }
   }
 
@@ -582,7 +671,7 @@ export function PlatformAuthCenterPage({
     } catch (err) {
       recordError(source, err);
     } finally {
-      releaseLock(source);
+      releaseLock(source, 'remove-account');
     }
   }
 
@@ -616,7 +705,7 @@ export function PlatformAuthCenterPage({
       recordError(source, err);
       return false;
     } finally {
-      releaseLock(source);
+      releaseLock(source, 'logout');
     }
   }
 
@@ -625,10 +714,21 @@ export function PlatformAuthCenterPage({
     const st = statuses[source] || (source === 'fengshen' ? fengshenStatus : undefined) || {};
     const version = st?.session_version;
     if (!acquireLock(source, 'verify')) return;
+    const controller = new AbortController();
+    verifyControllersRef.current.set(source, controller);
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      source === 'xiaoxiang' ? 45000 : 20000,
+    );
     try {
+      const wrappedFetch: typeof apiFetch = (url, init) =>
+        fetchRef.current(url, {
+          ...init,
+          signal: init?.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal,
+        });
       if (st?.saved && !st?.busy && !st?.offline && version) {
         const res = await fetchPlatformAuthJson(
-          fetchRef.current,
+          wrappedFetch,
           `/api/fengshen-downloads/platform-auth/${source}/check${source === 'xiaoxiang' ? '?deep=true' : ''}`,
           {},
           source === 'xiaoxiang' ? 45000 : 20000,
@@ -636,7 +736,7 @@ export function PlatformAuthCenterPage({
         updateStatus(source, { ...res, offline: false });
       } else {
         const res = await fetchPlatformAuthJson(
-          fetchRef.current,
+          wrappedFetch,
           `/api/fengshen-downloads/platform-auth/${source}`,
           undefined,
           10000,
@@ -648,9 +748,18 @@ export function PlatformAuthCenterPage({
         `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`,
       );
     } catch (err) {
-      recordError(source, err);
+      const isAbort = err instanceof Error && err.name === 'AbortError';
+      const status = (err as { status?: number } | null)?.status;
+      const msg = err instanceof Error ? err.message : '';
+      if (!isAbort && status !== 409 && !msg.includes('正在检测或切换')) {
+        recordError(source, err);
+      }
     } finally {
-      releaseLock(source);
+      clearTimeout(timeoutId);
+      if (verifyControllersRef.current.get(source) === controller) {
+        verifyControllersRef.current.delete(source);
+      }
+      releaseLock(source, 'verify');
     }
   }
 
@@ -742,7 +851,7 @@ export function PlatformAuthCenterPage({
     } catch (err) {
       recordError(source, err);
     } finally {
-      releaseLock(source);
+      releaseLock(source, 'credential');
     }
   }
 
@@ -756,8 +865,9 @@ export function PlatformAuthCenterPage({
         errors,
         isAdmin,
         canManageSharedAuth,
+        globalConfig,
       }),
-    [statuses, fengshenStatus, baizeAccount, pendingActions, errors, isAdmin, canManageSharedAuth],
+    [statuses, fengshenStatus, baizeAccount, pendingActions, errors, isAdmin, canManageSharedAuth, globalConfig],
   );
 
   const overview = useMemo(() => summarizePlatformAuthOverview(allCards), [allCards]);
@@ -1151,7 +1261,7 @@ export function PlatformAuthCenterPage({
                                   card.canManage ? (
                                     <button
                                       type="button"
-                                      disabled={Boolean(pendingAction)}
+                                      disabled={Boolean(pendingAction && pendingAction !== 'verify')}
                                       onClick={() => void handleStartLogin(entry.key, true)}
                                       className={`h-8 px-3 rounded-lg text-[12px] font-semibold inline-flex items-center justify-center gap-1.5 transition duration-150 cursor-pointer disabled:opacity-55 whitespace-nowrap ${
                                         badge.tone === 'warn'
@@ -1171,7 +1281,7 @@ export function PlatformAuthCenterPage({
                                   card.canManage && (
                                     <button
                                       type="button"
-                                      disabled={Boolean(pendingAction)}
+                                      disabled={Boolean(pendingAction && pendingAction !== 'verify')}
                                       onClick={() => void handleAddNewAccount(card)}
                                       title="保留当前账户，继续登录另一个新账户"
                                       className="h-8 px-2.5 rounded-lg border border-slate-200/90 bg-white hover:border-[#00AEEC]/70 hover:text-[#0086C4] hover:bg-sky-50/45 text-[#4E5969] text-[12px] font-medium inline-flex items-center justify-center gap-1 transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
@@ -1291,7 +1401,7 @@ export function PlatformAuthCenterPage({
                                               {!slot.isActive ? (
                                                 <button
                                                   type="button"
-                                                  disabled={Boolean(pendingAction)}
+                                                  disabled={Boolean(pendingAction && pendingAction !== 'verify')}
                                                   onClick={() =>
                                                     void handleActivateAccountSlot(entry.key, slot)
                                                   }
@@ -1305,7 +1415,7 @@ export function PlatformAuthCenterPage({
                                                 !card.isReady && (
                                                   <button
                                                     type="button"
-                                                    disabled={Boolean(pendingAction)}
+                                                    disabled={Boolean(pendingAction && pendingAction !== 'verify')}
                                                     onClick={() => void handleStartLogin(entry.key, true)}
                                                     className="h-6.5 px-2.5 rounded-md bg-[#00AEEC] hover:bg-[#009CD6] text-white text-[11.5px] font-semibold inline-flex items-center gap-1 transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
                                                   >
@@ -1318,7 +1428,7 @@ export function PlatformAuthCenterPage({
                                               {slot.slotId !== 'active_default' && (
                                                 <button
                                                   type="button"
-                                                  disabled={Boolean(pendingAction)}
+                                                  disabled={Boolean(pendingAction && pendingAction !== 'verify')}
                                                   onClick={() => {
                                                     setEditingSlotKey(compositeKey);
                                                     setEditingAliasValue(slot.alias || slot.displayTitle);
@@ -1333,7 +1443,7 @@ export function PlatformAuthCenterPage({
 
                                               <button
                                                 type="button"
-                                                disabled={Boolean(pendingAction)}
+                                                disabled={Boolean(pendingAction && pendingAction !== 'verify')}
                                                 onClick={() =>
                                                   void handleRemoveAccountSlot(entry.key, slot)
                                                 }
@@ -1368,10 +1478,16 @@ export function PlatformAuthCenterPage({
                                       {accounts.length > 0 && (
                                         <button
                                           type="button"
-                                          disabled={Boolean(pendingAction)}
-                                          onClick={() =>
-                                            void handleActivateAccountSlot(entry.key, accounts[0])
-                                          }
+                                          disabled={Boolean(pendingAction && pendingAction !== 'verify')}
+                                          onClick={() => {
+                                            const latestSlot =
+                                              [...accounts].sort((a, b) =>
+                                                String(b.raw.updated_at || '').localeCompare(
+                                                  String(a.raw.updated_at || ''),
+                                                ),
+                                              )[0] || accounts[0];
+                                            void handleActivateAccountSlot(entry.key, latestSlot);
+                                          }}
                                           className="h-6.5 px-2.5 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-[#61666D] text-[11.5px] font-medium cursor-pointer disabled:opacity-50"
                                         >
                                           取消添加
@@ -1379,7 +1495,7 @@ export function PlatformAuthCenterPage({
                                       )}
                                       <button
                                         type="button"
-                                        disabled={Boolean(pendingAction)}
+                                        disabled={Boolean(pendingAction && pendingAction !== 'verify')}
                                         onClick={() => void handleStartLogin(entry.key, true)}
                                         className="h-6.5 px-2.5 rounded-md bg-[#00AEEC] hover:bg-[#009CD6] text-white text-[11.5px] font-semibold cursor-pointer disabled:opacity-50"
                                       >
@@ -1400,7 +1516,7 @@ export function PlatformAuthCenterPage({
                                 {card.canManage && (
                                   <button
                                     type="button"
-                                    disabled={Boolean(pendingAction)}
+                                    disabled={Boolean(pendingAction && pendingAction !== 'verify')}
                                     onClick={() => void handleStartLogin(entry.key, true)}
                                     className="text-amber-700 hover:text-amber-950 font-semibold shrink-0 cursor-pointer"
                                   >

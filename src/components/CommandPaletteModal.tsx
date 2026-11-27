@@ -7,10 +7,13 @@ import {
   CornerDownLeft,
   FileSpreadsheet,
   FolderCheck,
+  FolderDown,
+  KeyRound,
   Layers,
   PanelLeft,
   Radar,
   Search,
+  Settings2,
   ShieldCheck,
   SlidersHorizontal,
   Terminal,
@@ -47,6 +50,10 @@ function CommandIcon({ item }: { item: ShellCommandItem }) {
   }
   if (action.type === 'workspace') {
     if (action.view === 'history') return <FolderCheck size={15} />;
+    if (action.view === 'pickup') return <FolderDown size={15} />;
+    if (action.view === 'platform-auth') return <KeyRound size={15} />;
+    if (action.view === 'accounts') return <ShieldCheck size={15} />;
+    if (action.view === 'global-config') return <Settings2 size={15} />;
     return <BadgeDollarSign size={15} />;
   }
   if (action.type === 'open-dock') return <ShieldCheck size={15} />;

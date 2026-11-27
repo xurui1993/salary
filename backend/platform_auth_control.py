@@ -18,19 +18,23 @@ from download_accounts import (
     require_shared_auth_manage,
 )
 from fengshen_auth import BROKER
+from global_workbench_config import config_version, is_shared_source, platform_label
 import binding_source_auth as sources
 import platform_account_pool as pool
 
 KEYS = ('fengshen', 'lanorange', 'lanorange_mdr', 'baize', 'xiaoxiang', 'benlai')
-SHARED_SOURCES = frozenset({'xiaoxiang', 'benlai'})
 _LOCKS_GUARD = threading.Lock()
 LOCKS = {}
+OP_LOCKS = {}
+_CHECKS_GUARD = threading.Lock()
+_INFLIGHT_CHECKS = {}
+_STATE_EPOCHS = {}
 META = {}
 router = APIRouter(prefix='/api/fengshen-downloads/platform-auth')
 
 
 def _scope_key(source: str) -> tuple[str, str]:
-    if source in SHARED_SOURCES:
+    if is_shared_source(source):
         return ('shared', source)
     from workspace_context import current_workspace
     return (current_workspace(), source)
@@ -44,6 +48,27 @@ def _source_lock(source: str) -> threading.RLock:
             lock = threading.RLock()
             LOCKS[key] = lock
         return lock
+
+
+def _op_lock(source: str) -> threading.RLock:
+    key = _scope_key(source)
+    with _LOCKS_GUARD:
+        lock = OP_LOCKS.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            OP_LOCKS[key] = lock
+        return lock
+
+
+def _state_epoch(source: str) -> int:
+    return _STATE_EPOCHS.get(_scope_key(source), 0)
+
+
+def _bump_state_epoch(source: str) -> int:
+    key = _scope_key(source)
+    next_val = _STATE_EPOCHS.get(key, 0) + 1
+    _STATE_EPOCHS[key] = next_val
+    return next_val
 
 
 def discard_meta(source: str) -> None:
@@ -65,8 +90,8 @@ def target(source):
 def files(source):
     if source == 'fengshen': return [BROKER.vault.path]
     if source == 'xiaoxiang':
-        from xiaoxiang_lighthouse import SESSION_FILE
-        return [SESSION_FILE]
+        from xiaoxiang_lighthouse import session_file
+        return [session_file()]
     return [sources.session_path(source), sources.state_path(source)]
 
 
@@ -95,7 +120,7 @@ def status(source, user=None):
             base = {**base, **{k: v for k, v in meta.items() if k != '_clock'}}
         from auth_diagnostics import history
         from function_availability import snapshot
-        is_shared = source in SHARED_SOURCES
+        is_shared = is_shared_source(source)
         can_manage = can_manage_shared_auth(resolved_user) if (is_shared and resolved_user is not None) else True
         src_files = files(source)
         payload = {
@@ -143,12 +168,16 @@ def display_identity(data):
 
 
 @contextmanager
-def operation(source):
+def operation(source, *, wait_timeout: float = 0.0):
     validate(source)
-    lock = _source_lock(source)
-    if not lock.acquire(blocking=False): raise HTTPException(409, '此平台正在检测或切换，请稍候')
-    try: yield
-    finally: lock.release()
+    lock = _op_lock(source)
+    acquired = lock.acquire(timeout=wait_timeout) if wait_timeout > 0 else lock.acquire(blocking=False)
+    if not acquired:
+        raise HTTPException(409, '此平台正在检测或切换，请稍候')
+    try:
+        yield
+    finally:
+        lock.release()
 
 
 def probe(source, deep=False):
@@ -192,13 +221,33 @@ def probe(source, deep=False):
 def check(source, force=False, deep=False):
     from fengshen_bill import AuthenticationRequired
     from xiaoxiang_lighthouse import SessionExpired
-    with operation(source):
-        before = status(source)
-        if before.get('busy') or before['state'] in ('starting', 'waiting_login', 'refreshing'):
-            raise HTTPException(409, '认证正在进行，请先完成或取消认证')
-        meta = META.get(_scope_key(source)) or META.get(source, {})
-        if not force and (not deep or meta.get('verification_level') == 'deep') and meta.get('session_version') == before['session_version'] and time.monotonic()-meta.get('_clock', 0) < 20:
-            return before
+    validate(source)
+    scope = _scope_key(source)
+    check_key = (scope, bool(deep))
+    while True:
+        leader_event = None
+        wait_event = None
+        with _source_lock(source):
+            before = status(source)
+            epoch_before = _state_epoch(source)
+            if before.get('busy') or before['state'] in ('starting', 'waiting_login', 'refreshing'):
+                raise HTTPException(409, '认证正在进行，请先完成或取消认证')
+            meta = META.get(scope) or META.get(source, {})
+            if not force and (not deep or meta.get('verification_level') == 'deep') and meta.get('session_version') == before['session_version'] and time.monotonic()-meta.get('_clock', 0) < 20:
+                return before
+        with _CHECKS_GUARD:
+            existing = _INFLIGHT_CHECKS.get(check_key)
+            if existing is not None and (not force or existing.get('force')):
+                wait_event = existing['event']
+            else:
+                leader_event = threading.Event()
+                _INFLIGHT_CHECKS[check_key] = {'event': leader_event, 'force': bool(force)}
+        if wait_event is not None:
+            wait_event.wait(timeout=15.0)
+            return status(source)
+        break
+
+    try:
         started = time.monotonic()
         result = {'session_version': before['session_version'], 'checked_at': datetime.now(timezone.utc).isoformat(), '_clock': time.monotonic()}
         recovered = False
@@ -236,18 +285,26 @@ def check(source, force=False, deep=False):
         if result['state'] not in ('ready', 'partial'):
             for key in ('account_label', 'organization', 'organization_reference', 'verified_at'):
                 if key in before: result[key] = before[key]
-        if not recovered and version(source) != before['session_version']: raise HTTPException(409, '会话已变化，请重新检查')
-        controller = BROKER if source == 'fengshen' else target(source)
-        with controller.lock:
-            if source == 'fengshen':
-                if not BROKER.active: BROKER.update(result['state'], result['message'])
-            elif controller.states.get(source, {}).get('state') not in ('starting', 'waiting_login', 'refreshing'):
-                controller.states[source] = {key: value for key, value in result.items() if not key.startswith('_')}
-        result['duration_ms'] = round((time.monotonic() - started) * 1000)
-        from auth_diagnostics import record
-        result['diagnostics_saved'] = record(source, result)
-        META[_scope_key(source)] = result
-        return status(source)
+        with _source_lock(source):
+            if (not recovered and (version(source) != before['session_version'] or _state_epoch(source) != epoch_before)) or auth_busy(source):
+                return status(source)
+            controller = BROKER if source == 'fengshen' else target(source)
+            with controller.lock:
+                if source == 'fengshen':
+                    if not BROKER.active: BROKER.update(result['state'], result['message'])
+                elif controller.states.get(source, {}).get('state') not in ('starting', 'waiting_login', 'refreshing'):
+                    controller.states[source] = {key: value for key, value in result.items() if not key.startswith('_')}
+            result['duration_ms'] = round((time.monotonic() - started) * 1000)
+            from auth_diagnostics import record
+            result['diagnostics_saved'] = record(source, result)
+            META[scope] = result
+            return status(source)
+    finally:
+        with _CHECKS_GUARD:
+            current_entry = _INFLIGHT_CHECKS.get(check_key)
+            if current_entry and current_entry.get('event') is leader_event:
+                _INFLIGHT_CHECKS.pop(check_key, None)
+        leader_event.set()
 
 
 @contextmanager
@@ -258,7 +315,7 @@ def idle_guard(source: str | None = None):
     from workbench import RUNNERS
     from workspace_context import current_workspace, is_isolated_workspace
     wid = current_workspace()
-    scoped_personal = bool(source and source not in SHARED_SOURCES and is_isolated_workspace(wid))
+    scoped_personal = bool(source and not is_shared_source(source) and is_isolated_workspace(wid))
     if not COLLECTION_LOCK.acquire(blocking=False): raise HTTPException(409, '资料采集正在进行，请任务结束后再切换账号')
     try:
         from lanorange_approvals import has_active
@@ -331,6 +388,7 @@ def disconnect(source, expected, *, guarded=False):
                     controller.board_reused = False
             pool.remove_active_slot_on_disconnect(source, files(source))
             _invalidate_source_caches(source)
+            _bump_state_epoch(source)
             discard_meta(source)
             return status(source)
 
@@ -371,6 +429,7 @@ def _apply_slot_to_controller(source: str, slot: dict) -> None:
                     'board': 'ready' if slot_state == 'ready' else 'pending',
                 }
     _invalidate_source_caches(source)
+    _bump_state_epoch(source)
     fp = version(source)
     now_iso = datetime.now(timezone.utc).isoformat()
     META[_scope_key(source)] = {
@@ -404,6 +463,7 @@ def _reset_controller_for_new_account(source: str) -> None:
                 controller.stages = {'lighthouse': 'pending', 'board': 'pending'}
                 controller.board_reused = False
     _invalidate_source_caches(source)
+    _bump_state_epoch(source)
     discard_meta(source)
 
 
@@ -415,7 +475,7 @@ def auth_busy(source):
         return bool(worker.is_alive()) if worker is not None else controller.states.get(source,{}).get('state') in ('starting','waiting_login','refreshing')
 
 
-def _cancel_login_if_busy(source: str, action_label: str, timeout: float = 10.0) -> None:
+def _cancel_login_if_busy(source: str, action_label: str, timeout: float = 5.0) -> None:
     if not auth_busy(source):
         return
     if source == 'fengshen':
@@ -424,44 +484,40 @@ def _cancel_login_if_busy(source: str, action_label: str, timeout: float = 10.0)
             if active:
                 if active.get('purpose', 'login') != 'login':
                     raise HTTPException(409, f'业务验证正在进行，请任务结束后再{action_label}')
-                BROKER.submit(active['owner'], active['id'], 'cancel')
+                try:
+                    BROKER.submit(active['owner'], active['id'], 'cancel')
+                except Exception:
+                    active['cancelled'].set()
     else:
         target(source).cancel(source)
     deadline = time.monotonic() + timeout
     while auth_busy(source) and time.monotonic() < deadline:
-        time.sleep(0.05)
+        time.sleep(0.02)
     if auth_busy(source):
         raise HTTPException(409, f'登录认证仍在安全结束，请稍候再{action_label}')
 
 
 def logout(source,expected,timeout=22):
-    with operation(source),idle_guard(source):
+    validate(source)
+    _cancel_login_if_busy(source, '退出', timeout=timeout)
+    with operation(source, wait_timeout=1.5), idle_guard(source):
         if expected!=version(source):raise HTTPException(409,'登录状态已变化，请重新点击退出')
-        if source=='fengshen':
-            with BROKER.lock:
-                active=BROKER.active
-                if active:
-                    if active.get('purpose','login')!='login':raise HTTPException(409,'业务验证正在进行，请任务结束后退出')
-                    BROKER.submit(active['owner'],active['id'],'cancel')
-        elif auth_busy(source):target(source).cancel(source)
-        deadline=time.monotonic()+timeout
-        while auth_busy(source) and time.monotonic()<deadline:time.sleep(.1)
-        if auth_busy(source):raise HTTPException(409,'认证仍在安全结束，原会话保留；请稍候再点击退出')
+        _cancel_login_if_busy(source, '退出', timeout=2.0)
         return disconnect(source,expected,guarded=True)
 
 
 def _require_platform_operator(request: Request, source: str):
     validate(source)
-    if source == 'xiaoxiang':
-        return require_shared_auth_manage(request, '小象灯塔')
-    if source == 'benlai':
-        return require_shared_auth_manage(request, '本来人力')
+    if is_shared_source(source):
+        return require_shared_auth_manage(request, platform_label(source))
     return require_account(request)
 
 
 def _prepare_add_account_sync(source: str, user: dict) -> dict:
-    with operation(source), idle_guard(source):
-        _cancel_login_if_busy(source, '添加新账户')
+    validate(source)
+    _cancel_login_if_busy(source, '添加新账户', timeout=5.0)
+    with operation(source, wait_timeout=1.5), idle_guard(source), _source_lock(source):
+        _cancel_login_if_busy(source, '添加新账户', timeout=2.0)
         current = status(source, user=user)
         pool.prepare_add_account(source, files(source), current)
         _reset_controller_for_new_account(source)
@@ -469,8 +525,10 @@ def _prepare_add_account_sync(source: str, user: dict) -> dict:
 
 
 def _activate_account_sync(source: str, slot_id: str, user: dict) -> dict:
-    with operation(source), idle_guard(source):
-        _cancel_login_if_busy(source, '切换账户')
+    validate(source)
+    _cancel_login_if_busy(source, '切换账户', timeout=5.0)
+    with operation(source, wait_timeout=1.5), idle_guard(source), _source_lock(source):
+        _cancel_login_if_busy(source, '切换账户', timeout=2.0)
         current = status(source, user=user)
         slot = pool.activate_slot(source, files(source), slot_id, current)
         _apply_slot_to_controller(source, slot)
@@ -478,8 +536,10 @@ def _activate_account_sync(source: str, slot_id: str, user: dict) -> dict:
 
 
 def _remove_account_sync(source: str, slot_id: str, user: dict) -> dict:
-    with operation(source), idle_guard(source):
-        _cancel_login_if_busy(source, '移除账户')
+    validate(source)
+    _cancel_login_if_busy(source, '移除账户', timeout=5.0)
+    with operation(source, wait_timeout=1.5), idle_guard(source), _source_lock(source):
+        _cancel_login_if_busy(source, '移除账户', timeout=2.0)
         current = status(source, user=user)
         if current.get('saved'):
             pool.sync_pool_with_status(source, files(source), current)
@@ -559,7 +619,10 @@ async def do_remove_account(source: str, slot_id: str, request: Request):
 
 @router.get('/baize/accounts')
 def baize_accounts(request: Request):
-    require_account(request)
+    if is_shared_source('baize'):
+        require_permission(request, 'baize_use', 'shared_auth_manage', any_of=True)
+    else:
+        require_account(request)
     from baize_accounts import snapshot
     fp_before = version('baize')
     data = snapshot()
@@ -609,6 +672,7 @@ def get_summary(request: Request):
     return {
         'statuses': {key: status(key, user=user) for key in KEYS},
         'checked_at': datetime.now(timezone.utc).isoformat(),
+        'global_config_version': config_version(),
     }
 
 
@@ -634,10 +698,8 @@ def get_status(source: str, request: Request):
 @router.post('/{source}/check')
 def do_check(source: str, request: Request, deep: bool = False):
     validate(source)
-    if source == 'xiaoxiang':
-        require_permission(request, 'xiaoxiang_use', 'shared_auth_manage', any_of=True)
-    elif source == 'benlai':
-        require_permission(request, 'benlai_use', 'shared_auth_manage', any_of=True)
+    if is_shared_source(source):
+        require_permission(request, f'{source}_use', 'shared_auth_manage', any_of=True)
     else:
         require_account(request)
     return check(source, deep=deep)

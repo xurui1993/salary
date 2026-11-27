@@ -78,6 +78,9 @@ class SessionVault:
     def path(self):
         if self._explicit_path is not None:
             return self._explicit_path
+        from global_workbench_config import is_shared_source
+        if is_shared_source("fengshen"):
+            return _PRIMARY_BROKER.vault.path
         from workspace_context import workspace_auth_dir
         return workspace_auth_dir() / "fengshen.dpapi"
 
@@ -211,6 +214,13 @@ class AuthBroker:
                 raise AuthError("请输入六位短信验证码")
             if action == "cancel":
                 self.active["cancelled"].set()
+                self.drain()
+                wake = Future()
+                wake.cancel()
+                try:
+                    self.commands.put_nowait(("", "", wake))
+                except queue.Full:
+                    pass
                 self.update("signed_out", "登录已取消，任务已停止")
                 return None
             if action not in ("send", "verify", "recheck"):
@@ -260,7 +270,10 @@ _BROKERS_LOCK = threading.RLock()
 
 
 def get_broker(wid=None) -> AuthBroker:
+    from global_workbench_config import is_shared_source
     from workspace_context import current_workspace, is_isolated_workspace, workspace_auth_dir
+    if is_shared_source("fengshen"):
+        return _PRIMARY_BROKER
     resolved = wid or current_workspace()
     if not is_isolated_workspace(resolved):
         return _PRIMARY_BROKER

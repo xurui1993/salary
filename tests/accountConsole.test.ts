@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 
 import {
   ALL_PERMISSION_KEYS,
-  applyTemplateToDraft,
+  buildDefaultNewMemberPermissions,
+  buildFullPermissions,
   countEnabledPermissions,
   createDraftFromUser,
   filterAuditEvents,
@@ -12,8 +13,9 @@ import {
   formatAuditDetail,
   formatAuditTime,
   getEnabledPermissionLabels,
-  getRoleTemplateLabel,
+  getPermissionGroups,
   getStatusLabel,
+  getVisiblePermissionKeys,
   getWorkspaceDisplayLabel,
   hasDraftChanges,
   resolveAuditTargetLabel,
@@ -24,58 +26,24 @@ import {
   getBreadcrumbModel,
   getCurrentQuickTargetId,
 } from '../src/lib/shellNav';
-import type { AuditEvent, RoleTemplateDef, WorkspaceUser } from '../src/lib/workspaceAuth';
+import {
+  DEFAULT_GLOBAL_WORKBENCH_CONFIG,
+  normalizeGlobalWorkbenchConfig,
+} from '../src/lib/workbenchConfig';
+import type { AuditEvent, PermissionKey, WorkspaceUser } from '../src/lib/workspaceAuth';
 
-const SAMPLE_TEMPLATES: Record<string, RoleTemplateDef> = {
-  admin: {
-    label: '系统管理员',
-    description: '全部模块与账户治理权限',
-    role: 'admin',
-    permissions: {
-      collection: true,
-      reports: true,
-      payroll: true,
-      approval: true,
-      xiaoxiang_use: true,
-      benlai_use: true,
-      shared_auth_manage: true,
-    },
-  },
-  payroll_specialist: {
-    label: '薪资专员',
-    description: '数据采集、业务报表与薪资核算',
-    role: 'member',
-    permissions: {
-      collection: true,
-      reports: true,
-      payroll: true,
-      approval: false,
-      xiaoxiang_use: true,
-      benlai_use: true,
-      shared_auth_manage: false,
-    },
-  },
-  viewer: {
-    label: '仅浏览导出',
-    description: '只读查看任务记录',
-    role: 'member',
-    permissions: {
-      collection: false,
-      reports: false,
-      payroll: false,
-      approval: false,
-      xiaoxiang_use: false,
-      benlai_use: false,
-      shared_auth_manage: false,
-    },
-  },
-};
+function makePerms(overrides: Partial<Record<PermissionKey, boolean>> = {}): Record<PermissionKey, boolean> {
+  return {
+    ...buildFullPermissions(false),
+    ...overrides,
+  };
+}
 
 function makeUser(overrides: Partial<WorkspaceUser> = {}): WorkspaceUser {
   return {
     id: 'u-1',
     username: 'payroll_test',
-    display_name: '林晓（薪资验收）',
+    display_name: '林晓',
     role: 'member',
     status: 'active',
     enabled: true,
@@ -83,8 +51,7 @@ function makeUser(overrides: Partial<WorkspaceUser> = {}): WorkspaceUser {
     effective_workspace: 'ws_payroll_test',
     inspecting: false,
     inspect_target: null,
-    role_template: 'payroll_specialist',
-    permissions: {
+    permissions: makePerms({
       collection: true,
       reports: true,
       payroll: true,
@@ -92,7 +59,7 @@ function makeUser(overrides: Partial<WorkspaceUser> = {}): WorkspaceUser {
       xiaoxiang_use: true,
       benlai_use: true,
       shared_auth_manage: false,
-    },
+    }),
     note: '负责华东区核算',
     created_at: 1730000000,
     updated_at: 1730000000,
@@ -100,57 +67,71 @@ function makeUser(overrides: Partial<WorkspaceUser> = {}): WorkspaceUser {
   };
 }
 
-test('createDraftFromUser, applyTemplateToDraft, and hasDraftChanges detect unsaved edits accurately', () => {
+test('ALL_PERMISSION_KEYS, permission drafts, and dynamic groups work without role templates', () => {
+  assert.equal(ALL_PERMISSION_KEYS.length, 11);
+
   const member = makeUser();
   const draft = createDraftFromUser(member);
-
-  assert.equal(draft.role_template, 'payroll_specialist');
+  assert.equal(draft.role, 'member');
   assert.equal(hasDraftChanges(member, draft), false);
-  assert.equal(countEnabledPermissions(draft.permissions), 5);
+
+  const visibleKeys = getVisiblePermissionKeys(DEFAULT_GLOBAL_WORKBENCH_CONFIG);
+  // Default config: 4 modules + 2 shared platforms (xiaoxiang, benlai) + shared_auth_manage = 7
+  assert.equal(visibleKeys.length, 7);
+  assert.equal(countEnabledPermissions(draft.permissions, visibleKeys), 5);
 
   const toggled = {
     ...draft,
-    role_template: 'custom',
     permissions: { ...draft.permissions, approval: true },
   };
   assert.equal(hasDraftChanges(member, toggled), true);
-  assert.equal(countEnabledPermissions(toggled.permissions), 6);
+  assert.equal(countEnabledPermissions(toggled.permissions, visibleKeys), 6);
 
-  const viewerDraft = applyTemplateToDraft('viewer', SAMPLE_TEMPLATES);
-  assert.equal(viewerDraft.role_template, 'viewer');
-  assert.equal(countEnabledPermissions(viewerDraft.permissions), 0);
-  assert.equal(hasDraftChanges(member, viewerDraft), true);
-
-  const adminUser = makeUser({ id: 'u-admin', username: 'admin', role: 'admin', role_template: 'admin' });
+  const adminUser = makeUser({ id: 'u-admin', username: 'admin', role: 'admin' });
   const adminDraft = createDraftFromUser(adminUser);
+  assert.equal(adminDraft.role, 'admin');
   assert.equal(countEnabledPermissions(adminDraft.permissions), ALL_PERMISSION_KEYS.length);
   assert.equal(hasDraftChanges(adminUser, adminDraft), false);
 
-  assert.deepEqual(getEnabledPermissionLabels(draft.permissions, false), [
+  assert.deepEqual(getEnabledPermissionLabels(draft.permissions, false, DEFAULT_GLOBAL_WORKBENCH_CONFIG), [
     '数据采集',
     '业务报表',
     '薪资核算',
-    '共享小象',
-    '共享本来',
+    '共享小象灯塔',
+    '共享本来人力',
   ]);
-  assert.equal(getEnabledPermissionLabels(undefined, true).length, ALL_PERMISSION_KEYS.length);
-  assert.deepEqual(getEnabledPermissionLabels(viewerDraft.permissions, false), []);
+  assert.equal(getEnabledPermissionLabels(undefined, true, DEFAULT_GLOBAL_WORKBENCH_CONFIG).length, 7);
+  assert.deepEqual(getEnabledPermissionLabels(makePerms(), false, DEFAULT_GLOBAL_WORKBENCH_CONFIG), []);
+
+  // Dynamically assigning fengshen to shared exposes fengshen_use in permission groups & visible keys
+  const sharedFsCfg = normalizeGlobalWorkbenchConfig({
+    channel_modes: { ...DEFAULT_GLOBAL_WORKBENCH_CONFIG.channel_modes, fengshen: 'shared' },
+  });
+  const sharedKeys = getVisiblePermissionKeys(sharedFsCfg);
+  assert.ok(sharedKeys.includes('fengshen_use'));
+  assert.equal(sharedKeys.length, 8);
+  const groups = getPermissionGroups(sharedFsCfg);
+  assert.ok(groups[1].items.some(item => item.key === 'fengshen_use' && item.label === '共享风神'));
+
+  const newMemberDefaults = buildDefaultNewMemberPermissions(sharedFsCfg);
+  assert.equal(newMemberDefaults.collection, true);
+  assert.equal(newMemberDefaults.reports, true);
+  assert.equal(newMemberDefaults.xiaoxiang_use, true);
+  assert.equal(newMemberDefaults.benlai_use, true);
 });
 
-test('filterManagedUsers excludes pending applicants and filters by status, role, and query', () => {
+test('filterManagedUsers filters by active/disabled status, role, and query cleanly', () => {
   const users: WorkspaceUser[] = [
     makeUser({ id: '1', username: 'admin', display_name: '系统管理员', role: 'admin', status: 'active', workspace_id: 'download_shared' }),
     makeUser({ id: '2', username: 'payroll_test', display_name: '林晓', role: 'member', status: 'active', note: '薪资核算' }),
     makeUser({ id: '3', username: 'disabled_user', display_name: '张敏', role: 'member', status: 'disabled', enabled: false, note: '离职停用' }),
-    makeUser({ id: '4', username: 'pending_test', display_name: '王磊', role: 'member', status: 'pending', enabled: false, note: '待审批' }),
-    makeUser({ id: '5', username: 'rejected_test', display_name: '赵阳', role: 'member', status: 'rejected', enabled: false, note: '已驳回' }),
   ];
 
   const allManaged = filterManagedUsers(users, { query: '', status: 'all', role: 'all' });
   assert.deepEqual(allManaged.map(u => u.id), ['1', '2', '3']);
 
-  const rejectedOnly = filterManagedUsers(users, { query: '', status: 'rejected', role: 'all' });
-  assert.deepEqual(rejectedOnly.map(u => u.id), ['5']);
+  const activeOnly = filterManagedUsers(users, { query: '', status: 'active', role: 'all' });
+  assert.deepEqual(activeOnly.map(u => u.id), ['1', '2']);
 
   const disabledOnly = filterManagedUsers(users, { query: '', status: 'disabled', role: 'all' });
   assert.deepEqual(disabledOnly.map(u => u.id), ['3']);
@@ -168,19 +149,14 @@ test('filterManagedUsers excludes pending applicants and filters by status, role
 
   assert.equal(getWorkspaceDisplayLabel('download_shared'), '管理员主空间');
   assert.equal(getWorkspaceDisplayLabel('ws_payroll_test'), '独立工作空间');
-  assert.equal(getRoleTemplateLabel('admin', 'custom', SAMPLE_TEMPLATES), '系统管理员');
-  assert.equal(getRoleTemplateLabel('member', 'payroll_specialist', SAMPLE_TEMPLATES), '薪资专员');
-  assert.equal(getRoleTemplateLabel('member', 'unknown_tpl', SAMPLE_TEMPLATES), '自定义权限');
   assert.equal(getStatusLabel('active'), '正常启用');
-  assert.equal(getStatusLabel('pending'), '待审批');
   assert.equal(getStatusLabel('disabled'), '已停用');
-  assert.equal(getStatusLabel('rejected'), '已驳回');
 });
 
-test('audit log formatters and filterAuditEvents map actions, details, timestamps, and categories', () => {
-  assert.deepEqual(formatAuditAction('account.approve'), {
-    label: '批准注册并开通空间',
-    category: 'approval',
+test('audit log formatters and filterAuditEvents support workbench.global_config and standard actions', () => {
+  assert.deepEqual(formatAuditAction('workbench.global_config'), {
+    label: '更新全局名称与通道配置',
+    category: 'workspace',
   });
   assert.deepEqual(formatAuditAction('custom.unknown'), {
     label: 'custom.unknown',
@@ -219,10 +195,19 @@ test('audit log formatters and filterAuditEvents map actions, details, timestamp
       run_id: 'payroll_test',
       detail: 'success',
     },
+    {
+      id: 4,
+      time: 1730000030,
+      user_id: 'u-admin',
+      username: 'admin',
+      action: 'workbench.global_config',
+      run_id: 'download_shared',
+      detail: 'success',
+    },
   ];
 
   const workspaceOnly = filterAuditEvents(events, { query: '', category: 'workspace' });
-  assert.deepEqual(workspaceOnly.map(e => e.id), [2]);
+  assert.deepEqual(workspaceOnly.map(e => e.id), [2, 4]);
 
   const byKeyword = filterAuditEvents(events, { query: '重置成员密码', category: 'all' });
   assert.deepEqual(byKeyword.map(e => e.id), [3]);
@@ -230,12 +215,12 @@ test('audit log formatters and filterAuditEvents map actions, details, timestamp
   const byTargetDisplayName = filterAuditEvents(events, {
     query: '林晓',
     category: 'all',
-    users: [makeUser({ id: 'u-payroll', username: 'payroll_test', display_name: '林晓（薪资验收）', workspace_id: 'ws_payroll_test' })],
+    users: [makeUser({ id: 'u-payroll', username: 'payroll_test', display_name: '林晓', workspace_id: 'ws_payroll_test' })],
   });
   assert.deepEqual(byTargetDisplayName.map(e => e.id), [2, 3]);
 });
 
-test('buildShellCommands and shellNav helpers enforce admin & module permissions cleanly', () => {
+test('buildShellCommands and shellNav helpers enforce admin, module pause, and shared platform permissions', () => {
   const baseState = {
     workspaceView: 'accounts' as const,
     taskKind: 'download' as const,
@@ -251,29 +236,68 @@ test('buildShellCommands and shellNav helpers enforce admin & module permissions
 
   const adminCommands = buildShellCommands(baseState, {
     isAdmin: true,
-    permissions: SAMPLE_TEMPLATES.admin.permissions,
+    permissions: buildFullPermissions(true),
   });
   assert.ok(adminCommands.some(c => c.id === 'nav-accounts' && c.active));
+  assert.ok(adminCommands.some(c => c.id === 'nav-global-config'));
   assert.ok(adminCommands.some(c => c.id === 'nav-approval'));
   assert.ok(adminCommands.some(c => c.id === 'nav-xiaoxiang'));
 
-  const payrollCommands = buildShellCommands(
+  const memberCommands = buildShellCommands(
     { ...baseState, workspaceView: 'create' },
     {
       isAdmin: false,
-      permissions: SAMPLE_TEMPLATES.payroll_specialist.permissions,
+      permissions: makePerms({
+        collection: true,
+        reports: true,
+        payroll: true,
+        approval: false,
+        xiaoxiang_use: true,
+        benlai_use: true,
+      }),
     },
   );
-  assert.equal(payrollCommands.some(c => c.id === 'nav-accounts'), false);
-  assert.equal(payrollCommands.some(c => c.id === 'nav-approval'), false);
-  assert.equal(payrollCommands.some(c => c.id === 'nav-payroll-batches'), true);
-  assert.equal(payrollCommands.some(c => c.id === 'nav-xiaoxiang'), true);
+  assert.equal(memberCommands.some(c => c.id === 'nav-accounts'), false);
+  assert.equal(memberCommands.some(c => c.id === 'nav-global-config'), false);
+  assert.equal(memberCommands.some(c => c.id === 'nav-approval'), false);
+  assert.equal(memberCommands.some(c => c.id === 'nav-payroll-batches'), true);
+  assert.equal(memberCommands.some(c => c.id === 'nav-xiaoxiang'), true);
+
+  // Global module pause hides payroll from non-admin even if user has payroll=true
+  const pausedPayrollCfg = normalizeGlobalWorkbenchConfig({
+    module_permissions: { ...DEFAULT_GLOBAL_WORKBENCH_CONFIG.module_permissions, payroll: false },
+  });
+  const pausedMemberCommands = buildShellCommands(
+    { ...baseState, workspaceView: 'create' },
+    {
+      isAdmin: false,
+      permissions: buildFullPermissions(true),
+      globalConfig: pausedPayrollCfg,
+    },
+  );
+  assert.equal(pausedMemberCommands.some(c => c.id === 'nav-payroll-batches'), false);
+  assert.equal(pausedMemberCommands.some(c => c.id === 'nav-approval'), true);
+
+  // Shared fengshen with fengshen_use=false hides nav-fengshen from member
+  const sharedFsDeniedCfg = normalizeGlobalWorkbenchConfig({
+    channel_modes: { ...DEFAULT_GLOBAL_WORKBENCH_CONFIG.channel_modes, fengshen: 'shared' },
+  });
+  const deniedMemberCommands = buildShellCommands(
+    { ...baseState, workspaceView: 'create' },
+    {
+      isAdmin: false,
+      permissions: makePerms({ collection: true, fengshen_use: false }),
+      globalConfig: sharedFsDeniedCfg,
+    },
+  );
+  assert.equal(deniedMemberCommands.some(c => c.id === 'nav-fengshen'), false);
+  assert.equal(deniedMemberCommands.some(c => c.id === 'nav-lanorange'), true);
 
   const viewerCommands = buildShellCommands(
     { ...baseState, workspaceView: 'history' },
     {
       isAdmin: false,
-      permissions: SAMPLE_TEMPLATES.viewer.permissions,
+      permissions: makePerms(),
     },
   );
   assert.equal(viewerCommands.some(c => c.id === 'nav-fengshen'), false);

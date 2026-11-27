@@ -348,7 +348,11 @@ class HTTPAuth:
             if not self.broker.active:
                 raise AuthError("登录操作尚未启动")
             self.broker.active["transport"] = "http"
-        if not force:
+        if self.cancelled.is_set():
+            raise AuthError("登录已取消，任务已停止")
+        if not force and len(self.client.session.cookies) > 0:
+            saved_timeout, saved_attempts = self.client.timeout, self.client.attempts
+            self.client.timeout, self.client.attempts = (3, 5), 1
             try:
                 self.client.identity()
             except AuthenticationRequired:
@@ -356,6 +360,10 @@ class HTTPAuth:
             else:
                 self.broker.save(self.client.storage_state())
                 return True
+            finally:
+                self.client.timeout, self.client.attempts = saved_timeout, saved_attempts
+        if self.cancelled.is_set():
+            raise AuthError("登录已取消，任务已停止")
         self.broker.update("login_required", "风神会话已失效，请在当前页面获取短信验证码")
         self.log("[登录] 等待页面内短信认证，不会自动发送验证码")
         deadline = None if self.wait_login_indefinitely else time.monotonic() + self.timeout
@@ -364,7 +372,7 @@ class HTTPAuth:
             if self.cancelled.is_set():
                 raise AuthError("登录已取消，任务已停止")
             try:
-                action, value, future = self.broker.commands.get(timeout=0.2)
+                action, value, future = self.broker.commands.get(timeout=0.05)
             except queue.Empty:
                 continue
             if future.cancelled():

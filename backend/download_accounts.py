@@ -1,7 +1,7 @@
-"""Account authentication, registration approval, module permissions, and workspace binding.
+"""Account authentication, module permissions, and isolated workspace binding.
 
 Supports multi-account LAN collaboration with isolated per-user workspaces,
-admin approval workflow, preset role templates + module switches, and admin
+admin-managed member creation and boolean permission switches, and admin
 cross-workspace inspection. When uninitialized without REQUIRE_AUTH_SESSION=1,
 retains shared fallback compatibility for offline unit tests.
 """
@@ -38,7 +38,6 @@ HOST_LOCAL_ONLY_HASH = "!host-local-only!"
 HOST_BUILTIN_USERNAME = "host_admin"
 LOGIN_WINDOW = 15 * 60
 LOGIN_LIMIT = 5
-REGISTER_WINDOW = 15 * 60
 _PRIVATE_V4 = tuple(ipaddress.ip_network(value) for value in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
 _PRIVATE_V6 = ipaddress.ip_network("fc00::/7")
 _singleton = None
@@ -49,9 +48,13 @@ PERMISSION_KEYS = (
     "reports",             # 业务报表
     "payroll",             # 薪资核算与扣款设置
     "approval",            # 价格审批与每日价格导出
+    "fengshen_use",        # 使用共享风神采集
+    "lanorange_use",       # 使用共享蓝橙采集
+    "lanorange_mdr_use",   # 使用共享新蓝橙采集
+    "baize_use",           # 使用共享商翼采集
     "xiaoxiang_use",       # 使用共享小象灯塔采集
     "benlai_use",          # 使用共享本来人力采集
-    "shared_auth_manage",  # 登录/断开共享平台连接（小象灯塔、本来人力）
+    "shared_auth_manage",  # 登录/断开全局共享平台连接
 )
 
 PERMISSION_LABELS = {
@@ -59,68 +62,34 @@ PERMISSION_LABELS = {
     "reports": "业务报表",
     "payroll": "薪资核算",
     "approval": "价格审批",
+    "fengshen_use": "共享风神·使用权",
+    "lanorange_use": "共享蓝橙·使用权",
+    "lanorange_mdr_use": "共享新蓝橙·使用权",
+    "baize_use": "共享商翼·使用权",
     "xiaoxiang_use": "共享小象·使用权",
     "benlai_use": "共享本来·使用权",
-    "shared_auth_manage": "共享连接·维护权(小象/本来)",
+    "shared_auth_manage": "共享连接·维护权",
 }
 
-ROLE_TEMPLATES = {
-    "admin": {
-        "label": "系统管理员",
-        "description": "全部业务模块、共享连接(小象/本来)维护、账户审批管理与跨空间巡检",
-        "role": "admin",
-        "permissions": {key: True for key in PERMISSION_KEYS},
-    },
-    "payroll_specialist": {
-        "label": "薪酬核算员",
-        "description": "数据采集、业务报表、薪资核算与共享小象/本来采集使用权",
-        "role": "member",
-        "permissions": {
-            "collection": True,
-            "reports": True,
-            "payroll": True,
-            "approval": False,
-            "xiaoxiang_use": True,
-            "benlai_use": True,
-            "shared_auth_manage": False,
-        },
-    },
-    "ops_specialist": {
-        "label": "运营审批专员",
-        "description": "数据采集、业务报表、蓝橙价格审批导出与共享小象/本来使用权",
-        "role": "member",
-        "permissions": {
-            "collection": True,
-            "reports": True,
-            "payroll": False,
-            "approval": True,
-            "xiaoxiang_use": True,
-            "benlai_use": True,
-            "shared_auth_manage": False,
-        },
-    },
-    "custom": {
-        "label": "自定义权限",
-        "description": "按需自由组合勾选各项功能模块权限",
-        "role": "member",
-        "permissions": {
-            "collection": True,
-            "reports": True,
-            "payroll": False,
-            "approval": False,
-            "xiaoxiang_use": True,
-            "benlai_use": True,
-            "shared_auth_manage": False,
-        },
-    },
+DEFAULT_MEMBER_PERMISSIONS = {
+    "collection": True,
+    "reports": True,
+    "payroll": False,
+    "approval": False,
+    "fengshen_use": False,
+    "lanorange_use": False,
+    "lanorange_mdr_use": False,
+    "baize_use": False,
+    "xiaoxiang_use": True,
+    "benlai_use": True,
+    "shared_auth_manage": False,
 }
 
 
-def normalize_permissions(role: str, role_template: str = "custom", overrides: dict | None = None) -> dict[str, bool]:
-    if role == "admin" or role_template == "admin":
+def normalize_permissions(role: str, overrides: dict | None = None) -> dict[str, bool]:
+    if role == "admin":
         return {key: True for key in PERMISSION_KEYS}
-    preset = ROLE_TEMPLATES.get(role_template, ROLE_TEMPLATES["custom"])["permissions"]
-    merged = {key: bool(preset.get(key, False)) for key in PERMISSION_KEYS}
+    merged = {key: bool(DEFAULT_MEMBER_PERMISSIONS.get(key, False)) for key in PERMISSION_KEYS}
     if isinstance(overrides, dict):
         for key in PERMISSION_KEYS:
             if key in overrides and isinstance(overrides[key], bool):
@@ -278,14 +247,14 @@ def _password_matches(password, encoded):
 
 
 def public_user(user):
+    enabled = bool(user.get("enabled", True))
     return {
         "id": user["id"],
         "username": user["username"],
         "display_name": user.get("display_name") or user["username"],
         "role": user["role"],
-        "role_template": user.get("role_template", "admin" if user["role"] == "admin" else "custom"),
-        "status": user.get("status", "active" if user.get("enabled", True) else "disabled"),
-        "enabled": bool(user.get("enabled", True)),
+        "status": "active" if enabled else "disabled",
+        "enabled": enabled,
         "has_password": bool(user.get("has_password", True)),
         "workspace_id": user.get("workspace_id", PRIMARY_WORKSPACE),
         "effective_workspace": user.get("effective_workspace", user.get("workspace_id", PRIMARY_WORKSPACE)),
@@ -300,10 +269,10 @@ def public_user(user):
 
 def _row_to_user(row) -> dict:
     keys = row.keys()
-    role = row["role"]
-    enabled = bool(row["enabled"])
-    status = (row["status"] if "status" in keys and row["status"] else ("active" if enabled else "disabled"))
-    role_template = row["role_template"] if "role_template" in keys and row["role_template"] else ("admin" if role == "admin" else "payroll_specialist")
+    role = row["role"] if row["role"] in ("admin", "member") else "member"
+    raw_status = row["status"] if "status" in keys and row["status"] else ("active" if row["enabled"] else "disabled")
+    enabled = bool(row["enabled"]) and raw_status == "active"
+    status = "active" if enabled else "disabled"
     raw_perms = {}
     if "permissions_json" in keys and row["permissions_json"]:
         try:
@@ -312,7 +281,7 @@ def _row_to_user(row) -> dict:
                 raw_perms = parsed
         except ValueError:
             raw_perms = {}
-    permissions = normalize_permissions(role, role_template, raw_perms)
+    permissions = normalize_permissions(role, raw_perms)
     wid = row["workspace_id"] if "workspace_id" in keys and row["workspace_id"] else (
         PRIMARY_WORKSPACE if role == "admin" else f"ws_{row['id'][:12]}"
     )
@@ -323,9 +292,8 @@ def _row_to_user(row) -> dict:
         "username": row["username"],
         "display_name": display_name,
         "role": role,
-        "role_template": "admin" if role == "admin" else role_template,
         "status": status,
-        "enabled": enabled and status == "active",
+        "enabled": enabled,
         "has_password": has_usable_password(encoded_pw),
         "workspace_id": wid,
         "effective_workspace": wid,
@@ -366,7 +334,6 @@ class AccountStore:
                 ("display_name", "TEXT NOT NULL DEFAULT ''"),
                 ("status", "TEXT NOT NULL DEFAULT 'active'"),
                 ("workspace_id", "TEXT NOT NULL DEFAULT ''"),
-                ("role_template", "TEXT NOT NULL DEFAULT 'payroll_specialist'"),
                 ("permissions_json", "TEXT NOT NULL DEFAULT '{}'"),
                 ("note", "TEXT NOT NULL DEFAULT ''"),
                 ("updated_at", "REAL NOT NULL DEFAULT 0"),
@@ -378,6 +345,11 @@ class AccountStore:
             sess_cols = {row["name"] for row in connection.execute("PRAGMA table_info(account_sessions)").fetchall()}
             if "inspect_workspace" not in sess_cols:
                 connection.execute("ALTER TABLE account_sessions ADD COLUMN inspect_workspace TEXT NOT NULL DEFAULT ''")
+
+            # Normalize any historical pending/rejected rows from legacy builds to disabled.
+            connection.execute(
+                "UPDATE accounts SET status = 'disabled', enabled = 0 WHERE status IN ('pending', 'rejected')"
+            )
 
             # Backfill legacy rows missing workspace_id or status
             rows = connection.execute("SELECT * FROM accounts WHERE workspace_id = ''").fetchall()
@@ -391,12 +363,11 @@ class AccountStore:
                 else:
                     wid = f"ws_{row['id'][:12]}"
                 status = "active" if row["enabled"] else "disabled"
-                tmpl = "admin" if row["role"] == "admin" else "payroll_specialist"
-                perms = json.dumps(normalize_permissions(row["role"], tmpl), ensure_ascii=False)
+                perms = json.dumps(normalize_permissions(row["role"]), ensure_ascii=False)
                 connection.execute(
-                    "UPDATE accounts SET workspace_id = ?, status = ?, role_template = ?, permissions_json = ?, "
+                    "UPDATE accounts SET workspace_id = ?, status = ?, permissions_json = ?, "
                     "display_name = CASE WHEN display_name = '' THEN username ELSE display_name END WHERE id = ?",
-                    (wid, status, tmpl, perms, row["id"]),
+                    (wid, status, perms, row["id"]),
                 )
 
     @contextmanager
@@ -452,7 +423,7 @@ class AccountStore:
     def ensure_host_admin(self, *, header_inspect: str | None = None) -> dict:
         """Return the primary active host admin, creating the built-in local super-admin on first run."""
         now = time.time()
-        perms_json = json.dumps(normalize_permissions("admin", "admin"), ensure_ascii=False)
+        perms_json = json.dumps(normalize_permissions("admin"), ensure_ascii=False)
         with self._lock, self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
@@ -468,7 +439,7 @@ class AccountStore:
                 if existing_builtin is not None:
                     wid = existing_builtin["workspace_id"] or PRIMARY_WORKSPACE
                     connection.execute(
-                        "UPDATE accounts SET role = 'admin', role_template = 'admin', permissions_json = ?, "
+                        "UPDATE accounts SET role = 'admin', permissions_json = ?, "
                         "status = 'active', enabled = 1, workspace_id = ?, updated_at = ? WHERE id = ?",
                         (perms_json, wid, now, existing_builtin["id"]),
                     )
@@ -485,8 +456,8 @@ class AccountStore:
                     wid = PRIMARY_WORKSPACE if not primary_taken else f"ws_{user_id[:12]}"
                     connection.execute(
                         "INSERT INTO accounts (id, username, username_key, password_hash, role, enabled, created_at, "
-                        "display_name, status, workspace_id, role_template, permissions_json, note, updated_at) "
-                        "VALUES (?, ?, ?, ?, 'admin', 1, ?, ?, 'active', ?, 'admin', ?, ?, ?)",
+                        "display_name, status, workspace_id, permissions_json, note, updated_at) "
+                        "VALUES (?, ?, ?, ?, 'admin', 1, ?, ?, 'active', ?, ?, ?, ?)",
                         (
                             user_id,
                             HOST_BUILTIN_USERNAME,
@@ -516,23 +487,15 @@ class AccountStore:
         *,
         bootstrap=False,
         display_name="",
-        role_template=None,
         permissions=None,
         note="",
     ):
         username, key, password = _credentials(username, password)
         if role not in ("member", "admin"):
             raise HTTPException(400, "账号角色无效")
-        tmpl = role_template or ("admin" if role == "admin" else "payroll_specialist")
-        if tmpl not in ROLE_TEMPLATES:
-            tmpl = "custom"
-        if tmpl == "admin":
-            role = "admin"
-        elif role == "admin":
-            tmpl = "admin"
         clean_display = _clean_text(display_name, 40, "姓名/显示名") or username
         clean_note = _clean_text(note, 120, "备注")
-        perms = normalize_permissions(role, tmpl, permissions)
+        perms = normalize_permissions(role, permissions)
         encoded = _password_hash(password)
         now = time.time()
         with self._lock, self._connection() as connection:
@@ -550,9 +513,9 @@ class AccountStore:
             try:
                 connection.execute(
                     "INSERT INTO accounts (id, username, username_key, password_hash, role, enabled, created_at, "
-                    "display_name, status, workspace_id, role_template, permissions_json, note, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, 1, ?, ?, 'active', ?, ?, ?, ?, ?)",
-                    (user_id, username, key, encoded, role, now, clean_display, wid, tmpl, json.dumps(perms, ensure_ascii=False), clean_note, now),
+                    "display_name, status, workspace_id, permissions_json, note, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, 1, ?, ?, 'active', ?, ?, ?, ?)",
+                    (user_id, username, key, encoded, role, now, clean_display, wid, json.dumps(perms, ensure_ascii=False), clean_note, now),
                 )
             except sqlite3.IntegrityError:
                 raise HTTPException(409, "用户名已存在") from None
@@ -560,156 +523,12 @@ class AccountStore:
         initialize_workspace_storage(wid)
         return _row_to_user(row)
 
-    def register_user(
-        self,
-        username: str,
-        password: str,
-        *,
-        display_name: str = "",
-        note: str = "",
-        address: str = "",
-    ) -> dict:
-        """Public colleague registration: creates a pending account awaiting admin approval."""
-        if not self.initialized():
-            raise HTTPException(409, "系统尚未初始化主机管理员，请先由管理员在本机完成初始化")
-        username, key, password = _credentials(username, password)
-        clean_display = _clean_text(display_name, 40, "姓名/显示名") or username
-        clean_note = _clean_text(note, 120, "申请说明/负责区域")
-        encoded = _password_hash(password)
-        default_perms = normalize_permissions("member", "payroll_specialist")
-        now = time.time()
-        try:
-            register_limit = max(1, int(os.environ.get("REGISTER_RATE_LIMIT", "10")))
-        except ValueError:
-            register_limit = 10
-        try:
-            pending_cap = max(1, int(os.environ.get("PENDING_QUEUE_LIMIT", "100")))
-        except ValueError:
-            pending_cap = 100
-        addr_bucket = (
-            hashlib.sha256(("register:" + address.strip()).encode()).hexdigest()
-            if address and address.strip()
-            else ""
-        )
-        with self._lock, self._connection() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            if addr_bucket:
-                limit_row = connection.execute(
-                    "SELECT * FROM login_limits WHERE key = ?",
-                    (addr_bucket,),
-                ).fetchone()
-                if (
-                    limit_row
-                    and now - limit_row["started_at"] < REGISTER_WINDOW
-                    and limit_row["failures"] >= register_limit
-                ):
-                    raise HTTPException(
-                        429,
-                        "当前网络注册请求过于频繁，请15分钟后再试",
-                        headers={"Retry-After": str(REGISTER_WINDOW)},
-                    )
-            existing = connection.execute("SELECT * FROM accounts WHERE username_key = ?", (key,)).fetchone()
-            if existing is not None:
-                if existing["status"] == "pending":
-                    raise HTTPException(409, "该用户名已提交过注册申请，正在等待管理员审批")
-                if existing["status"] == "rejected":
-                    pending_total = int(
-                        connection.execute("SELECT COUNT(*) FROM accounts WHERE status = 'pending'").fetchone()[0]
-                    )
-                    if pending_total >= pending_cap:
-                        raise HTTPException(429, "当前待审批申请队列已满，请联系系统管理员处理后再提交")
-                    connection.execute(
-                        "UPDATE accounts SET username = ?, password_hash = ?, display_name = ?, note = ?, "
-                        "status = 'pending', enabled = 0, updated_at = ? WHERE id = ?",
-                        (username, encoded, clean_display, clean_note, now, existing["id"]),
-                    )
-                    if addr_bucket:
-                        connection.execute(
-                            "INSERT INTO login_limits VALUES (?, ?, 1) ON CONFLICT(key) DO UPDATE SET "
-                            "failures = CASE WHEN ? - started_at >= ? THEN 1 ELSE failures + 1 END, "
-                            "started_at = CASE WHEN ? - started_at >= ? THEN ? ELSE started_at END",
-                            (addr_bucket, now, now, REGISTER_WINDOW, now, REGISTER_WINDOW, now),
-                        )
-                    row = connection.execute("SELECT * FROM accounts WHERE id = ?", (existing["id"],)).fetchone()
-                    return _row_to_user(row)
-                raise HTTPException(409, "该用户名已被使用，请更换其他用户名")
-            pending_total = int(
-                connection.execute("SELECT COUNT(*) FROM accounts WHERE status = 'pending'").fetchone()[0]
-            )
-            if pending_total >= pending_cap:
-                raise HTTPException(429, "当前待审批申请队列已满，请联系系统管理员处理后再提交")
-            user_id = uuid.uuid4().hex
-            wid = f"ws_{user_id[:12]}"
-            connection.execute(
-                "INSERT INTO accounts (id, username, username_key, password_hash, role, enabled, created_at, "
-                "display_name, status, workspace_id, role_template, permissions_json, note, updated_at) "
-                "VALUES (?, ?, ?, ?, 'member', 0, ?, ?, 'pending', ?, 'payroll_specialist', ?, ?, ?)",
-                (user_id, username, key, encoded, now, clean_display, wid, json.dumps(default_perms, ensure_ascii=False), clean_note, now),
-            )
-            if addr_bucket:
-                connection.execute(
-                    "INSERT INTO login_limits VALUES (?, ?, 1) ON CONFLICT(key) DO UPDATE SET "
-                    "failures = CASE WHEN ? - started_at >= ? THEN 1 ELSE failures + 1 END, "
-                    "started_at = CASE WHEN ? - started_at >= ? THEN ? ELSE started_at END",
-                    (addr_bucket, now, now, REGISTER_WINDOW, now, REGISTER_WINDOW, now),
-                )
-            row = connection.execute("SELECT * FROM accounts WHERE id = ?", (user_id,)).fetchone()
-        return _row_to_user(row)
-
-    def approve_user(
-        self,
-        user_id: str,
-        *,
-        role_template: str = "payroll_specialist",
-        permissions: dict | None = None,
-        display_name: str | None = None,
-        note: str | None = None,
-    ) -> dict:
-        if role_template not in ROLE_TEMPLATES:
-            raise HTTPException(400, "预设角色无效")
-        role = "admin" if role_template == "admin" else "member"
-        perms = normalize_permissions(role, role_template, permissions)
-        now = time.time()
-        with self._lock, self._connection() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            row = connection.execute("SELECT * FROM accounts WHERE id = ?", (user_id,)).fetchone()
-            if row is None:
-                raise HTTPException(404, "账号不存在")
-            wid = row["workspace_id"] or f"ws_{row['id'][:12]}"
-            next_display = _clean_text(display_name, 40, "姓名/显示名") if display_name is not None else row["display_name"]
-            next_note = _clean_text(note, 120, "备注") if note is not None else row["note"]
-            connection.execute(
-                "UPDATE accounts SET role = ?, role_template = ?, permissions_json = ?, status = 'active', "
-                "enabled = 1, workspace_id = ?, display_name = ?, note = ?, updated_at = ? WHERE id = ?",
-                (role, role_template, json.dumps(perms, ensure_ascii=False), wid, next_display or row["username"], next_note, now, user_id),
-            )
-            updated = connection.execute("SELECT * FROM accounts WHERE id = ?", (user_id,)).fetchone()
-        initialize_workspace_storage(wid)
-        return _row_to_user(updated)
-
-    def reject_user(self, user_id: str) -> dict:
-        now = time.time()
-        with self._lock, self._connection() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            row = connection.execute("SELECT * FROM accounts WHERE id = ?", (user_id,)).fetchone()
-            if row is None:
-                raise HTTPException(404, "账号不存在")
-            if row["role"] == "admin" and row["enabled"]:
-                raise HTTPException(409, "不能驳回已启用的管理员账号")
-            connection.execute(
-                "UPDATE accounts SET status = 'rejected', enabled = 0, updated_at = ? WHERE id = ?",
-                (now, user_id),
-            )
-            connection.execute("DELETE FROM account_sessions WHERE user_id = ?", (user_id,))
-            updated = connection.execute("SELECT * FROM accounts WHERE id = ?", (user_id,)).fetchone()
-        return _row_to_user(updated)
-
     def update_user_access(
         self,
         user_id: str,
         *,
         display_name: str | None = None,
-        role_template: str | None = None,
+        role: str | None = None,
         permissions: dict | None = None,
         enabled: bool | None = None,
         note: str | None = None,
@@ -721,10 +540,9 @@ class AccountStore:
             if row is None:
                 raise HTTPException(404, "账号不存在")
             current = _row_to_user(row)
-            next_tmpl = role_template if role_template is not None else current["role_template"]
-            if next_tmpl not in ROLE_TEMPLATES:
-                raise HTTPException(400, "角色模板无效")
-            next_role = "admin" if next_tmpl == "admin" else "member"
+            if role is not None and role not in ("admin", "member"):
+                raise HTTPException(400, "账号角色无效")
+            next_role = role if role is not None else current["role"]
             next_enabled = current["enabled"] if enabled is None else bool(enabled)
 
             # Prevent removing or disabling the last active admin
@@ -735,22 +553,18 @@ class AccountStore:
                 if admin_count <= 1:
                     raise HTTPException(409, "系统必须至少保留一个处于启用状态的管理员账号")
 
-            base_perms = current["permissions"] if role_template is None else None
-            merged_overrides = {**(base_perms or {}), **(permissions or {})} if permissions is not None or base_perms is not None else None
-            if role_template is not None and permissions is None:
-                merged_overrides = None
-            next_perms = normalize_permissions(next_role, next_tmpl, merged_overrides)
-            next_status = "active" if next_enabled else ("pending" if row["status"] == "pending" and enabled is None else "disabled")
+            merged_overrides = {**(current["permissions"] or {}), **(permissions or {})} if permissions is not None else current["permissions"]
+            next_perms = normalize_permissions(next_role, merged_overrides)
+            next_status = "active" if next_enabled else "disabled"
             next_display = _clean_text(display_name, 40, "姓名/显示名") if display_name is not None else current["display_name"]
             next_note = _clean_text(note, 120, "备注") if note is not None else current["note"]
             wid = current["workspace_id"]
 
             connection.execute(
-                "UPDATE accounts SET role = ?, role_template = ?, permissions_json = ?, enabled = ?, status = ?, "
+                "UPDATE accounts SET role = ?, permissions_json = ?, enabled = ?, status = ?, "
                 "display_name = ?, note = ?, workspace_id = ?, updated_at = ? WHERE id = ?",
                 (
                     next_role,
-                    next_tmpl,
                     json.dumps(next_perms, ensure_ascii=False),
                     int(next_status == "active"),
                     next_status,
@@ -855,7 +669,7 @@ class AccountStore:
                 except ValueError:
                     raise HTTPException(400, "目标空间标识无效") from None
                 target_row = connection.execute(
-                    "SELECT * FROM accounts WHERE workspace_id = ? AND status != 'rejected'",
+                    "SELECT * FROM accounts WHERE workspace_id = ?",
                     (cleaned,),
                 ).fetchone()
                 if target_row is None:
@@ -922,7 +736,7 @@ class AccountStore:
         buckets = [hashlib.sha256((kind + ":" + value).encode()).hexdigest()
                    for kind, value in (("user", key), ("address", address))]
         now = time.time()
-        pending_status = None
+        account_disabled = False
         with self._lock, self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             for bucket, limit in zip(buckets, (LOGIN_LIMIT, LOGIN_LIMIT * 6)):
@@ -935,14 +749,8 @@ class AccountStore:
                 hashlib.pbkdf2_hmac("sha256", password.encode(), b"download-login-missing", PASSWORD_ITERATIONS)
             if pw_ok:
                 connection.execute("DELETE FROM login_limits WHERE key = ?", (buckets[0],))
-                if row["status"] == "pending":
-                    pending_status = "pending"
-                    user = None
-                elif row["status"] == "rejected":
-                    pending_status = "rejected"
-                    user = None
-                elif not row["enabled"] or row["status"] != "active":
-                    pending_status = "disabled"
+                if not row["enabled"] or row["status"] != "active":
+                    account_disabled = True
                     user = None
                 else:
                     user = _row_to_user(row)
@@ -955,11 +763,7 @@ class AccountStore:
                         (bucket, now, now, LOGIN_WINDOW, now, LOGIN_WINDOW, now),
                     )
                 user = None
-        if pending_status == "pending":
-            raise HTTPException(403, "您的注册申请已提交，正在等待主机管理员审批开通独立空间")
-        if pending_status == "rejected":
-            raise HTTPException(403, "您的注册申请未获通过，可联系管理员或重新提交申请")
-        if pending_status == "disabled":
+        if account_disabled:
             raise HTTPException(403, "该账号已被停用，请联系系统管理员")
         if not user:
             raise HTTPException(401, "用户名或密码错误")
@@ -969,13 +773,9 @@ class AccountStore:
     def users(self):
         with self._connection() as connection:
             rows = connection.execute(
-                "SELECT * FROM accounts ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'active' THEN 1 ELSE 2 END, created_at DESC, id"
+                "SELECT * FROM accounts ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, created_at DESC, id"
             ).fetchall()
         return [public_user(_row_to_user(row)) for row in rows]
-
-    def pending_count(self) -> int:
-        with self._connection() as connection:
-            return int(connection.execute("SELECT COUNT(*) FROM accounts WHERE status = 'pending'").fetchone()[0])
 
     def set_enabled(self, user_id, enabled):
         if type(enabled) is not bool:
@@ -987,7 +787,7 @@ class AccountStore:
         run_id = run_id if isinstance(run_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", run_id) else ""
         detail = detail if detail in {
             "", "success", "failed", "enabled", "disabled", "admin", "member",
-            "cancelled", "partial", "approved", "rejected", "registered", "inspect",
+            "cancelled", "partial", "inspect",
         } else ""
         with self._connection() as connection:
             connection.execute(
@@ -1014,7 +814,6 @@ def _shared_fallback_user() -> dict:
         "username": "小组共享",
         "display_name": "小组共享",
         "role": "admin",
-        "role_template": "admin",
         "status": "active",
         "enabled": True,
         "owner": PRIMARY_WORKSPACE,
@@ -1070,14 +869,31 @@ def require_admin(request):
 def check_user_permission(user: dict | None, *perm_keys: str, any_of: bool = False):
     if not user or user.get("role") == "admin" or "permissions" not in user:
         return user
+    from global_workbench_config import BUSINESS_MODULE_KEYS, module_enabled
     perms = user.get("permissions") or {}
+    def _allowed(k: str) -> bool:
+        if k in BUSINESS_MODULE_KEYS and not module_enabled(k):
+            return False
+        return bool(perms.get(k))
     if any_of:
-        if any(perms.get(k) for k in perm_keys):
+        if any(_allowed(k) for k in perm_keys):
             return user
     else:
-        if all(perms.get(k) for k in perm_keys):
+        if all(_allowed(k) for k in perm_keys):
             return user
-    missing_labels = " / ".join(PERMISSION_LABELS.get(k, k) for k in perm_keys if not perms.get(k))
+    globally_paused = [
+        PERMISSION_LABELS.get(k, k)
+        for k in perm_keys
+        if k in BUSINESS_MODULE_KEYS and not module_enabled(k)
+    ]
+    missing_member = [
+        PERMISSION_LABELS.get(k, k)
+        for k in perm_keys
+        if not perms.get(k)
+    ]
+    if globally_paused and not missing_member:
+        raise HTTPException(403, f"【{' / '.join(globally_paused)}】已由主机管理员在全局配置中暂停开放")
+    missing_labels = " / ".join(missing_member or globally_paused)
     raise HTTPException(403, f"当前账号尚未开通【{missing_labels or '对应模块'}】操作权限，请联系管理员分配")
 
 

@@ -465,8 +465,12 @@ async def add_tasks(request:Request):
     from download_accounts import require_permission
     require_permission(request, 'payroll')
     wid,owner=identity(request);data=await payload(request)
-    if data.get('mode') == 'xiaoxiang':
+    from global_workbench_config import is_shared_source
+    mode = data.get('mode', 'fengshen')
+    if mode == 'xiaoxiang' and is_shared_source('xiaoxiang'):
         require_permission(request, 'xiaoxiang_use')
+    elif mode == 'fengshen' and is_shared_source('fengshen'):
+        require_permission(request, 'fengshen_use')
     tasks=await asyncio.to_thread(call,get_queue().enqueue,wid,owner,data.get('source_path',''),data.get('mode','fengshen'),data.get('config',{}),data.get('request_id'))
     return {'tasks':tasks}
 

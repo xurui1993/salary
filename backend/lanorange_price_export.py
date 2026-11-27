@@ -269,7 +269,12 @@ def has_active(scope_id=None):
 def shutdown():
     if _manager is not None:
         with _manager.db() as db:db.execute("UPDATE exports SET stop=1 WHERE status IN ('queued','running','stopping')")
-def owner(request):require_permission(request, 'approval');return workspace_owner(request)
+def owner(request):
+    from global_workbench_config import is_shared_source
+    require_permission(request, 'approval')
+    if is_shared_source('lanorange'):
+        require_permission(request, 'lanorange_use')
+    return workspace_owner(request)
 
 
 @router.post('/exports')
