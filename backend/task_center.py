@@ -20,14 +20,15 @@ from parttime_source import ROOT
 
 router = APIRouter(prefix='/api/workbench/task-center')
 LOCK = threading.RLock()
-COLLECT_TTL = 1.5
-COLLECT_ACTIVE_TTL = 0.5
+COLLECT_TTL = 3.0
+COLLECT_ACTIVE_TTL = 0.6
 _COLLECT_CACHE = {}
 _REFRESHING = set()
-ENDED = {'success', 'partial', 'error', 'cancelled', 'interrupted'}
+ENDED = {'success', 'partial', 'error', 'cancelled', 'interrupted', 'stopped'}
 ACTIVE = {'queued', 'running', 'waiting_login', 'waiting_manual', 'cancelling', 'preparing', 'stopping'}
 ATTENTION = {'waiting_login', 'waiting_manual', 'waiting_materials', 'pending_download', 'ready', 'partial', 'error', 'interrupted', 'needs_review'}
 ATTENTION.add('awaiting_confirmation')
+STOPPED = {'cancelled', 'stopped'}
 
 
 @contextmanager
@@ -196,44 +197,85 @@ def created_day(record):
         return value[:10]
 
 
+def _status_matches(record_status: str, status_filter: str) -> bool:
+    if not status_filter:
+        return True
+    if status_filter == 'active':
+        return record_status in ACTIVE
+    if status_filter == 'attention':
+        return record_status in ATTENTION
+    if status_filter == 'stopped':
+        return record_status in STOPPED
+    return record_status == status_filter
+
+
 def select_records(records, hidden, filters):
     # An archived task that resumes must be visible again, including its retry chain.
     for record in records:
         record['hidden'] = record['id'] in hidden and record['status'] not in ACTIVE
     archived = filters.get('archived') == '1'
     base = [r for r in records if r['hidden'] == archived]
-    def matches(r, ignore_status=False):
-        status = filters.get('status', '')
-        if not ignore_status and status and not (r['status'] in ACTIVE if status == 'active' else r['status'] in ATTENTION if status == 'attention' else r['status'] == status):
-            return False
-        if filters.get('kind') and r.get('kind') != filters['kind']:
+
+    status_filter = filters.get('status', '')
+    kind_filter = filters.get('kind', '')
+    tag = filters.get('system', '')
+    tag_alt = {'lanorange': '蓝橙'}.get(tag)
+    module = filters.get('module', '')
+    date_from = filters.get('from', '')
+    date_to = filters.get('to', '')
+    q_norm = filters.get('q', '').strip().casefold()
+
+    generators = None
+    if module == 'fengshen':
+        from task_catalog import GENERATORS
+        generators = GENERATORS
+
+    labels = None
+    if q_norm:
+        from download_archive import LABELS
+        labels = LABELS
+
+    def matches_base_filters(r):
+        if kind_filter and r.get('kind') != kind_filter:
             return False
         groups = r.get('systems') or [dataset_group(key) for key in r['datasets']]
-        tag = filters.get('system', '')
-        if tag and tag not in groups and {'lanorange': '蓝橙'}.get(tag) not in groups:
+        if tag and tag not in groups and tag_alt not in groups:
             return False
-        module = filters.get('module', '')
         if module:
             if module == 'generate':
                 if r.get('kind') != 'generate':
                     return False
             elif module == 'fengshen':
-                from task_catalog import GENERATORS
-                is_fengshen_gen = r.get('kind') == 'generate' and any(key in GENERATORS for key in r.get('datasets', []))
+                is_fengshen_gen = r.get('kind') == 'generate' and any(key in generators for key in r.get('datasets', []))
                 if not is_fengshen_gen and (r.get('kind') not in ('download', 'payroll_source') or 'fengshen' not in groups):
                     return False
             elif r.get('kind') not in ('download', 'payroll_source') or module not in groups:
                 return False
-        date = created_day(r)
-        if filters.get('from') and date < filters['from'] or filters.get('to') and date > filters['to']:
-            return False
-        from download_archive import LABELS
-        text = ' '.join([r['id'], r.get('title', ''), *r['cities'], *(LABELS.get(key, key) for key in r['datasets']), *(f['name'] for f in r['files'])]).casefold()
-        return filters.get('q', '').strip().casefold() in text
-    counted = [r for r in base if matches(r, ignore_status=True)]
-    counts = {'all': len(counted), 'active': sum(r['status'] in ACTIVE for r in counted),
-              'attention': sum(r['status'] in ATTENTION for r in counted), 'success': sum(r['status'] == 'success' for r in counted)}
-    rows = sorted((r for r in counted if matches(r)), key=lambda r: (r.get('created_at', ''), r['id']), reverse=True)
+        if date_from or date_to:
+            date = created_day(r)
+            if (date_from and date < date_from) or (date_to and date > date_to):
+                return False
+        if q_norm:
+            text = ' '.join([
+                r['id'],
+                r.get('title', ''),
+                *r['cities'],
+                *(labels.get(key, key) for key in r['datasets']),
+                *(f['name'] for f in r['files']),
+            ]).casefold()
+            return q_norm in text
+        return True
+
+    counted = [r for r in base if matches_base_filters(r)]
+    counts = {
+        'all': len(counted),
+        'active': sum(r['status'] in ACTIVE for r in counted),
+        'attention': sum(r['status'] in ATTENTION for r in counted),
+        'success': sum(r['status'] == 'success' for r in counted),
+        'stopped': sum(r['status'] in STOPPED for r in counted),
+    }
+    filtered = counted if not status_filter else (r for r in counted if _status_matches(r['status'], status_filter))
+    rows = sorted(filtered, key=lambda r: (r.get('created_at', ''), r['id']), reverse=True)
     return rows, counts
 
 
@@ -246,25 +288,34 @@ def hidden_ids(records=None, request=None):
     with database() as db:
         if records is not None:
             raw_pending = db.execute('SELECT id,created,members FROM pending_hide').fetchall()
-            pending = {}
-            for stored_id, created, members in raw_pending:
-                item_id = _decode_hid(prefix, stored_id)
-                if item_id is not None:
-                    pending[item_id] = (stored_id, created, members)
-            for record in records:
-                if record['id'] in pending and record['status'] not in ACTIVE:
-                    stored_id, created, members = pending[record['id']]
-                    if not members or members == json.dumps(sorted(record.get('member_ids', []))):
-                        db.execute('INSERT OR REPLACE INTO hidden (id,created,signature) VALUES (?,?,?)', (_encode_hid(prefix, record['id']), created, signature(record)))
-                    db.execute('DELETE FROM pending_hide WHERE id=?', (stored_id,))
+            if raw_pending:
+                pending = {}
+                for stored_id, created, members in raw_pending:
+                    item_id = _decode_hid(prefix, stored_id)
+                    if item_id is not None:
+                        pending[item_id] = (stored_id, created, members)
+                if pending:
+                    for record in records:
+                        if record['id'] in pending and record['status'] not in ACTIVE:
+                            stored_id, created, members = pending[record['id']]
+                            if not members or members == json.dumps(sorted(record.get('member_ids', []))):
+                                db.execute('INSERT OR REPLACE INTO hidden (id,created,signature) VALUES (?,?,?)', (_encode_hid(prefix, record['id']), created, signature(record)))
+                            db.execute('DELETE FROM pending_hide WHERE id=?', (stored_id,))
             hidden = {}
             for stored_id, sig in db.execute('SELECT id, signature FROM hidden').fetchall():
                 item_id = _decode_hid(prefix, stored_id)
                 if item_id is not None:
                     hidden[item_id] = (stored_id, sig)
-            changed = [(hidden[r['id']][0],) for r in records if r['id'] in hidden and
-                       (r['status'] in ACTIVE or hidden[r['id']][1] and hidden[r['id']][1] != signature(r))]
-            db.executemany('DELETE FROM hidden WHERE id=?', changed)
+            if hidden:
+                changed = [(hidden[r['id']][0],) for r in records if r['id'] in hidden and
+                           (r['status'] in ACTIVE or hidden[r['id']][1] and hidden[r['id']][1] != signature(r))]
+                if changed:
+                    db.executemany('DELETE FROM hidden WHERE id=?', changed)
+                    for (removed_stored_id,) in changed:
+                        decoded = _decode_hid(prefix, removed_stored_id)
+                        if decoded is not None:
+                            hidden.pop(decoded, None)
+            return set(hidden.keys())
         result = set()
         for (stored_id,) in db.execute('SELECT id FROM hidden').fetchall():
             item_id = _decode_hid(prefix, stored_id)
@@ -276,7 +327,7 @@ def hidden_ids(records=None, request=None):
 @router.get('')
 def listing(request: Request, page: int = 1, page_size: int = 20):
     require_account(request)
-    if page < 1 or page_size not in (20, 50, 100):
+    if page < 1 or page_size not in (10, 20, 50, 100):
         raise HTTPException(400, '分页参数无效')
     records, warnings = collect(request)
     rows, counts = select_records(records, hidden_ids(records, request), request.query_params)
@@ -476,12 +527,18 @@ def directory(request, record_id=None):
     manager = get_manager()
     owner = None if user['role'] == 'admin' else user['owner']
     if record_id.startswith('price-export:'):
+        published = manager.deliveries.directory(record_id)
+        if published is not None and published.is_dir():
+            return published
         from lanorange_price_export import manager as prices, owner as price_owner
         try:
             return prices().result(price_owner(request), record_id.split(':',1)[1]).parent
         except Exception:
             raise HTTPException(404, '价格导出文件尚未生成或不可用') from None
     if record_id.startswith('approval:'):
+        published = manager.deliveries.directory(record_id)
+        if published is not None and published.is_dir():
+            return published
         from lanorange_approvals import get_manager as approvals, scope
         from delivery_store import approval_delivery
         return approval_delivery(approvals(),scope(request),record_id.split(':',1)[1]).parent

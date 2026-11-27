@@ -308,29 +308,29 @@ export function HeaderDownloadCenter({
     setError('');
     setNotice('');
     try {
-      const infoRes = await apiRef.current(`${API}/directory?record_id=${encodeURIComponent(r.id)}`, {
+      const openRes = await apiRef.current(`${API}/directory/open`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ record_id: r.id }),
         signal: AbortSignal.timeout(15000),
       });
-      const info = await infoRes.json().catch(() => ({}));
-      if (!infoRes.ok) throw new Error(info.detail || '暂无法读取结果目录');
-      if (info.exists && info.can_open) {
-        const openRes = await apiRef.current(`${API}/directory/open`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ record_id: r.id }),
-          signal: AbortSignal.timeout(15000),
-        });
-        if (!openRes.ok) {
-          const errData = await openRes.json().catch(() => ({}));
-          throw new Error(errData.detail || '打开本地目录失败');
-        }
+      if (openRes.ok) {
         setNotice('已打开本地结果目录');
         onShowToast?.('已打开本地结果目录', 'success');
-      } else {
+        return;
+      }
+      if (openRes.status === 400 || openRes.status === 403) {
+        const infoRes = await apiRef.current(`${API}/directory?record_id=${encodeURIComponent(r.id)}`, {
+          signal: AbortSignal.timeout(10000),
+        });
+        const info = await infoRes.json().catch(() => ({}));
         const pathTip = info.path ? `结果目录：${info.path}` : '当前为远程环境，已跳转任务详情查看文件';
         setNotice(pathTip);
         onShowToast?.(pathTip, 'info');
+        return;
       }
+      const errData = await openRes.json().catch(() => ({}));
+      throw new Error(errData.detail || '打开本地目录失败');
     } catch (err) {
       const msg = downloadErrorMessage(err);
       setError(msg);

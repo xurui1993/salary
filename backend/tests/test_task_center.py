@@ -32,7 +32,11 @@ class SharedListTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name)
         self.rows=[record('a'),record('b','running'),record('c','waiting_manual'),record('d','needs_review')]
-        for target, value in [('ROOT',self.root),('collect',lambda _: (copy.deepcopy(self.rows),[]))]:
+        for target, value in [
+            ('ROOT', self.root),
+            ('collect', lambda _: (copy.deepcopy(self.rows), [])),
+            ('require_account', lambda _: {'owner': 'download_shared', 'role': 'admin'}),
+        ]:
             mock=patch.object(center,target,value);mock.start();self.addCleanup(mock.stop)
 
     def test_shared_persistent_hide_restore_keeps_files_and_original_records(self):
@@ -177,6 +181,24 @@ class SharedListTests(unittest.TestCase):
         self.assertEqual(sorted(r['id'] for r in fengshen), ['dl_1', 'gen_1', 'gen_2'])
         lanorange, _ = center.select_records(rows, set(), {'module': 'lanorange'})
         self.assertEqual([r['id'] for r in lanorange], ['lan_1'])
+
+    def test_stopped_status_tab_counts_and_filtering(self):
+        rows = [
+            record('ok_1', 'success'),
+            record('run_1', 'running'),
+            record('err_1', 'error'),
+            record('cancel_1', 'cancelled'),
+            record('stop_1', 'stopped'),
+        ]
+        all_rows, counts = center.select_records(rows, set(), {})
+        self.assertEqual(len(all_rows), 5)
+        self.assertEqual(counts['all'], 5)
+        self.assertEqual(counts['active'], 1)
+        self.assertEqual(counts['attention'], 1)
+        self.assertEqual(counts['success'], 1)
+        self.assertEqual(counts['stopped'], 2)
+        stopped_rows, _ = center.select_records(rows, set(), {'status': 'stopped'})
+        self.assertEqual(sorted(r['id'] for r in stopped_rows), ['cancel_1', 'stop_1'])
 
     def test_delete_tasks_rejects_active_and_dispatches_to_managers(self):
         from unittest.mock import Mock

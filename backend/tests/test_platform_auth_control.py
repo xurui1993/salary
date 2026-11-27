@@ -205,5 +205,14 @@ class PlatformControlTests(unittest.TestCase):
         self.assertEqual(st_after_remove['active_account_id'], slot2_id)
         self.assertEqual(self.session.read_bytes(), b'synthetic-encrypted-token-account-B')
 
+    def test_summary_aggregates_all_six_platform_statuses(self):
+        fake_req = Mock()
+        with patch.object(control, 'require_account', return_value={'owner': 'admin', 'role': 'admin'}):
+            summary = control.get_summary(fake_req)
+        self.assertIn('statuses', summary)
+        self.assertIn('checked_at', summary)
+        self.assertEqual(set(summary['statuses'].keys()), set(control.KEYS))
+        self.assertTrue(summary['statuses']['baize']['saved'])
+
 
 if __name__ == '__main__': unittest.main()

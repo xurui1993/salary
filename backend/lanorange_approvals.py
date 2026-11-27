@@ -179,12 +179,20 @@ class ApprovalManager:
             worker=threading.Thread(target=_worker_entry,daemon=True,name='lanorange-price-approval')
             with self.lock:self.workers[batch_id]=worker
             worker.start()
+        import sys
+        tc = sys.modules.get('task_center')
+        if tc is not None and hasattr(tc, '_invalidate_cache'):
+            tc._invalidate_cache()
         return self.batch(scope,batch_id)
 
     def _item(self,batch_id,position,state,message):
         with self.lock,self.connection() as db:
             db.execute('UPDATE items SET status=?,message=?,finished=? WHERE batch_id=? AND position=?',(state,message,time.time(),batch_id,position))
             db.execute('UPDATE claims SET status=? WHERE batch_id=? AND task_id=(SELECT task_id FROM items WHERE batch_id=? AND position=?)',(state,batch_id,batch_id,position))
+        import sys
+        tc = sys.modules.get('task_center')
+        if tc is not None and hasattr(tc, '_invalidate_cache'):
+            tc._invalidate_cache()
 
     def _stop(self,batch_id):
         with self.connection() as db:return bool(db.execute('SELECT stop FROM batches WHERE id=?',(batch_id,)).fetchone()['stop'])

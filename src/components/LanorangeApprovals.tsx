@@ -285,6 +285,7 @@ export function LanorangeApprovals({apiFetch,workspaceId,onActiveCount,onSwitchV
     setAttempt(current);setAttemptMissing(false);remember(attemptKey,current);
     try{
       const result=await request<Batch>('/batches',{...current,confirm:true},20000);
+      window.dispatchEvent(new CustomEvent('workbench:task-submitted', { detail: { id: `approval:${result.id}` } }));
       if(alive.current){setBatch(result);setPreview(null);setSelection({});setAttempt(null);remember(attemptKey,null);setReceiptStatusFilter('all');setActiveViewTab('results');holdDownloads();setRefresh(x=>x+1);void readHistory();}
     }catch(err){if(!(err instanceof PlatformAuthError && err.uncertain)){setAttempt(null);remember(attemptKey,null);}else throw new Error('本次审批批次尚未确认，请先查找本次提交；系统不会自动重复审批。');throw err;}
   });}

@@ -995,15 +995,17 @@ export function FlashPayrollWorkbench({
   const directory = (task: PayrollQueueTask) =>
     void act(async () => {
       const recordKey = 'payroll_' + task.batch_id;
+      try {
+        await request('/api/workbench/task-center/directory/open', { record_id: recordKey });
+        pushToast('已打开本地结果目录');
+        return;
+      } catch {
+        // Non-Windows or LAN remote client: fallback to fetching path & copying
+      }
       const resp = await request(
         `/api/workbench/task-center/directory?record_id=${encodeURIComponent(recordKey)}`,
       );
       const info = await resp.json();
-      if (info.exists && info.can_open) {
-        await request('/api/workbench/task-center/directory/open', { record_id: recordKey });
-        pushToast('已打开本地结果目录');
-        return;
-      }
       if (info.path && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
         try {
           await navigator.clipboard.writeText(info.path);

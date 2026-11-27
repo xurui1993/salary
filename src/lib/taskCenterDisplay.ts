@@ -698,4 +698,42 @@ export function buildTaskProgressPopoverData(
   };
 }
 
+const TASK_STATUS_ACTIVE_SET = new Set([
+  'queued',
+  'running',
+  'waiting_login',
+  'waiting_manual',
+  'cancelling',
+  'preparing',
+  'stopping',
+]);
+
+const TASK_STATUS_ATTENTION_SET = new Set([
+  'waiting_login',
+  'waiting_manual',
+  'waiting_materials',
+  'pending_download',
+  'ready',
+  'partial',
+  'error',
+  'interrupted',
+  'needs_review',
+  'awaiting_confirmation',
+]);
+
+const TASK_STATUS_STOPPED_SET = new Set(['cancelled', 'stopped']);
+
+/**
+ * 判断单条任务状态是否匹配任务中心顶部的状态页签（全部 / 进行中 / 待处理 / 已完成 / 已停止）。
+ * 用于点击状态页签时在前端 0ms 乐观过滤已缓存列表，彻底消除切页卡顿与旧数据残留。
+ */
+export function matchesTaskStatusFilter(taskStatus: string, statusFilter: string): boolean {
+  if (!statusFilter) return true;
+  if (statusFilter === 'active') return TASK_STATUS_ACTIVE_SET.has(taskStatus);
+  if (statusFilter === 'attention') return TASK_STATUS_ATTENTION_SET.has(taskStatus);
+  if (statusFilter === 'stopped') return TASK_STATUS_STOPPED_SET.has(taskStatus);
+  return taskStatus === statusFilter;
+}
+
+
 

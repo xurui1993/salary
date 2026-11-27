@@ -532,6 +532,53 @@ def baize_accounts(request: Request):
     return data
 
 
+_LAST_WARMUP_AT = 0.0
+_WARMUP_LOCK = threading.Lock()
+
+
+def _background_warmup() -> None:
+    import socket
+    from auth_browser_runtime import chrome_executable, edge_executable
+    try:
+        chrome_executable()
+        edge_executable()
+    except Exception:
+        pass
+    for host in (
+        'madouren.cdevelopment.cn',
+        'mdr.lanchengsz.cn',
+        'login.dingtalk.com',
+        'merchant.shangyiworker.com',
+        'b.icp88.com',
+    ):
+        try:
+            socket.getaddrinfo(host, 443)
+        except Exception:
+            pass
+
+
+@router.get('/summary')
+def get_summary(request: Request):
+    user = require_account(request)
+    return {
+        'statuses': {key: status(key, user=user) for key in KEYS},
+        'checked_at': datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.post('/warmup')
+def do_warmup(request: Request):
+    global _LAST_WARMUP_AT
+    require_account(request)
+    now = time.monotonic()
+    with _WARMUP_LOCK:
+        if now - _LAST_WARMUP_AT < 120.0:
+            return {'warmed': True, 'cached': True}
+        _LAST_WARMUP_AT = now
+    threading.Thread(target=_background_warmup, name='platform-auth-warmup', daemon=True).start()
+    return {'warmed': True, 'cached': False}
+
+
 @router.get('/{source}')
 def get_status(source: str, request: Request):
     user = require_account(request)

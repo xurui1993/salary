@@ -34,9 +34,13 @@ const GAP = 9;
 
 export function StatusHoverPopover({
   model,
+  getModel,
+  badgeLabel,
   children,
 }: {
-  model: StatusPopoverModel;
+  model?: StatusPopoverModel;
+  getModel?: () => StatusPopoverModel;
+  badgeLabel?: string;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -44,6 +48,8 @@ export function StatusHoverPopover({
   const triggerRef = useRef<HTMLSpanElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const popoverId = useId();
+
+  const resolvedModel = open ? (model ?? getModel?.()) : model;
 
   const updatePosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -74,11 +80,11 @@ export function StatusHoverPopover({
   }, []);
 
   useLayoutEffect(() => {
-    if (!open) return;
+    if (!open || !resolvedModel) return;
     updatePosition();
     const raf = window.requestAnimationFrame(updatePosition);
     return () => window.cancelAnimationFrame(raf);
-  }, [open, updatePosition, model.currentNode, model.elapsedValue, model.percent]);
+  }, [open, updatePosition, resolvedModel?.currentNode, resolvedModel?.elapsedValue, resolvedModel?.percent]);
 
   useEffect(() => {
     if (!open) return;
@@ -91,15 +97,20 @@ export function StatusHoverPopover({
     };
   }, [open, updatePosition]);
 
-  const hasPct = typeof model.percent === 'number' && Number.isFinite(model.percent);
-  const clampedPct = hasPct ? Math.max(0, Math.min(100, Math.round(model.percent!))) : 0;
+  const hasPct = typeof resolvedModel?.percent === 'number' && Number.isFinite(resolvedModel.percent);
+  const clampedPct = hasPct ? Math.max(0, Math.min(100, Math.round(resolvedModel!.percent!))) : 0;
+  const triggerAriaLabel = resolvedModel
+    ? resolvedModel.currentNode
+      ? `${resolvedModel.badgeLabel}：${resolvedModel.currentNode}`
+      : resolvedModel.badgeLabel
+    : badgeLabel;
 
   return (
     <span
       ref={triggerRef}
       className="wbx-status-hover-trigger"
       tabIndex={0}
-      aria-label={model.currentNode ? `${model.badgeLabel}：${model.currentNode}` : model.badgeLabel}
+      aria-label={triggerAriaLabel}
       aria-describedby={open ? popoverId : undefined}
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
@@ -108,13 +119,14 @@ export function StatusHoverPopover({
     >
       {children}
       {open &&
+        resolvedModel &&
         typeof document !== 'undefined' &&
         createPortal(
           <div
             ref={popoverRef}
             id={popoverId}
             role="tooltip"
-            className={`wbx-status-popover is-${model.tone} is-place-${coords?.placement || 'top'}`}
+            className={`wbx-status-popover is-${resolvedModel.tone} is-place-${coords?.placement || 'top'}`}
             style={{
               top: coords ? `${coords.top}px` : '-9999px',
               left: coords ? `${coords.left}px` : '-9999px',
@@ -130,12 +142,12 @@ export function StatusHoverPopover({
             <div className="wbx-status-popover__head">
               <span className="wbx-status-popover__title">
                 <span className="wbx-status-popover__dot" aria-hidden="true" />
-                <strong>{model.badgeLabel}</strong>
+                <strong>{resolvedModel.badgeLabel}</strong>
               </span>
               <span className="wbx-status-popover__elapsed tabular-nums">
                 <Clock size={11.5} aria-hidden="true" />
-                <span>{model.elapsedLabel}</span>
-                <strong>{model.elapsedValue || '—'}</strong>
+                <span>{resolvedModel.elapsedLabel}</span>
+                <strong>{resolvedModel.elapsedValue || '—'}</strong>
               </span>
             </div>
 
@@ -156,12 +168,12 @@ export function StatusHoverPopover({
                 <Activity size={11} aria-hidden="true" />
                 <span>当前处理节点</span>
               </span>
-              <p className="wbx-status-popover__node-text">{model.currentNode}</p>
+              <p className="wbx-status-popover__node-text">{resolvedModel.currentNode}</p>
             </div>
 
-            {model.metrics.length > 0 && (
+            {resolvedModel.metrics.length > 0 && (
               <dl className="wbx-status-popover__metrics">
-                {model.metrics.map(item => (
+                {resolvedModel.metrics.map(item => (
                   <div key={item.label} className="wbx-status-popover__metric">
                     <dt>{item.label}</dt>
                     <dd className={`tabular-nums${item.tone ? ` is-${item.tone}` : ''}`}>
@@ -172,8 +184,8 @@ export function StatusHoverPopover({
               </dl>
             )}
 
-            {model.footnote && (
-              <p className="wbx-status-popover__footnote">{model.footnote}</p>
+            {resolvedModel.footnote && (
+              <p className="wbx-status-popover__footnote">{resolvedModel.footnote}</p>
             )}
           </div>,
           document.body,

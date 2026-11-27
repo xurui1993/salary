@@ -65,11 +65,15 @@ export function FengshenLoginModal({
 
   const opening = useRef(false);
   const snoozeUntil = useRef(0);
+  const dismissedChallengeRef = useRef<string | null>(null);
   const initialFocusDone = useRef(false);
   const autoOpenEnabledRef = useRef(autoOpenEnabled);
   autoOpenEnabledRef.current = autoOpenEnabled;
 
   const snooze = useCallback(() => {
+    if (statusRef.current?.purpose !== 'export' && statusRef.current?.challenge_id) {
+      dismissedChallengeRef.current = statusRef.current.challenge_id;
+    }
     snoozeUntil.current = Date.now() + 30000;
     setOpen(false);
   }, []);
@@ -122,9 +126,14 @@ export function FengshenLoginModal({
       statusRef.current = next;
       setStatus(next);
       onStatus(next);
+      const isDismissedManual =
+        next.purpose !== 'export' &&
+        !!next.challenge_id &&
+        next.challenge_id === dismissedChallengeRef.current;
       if (
         autoOpenEnabledRef.current &&
         next.challenge_id &&
+        !isDismissedManual &&
         Date.now() >= snoozeUntil.current &&
         ['login_required', 'sms_sent', 'manual_required', 'sending', 'verifying'].includes(
           next.stage || '',
@@ -133,6 +142,7 @@ export function FengshenLoginModal({
         setOpen(true);
       }
       if (justSucceeded) {
+        dismissedChallengeRef.current = null;
         setOpen(false);
         setPhone('');
         setCode('');
@@ -158,6 +168,7 @@ export function FengshenLoginModal({
   useEffect(() => {
     if (!enabled) return;
     const openVerification = () => {
+      dismissedChallengeRef.current = null;
       snoozeUntil.current = 0;
       setOpen(true);
       void refresh().catch(() => {});
@@ -203,6 +214,7 @@ export function FengshenLoginModal({
 
   useEffect(() => {
     if (!requestVersion || !enabled) return;
+    dismissedChallengeRef.current = null;
     snoozeUntil.current = 0;
     setOpen(true);
     setMessage('');
@@ -382,8 +394,8 @@ export function FengshenLoginModal({
           </div>
           <button
             type="button"
-            aria-label="稍后提醒（30 秒）"
-            title="稍后提醒（30 秒）"
+            aria-label={exportVerification ? '稍后提醒（30 秒）' : '收起登录窗口'}
+            title={exportVerification ? '稍后提醒（30 秒）' : '收起登录窗口'}
             onClick={snooze}
             className="wbx-fs-modal__close"
           >

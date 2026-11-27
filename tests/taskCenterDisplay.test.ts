@@ -15,6 +15,7 @@ import {
   formatPeriodCompact,
   formatTaskContentDisplay,
   isTaskRetryable,
+  matchesTaskStatusFilter,
   platformTone,
   resolveTaskAuthSystem,
   resolveTaskPrimaryAction,
@@ -397,4 +398,26 @@ test('buildTaskProgressPopoverData exposes elapsed timing, item progress, and cu
   assert.equal(partial.currentNode, '泉州问题单拉取超时');
   assert.ok(partial.metrics.some(m => m.label === '异常子项' && m.value === '2 项失败'));
 });
+
+test('matchesTaskStatusFilter accurately filters all 5 status tabs on the client', () => {
+  assert.equal(matchesTaskStatusFilter('running', ''), true);
+  assert.equal(matchesTaskStatusFilter('cancelled', ''), true);
+
+  assert.equal(matchesTaskStatusFilter('running', 'active'), true);
+  assert.equal(matchesTaskStatusFilter('queued', 'active'), true);
+  assert.equal(matchesTaskStatusFilter('success', 'active'), false);
+
+  assert.equal(matchesTaskStatusFilter('error', 'attention'), true);
+  assert.equal(matchesTaskStatusFilter('interrupted', 'attention'), true);
+  assert.equal(matchesTaskStatusFilter('partial', 'attention'), true);
+  assert.equal(matchesTaskStatusFilter('success', 'attention'), false);
+
+  assert.equal(matchesTaskStatusFilter('success', 'success'), true);
+  assert.equal(matchesTaskStatusFilter('partial', 'success'), false);
+
+  assert.equal(matchesTaskStatusFilter('cancelled', 'stopped'), true);
+  assert.equal(matchesTaskStatusFilter('stopped', 'stopped'), true);
+  assert.equal(matchesTaskStatusFilter('error', 'stopped'), false);
+});
+
 

@@ -164,9 +164,17 @@ class PriceExports:
                 with bind_workspace(scope):
                     self.run(key)
             thread=threading.Thread(target=_export_worker,daemon=True,name='lanorange-price-export');self.workers[key]=thread;thread.start()
+        import sys
+        tc = sys.modules.get('task_center')
+        if tc is not None and hasattr(tc, '_invalidate_cache'):
+            tc._invalidate_cache()
         return self.get(scope,key)
     def update(self,key,**fields):
         with self.lock,self.db() as db:db.execute('UPDATE exports SET '+','.join(name+'=?' for name in fields)+' WHERE id=?',(*fields.values(),key))
+        import sys
+        tc = sys.modules.get('task_center')
+        if tc is not None and hasattr(tc, '_invalidate_cache'):
+            tc._invalidate_cache()
     def stopped(self,key):
         with self.db() as db:return bool(db.execute('SELECT stop FROM exports WHERE id=?',(key,)).fetchone()['stop'])
     def run(self,key):

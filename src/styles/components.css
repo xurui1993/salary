@@ -739,6 +739,8 @@
 }
 
 .wbx-table tbody tr {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 44px;
   transition: background-color var(--wbx-dur-fast) var(--wbx-ease);
 }
 

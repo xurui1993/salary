@@ -45,6 +45,7 @@ import {
   formatCompactTimestamp,
   formatPeriodCompact,
   formatTaskContentDisplay,
+  matchesTaskStatusFilter,
   platformTone,
   resolveTaskPrimaryAction,
   sortTaskDisplayRecords,
@@ -219,11 +220,24 @@ export function DownloadRecords({
   const hasLoadedRecordsRef = useRef(false);
   const pollFingerprintRef = useRef('');
   const forceFreshRef = useRef(true);
+  const knownRecordsRef = useRef<Map<string, Task>>(new Map());
+  const tabSnapshotRef = useRef<
+    Map<string, { records: Task[]; total: number; pages: number; page: number }>
+  >(new Map());
+
+  const baseFilterKey = `${workspaceId}|${recordModule || ''}|${archived ? 1 : 0}|${query}|${system}|${kind}|${from}|${to}|${pageSize}`;
+  const prevBaseFilterKeyRef = useRef(baseFilterKey);
+  if (prevBaseFilterKeyRef.current !== baseFilterKey) {
+    prevBaseFilterKeyRef.current = baseFilterKey;
+    tabSnapshotRef.current.clear();
+    knownRecordsRef.current.clear();
+  }
 
   useEffect(() => {
     const onTaskSubmitted = () => {
       forceFreshRef.current = true;
       pollFingerprintRef.current = '';
+      tabSnapshotRef.current.clear();
       setVersion(v => v + 1);
     };
     window.addEventListener('workbench:task-submitted', onTaskSubmitted);
@@ -231,8 +245,13 @@ export function DownloadRecords({
   }, []);
 
   useEffect(() => {
+    if (visible) {
+      forceFreshRef.current = true;
+    }
+  }, [visible, version, refreshVersion]);
+
+  useEffect(() => {
     if (!visible) return;
-    forceFreshRef.current = true;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = async (forceFresh = false) => {
@@ -243,6 +262,7 @@ export function DownloadRecords({
       try {
         const params = new URLSearchParams({
           page: String(page),
+          page_size: String(pageSize),
           q: query,
           status,
           system,
@@ -263,6 +283,15 @@ export function DownloadRecords({
         if (!response.ok) throw new Error(data.detail || '任务列表暂不可读');
         if (controller.signal.aborted) return;
         const incoming: Task[] = Array.isArray(data.records) ? data.records : [];
+        for (const item of incoming) {
+          knownRecordsRef.current.set(item.id, item);
+        }
+        tabSnapshotRef.current.set(`${baseFilterKey}|${status}|${data.page || page}`, {
+          records: incoming,
+          total: data.total,
+          pages: data.pages,
+          page: data.page || page,
+        });
         anyActive = incoming.some(r => ACTIVE.has(r.status)) || (data.counts?.active || 0) > 0;
         const serverHasLive =
           incoming.length > 0 || (data.counts?.all || 0) > 0 || (data.counts?.archived || 0) > 0;
@@ -270,7 +299,7 @@ export function DownloadRecords({
         const nextFingerprint = buildTaskListFingerprint(
           incoming,
           data.counts || {},
-          `${data.total}|${data.pages}|${data.page}|${serverHasLive ? 1 : 0}|${data.focused?.id || ''}|${data.focused?.status || ''}|${(data.warnings || []).join(';')}`,
+          `${status}|${pageSize}|${data.total}|${data.pages}|${data.page}|${serverHasLive ? 1 : 0}|${data.focused?.id || ''}|${data.focused?.status || ''}|${(data.warnings || []).join(';')}`,
         );
         if (shouldForceFresh || nextFingerprint !== pollFingerprintRef.current) {
           pollFingerprintRef.current = nextFingerprint;
@@ -327,14 +356,14 @@ export function DownloadRecords({
     if (!hasLoadedRecordsRef.current) {
       setLoading(true);
     }
-    void poll(true);
+    void poll(false);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       controller.abort();
       clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [visible, page, query, status, system, kind, from, to, archived, recordModule, version, refreshVersion]);
+  }, [visible, page, pageSize, query, status, system, kind, from, to, archived, recordModule, version, refreshVersion, baseFilterKey]);
 
   // 真实登录后立即切回后台实时数据并刷新一次，清除本地演示焦点
   const prevLoggedInRef = useRef(auth.anyLoggedIn);
@@ -351,8 +380,12 @@ export function DownloadRecords({
   }, [auth.anyLoggedIn]);
 
   const effectiveRecords = useMemo(
-    () => sortTaskDisplayRecords(records, sortKey),
-    [records, sortKey],
+    () =>
+      sortTaskDisplayRecords(
+        records.filter(r => matchesTaskStatusFilter(r.status, status)),
+        sortKey,
+      ),
+    [records, status, sortKey],
   );
   const effectiveTotal = total;
   const effectivePages = pages;
@@ -779,8 +812,33 @@ export function DownloadRecords({
                 aria-selected={status === key}
                 className={`wbx-tc-tab${status === key ? ' is-active' : ''}`}
                 onClick={() => {
+                  if (status === key) return;
                   setStatus(key);
                   reset();
+                  pollFingerprintRef.current = '';
+                  const tabCount = effectiveCounts[count];
+                  const cachedTab = tabSnapshotRef.current.get(`${baseFilterKey}|${key}|1`);
+                  if (tabCount === 0) {
+                    setRecords([]);
+                    setTotal(0);
+                    setPages(1);
+                  } else if (cachedTab) {
+                    setRecords(cachedTab.records);
+                    setTotal(cachedTab.total);
+                    setPages(cachedTab.pages);
+                  } else {
+                    const optimistic = Array.from(knownRecordsRef.current.values())
+                      .filter(r => matchesTaskStatusFilter(r.status, key))
+                      .sort((a, b) =>
+                        (b.created_at || '').localeCompare(a.created_at || '') || b.id.localeCompare(a.id),
+                      )
+                      .slice(0, pageSize);
+                    setRecords(optimistic);
+                    if (typeof tabCount === 'number') {
+                      setTotal(tabCount);
+                      setPages(Math.max(1, Math.ceil(tabCount / pageSize)));
+                    }
+                  }
                 }}
               >
                 <span>{label}</span>
@@ -1076,15 +1134,16 @@ export function DownloadRecords({
                 const popoverTone = (['active', 'waiting', 'success', 'error', 'muted'].includes(resolvedTone)
                   ? resolvedTone
                   : 'muted') as 'active' | 'waiting' | 'success' | 'error' | 'muted';
-                const popoverModel = buildTaskProgressPopoverData(r, {
-                  statusLabel: guidance.label,
-                  tone: popoverTone,
-                  percent: showProgressBar ? progressMeta.pct : null,
-                  elapsedText,
-                  platformName: pName,
-                  diagNote,
-                  nowMs,
-                });
+                const getPopoverModel = () =>
+                  buildTaskProgressPopoverData(r, {
+                    statusLabel: guidance.label,
+                    tone: popoverTone,
+                    percent: showProgressBar ? progressMeta.pct : null,
+                    elapsedText,
+                    platformName: pName,
+                    diagNote,
+                    nowMs,
+                  });
 
                 return (
                   <tr
@@ -1140,7 +1199,7 @@ export function DownloadRecords({
                     {/* 状态与进度：唯一保留语义色的列，悬停进度胶囊浮窗展示耗时与处理节点 */}
                     <td className="tc-col-progress">
                       <div className="tc-progress-top">
-                        <StatusHoverPopover model={popoverModel}>
+                        <StatusHoverPopover getModel={getPopoverModel} badgeLabel={guidance.label}>
                           <span
                             className={`wbx-pill ${toneClass(resolvedTone)}${showProgressBar ? ' wbx-pill--has-progress' : ''}${isPausedProgress ? ' is-paused' : ''}`}
                             aria-label={showProgressBar ? `${guidance.label} ${progressMeta.pct}%` : guidance.label}

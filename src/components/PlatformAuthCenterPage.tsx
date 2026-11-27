@@ -244,50 +244,104 @@ export function PlatformAuthCenterPage({
   }
 
   useEffect(() => {
+    if (!active) return;
+    void fetchPlatformAuthJson(
+      fetchRef.current,
+      '/api/fengshen-downloads/platform-auth/warmup',
+      {},
+      6000,
+    ).catch(() => {});
+  }, [active]);
+
+  useEffect(() => {
     let disposed = false;
     const controller = new AbortController();
-    const timers = new Map<string, any>();
+    let summaryTimer: ReturnType<typeof setTimeout> | undefined;
+    let activeTimer: ReturnType<typeof setTimeout> | undefined;
     const wrappedFetch = (url: string, init?: RequestInit) =>
       fetchRef.current(url, {
         ...init,
         signal: init?.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal,
       });
 
-    async function poll(source: string) {
+    async function pollSummary() {
+      if (document.visibilityState === 'visible') {
+        try {
+          const data = await fetchPlatformAuthJson(
+            wrappedFetch,
+            '/api/fengshen-downloads/platform-auth/summary',
+            undefined,
+            10000,
+          );
+          if (!disposed && data && typeof data.statuses === 'object' && data.statuses !== null) {
+            for (const { key } of PLATFORM_AUTH_REGISTRY) {
+              const item = data.statuses[key];
+              if (item && typeof item === 'object') {
+                updateStatus(key, { ...item, offline: false });
+              }
+            }
+          }
+        } catch {
+          if (!disposed) {
+            // Fallback to individual polling if summary fails
+            await Promise.all(
+              PLATFORM_AUTH_REGISTRY.map(async ({ key }) => {
+                try {
+                  const res = await fetchPlatformAuthJson(
+                    wrappedFetch,
+                    `/api/fengshen-downloads/platform-auth/${key}`,
+                    undefined,
+                    8000,
+                  );
+                  if (!disposed) updateStatus(key, { ...res, offline: false });
+                } catch {
+                  if (!disposed) {
+                    setStatuses(prev => {
+                      if (prev[key]?.offline === true) return prev;
+                      return { ...prev, [key]: { ...prev[key], offline: true } };
+                    });
+                  }
+                }
+              }),
+            );
+          }
+        }
+      }
+      if (!disposed) {
+        const delay = active || activeSessionKey ? 3000 : 20000;
+        summaryTimer = setTimeout(() => void pollSummary(), delay);
+      }
+    }
+
+    async function pollActiveSource(source: string) {
+      if (!source || disposed) return;
       if (document.visibilityState === 'visible') {
         try {
           const res = await fetchPlatformAuthJson(
             wrappedFetch,
             `/api/fengshen-downloads/platform-auth/${source}`,
             undefined,
-            10000,
+            8000,
           );
           if (!disposed) updateStatus(source, { ...res, offline: false });
         } catch {
-          if (!disposed) {
-            setStatuses(prev => {
-              if (prev[source]?.offline === true) return prev;
-              return { ...prev, [source]: { ...prev[source], offline: true } };
-            });
-          }
+          // ignore transient poll error during active login
         }
       }
-      if (!disposed) {
-        const delay =
-          source === activeSessionKey
-            ? 450
-            : active || activeSessionKey
-              ? 2500
-              : 20000;
-        timers.set(source, setTimeout(() => void poll(source), delay));
+      if (!disposed && activeSessionKey === source) {
+        activeTimer = setTimeout(() => void pollActiveSource(source), 450);
       }
     }
 
-    PLATFORM_AUTH_REGISTRY.forEach(({ key }) => void poll(key));
+    void pollSummary();
+    if (activeSessionKey) {
+      void pollActiveSource(activeSessionKey);
+    }
     return () => {
       disposed = true;
       controller.abort();
-      timers.forEach(clearTimeout);
+      clearTimeout(summaryTimer);
+      clearTimeout(activeTimer);
     };
   }, [active, activeSessionKey]);
 

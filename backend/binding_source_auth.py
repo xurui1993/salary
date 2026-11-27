@@ -1458,7 +1458,12 @@ class SourceAuth:
                         page = context.new_page()
                         navigate(page, entry, cancelled)
                     try:
-                        page.get_by_role('button', name='钉钉登录', exact=True).click(timeout=9000)
+                        if source == 'lanorange_mdr' and callable(getattr(page, 'locator', None)):
+                            page.locator(
+                                'button[title*="钉钉"], [aria-label*="钉钉"], button:has-text("钉钉"), a:has-text("钉钉"), [role="button"]:has-text("钉钉"), [role="tab"]:has-text("钉钉")'
+                            ).first.click(timeout=4500)
+                        else:
+                            page.get_by_role('button', name='钉钉登录', exact=True).click(timeout=5000)
                     except Exception:
                         if self._reuse_context(source, context, cancelled):
                             authenticated = True
@@ -1469,11 +1474,9 @@ class SourceAuth:
                         if not (current_host == 'dingtalk.com' or current_host.endswith('.dingtalk.com')):
                             try:
                                 if callable(getattr(page, 'locator', None)):
-                                    fallback_btn = page.locator(
-                                        'button[title*="钉钉"]:visible, button:has-text("钉钉"):visible, a:has-text("钉钉"):visible, [role="button"]:has-text("钉钉"):visible, [role="tab"]:has-text("钉钉"):visible'
-                                    ).first
-                                    if fallback_btn.is_visible():
-                                        fallback_btn.click(timeout=2500)
+                                    page.locator(
+                                        'button[title*="钉钉"], [aria-label*="钉钉"], button:has-text("钉钉"), a:has-text("钉钉"), [role="button"]:has-text("钉钉"), [role="tab"]:has-text("钉钉")'
+                                    ).first.click(timeout=3000)
                             except Exception:
                                 pass
                 elif stored is not None:

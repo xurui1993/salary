@@ -94,7 +94,7 @@ export function LanorangePriceExports({apiFetch,workspaceId,lanorangeConnected,o
   async function perform(kind:string,fn:()=>Promise<void>){if(inflight.current)return;inflight.current=true;setBusy(kind);setError('');setNotice('');try{await fn();}catch(err){if(alive.current)setError(err instanceof Error?err.message:'操作未完成');}finally{inflight.current=false;if(alive.current)setBusy('');}}
   async function start(event:React.FormEvent){event.preventDefault();await perform('start',async()=>{
     const current=attempt || {request_id:crypto.randomUUID(),query:{...query}};save(current);
-    try{const value=await request<Export>('/exports',current);save(null);setJob(value);void refresh();}
+    try{const value=await request<Export>('/exports',current);save(null);setJob(value);window.dispatchEvent(new CustomEvent('workbench:task-submitted',{detail:{id:`price-export:${value.id}`}}));void refresh();}
     catch(err){if(err instanceof PlatformAuthError && err.uncertain)throw Error('本次导出提交尚未确认，请先查找本次导出；系统不会自动重发。');save(null);throw err;}
   });}
   async function find(){await perform('find',async()=>{const result=await request<{exports:Export[]}>('/exports');const found=result.exports.find(j=>j.request_id===attempt?.request_id);if(!found)throw Error('尚未找到本次提交，可使用原标识再次发起导出；不会创建重复任务。');setHistory(result.exports);setJob(found);save(null);});}
