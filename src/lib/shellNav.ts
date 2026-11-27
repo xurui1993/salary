@@ -243,10 +243,10 @@ export const QUICK_TARGETS: QuickTargetMeta[] = [
   },
   {
     id: 'workspace:history',
-    groupId: 'history',
+    groupId: 'collection',
     label: '任务下载',
     shortLabel: '下载',
-    moduleLabel: '平台管理',
+    moduleLabel: '数据采集',
     hint: '进度追踪与打包领取',
     accent: 'slate',
     action: { type: 'workspace', view: 'history' },
@@ -298,7 +298,8 @@ export function getActiveNavGroup(state: Pick<ShellNavState, 'workspaceView' | '
   ) {
     return 'admin';
   }
-  if (state.workspaceView === 'history' || state.workspaceView === 'pickup') return 'history';
+  if (state.workspaceView === 'history') return 'collection';
+  if (state.workspaceView === 'pickup') return 'history';
   if (state.workspaceView === 'approval' || state.workspaceView === 'price-export') return 'payroll';
   if (state.taskKind === 'payroll') return 'payroll';
   if (state.taskKind === 'generate') return 'reports';
@@ -316,7 +317,8 @@ export function getCurrentQuickTargetId(state: ShellNavState): QuickTargetId {
     if (state.workspaceView === 'platform-auth') return 'workspace:platform-auth';
     return 'workspace:accounts';
   }
-  if (groupId === 'history') return state.workspaceView === 'pickup' ? 'workspace:pickup' : 'workspace:history';
+  if (state.workspaceView === 'history') return 'workspace:history';
+  if (groupId === 'history') return 'workspace:pickup';
   if (state.workspaceView === 'approval' || state.workspaceView === 'price-export') {
     return 'workspace:approval';
   }
@@ -393,6 +395,7 @@ export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
   const groupId = getActiveNavGroup(state);
 
   if (groupId === 'collection') {
+    const isHistory = state.workspaceView === 'history';
     const platforms: { id: DownloadPlatform; label: string; hint: string }[] = [
       { id: 'fengshen', label: '风神数据', hint: '配送费、违规扣款与考勤源表' },
       { id: 'lanorange', label: '蓝橙数据', hint: '人事档案、离职请假与价格表' },
@@ -401,17 +404,27 @@ export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
       { id: 'xiaoxiang', label: '小象灯塔', hint: '商配送日维度分析与订单明细' },
     ];
     const current = platforms.find(item => item.id === state.downloadPlatform) || platforms[0];
-    return {
-      groupId,
-      moduleLabel: '数据采集',
-      viewLabel: current.label,
-      siblings: platforms.map(item => ({
+    const siblings: BreadcrumbSibling[] = [
+      ...platforms.map(item => ({
         id: item.id,
         label: item.label,
         hint: item.hint,
-        active: item.id === current.id,
-        action: { type: 'platform', platform: item.id },
+        active: !isHistory && item.id === current.id,
+        action: { type: 'platform' as const, platform: item.id },
       })),
+      {
+        id: 'history',
+        label: '任务下载',
+        hint: '全部历史任务与文件下载',
+        active: isHistory,
+        action: { type: 'workspace' as const, view: 'history' as const },
+      },
+    ];
+    return {
+      groupId,
+      moduleLabel: '数据采集',
+      viewLabel: isHistory ? '任务下载' : current.label,
+      siblings,
     };
   }
 
@@ -476,13 +489,6 @@ export function getBreadcrumbModel(state: ShellNavState): BreadcrumbModel {
 
   const platformManagementSiblings: BreadcrumbSibling[] = [
     {
-      id: 'history',
-      label: '任务下载',
-      hint: '全部历史任务与文件下载',
-      active: state.workspaceView === 'history',
-      action: { type: 'workspace', view: 'history' },
-    },
-    {
       id: 'pickup',
       label: '组内共享',
       hint: '本机成品与局域网组内共享文件一键获取',
@@ -535,6 +541,7 @@ export function buildShellCommands(
 
   const commands: ShellCommandItem[] = [];
 
+  const isCollectionPlatform = isCollection && state.workspaceView === 'create';
   if (canUse('collection')) {
     commands.push(
       {
@@ -543,7 +550,7 @@ export function buildShellCommands(
         label: '风神数据',
         subtitle: '配送费、违规扣款、UB账单、风控运单与考勤源表采集',
         keywords: ['fengshen', 'fs', '风神', '闪购', '配送费', '扣款', '考勤'],
-        active: isCollection && state.downloadPlatform === 'fengshen',
+        active: isCollectionPlatform && state.downloadPlatform === 'fengshen',
         action: { type: 'platform', platform: 'fengshen' },
       },
       {
@@ -552,7 +559,7 @@ export function buildShellCommands(
         label: '蓝橙数据',
         subtitle: '骑手档案、兼职价格、离职报备与请假全量采集',
         keywords: ['lanorange', 'lc', '蓝橙', '雷神', '离职', '请假', '骑手档案'],
-        active: isCollection && state.downloadPlatform === 'lanorange',
+        active: isCollectionPlatform && state.downloadPlatform === 'lanorange',
         action: { type: 'platform', platform: 'lanorange' },
       },
       {
@@ -561,7 +568,7 @@ export function buildShellCommands(
         label: '新蓝橙数据',
         subtitle: '新蓝橙系统骑手档案、离职请假、兼全职变更、佣金代领与价格档案采集',
         keywords: ['lanorange_mdr', 'lcmdr', '新蓝橙', '蓝橙新系统', 'mdr', '离职', '请假', '骑手档案'],
-        active: isCollection && state.downloadPlatform === 'lanorange_mdr',
+        active: isCollectionPlatform && state.downloadPlatform === 'lanorange_mdr',
         action: { type: 'platform', platform: 'lanorange_mdr' },
       },
       {
@@ -570,7 +577,7 @@ export function buildShellCommands(
         label: '发薪平台（白泽商翼 + 本来人力）',
         subtitle: '商翼员工总表与本来人力灵工档案实时直采',
         keywords: ['payout', 'fx', 'baize', 'shangyi', 'benlai', '发薪', '白泽', '商翼', '本来'],
-        active: isCollection && state.downloadPlatform === 'payout',
+        active: isCollectionPlatform && state.downloadPlatform === 'payout',
         action: { type: 'platform', platform: 'payout' },
       },
     );
@@ -581,11 +588,21 @@ export function buildShellCommands(
         label: '小象灯塔',
         subtitle: '商配送日维度骑手分析、档案与订单客诉明细',
         keywords: ['xiaoxiang', 'xx', 'dengta', 'dt', '小象', '灯塔', '美团'],
-        active: isCollection && state.downloadPlatform === 'xiaoxiang',
+        active: isCollectionPlatform && state.downloadPlatform === 'xiaoxiang',
         action: { type: 'platform', platform: 'xiaoxiang' },
       });
     }
   }
+
+  commands.push({
+    id: 'nav-history',
+    group: '数据采集',
+    label: '任务下载',
+    subtitle: '查看跨平台任务执行记录并一键打包下载成果文件',
+    keywords: ['history', 'task', 'rw', 'rwxz', '任务', '任务下载', '任务管理', '任务中心', '记录', '下载', '归档'],
+    active: state.workspaceView === 'history',
+    action: { type: 'workspace', view: 'history' },
+  });
 
   if (canUse('reports')) {
     commands.push(
@@ -646,15 +663,6 @@ export function buildShellCommands(
   }
 
   commands.push(
-    {
-      id: 'nav-history',
-      group: '平台管理',
-      label: '任务下载',
-      subtitle: '查看跨平台任务执行记录并一键打包下载成果文件',
-      keywords: ['history', 'task', 'rw', 'rwxz', '任务', '任务下载', '任务管理', '任务中心', '记录', '下载', '归档'],
-      active: state.workspaceView === 'history',
-      action: { type: 'workspace', view: 'history' },
-    },
     {
       id: 'nav-pickup',
       group: '平台管理',

@@ -20,7 +20,8 @@ from parttime_source import ROOT
 
 router = APIRouter(prefix='/api/workbench/task-center')
 LOCK = threading.RLock()
-COLLECT_TTL = 3.0
+COLLECT_TTL = 1.5
+COLLECT_ACTIVE_TTL = 0.5
 _COLLECT_CACHE = {}
 _REFRESHING = set()
 ENDED = {'success', 'partial', 'error', 'cancelled', 'interrupted'}
@@ -115,25 +116,36 @@ def _decode_hid(prefix: str, stored_id: str) -> str | None:
     return stored_id[len(prefix):] if stored_id.startswith(prefix) else None
 
 
-def collect(request):
+def collect(request, force_fresh: bool = False):
     from download_routes import workspace_owner
     try:
         wid = workspace_owner(request)
     except Exception:
         wid = request.headers.get('x-workspace-id', '')
     key = (wid, request.headers.get('x-download-account', ''))
+    want_fresh = force_fresh or request.query_params.get('fresh') == '1'
     now = time.monotonic()
     with LOCK:
         hit = _COLLECT_CACHE.get(key)
-        if hit and now - hit[0] < COLLECT_TTL:
-            return copy.deepcopy(hit[1])
-        stale = copy.deepcopy(hit[1]) if hit else None
-        start = stale is not None and key not in _REFRESHING
-        if start:
-            _REFRESHING.add(key)
+        if hit and not want_fresh:
+            has_active = any(r.get('status') in ACTIVE for r in hit[1][0])
+            ttl = COLLECT_ACTIVE_TTL if has_active else COLLECT_TTL
+            if now - hit[0] < ttl:
+                return copy.deepcopy(hit[1])
+            if has_active:
+                stale = None
+                start = False
+            else:
+                stale = copy.deepcopy(hit[1])
+                start = key not in _REFRESHING
+                if start:
+                    _REFRESHING.add(key)
+        else:
+            stale = None
+            start = False
     if stale is not None and start:
         from workspace_context import spawn_in_context
-        # 页面轮询直接返回上一次结果，慢扫描在后台完成，避免列表反复等待。
+        # 仅在空闲态下使用后台静默刷新；存在进行中任务或显式 fresh=1 时同步读取最新状态。
         spawn_in_context(_refresh_quiet, key, request, name='task-center-refresh').start()
         return stale
     return _refresh_cache(key, request)
@@ -430,6 +442,7 @@ def stop_task(payload: dict, request: Request):
             raise HTTPException(404, '任务不存在或不可访问')
         if record['status'] not in ENDED:
             stop_record(record, request)
+        _invalidate_cache()
     return {'requested': True}
 
 
@@ -476,10 +489,10 @@ def directory(request, record_id=None):
         record = get_record(manager, owner, record_id)
     except Exception:
         raise HTTPException(404, '任务目录不存在或不可访问') from None
-    run_id = record_id if record_id != record['id'] and record_id in record['member_ids'] else record['action_run_id'] or record['id']
+    run_id = record_id if record_id != record['id'] and record_id in (record.get('member_ids') or ()) else record.get('action_run_id') or record['id']
     run_owner = manager.run_owner(run_id) if owner is None else owner
     published = manager.deliveries.directory(record['id'])
-    if published is not None and published.is_dir() and record['status'] not in ENDED:
+    if published is not None and published.is_dir():
         return published
     try:
         target = manager.publish_delivery(owner, record['id'])
@@ -487,8 +500,6 @@ def directory(request, record_id=None):
             return target
     except Exception:
         pass
-    if published is not None and published.is_dir():
-        return published
     try:
         run_dir = manager._run_directory(run_owner, run_id)
         if run_dir is not None and run_dir.is_dir():

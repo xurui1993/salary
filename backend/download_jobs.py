@@ -384,6 +384,10 @@ class DownloadManager:
     def _save(connection, run):
         connection.execute("UPDATE download_runs SET status = ?, state_json = ? WHERE id = ?",
                            (run["status"], json.dumps(run, ensure_ascii=False), run["id"]))
+        import sys
+        tc = sys.modules.get("task_center")
+        if tc is not None and hasattr(tc, "_invalidate_cache"):
+            tc._invalidate_cache()
 
     @staticmethod
     def _find(connection, owner, run_id):

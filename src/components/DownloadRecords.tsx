@@ -27,7 +27,6 @@ import {
   type DownloadFetch,
 } from '../lib/downloadCenterLogic';
 import type { RecordModule } from '../lib/downloadModules';
-import { WorkbenchDrawer } from './WorkbenchDrawer';
 import { StatusHoverPopover } from './StatusHoverPopover';
 import { WorkbenchDatePicker } from './WorkbenchDatePicker';
 import { WorkbenchConfirmModal, WorkbenchToast, type ToastNotice } from './WorkbenchFeedback';
@@ -169,14 +168,6 @@ export function DownloadRecords({
   const [deleteTargets, setDeleteTargets] = useState<Task[] | null>(null);
   const [deleteFiles, setDeleteFiles] = useState(true);
   const [pulsingTaskId, setPulsingTaskId] = useState('');
-  const [directory, setDirectory] = useState<{
-    path: string;
-    exists: boolean;
-    can_open: boolean;
-    record_id?: string;
-    auto_opened?: boolean;
-    fallback_root?: boolean;
-  } | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [syncMs, setSyncMs] = useState(() => Date.now());
   const auth = usePlatformAuthSnapshot();
@@ -227,13 +218,27 @@ export function DownloadRecords({
 
   const hasLoadedRecordsRef = useRef(false);
   const pollFingerprintRef = useRef('');
+  const forceFreshRef = useRef(true);
+
+  useEffect(() => {
+    const onTaskSubmitted = () => {
+      forceFreshRef.current = true;
+      pollFingerprintRef.current = '';
+      setVersion(v => v + 1);
+    };
+    window.addEventListener('workbench:task-submitted', onTaskSubmitted);
+    return () => window.removeEventListener('workbench:task-submitted', onTaskSubmitted);
+  }, []);
 
   useEffect(() => {
     if (!visible) return;
+    forceFreshRef.current = true;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const poll = async () => {
+    const poll = async (forceFresh = false) => {
       if (controller.signal.aborted || document.visibilityState !== 'visible') return;
+      const shouldForceFresh = forceFresh || forceFreshRef.current;
+      forceFreshRef.current = false;
       let anyActive = false;
       try {
         const params = new URLSearchParams({
@@ -248,6 +253,9 @@ export function DownloadRecords({
           module: recordModule || '',
           focus: focusRef.current?.id || '',
         });
+        if (shouldForceFresh) {
+          params.set('fresh', '1');
+        }
         const response = await api.current(`${API}?${params}`, {
           signal: AbortSignal.any([controller.signal, AbortSignal.timeout(45000)]),
         });
@@ -264,13 +272,16 @@ export function DownloadRecords({
           data.counts || {},
           `${data.total}|${data.pages}|${data.page}|${serverHasLive ? 1 : 0}|${data.focused?.id || ''}|${data.focused?.status || ''}|${(data.warnings || []).join(';')}`,
         );
-        if (nextFingerprint !== pollFingerprintRef.current) {
+        if (shouldForceFresh || nextFingerprint !== pollFingerprintRef.current) {
           pollFingerprintRef.current = nextFingerprint;
-          setRecords(previous =>
-            selectedRef.current.length
-              ? previous.map(r => incoming.find((next: Task) => next.id === r.id) || r)
-              : incoming,
-          );
+          setRecords(previous => {
+            if (!selectedRef.current.length) return incoming;
+            const incomingById = new Map(incoming.map((next: Task) => [next.id, next]));
+            const prevIds = new Set(previous.map(r => r.id));
+            const brandNew = incoming.filter((next: Task) => !prevIds.has(next.id));
+            const merged = previous.map(r => incomingById.get(r.id) || r);
+            return [...brandNew, ...merged];
+          });
           setSyncMs(Date.now());
           setNowMs(Date.now());
           setTotal(data.total);
@@ -300,23 +311,23 @@ export function DownloadRecords({
           hasActiveTasks: anyActive,
           isDocumentVisible: document.visibilityState === 'visible',
           isViewActive: true,
-          activeMs: 3500,
-          idleMs: 12000,
+          activeMs: 1200,
+          idleMs: 5000,
         });
         if (delay !== null) {
-          timer = setTimeout(poll, delay);
+          timer = setTimeout(() => void poll(false), delay);
         }
       }
     };
     const onVisibility = () => {
       clearTimeout(timer);
-      if (document.visibilityState === 'visible') void poll();
+      if (document.visibilityState === 'visible') void poll(true);
     };
     // Only show skeleton loading state on the very first fetch so returning to Task Center never flashes.
     if (!hasLoadedRecordsRef.current) {
       setLoading(true);
     }
-    void poll();
+    void poll(true);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       controller.abort();
@@ -554,54 +565,55 @@ export function DownloadRecords({
   const showDirectory = async (r?: Task) => {
     setError('');
     try {
-      let info: { path: string; exists: boolean; can_open: boolean } | null = null;
+      const openDirect = async (recordId?: string) => {
+        const res = await api.current(`${API}/directory/open`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(recordId ? { record_id: recordId } : {}),
+          signal: AbortSignal.timeout(15000),
+        });
+        const data = await res.json().catch(() => ({}));
+        return { ok: res.ok, status: res.status, data };
+      };
+
+      let result = await openDirect(r?.id);
       let fallbackRoot = false;
-      let targetRecordId = r?.id;
 
-      try {
-        const response = await request(
-          `${API}/directory${r ? `?record_id=${encodeURIComponent(r.id)}` : ''}`,
-        );
-        info = await response.json();
-      } catch (err) {
-        if (r) {
-          const rootResp = await request(`${API}/directory`);
-          info = await rootResp.json();
-          fallbackRoot = true;
-          targetRecordId = undefined;
-        } else {
-          throw err;
-        }
+      if (!result.ok && result.status === 404 && r?.id) {
+        result = await openDirect(undefined);
+        fallbackRoot = true;
       }
 
-      if (!info) return;
-
-      let autoOpened = false;
-      if (info.exists && info.can_open) {
-        try {
-          await request(`${API}/directory/open`, { record_id: targetRecordId });
-          autoOpened = true;
-        } catch {
-          autoOpened = false;
-        }
-      }
-
-      setDirectory({
-        ...info,
-        record_id: targetRecordId,
-        auto_opened: autoOpened,
-        fallback_root: fallbackRoot,
-      });
-
-      if (autoOpened) {
+      if (result.ok) {
         pushToast(
           fallbackRoot
-            ? '该任务尚无独立成品目录，已为您打开系统生成根目录'
-            : '已为您打开本地结果目录',
+            ? '该任务尚无独立成品目录，已直接打开系统生成根目录'
+            : '已打开本地结果目录',
         );
-      } else if (fallbackRoot) {
-        pushToast('该任务尚无独立成品目录，已为您定位至系统生成根目录', 'info');
+        return;
       }
+
+      // 非 Windows 主机或局域网访问无法直接唤起资源管理器时，静默复制目录路径并提示，不弹抽屉
+      if (result.status === 400 || result.status === 403) {
+        try {
+          const infoRes = await api.current(
+            `${API}/directory${r && !fallbackRoot ? `?record_id=${encodeURIComponent(r.id)}` : ''}`,
+            { signal: AbortSignal.timeout(10000) },
+          );
+          const info = await infoRes.json().catch(() => null);
+          if (infoRes.ok && info?.path) {
+            await copyPathText(info.path);
+            pushToast(`当前环境无法直接唤起目录，已复制路径：${info.path}`, 'info');
+            return;
+          }
+        } catch {
+          // fall through to toast below
+        }
+      }
+
+      const msg = result.data?.detail || '打开本地目录失败，请稍后重试';
+      setError(msg);
+      pushToast(msg, 'error');
     } catch (e) {
       const msg = downloadErrorMessage(e);
       setError(msg);
@@ -1479,80 +1491,6 @@ export function DownloadRecords({
           onOpenAttempt={onOpenAttempt}
           onReloadExecution={r => openDetail(r, 'history')}
         />
-
-        {directory && (
-          <WorkbenchDrawer title="生成文件目录" onClose={() => setDirectory(null)}>
-            <p className="wb-muted">这是运行本系统的电脑上的目录，浏览器下载位置由浏览器设置决定。</p>
-            {directory.auto_opened && (
-              <p
-                className="wb-notice"
-                style={{
-                  background: '#ecfdf5',
-                  borderColor: '#a7f3d0',
-                  color: '#065f46',
-                  marginTop: '10px',
-                }}
-              >
-                已唤起系统资源管理器打开该目录；若文件夹窗口被浏览器遮挡，请查看底部任务栏，或直接复制下方路径。
-              </p>
-            )}
-            {directory.fallback_root && (
-              <p className="wb-notice" style={{ marginTop: '10px' }}>
-                当前任务尚未生成独立结果子目录，已为您定位到系统生成根目录。
-              </p>
-            )}
-            <label className="tc-path">
-              {directory.record_id ? '本次任务目录' : '生成根目录'}
-              <textarea readOnly value={directory.path} onFocus={e => e.target.select()} />
-            </label>
-            {!directory.exists && <p className="wb-notice">目录尚未生成或已被移动。</p>}
-            <div className="tc-detail-actions">
-              {directory.can_open && (
-                <button
-                  type="button"
-                  className="wbx-btn wbx-btn--primary wbx-btn--sm"
-                  disabled={busy || !directory.exists}
-                  onClick={() =>
-                    void act(async () => {
-                      await request(`${API}/directory/open`, { record_id: directory.record_id });
-                      pushToast('已打开资源管理器。');
-                    })
-                  }
-                >
-                  <FolderOpen size={14} />
-                  <span>{directory.auto_opened ? '再次打开文件夹' : '打开文件夹'}</span>
-                </button>
-              )}
-              <button
-                type="button"
-                className={`wbx-btn wbx-btn--sm ${!directory.can_open ? 'wbx-btn--primary' : ''}`}
-                onClick={() =>
-                  void (async () => {
-                    try {
-                      await copyPathText(directory.path);
-                      pushToast('目录路径已复制到剪贴板。');
-                    } catch (e) {
-                      pushToast(downloadErrorMessage(e), 'error');
-                    }
-                  })()
-                }
-              >
-                复制路径
-              </button>
-            </div>
-            {!directory.can_open && (
-              <p className="wb-muted">
-                当前运行环境不支持直接唤起本地资源管理器窗口，请复制上方路径或在列表中直接下载文件。
-              </p>
-            )}
-            <details>
-              <summary>新任务目录结构</summary>
-              <pre className="tc-tree">
-                {'任务名称_生成时间_编号 /\n  汇总报表.xlsx\n  城市_报表.xlsx\n  文件清单.csv\n\n成品直接平铺；原始资料单独保留，需要时领取复核资料包。'}
-              </pre>
-            </details>
-          </WorkbenchDrawer>
-        )}
 
         {confirm && (
           <WorkbenchConfirmModal

@@ -869,27 +869,15 @@ class SourceAuth:
                         desktop['submitted'] = {'account': retry_state['account']}
                     else:
                         self.retry_forms.pop(source, None)
-            if source=='lanorange_mdr' and desktop.get('qr_state') not in ('visible', 'expired'):
-                attempted = self.mode_attempts.setdefault(source, set())
-                choice = next((c for c in desktop.get('controls', [])
-                               if c.get('enabled', True) and '钉钉' in str(c.get('label', ''))
-                               and (page.url, c.get('label')) not in attempted), None)
-                if choice is not None:
-                    attempted.add((page.url, choice.get('label')))
-                    bindings[choice['id']].click(timeout=2500)
-                    desktop,bindings=inspect_login_page(source,page,desktop)
-                    desktop.pop('_challenge',None);desktop.pop('_qr_element',None)
-            if source=='lanorange':
+            if source in ('lanorange', 'lanorange_mdr'):
                 preferred=self.login_mode(source)
-                # 小象灯塔的官方 SSO 入口默认就是美团App扫码页，保持扫码视图；
-                # 需要手机号登录时由用户在窗口中自行切换，系统不代点。
                 need_mode=desktop.get('qr_state') not in ('visible','expired')
                 if need_mode:
                     modes=[c for c in desktop.get('controls',[]) if c.get('kind')=='mode' and c.get('enabled',True)]
                     attempted=self.mode_attempts.setdefault(source,set())
                     # 每轮登录最多自动切换 4 次：官方页面在扫码/账号视图间跳转时，
                     # 无上限的切换会变成窗口反复刷新，用户无法手动操作。
-                    labels=() if len(attempted)>=4 else ('扫码登录','二维码登录')
+                    labels=() if len(attempted)>=4 else ('钉钉登录','钉钉扫码登录','钉钉扫码','扫码登录','二维码登录','Scan QR code','QR Code')
                     choice=next((c for label in labels for c in modes if c['label']==label and (page.url,c['label']) not in attempted),None)
                     key=(page.url,choice['label']) if choice else None
                     if choice:
@@ -897,6 +885,10 @@ class SourceAuth:
                         desktop,bindings=inspect_login_page(source,page,desktop)
                         challenge=desktop.pop('_challenge',None)
                         qr_element=desktop.pop('_qr_element',None)
+            if source in ('baize', 'benlai') and not desktop.get('fields') and desktop.get('form_detection') == 'not_detected':
+                started_at = getattr(self, 'login_started_at', {}).get(source, 0)
+                if started_at and time.monotonic() - started_at < 12.0:
+                    desktop['form_detection'] = 'loading'
             if SOURCES.get(source, {}).get('dingtalk_qr'):
                 from desktop_auth_page import trusted
                 preferred=self.login_mode(source);desktop['login_mode']=preferred
@@ -910,6 +902,13 @@ class SourceAuth:
                             candidate=page.screenshot(type='png',clip=region,timeout=1500)
                         except Exception:
                             candidate=None
+                        if (not (isinstance(candidate,bytes) and candidate.startswith(b'\x89PNG\r\n\x1a\n') and len(candidate)<=512*1024)) and qr_element is not None:
+                            try:
+                                data_url = qr_element.evaluate("e=>e.tagName==='CANVAS'?e.toDataURL('image/png'):''")
+                                if isinstance(data_url, str) and data_url.startswith('data:image/png;base64,'):
+                                    candidate = base64.b64decode(data_url.split(',', 1)[1])
+                            except Exception:
+                                candidate=None
                         if (not (isinstance(candidate,bytes) and candidate.startswith(b'\x89PNG\r\n\x1a\n') and len(candidate)<=512*1024)) and qr_element is not None:
                             try:
                                 candidate=qr_element.screenshot(type='png',timeout=1500)
@@ -1427,7 +1426,16 @@ class SourceAuth:
                     options['storage_state'] = stored
                 context = browser.new_context(**options)
                 getattr(context,'set_default_timeout',lambda _:None)(2000)
+                if source == 'benlai' and callable(getattr(context, 'route', None)):
+                    # 本来人力登录页的 Vanta/Three.js 3D 动效背景在无头浏览器会占满 CPU 导致表单扫描卡顿，安全跳过装饰脚本。
+                    try:
+                        context.route(re.compile(r'(?:vanta|three)(?:\.min)?\.js', re.I), lambda route: route.abort())
+                    except Exception:
+                        pass
                 page = context.new_page()
+                if not hasattr(self, 'login_started_at'):
+                    self.login_started_at = {}
+                self.login_started_at[source] = time.monotonic()
                 navigate(page, entry, cancelled)
                 if SOURCES[source].get('dingtalk_qr'):
                     # 有效的已保存会话会被登录页直接放行到首页，页面上没有「钉钉登录」按钮，
@@ -1450,7 +1458,7 @@ class SourceAuth:
                         page = context.new_page()
                         navigate(page, entry, cancelled)
                     try:
-                        page.get_by_role('button', name='钉钉登录', exact=True).click(timeout=3500)
+                        page.get_by_role('button', name='钉钉登录', exact=True).click(timeout=9000)
                     except Exception:
                         if self._reuse_context(source, context, cancelled):
                             authenticated = True
@@ -1459,16 +1467,15 @@ class SourceAuth:
                             return
                         current_host = (urlparse(page.url).hostname or '').lower()
                         if not (current_host == 'dingtalk.com' or current_host.endswith('.dingtalk.com')):
-                            clicked_fallback = False
                             try:
-                                fallback_btn = page.locator('button:visible, a:visible, [role=button]:visible, [role=tab]:visible').filter(has_text='钉钉').first
-                                if fallback_btn.is_visible():
-                                    fallback_btn.click(timeout=2000)
-                                    clicked_fallback = True
+                                if callable(getattr(page, 'locator', None)):
+                                    fallback_btn = page.locator(
+                                        'button[title*="钉钉"]:visible, button:has-text("钉钉"):visible, a:has-text("钉钉"):visible, [role="button"]:has-text("钉钉"):visible, [role="tab"]:has-text("钉钉"):visible'
+                                    ).first
+                                    if fallback_btn.is_visible():
+                                        fallback_btn.click(timeout=2500)
                             except Exception:
-                                clicked_fallback = False
-                            if not clicked_fallback and source == 'lanorange':
-                                raise BillCollectionError('蓝橙登录页未出现「钉钉登录」入口，页面可能已改版') from None
+                                pass
                 elif stored is not None:
                     # 失效令牌留在会话里会让下面的循环立刻校验失败并关闭窗口，用户来不及登录；
                     # 先确认旧会话，失效则丢弃并用干净的上下文重新打开登录页。
@@ -1481,7 +1488,13 @@ class SourceAuth:
                     context.close()
                     context = browser.new_context(viewport=viewport,locale='zh-CN',timezone_id='Asia/Shanghai')
                     getattr(context,'set_default_timeout',lambda _:None)(2000)
+                    if source == 'benlai' and callable(getattr(context, 'route', None)):
+                        try:
+                            context.route(re.compile(r'(?:vanta|three)(?:\.min)?\.js', re.I), lambda route: route.abort())
+                        except Exception:
+                            pass
                     page = context.new_page()
+                    self.login_started_at[source] = time.monotonic()
                     navigate(page, entry, cancelled)
                 with self.lock:
                     self.states.setdefault(source, {}).update(**phase_fields('waiting_user'))

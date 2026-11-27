@@ -112,6 +112,36 @@ test('isPlatformStatusRecordEqual and arePlatformStatusMapsEqual prevent redunda
     arePlatformStatusMapsEqual({ lanorange: s1, baize: s1 }, { lanorange: s3, baize: s2 }),
     false,
   );
+
+  const waitingLoading = {
+    state: 'waiting_login',
+    saved: false,
+    offline: false,
+    busy: true,
+    session_id: 'sid-1',
+    message: '请扫码',
+    has_qr: false,
+    qr_state: 'not_detected',
+    form_detection: 'loading',
+    fields: [],
+  };
+  const waitingQrReady = {
+    ...waitingLoading,
+    has_qr: true,
+    qr_state: 'visible',
+    qr_version: 'abc123',
+    form_detection: 'qr_only',
+  };
+  const waitingFormReady = {
+    ...waitingLoading,
+    form_detection: 'fields_detected',
+    form_id: 'f1',
+    fields: [{ id: 'u', role: 'username', label: '账号' }],
+    math_captcha: { id: 'm1', state: 'manual', image: 'data:image/png;base64,AAA' },
+  };
+  assert.equal(isPlatformStatusRecordEqual(waitingLoading, waitingQrReady), false);
+  assert.equal(isPlatformStatusRecordEqual(waitingLoading, waitingFormReady), false);
+  assert.equal(isPlatformStatusRecordEqual(waitingFormReady, { ...waitingFormReady }), true);
 });
 
 test('buildPayrollQueueFingerprint and buildApprovalBatchesFingerprint stabilize idle polling', () => {

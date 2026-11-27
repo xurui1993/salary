@@ -142,7 +142,7 @@ test('formatDisplayAdaptationBadge formats sidebar badge accurately', () => {
   );
 });
 
-test('shellNav removes 界面适配 submodule and exposes 4 renamed items under 平台管理', () => {
+test('shellNav removes 界面适配 submodule and moves 任务下载 under 数据采集', () => {
   const state: ShellNavState = {
     workspaceView: 'history',
     taskKind: 'download',
@@ -150,20 +150,28 @@ test('shellNav removes 界面适配 submodule and exposes 4 renamed items under 
     payrollSubView: 'batches',
   };
 
-  assert.equal(getActiveNavGroup(state), 'history');
+  assert.equal(getActiveNavGroup(state), 'collection');
   assert.equal(getCurrentQuickTargetId(state), 'workspace:history');
 
   const breadcrumb = getBreadcrumbModel(state);
-  assert.equal(breadcrumb.moduleLabel, '平台管理');
+  assert.equal(breadcrumb.moduleLabel, '数据采集');
   assert.equal(breadcrumb.viewLabel, '任务下载');
   assert.deepEqual(
     breadcrumb.siblings.map(s => s.label),
-    ['任务下载', '组内共享', '授权管理', '用户权限分配'],
+    ['风神数据', '蓝橙数据', '新蓝橙数据', '发薪平台', '小象灯塔', '任务下载'],
+  );
+
+  const pickupBreadcrumb = getBreadcrumbModel({ ...state, workspaceView: 'pickup' });
+  assert.equal(pickupBreadcrumb.moduleLabel, '平台管理');
+  assert.deepEqual(
+    pickupBreadcrumb.siblings.map(s => s.label),
+    ['组内共享', '授权管理', '用户权限分配'],
   );
 
   const commands = buildShellCommands(state, { isAdmin: true });
   assert.equal(commands.some(c => c.id === 'nav-display-adaptation'), false);
   assert.equal(commands.find(c => c.id === 'nav-history')?.label, '任务下载');
+  assert.equal(commands.find(c => c.id === 'nav-history')?.group, '数据采集');
   assert.equal(commands.find(c => c.id === 'nav-accounts')?.label, '用户权限分配');
   assert.equal(filterShellCommands(commands, '任务下载')[0]?.id, 'nav-history');
   assert.equal(filterShellCommands(commands, '用户权限分配')[0]?.id, 'nav-accounts');

@@ -199,8 +199,16 @@ async def create(request: Request):
     from auth_preflight import gate_datasets
     gate_datasets(config['datasets'])
     result = _call(lambda: get_manager().create(owner, config, request_id=request_id))
+    _invalidate_task_center_cache()
     audit_event(user, "download.create", result["id"])
     return {"run": _visible(result)}
+
+
+def _invalidate_task_center_cache():
+    import sys
+    tc = sys.modules.get("task_center")
+    if tc is not None and hasattr(tc, "_invalidate_cache"):
+        tc._invalidate_cache()
 
 
 @router.get("/runs/{run_id}")
@@ -214,6 +222,7 @@ async def cancel(run_id: str, request: Request):
     user, owner = _authorized(request, run_id)
     await _json(request)
     result = _call(lambda: get_manager().cancel(owner, run_id))
+    _invalidate_task_center_cache()
     audit_event(user, "download.cancel", run_id)
     return {"run": _visible(result)}
 
@@ -231,6 +240,7 @@ async def resume_detail(run_id: str, request: Request):
              if item["dataset"] == "rider_detail" and item["status"] in ("error", "cancelled", "interrupted")]
     result = _call(lambda: get_manager().retry(owner, run_id, items, "resume_" + run_id, actor_owner=user["owner"],
                                               allow_shared_result=user["role"] == "admin", existing_only=True))
+    _invalidate_task_center_cache()
     audit_event(user, "download.resume", result["id"])
     return {"run": _visible(result)}
 
@@ -247,6 +257,7 @@ async def retry(run_id: str, request: Request):
     gate_datasets(original['datasets'])
     result = _call(lambda: get_manager().retry(owner, run_id, payload["items"], request_id, actor_owner=user["owner"],
                                               allow_shared_result=user["role"] == "admin"))
+    _invalidate_task_center_cache()
     audit_event(user, "download.retry", result["id"])
     return {"run": _visible(result)}
 

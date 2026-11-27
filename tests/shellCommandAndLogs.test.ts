@@ -28,7 +28,8 @@ test('getActiveNavGroup maps workspace views and task kinds to the expected prim
   assert.equal(getActiveNavGroup({ workspaceView: 'create', taskKind: 'generate' }), 'reports');
   assert.equal(getActiveNavGroup({ workspaceView: 'create', taskKind: 'payroll' }), 'payroll');
   assert.equal(getActiveNavGroup({ workspaceView: 'approval', taskKind: 'download' }), 'payroll');
-  assert.equal(getActiveNavGroup({ workspaceView: 'history', taskKind: 'download' }), 'history');
+  assert.equal(getActiveNavGroup({ workspaceView: 'history', taskKind: 'download' }), 'collection');
+  assert.equal(getActiveNavGroup({ workspaceView: 'pickup', taskKind: 'download' }), 'history');
 });
 
 test('getBreadcrumbModel provides interactive sibling switchers for collection, reports, and payroll (including 价格审批)', () => {
@@ -40,7 +41,7 @@ test('getBreadcrumbModel provides interactive sibling switchers for collection, 
   });
   assert.equal(collection.moduleLabel, '数据采集');
   assert.equal(collection.viewLabel, '蓝橙数据');
-  assert.equal(collection.siblings.length, 5);
+  assert.equal(collection.siblings.length, 6);
   assert.equal(collection.siblings.find(s => s.active)?.id, 'lanorange');
 
   const reports = getBreadcrumbModel({
@@ -82,9 +83,9 @@ test('getBreadcrumbModel provides interactive sibling switchers for collection, 
     downloadPlatform: 'fengshen',
     payrollSubView: 'batches',
   });
-  assert.equal(history.moduleLabel, '平台管理');
+  assert.equal(history.moduleLabel, '数据采集');
   assert.equal(history.viewLabel, '任务下载');
-  assert.equal(history.siblings.length, 4);
+  assert.equal(history.siblings.length, 6);
   assert.equal(history.siblings.find(s => s.active)?.id, 'history');
 
   const pickup = getBreadcrumbModel({

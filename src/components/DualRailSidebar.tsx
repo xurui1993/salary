@@ -119,7 +119,7 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
       id: 'platform:fengshen',
       label: '风神数据',
       icon: <Compass size={15.5} />,
-      active: activeGroup === 'collection' && downloadPlatform === 'fengshen',
+      active: workspaceView === 'create' && activeGroup === 'collection' && downloadPlatform === 'fengshen',
       action: { type: 'platform', platform: 'fengshen' },
       channel: getPlatformChannelStatus('fengshen', platformStatuses),
     },
@@ -127,7 +127,7 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
       id: 'platform:lanorange',
       label: '蓝橙数据',
       icon: <Layers size={15.5} />,
-      active: activeGroup === 'collection' && downloadPlatform === 'lanorange',
+      active: workspaceView === 'create' && activeGroup === 'collection' && downloadPlatform === 'lanorange',
       action: { type: 'platform', platform: 'lanorange' },
       channel: getPlatformChannelStatus('lanorange', platformStatuses),
     },
@@ -135,7 +135,7 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
       id: 'platform:lanorange_mdr',
       label: '新蓝橙数据',
       icon: <Building2 size={15.5} />,
-      active: activeGroup === 'collection' && downloadPlatform === 'lanorange_mdr',
+      active: workspaceView === 'create' && activeGroup === 'collection' && downloadPlatform === 'lanorange_mdr',
       action: { type: 'platform', platform: 'lanorange_mdr' },
       channel: getPlatformChannelStatus('lanorange_mdr', platformStatuses),
     },
@@ -143,7 +143,7 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
       id: 'platform:payout',
       label: '发薪平台',
       icon: <UsersRound size={15.5} />,
-      active: activeGroup === 'collection' && downloadPlatform === 'payout',
+      active: workspaceView === 'create' && activeGroup === 'collection' && downloadPlatform === 'payout',
       action: { type: 'platform', platform: 'payout' },
       channel: getPlatformChannelStatus('payout', platformStatuses),
     },
@@ -151,9 +151,18 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
       id: 'platform:xiaoxiang',
       label: '小象灯塔',
       icon: <Radar size={15.5} />,
-      active: activeGroup === 'collection' && downloadPlatform === 'xiaoxiang',
+      active: workspaceView === 'create' && activeGroup === 'collection' && downloadPlatform === 'xiaoxiang',
       action: { type: 'platform', platform: 'xiaoxiang' },
       channel: getPlatformChannelStatus('xiaoxiang', platformStatuses),
+    },
+    {
+      id: 'workspace:history',
+      label: '任务下载',
+      icon: <FolderCheck size={15.5} />,
+      active: workspaceView === 'history',
+      action: { type: 'workspace', view: 'history' },
+      badgeText: totalActiveCount > 0 ? String(totalActiveCount) : taskAttentionCount > 0 ? String(taskAttentionCount) : undefined,
+      badgeTone: totalActiveCount > 0 ? 'active' : taskAttentionCount > 0 ? 'warn' : undefined,
     },
   ];
 
@@ -203,9 +212,11 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
     },
   ];
 
-  const visibleCollectionItems = canUse('collection')
-    ? collectionItems.filter(item => item.id !== 'platform:xiaoxiang' || canUse('xiaoxiang_use'))
-    : [];
+  const visibleCollectionItems = collectionItems.filter(item => {
+    if (item.id === 'workspace:history') return true;
+    if (!canUse('collection')) return false;
+    return item.id !== 'platform:xiaoxiang' || canUse('xiaoxiang_use');
+  });
   const visibleReportItems = canUse('reports') ? reportItems : [];
   const visiblePayrollItems = payrollItems.filter(item => {
     if (item.id === 'workspace:approval') return canUse('approval');
@@ -217,13 +228,6 @@ export const DualRailSidebar = React.memo(function DualRailSidebar({
   const platformWarnCount = platformCluster.filter(item => item.tone === 'warn').length;
 
   const platformManagementItems: SidebarNavItem[] = [
-    {
-      id: 'workspace:history',
-      label: '任务下载',
-      icon: <FolderCheck size={15.5} />,
-      active: workspaceView === 'history',
-      action: { type: 'workspace', view: 'history' },
-    },
     {
       id: 'workspace:pickup',
       label: '组内共享',

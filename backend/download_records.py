@@ -92,6 +92,8 @@ def group_records(runs):
             'start': root['start'], 'end': root['end'], 'created_at': root['created_at'],
             'updated_at': members[-1]['created_at'], 'status': status,
             'phase': active[-1].get('phase') if active else None,
+            'progress': active[-1].get('progress') if active else None,
+            'last_activity_at': (active[-1].get('last_activity_at') or active[-1].get('phase_since')) if active else members[-1].get('last_activity_at') or members[-1]['created_at'],
             'files': files, 'available_files': sum(file.get('available', True) for file in files),
             'total_items': len(items), 'completed_items': succeeded, 'failed_items': len(failed),
             'incomplete_items': [{key: item.get(key, '') for key in ('city', 'dataset', 'start', 'end', 'status')} for item in failed],

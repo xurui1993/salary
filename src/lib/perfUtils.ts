@@ -40,8 +40,10 @@ export interface FingerprintableTaskRecord {
   available_files?: number;
   current_action?: string;
   phase?: string;
+  progress?: number | null;
   error?: string;
   updated_at?: string | number;
+  last_activity_at?: string | number;
   finished_at?: string | number;
   files?: ReadonlyArray<{ id?: string; available?: boolean }>;
 }
@@ -60,7 +62,7 @@ export function buildTaskListFingerprint(
     const r = records[i];
     const availCount = r.available_files ?? r.files?.length ?? 0;
     parts.push(
-      `${r.id}|${r.status ?? ''}|${r.completed_items ?? 0}/${r.total_items ?? 0}|f${r.failed_items ?? 0}|a${availCount}|${r.phase ?? ''}|${r.current_action ?? ''}|${r.updated_at ?? ''}|${r.finished_at ?? ''}|${r.error ?? ''}`,
+      `${r.id}|${r.status ?? ''}|${r.completed_items ?? 0}/${r.total_items ?? 0}|f${r.failed_items ?? 0}|a${availCount}|p${r.progress ?? ''}|${r.phase ?? ''}|${r.current_action ?? ''}|${r.last_activity_at ?? r.updated_at ?? ''}|${r.finished_at ?? ''}|${r.error ?? ''}`,
     );
   }
   let countsPart = '';
@@ -109,15 +111,72 @@ export function isPlatformStatusRecordEqual(
 ): boolean {
   if (prev === next) return true;
   if (!prev || !next) return false;
-  return (
-    (prev.state ?? '') === (next.state ?? '') &&
-    Boolean(prev.saved) === Boolean(next.saved) &&
-    Boolean(prev.offline) === Boolean(next.offline) &&
-    (prev.session_version ?? '') === (next.session_version ?? '') &&
-    (prev.account_label ?? '') === (next.account_label ?? '') &&
-    (prev.message ?? '') === (next.message ?? '') &&
-    (prev.updated_at ?? '') === (next.updated_at ?? '')
-  );
+  if (
+    (prev.state ?? '') !== (next.state ?? '') ||
+    Boolean(prev.saved) !== Boolean(next.saved) ||
+    Boolean(prev.offline) !== Boolean(next.offline) ||
+    Boolean(prev.busy) !== Boolean(next.busy) ||
+    Boolean(prev.cancelling) !== Boolean(next.cancelling) ||
+    (prev.session_version ?? '') !== (next.session_version ?? '') ||
+    (prev.session_id ?? '') !== (next.session_id ?? '') ||
+    (prev.phase ?? '') !== (next.phase ?? '') ||
+    (prev.account_label ?? '') !== (next.account_label ?? '') ||
+    (prev.message ?? '') !== (next.message ?? '') ||
+    (prev.updated_at ?? '') !== (next.updated_at ?? '')
+  ) {
+    return false;
+  }
+  // Compare interactive desktop login / QR / form / captcha fields so live auth modals update immediately.
+  if (
+    Boolean(prev.has_qr) !== Boolean(next.has_qr) ||
+    (prev.qr_state ?? '') !== (next.qr_state ?? '') ||
+    (prev.qr_stage ?? '') !== (next.qr_stage ?? '') ||
+    (prev.qr_version ?? '') !== (next.qr_version ?? '') ||
+    (prev.form_id ?? '') !== (next.form_id ?? '') ||
+    (prev.form_detection ?? '') !== (next.form_detection ?? '') ||
+    Boolean(prev.transitioning) !== Boolean(next.transitioning) ||
+    Boolean(prev.retry) !== Boolean(next.retry) ||
+    Boolean(prev.credential_prompt) !== Boolean(next.credential_prompt) ||
+    Boolean(prev.input_pending) !== Boolean(next.input_pending) ||
+    (prev.input_completed ?? 0) !== (next.input_completed ?? 0) ||
+    (prev.input_error ?? '') !== (next.input_error ?? '') ||
+    (prev.sms_retry_after ?? 0) !== (next.sms_retry_after ?? 0) ||
+    Boolean(prev.has_challenge) !== Boolean(next.has_challenge) ||
+    (prev.challenge_id ?? '') !== (next.challenge_id ?? '') ||
+    (prev.challenge_version ?? '') !== (next.challenge_version ?? '') ||
+    (prev.official_feedback ?? '') !== (next.official_feedback ?? '') ||
+    (prev.official_feedback_kind ?? '') !== (next.official_feedback_kind ?? '') ||
+    (prev.official_feedback_detail ?? '') !== (next.official_feedback_detail ?? '')
+  ) {
+    return false;
+  }
+  const prevMath = prev.math_captcha;
+  const nextMath = next.math_captcha;
+  if (Boolean(prevMath) !== Boolean(nextMath)) return false;
+  if (
+    prevMath &&
+    nextMath &&
+    ((prevMath.id ?? '') !== (nextMath.id ?? '') ||
+      (prevMath.state ?? '') !== (nextMath.state ?? '') ||
+      (prevMath.answer ?? '') !== (nextMath.answer ?? '') ||
+      (prevMath.expression ?? '') !== (nextMath.expression ?? '') ||
+      (prevMath.image ?? '') !== (nextMath.image ?? ''))
+  ) {
+    return false;
+  }
+  const prevFields = Array.isArray(prev.fields) ? prev.fields : null;
+  const nextFields = Array.isArray(next.fields) ? next.fields : null;
+  if ((prevFields?.length ?? 0) !== (nextFields?.length ?? 0)) return false;
+  if (prevFields && nextFields && prevFields.length > 0) {
+    if (JSON.stringify(prevFields) !== JSON.stringify(nextFields)) return false;
+  }
+  const prevControls = Array.isArray(prev.controls) ? prev.controls : null;
+  const nextControls = Array.isArray(next.controls) ? next.controls : null;
+  if ((prevControls?.length ?? 0) !== (nextControls?.length ?? 0)) return false;
+  if (prevControls && nextControls && prevControls.length > 0) {
+    if (JSON.stringify(prevControls) !== JSON.stringify(nextControls)) return false;
+  }
+  return true;
 }
 
 /**

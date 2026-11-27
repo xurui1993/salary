@@ -678,11 +678,24 @@ export function SourceLoginPanel({
               <p className="wb-muted">
                 {source === 'xiaoxiang' && desktop.form_detection === 'not_detected'
                   ? '正在等待官方登录页面就绪；如窗口已关闭，请重新点击登录（灯塔登录已保留，无需重新发送短信）。'
-                  : desktop.form_detection === 'not_detected' ||
-                      desktop.form_detection === 'qr_only'
-                    ? '暂未识别到可用的内部登录表单；不会自动打开外部页面或发送验证码。'
-                    : '正在准备登录表单…'}
+                  : desktop.form_detection === 'loading' || !desktop.form_detection
+                    ? '正在加载官方登录表单，请稍候…'
+                    : desktop.form_detection === 'not_detected' ||
+                        desktop.form_detection === 'qr_only'
+                      ? '暂未识别到可用的内部登录表单；请稍候或点击下方重新检测。'
+                      : '正在准备登录表单…'}
               </p>
+              {desktop.form_detection === 'not_detected' && (
+                <button
+                  type="button"
+                  className="wb-button wbx-fs-code-btn is-compact"
+                  disabled={disabled}
+                  onClick={() => void send(undefined, true)}
+                >
+                  <RefreshCw size={13} className={busy || pending ? 'wbx-fs-spin' : ''} />
+                  <span>重新检测表单</span>
+                </button>
+              )}
             </div>
           ) : (
             <form

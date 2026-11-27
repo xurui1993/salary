@@ -1028,22 +1028,15 @@ function AuthenticatedWorkbench({
 
   const handleOpenAlertDirectory = async (alert: TaskStatusAlert) => {
     try {
-      const infoRes = await fetchWithAuth(
-        `/api/workbench/task-center/directory?record_id=${encodeURIComponent(alert.taskId)}`,
-        { signal: AbortSignal.timeout(15000) },
-      );
-      const info = await infoRes.json().catch(() => ({}));
-      if (infoRes.ok && info.exists && info.can_open) {
-        const openRes = await fetchWithAuth('/api/workbench/task-center/directory/open', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ record_id: alert.taskId }),
-          signal: AbortSignal.timeout(15000),
-        });
-        if (openRes.ok) {
-          showToast('已打开本地结果目录', 'success');
-          return;
-        }
+      const openRes = await fetchWithAuth('/api/workbench/task-center/directory/open', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ record_id: alert.taskId }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (openRes.ok) {
+        showToast('已打开本地结果目录', 'success');
+        return;
       }
     } catch {
       // Fallback to opening the task detail drawer in Task Center.
