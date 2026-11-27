@@ -214,5 +214,63 @@ class PlatformControlTests(unittest.TestCase):
         self.assertEqual(set(summary['statuses'].keys()), set(control.KEYS))
         self.assertTrue(summary['statuses']['baize']['saved'])
 
+    def test_activate_account_cancels_in_progress_login_session(self):
+        import platform_account_pool as pool
+        user = {'owner': 'admin', 'role': 'admin'}
+        with patch.object(control, 'probe', return_value={'account_label': '商翼账号1'}):
+            st1 = control.check('baize')
+        slot1_id = st1['active_account_id']
+        pool.prepare_add_account('baize', control.files('baize'), st1)
+        control._reset_controller_for_new_account('baize')
+
+        # Simulate an in-progress login worker / waiting_login state when user changes mind and clicks 切换使用
+        self.auth.states['baize'] = {'state': 'waiting_login'}
+        cancelled = []
+        def fake_cancel(src):
+            cancelled.append(src)
+            self.auth.states[src] = {'state': 'signed_out'}
+
+        with patch.object(control, 'idle_guard', contextlib.nullcontext), \
+             patch.object(self.auth, 'cancel', side_effect=fake_cancel):
+            switched = control._activate_account_sync('baize', slot1_id, user)
+        self.assertEqual(cancelled, ['baize'])
+        self.assertEqual(switched['active_account_id'], slot1_id)
+        self.assertTrue(switched['saved'])
+
+    def test_activate_account_cancels_fengshen_login_but_blocks_export_verification(self):
+        import platform_account_pool as pool
+        user = {'owner': 'admin', 'role': 'admin'}
+        fs_file = self.root / 'fengshen.dpapi'
+        fs_file.write_bytes(b'synthetic-fs-session')
+        fake_broker = MagicMock()
+        fake_broker.lock = threading.RLock()
+        fake_broker.vault = SimpleNamespace(path=fs_file)
+        fake_broker.status.return_value = {'state': 'ready', 'saved': True, 'busy': False}
+        fake_broker.active = None
+
+        with patch.object(control, 'BROKER', fake_broker), \
+             patch.object(control, 'files', return_value=[fs_file]), \
+             patch.object(control, 'idle_guard', contextlib.nullcontext), \
+             patch.object(control, 'probe', return_value={'account_label': '风神账号1'}):
+            st1 = control.check('fengshen')
+            slot1_id = st1['active_account_id']
+            pool.prepare_add_account('fengshen', [fs_file], st1)
+
+            # 1) Active login-purpose Fengshen session should be cancelled automatically on switch
+            fake_broker.active = {'owner': 'admin', 'id': 'chal-login', 'purpose': 'login'}
+            def cancel_submit(owner, cid, action):
+                self.assertEqual(action, 'cancel')
+                fake_broker.active = None
+            fake_broker.submit.side_effect = cancel_submit
+            switched = control._activate_account_sync('fengshen', slot1_id, user)
+            self.assertEqual(switched['active_account_id'], slot1_id)
+            fake_broker.submit.assert_called_once_with('admin', 'chal-login', 'cancel')
+
+            # 2) Active export-purpose verification must still reject switching with 409
+            fake_broker.active = {'owner': 'admin', 'id': 'chal-export', 'purpose': 'export'}
+            with self.assertRaises(HTTPException) as caught:
+                control._activate_account_sync('fengshen', slot1_id, user)
+            self.assertEqual(caught.exception.status_code, 409)
+
 
 if __name__ == '__main__': unittest.main()

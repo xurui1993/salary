@@ -504,12 +504,21 @@ export function PlatformAuthCenterPage({
     if (slot.isActive) return;
     if (!acquireLock(source, 'switch-account')) return;
     setFocusedPlatformKey(source);
+    if (activeSessionKey === source) {
+      setActiveSessionKey('');
+    }
+    setErrors(prev => {
+      if (!prev[source]) return prev;
+      const next = { ...prev };
+      delete next[source];
+      return next;
+    });
     try {
       const res = await fetchPlatformAuthJson(
         apiFetch,
         `/api/fengshen-downloads/platform-auth/${source}/accounts/${encodeURIComponent(slot.slotId)}/activate`,
         {},
-        15000,
+        20000,
       );
       updateStatus(source, { ...res, offline: false });
       window.dispatchEvent(
@@ -1355,14 +1364,28 @@ export function PlatformAuthCenterPage({
                                     <span className="text-[12px] text-[#0086C4]">
                                       等待登录新账户（已有账户已保留）
                                     </span>
-                                    <button
-                                      type="button"
-                                      disabled={Boolean(pendingAction)}
-                                      onClick={() => void handleStartLogin(entry.key, true)}
-                                      className="h-6.5 px-2.5 rounded-md bg-[#00AEEC] hover:bg-[#009CD6] text-white text-[11.5px] font-semibold cursor-pointer"
-                                    >
-                                      继续登录
-                                    </button>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      {accounts.length > 0 && (
+                                        <button
+                                          type="button"
+                                          disabled={Boolean(pendingAction)}
+                                          onClick={() =>
+                                            void handleActivateAccountSlot(entry.key, accounts[0])
+                                          }
+                                          className="h-6.5 px-2.5 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-[#61666D] text-[11.5px] font-medium cursor-pointer disabled:opacity-50"
+                                        >
+                                          取消添加
+                                        </button>
+                                      )}
+                                      <button
+                                        type="button"
+                                        disabled={Boolean(pendingAction)}
+                                        onClick={() => void handleStartLogin(entry.key, true)}
+                                        className="h-6.5 px-2.5 rounded-md bg-[#00AEEC] hover:bg-[#009CD6] text-white text-[11.5px] font-semibold cursor-pointer disabled:opacity-50"
+                                      >
+                                        继续登录
+                                      </button>
+                                    </div>
                                   </div>
                                 )}
                               </div>

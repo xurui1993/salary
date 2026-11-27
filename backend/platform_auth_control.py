@@ -415,6 +415,25 @@ def auth_busy(source):
         return bool(worker.is_alive()) if worker is not None else controller.states.get(source,{}).get('state') in ('starting','waiting_login','refreshing')
 
 
+def _cancel_login_if_busy(source: str, action_label: str, timeout: float = 10.0) -> None:
+    if not auth_busy(source):
+        return
+    if source == 'fengshen':
+        with BROKER.lock:
+            active = BROKER.active
+            if active:
+                if active.get('purpose', 'login') != 'login':
+                    raise HTTPException(409, f'业务验证正在进行，请任务结束后再{action_label}')
+                BROKER.submit(active['owner'], active['id'], 'cancel')
+    else:
+        target(source).cancel(source)
+    deadline = time.monotonic() + timeout
+    while auth_busy(source) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    if auth_busy(source):
+        raise HTTPException(409, f'登录认证仍在安全结束，请稍候再{action_label}')
+
+
 def logout(source,expected,timeout=22):
     with operation(source),idle_guard(source):
         if expected!=version(source):raise HTTPException(409,'登录状态已变化，请重新点击退出')
@@ -440,6 +459,40 @@ def _require_platform_operator(request: Request, source: str):
     return require_account(request)
 
 
+def _prepare_add_account_sync(source: str, user: dict) -> dict:
+    with operation(source), idle_guard(source):
+        _cancel_login_if_busy(source, '添加新账户')
+        current = status(source, user=user)
+        pool.prepare_add_account(source, files(source), current)
+        _reset_controller_for_new_account(source)
+        return status(source, user=user)
+
+
+def _activate_account_sync(source: str, slot_id: str, user: dict) -> dict:
+    with operation(source), idle_guard(source):
+        _cancel_login_if_busy(source, '切换账户')
+        current = status(source, user=user)
+        slot = pool.activate_slot(source, files(source), slot_id, current)
+        _apply_slot_to_controller(source, slot)
+        return status(source, user=user)
+
+
+def _remove_account_sync(source: str, slot_id: str, user: dict) -> dict:
+    with operation(source), idle_guard(source):
+        _cancel_login_if_busy(source, '移除账户')
+        current = status(source, user=user)
+        if current.get('saved'):
+            pool.sync_pool_with_status(source, files(source), current)
+        was_active, next_slot_id = pool.remove_slot(source, files(source), slot_id)
+        if was_active:
+            if next_slot_id:
+                slot = pool.activate_slot(source, files(source), next_slot_id, {'saved': False})
+                _apply_slot_to_controller(source, slot)
+            elif any(p.exists() for p in files(source)):
+                disconnect(source, version(source), guarded=True)
+        return status(source, user=user)
+
+
 @router.post('/{source}/logout')
 async def do_logout(source:str,request:Request):
     _require_platform_operator(request, source)
@@ -456,27 +509,27 @@ async def do_logout(source:str,request:Request):
 
 
 @router.post('/{source}/accounts/prepare-add')
-def do_prepare_add_account(source: str, request: Request):
+async def do_prepare_add_account(source: str, request: Request):
     user = _require_platform_operator(request, source)
-    with operation(source), idle_guard(source):
-        if auth_busy(source):
-            raise HTTPException(409, '当前有正在进行的登录认证，请先完成或取消')
-        current = status(source, user=user)
-        pool.prepare_add_account(source, files(source), current)
-        _reset_controller_for_new_account(source)
-        return status(source, user=user)
+    from starlette.concurrency import run_in_threadpool
+    from workspace_context import current_workspace, bind_workspace
+    wid = current_workspace()
+    def _run():
+        with bind_workspace(wid):
+            return _prepare_add_account_sync(source, user)
+    return await run_in_threadpool(_run)
 
 
 @router.post('/{source}/accounts/{slot_id}/activate')
-def do_activate_account(source: str, slot_id: str, request: Request):
+async def do_activate_account(source: str, slot_id: str, request: Request):
     user = _require_platform_operator(request, source)
-    with operation(source), idle_guard(source):
-        if auth_busy(source):
-            raise HTTPException(409, '当前有正在进行的登录认证，请先完成或取消后再切换账户')
-        current = status(source, user=user)
-        slot = pool.activate_slot(source, files(source), slot_id, current)
-        _apply_slot_to_controller(source, slot)
-        return status(source, user=user)
+    from starlette.concurrency import run_in_threadpool
+    from workspace_context import current_workspace, bind_workspace
+    wid = current_workspace()
+    def _run():
+        with bind_workspace(wid):
+            return _activate_account_sync(source, slot_id, user)
+    return await run_in_threadpool(_run)
 
 
 @router.post('/{source}/accounts/{slot_id}/alias')
@@ -493,22 +546,15 @@ async def do_update_account_alias(source: str, slot_id: str, request: Request):
 
 
 @router.post('/{source}/accounts/{slot_id}/remove')
-def do_remove_account(source: str, slot_id: str, request: Request):
+async def do_remove_account(source: str, slot_id: str, request: Request):
     user = _require_platform_operator(request, source)
-    with operation(source), idle_guard(source):
-        if auth_busy(source):
-            raise HTTPException(409, '当前有正在进行的登录认证，请先完成或取消后再移除账户')
-        current = status(source, user=user)
-        if current.get('saved'):
-            pool.sync_pool_with_status(source, files(source), current)
-        was_active, next_slot_id = pool.remove_slot(source, files(source), slot_id)
-        if was_active:
-            if next_slot_id:
-                slot = pool.activate_slot(source, files(source), next_slot_id, {'saved': False})
-                _apply_slot_to_controller(source, slot)
-            elif any(p.exists() for p in files(source)):
-                disconnect(source, version(source), guarded=True)
-        return status(source, user=user)
+    from starlette.concurrency import run_in_threadpool
+    from workspace_context import current_workspace, bind_workspace
+    wid = current_workspace()
+    def _run():
+        with bind_workspace(wid):
+            return _remove_account_sync(source, slot_id, user)
+    return await run_in_threadpool(_run)
 
 
 @router.get('/baize/accounts')

@@ -71,12 +71,20 @@ export function FengshenLoginModal({
   autoOpenEnabledRef.current = autoOpenEnabled;
 
   const snooze = useCallback(() => {
-    if (statusRef.current?.purpose !== 'export' && statusRef.current?.challenge_id) {
-      dismissedChallengeRef.current = statusRef.current.challenge_id;
+    const activeStatus = statusRef.current;
+    if (activeStatus?.purpose !== 'export' && activeStatus?.challenge_id) {
+      dismissedChallengeRef.current = activeStatus.challenge_id;
+      void requestFengshenAuth(
+        workspaceId,
+        'cancel',
+        { challenge_id: activeStatus.challenge_id },
+        fetch,
+        !!downloadAccountId,
+      ).catch(() => {});
     }
     snoozeUntil.current = Date.now() + 30000;
     setOpen(false);
-  }, []);
+  }, [workspaceId, downloadAccountId]);
 
   const httpMode =
     status?.transport === 'http' || (!!downloadAccountId && status?.transport !== 'browser');

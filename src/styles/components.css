@@ -5487,11 +5487,11 @@
   min-height: 46px;
   padding: 0 14px;
   border-radius: 14px;
-  border: 1px solid rgba(15, 23, 42, 0.085);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(246, 250, 255, 0.86) 100%);
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: #ffffff;
+  overflow: hidden;
   box-shadow:
-    inset 0 1px 2px rgba(15, 23, 42, 0.025),
+    inset 0 1px 2px rgba(15, 23, 42, 0.02),
     0 1px 0 rgba(255, 255, 255, 0.94);
   transition:
     border-color 200ms cubic-bezier(0.22, 1, 0.36, 1),
@@ -5501,12 +5501,12 @@
 }
 
 .wbx-fs-input-wrap:hover:not(.is-disabled) {
-  border-color: rgba(0, 174, 236, 0.36);
-  background: rgba(255, 255, 255, 0.98);
+  border-color: rgba(0, 174, 236, 0.42);
+  background: #ffffff;
 }
 
 .wbx-fs-input-wrap:focus-within {
-  border-color: rgba(0, 174, 236, 0.66);
+  border-color: rgba(0, 174, 236, 0.72);
   background: #ffffff;
   box-shadow:
     0 0 0 3.5px rgba(0, 174, 236, 0.14),
@@ -5515,13 +5515,13 @@
 }
 
 .wbx-fs-input-wrap.is-complete:not(:focus-within) {
-  border-color: rgba(0, 174, 236, 0.28);
-  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(15, 23, 42, 0.15);
+  background: #ffffff;
 }
 
 .wbx-fs-input-wrap.is-disabled {
   opacity: 0.62;
-  background: rgba(241, 245, 249, 0.72);
+  background: #f1f5f9;
 }
 
 .wbx-fs-input__icon {
@@ -5531,8 +5531,11 @@
   transition: color 180ms ease, transform 180ms ease;
 }
 
-.wbx-fs-input-wrap:focus-within .wbx-fs-input__icon,
 .wbx-fs-input-wrap.is-complete .wbx-fs-input__icon {
+  color: #61666d;
+}
+
+.wbx-fs-input-wrap:focus-within .wbx-fs-input__icon {
   color: #00aeec;
   transform: scale(1.04);
 }
@@ -5551,6 +5554,23 @@
   font-variant-numeric: tabular-nums;
   outline: none;
   box-shadow: none;
+}
+
+.wb-fengshen-input.wbx-fs-input:-webkit-autofill,
+.wb-fengshen-input.wbx-fs-input:-webkit-autofill:hover,
+.wb-fengshen-input.wbx-fs-input:-webkit-autofill:focus,
+.wb-fengshen-input.wbx-fs-input:-webkit-autofill:active,
+.wb-fengshen-input.wbx-fs-input:autofill,
+.wb-fengshen-input.wbx-fs-input:autofill:hover,
+.wb-fengshen-input.wbx-fs-input:autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+  box-shadow: 0 0 0 1000px #ffffff inset !important;
+  -webkit-text-fill-color: #18191c !important;
+  color: #18191c !important;
+  caret-color: #18191c;
+  background-color: #ffffff !important;
+  background-image: none !important;
+  transition: background-color 99999s ease-in-out 0s;
 }
 
 .wb-fengshen-input.wbx-fs-input::placeholder {
@@ -5841,6 +5861,25 @@
   font-weight: 500;
   box-shadow: none;
   outline: none;
+}
+
+.wbx-unified-auth-modal .wbx-fs-input-wrap input.wbx-fs-input:-webkit-autofill,
+.wbx-unified-auth-modal .wbx-fs-input-wrap input.wbx-fs-input:-webkit-autofill:hover,
+.wbx-unified-auth-modal .wbx-fs-input-wrap input.wbx-fs-input:-webkit-autofill:focus,
+.wbx-unified-auth-modal .wbx-fs-input-wrap input.wbx-fs-input:-webkit-autofill:active,
+.wbx-unified-auth-modal .wbx-fs-input-wrap input.wbx-fs-input:autofill,
+.wbx-unified-auth-modal .wbx-fs-input-wrap input.wbx-fs-input:autofill:hover,
+.wbx-unified-auth-modal .wbx-fs-input-wrap input.wbx-fs-input:autofill:focus,
+.wbx-fs-input-wrap input:-webkit-autofill,
+.wbx-fs-input-wrap input:autofill {
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+  box-shadow: 0 0 0 1000px #ffffff inset !important;
+  -webkit-text-fill-color: #18191c !important;
+  color: #18191c !important;
+  caret-color: #18191c;
+  background-color: #ffffff !important;
+  background-image: none !important;
+  transition: background-color 99999s ease-in-out 0s;
 }
 
 .wbx-unified-auth-modal .wbx-fs-input-wrap input.wbx-fs-input::placeholder {
