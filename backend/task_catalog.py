@@ -7,7 +7,7 @@ REPORTS = (
      'description':'按城市和月份整理骑手支付绑定信息。',
      '_source_labels':['风神骑手数据明细','风神骑手绑定','风神骑手信息','蓝橙代领资料','商翼员工资料','本来人力灵工资料']},
     {'id':'abnormal_followup', 'label':'异常骑手跟进', 'scope':'city_month',
-     'systems':['风神','蓝橙','商翼'], 'station_rule':'separation',
+     'systems':['风神','蓝橙','商翼','本来人力'], 'station_rule':'separation',
      'description':'以支付绑定为基准生成异常骑手跟进表。', '_source_group':'FOLLOWUP_DEPENDENCIES'},
     {'id':'abnormal_riders', 'label':'异常骑手整理', 'scope':'all',
      'systems':['蓝橙'], 'station_rule':'none',

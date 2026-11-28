@@ -171,8 +171,8 @@ def validate_request(payload, today=None):
         raise ValidationError("历史数据刷新选项必须为布尔值")
     if "order_export_concurrency" in payload and (
             type(payload["order_export_concurrency"]) is not int
-            or payload["order_export_concurrency"] not in (1, 2)):
-        raise ValidationError("运单导出并发数只能为 1 或 2")
+            or payload["order_export_concurrency"] not in (1, 2, 3)):
+        raise ValidationError("运单导出并发数只能为 1、2 或 3")
     if "waybill_all_city_send" in payload and type(payload["waybill_all_city_send"]) is not bool:
         raise ValidationError("运单全城送筛选选项必须为布尔值")
     if "xiaoxiang_all_dates" in payload and type(payload["xiaoxiang_all_dates"]) is not bool:
@@ -974,9 +974,12 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
             # 新选项仅在勾选排除时过滤；不勾选保留全量。历史任务沿用原方向。
             if path == target:
                 raise BillCollectionError("取分离过滤不能就地覆盖原文件")
-            path, separation = separation_filter.filter_table(
-                path, description['dataset'], include, path.parent)
-            derived = path
+            filtered_path, separation = separation_filter.filter_table(
+                path, description['dataset'], include, path.parent,
+                skip_unchanged=description['dataset'] == 'rider_monthly')
+            if filtered_path != path:
+                derived = filtered_path
+                path = filtered_path
             progress_log(f"[过滤] {description['city']} {description['dataset']} 取分离站点过滤"
                          f"（{'仅保留' if include else '排除'}）："
                          f"{separation['rows_before']} → {separation['rows_after']} 行")
@@ -1297,34 +1300,115 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
     if 'abnormal_riders' in selected:
         from lanorange_approvals import current_version
         directory_session_version = current_version()
-    for description in requested:
-        if description['dataset'] not in LANORANGE_DATASETS: continue
-        def blue_download():
-            nonlocal blue_city_map
-            from lanorange_download import collect, load_cities
-            kind = description['dataset']
-            city = description['city']
-            resume = config.get('resume_lanorange_sources', {}).get(source_key(city, kind))
-            if not resume and city != ALL_CITIES and blue_city_map is None:
-                blue_city_map = load_cities(progress_log, cancelled)
-            directory = source_directory(root, city, kind)
-            context.update(raw=directory, kind=kind)
-            months = platform_months(config, kind)
-            if config.get('lanorange_full_delivery'):
-                from lanorange_full import collect_full
-                source=collect_full(kind,directory,progress_log,cancelled,resume,months=months)
-                proof=json.loads((directory/'source_receipt.json').read_text(encoding='utf-8'))
-                description['delivery_kind']=proof['delivery_kind']
-            else:
-                # 按城市直接导出：平台原表即本城市原始资料，成品仍需格式化/按月裁剪。
-                if city != ALL_CITIES:
-                    description['delivery_kind']='platform_original'
-                source = collect(kind, directory, progress_log, cancelled,
-                                 resume, months=months,
-                                 **({'city': city, 'city_id': (blue_city_map or {}).get(city)} if city != ALL_CITIES else {}))
-            blue_sources.append((description, source))
-            return [publish(source, root, description)]
-        run_step([description], blue_download)
+    early_materials_pool = None
+    early_materials_future = None
+    early_binding_sources = None
+    blue_items = [value for value in requested if value['dataset'] in LANORANGE_DATASETS]
+    early_materials_cfg = config.get('resume_binding_materials', {})
+    early_fresh_binding = any(
+        value['dataset'] == 'payment_binding'
+        and not early_materials_cfg.get(value['city'] + '|' + value['start'][:7])
+        for value in requested
+    )
+    if (blue_items and early_fresh_binding and config.get('task_kind') != 'payroll_source'
+            and runner_factory is None):
+        from concurrent.futures import ThreadPoolExecutor
+        import contextvars
+        from binding_sources_http import BindingSources
+        def _early_material_log(message, *args, **kwargs):
+            progress_log('[资料] ' + str(message), *args, **kwargs)
+        early_binding_sources = BindingSources(
+            root / '原始资料' / '支付绑定公共来源', _early_material_log, cancelled)
+        early_months = sorted({value['start'][:7] for value in requested
+                               if value['dataset'] == 'payment_binding'})
+        early_materials_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='binding-materials')
+        def _early_prefetch_materials():
+            with ThreadPoolExecutor(max_workers=3, thread_name_prefix='binding-source-prefetch') as pool:
+                employees = pool.submit(contextvars.copy_context().run, early_binding_sources.employees)
+                proxies = pool.submit(
+                    contextvars.copy_context().run,
+                    lambda: {month: early_binding_sources.proxies(month) for month in early_months},
+                )
+                benlai = pool.submit(contextvars.copy_context().run, early_binding_sources.benlai)
+                return employees.result(), proxies.result(), benlai.result()
+        early_materials_future = early_materials_pool.submit(
+            contextvars.copy_context().run, _early_prefetch_materials)
+    try:
+        if (len(blue_items) > 1 and config.get('lanorange_full_delivery')
+                and not config.get('resume_lanorange_sources')):
+            from concurrent.futures import ThreadPoolExecutor
+            import contextvars
+            from lanorange_full import collect_full
+
+            def _collect_blue_parallel(description):
+                kind = description['dataset']
+                city = description['city']
+                directory = source_directory(root, city, kind)
+                months = platform_months(config, kind)
+                buffered_logs = []
+                def item_log(message, *args, **kwargs):
+                    buffered_logs.append((message, args, kwargs))
+                try:
+                    source = collect_full(kind, directory, item_log, cancelled, None, months=months)
+                    proof = json.loads((directory / 'source_receipt.json').read_text(encoding='utf-8'))
+                    return {'source': source, 'delivery_kind': proof['delivery_kind'], 'logs': buffered_logs}
+                except BaseException as exc:
+                    return {'error': exc, 'logs': buffered_logs, 'directory': directory, 'kind': kind}
+
+            with ThreadPoolExecutor(max_workers=min(2, len(blue_items)),
+                                    thread_name_prefix='lanorange-full') as blue_pool:
+                blue_futures = {
+                    id(desc): blue_pool.submit(contextvars.copy_context().run, _collect_blue_parallel, desc)
+                    for desc in blue_items
+                }
+                for description in blue_items:
+                    def blue_publish(description=description):
+                        kind = description['dataset']
+                        city = description['city']
+                        directory = source_directory(root, city, kind)
+                        context.update(raw=directory, kind=kind)
+                        outcome = blue_futures[id(description)].result()
+                        for message, args, kwargs in outcome.get('logs', ()):
+                            progress_log(message, *args, **kwargs)
+                        if 'error' in outcome:
+                            raise outcome['error']
+                        description['delivery_kind'] = outcome['delivery_kind']
+                        source = outcome['source']
+                        blue_sources.append((description, source))
+                        return [publish(source, root, description)]
+                    run_step([description], blue_publish)
+        else:
+            for description in blue_items:
+                def blue_download(description=description):
+                    nonlocal blue_city_map
+                    from lanorange_download import collect, load_cities
+                    kind = description['dataset']
+                    city = description['city']
+                    resume = config.get('resume_lanorange_sources', {}).get(source_key(city, kind))
+                    if not resume and city != ALL_CITIES and blue_city_map is None:
+                        blue_city_map = load_cities(progress_log, cancelled)
+                    directory = source_directory(root, city, kind)
+                    context.update(raw=directory, kind=kind)
+                    months = platform_months(config, kind)
+                    if config.get('lanorange_full_delivery'):
+                        from lanorange_full import collect_full
+                        source=collect_full(kind,directory,progress_log,cancelled,resume,months=months)
+                        proof=json.loads((directory/'source_receipt.json').read_text(encoding='utf-8'))
+                        description['delivery_kind']=proof['delivery_kind']
+                    else:
+                        # 按城市直接导出：平台原表即本城市原始资料，成品仍需格式化/按月裁剪。
+                        if city != ALL_CITIES:
+                            description['delivery_kind']='platform_original'
+                        source = collect(kind, directory, progress_log, cancelled,
+                                         resume, months=months,
+                                         **({'city': city, 'city_id': (blue_city_map or {}).get(city)} if city != ALL_CITIES else {}))
+                    blue_sources.append((description, source))
+                    return [publish(source, root, description)]
+                run_step([description], blue_download)
+    except BaseException:
+        if early_materials_pool is not None:
+            early_materials_pool.shutdown(wait=True, cancel_futures=True)
+        raise
     mdr_sources = []
     mdr_city_cache = {}
     for description in requested:
@@ -1417,15 +1501,25 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
            for value in requested):
         return files
     with managed_runner() as runner:
-        binding_sources = None
+        binding_sources = early_binding_sources
         binding_jobs = []
+        followup_jobs = []
+        deferred_followup_bindings = {}
         binding_tables = {}
         binding_pool = None
-        materials_pool = None
-        materials_future = None
+        binding_cancel_path = None
+        order_jobs = []
+        order_pool = None
+        order_city_count = len({value['city'] for value in requested if value['dataset'] in ('fraud', 'problem')})
+        if order_city_count > 1 and getattr(runner, 'generation_processes', False) is True:
+            from concurrent.futures import ThreadPoolExecutor
+            order_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix='order-city-finalize')
+        materials_pool = early_materials_pool
+        materials_future = early_materials_future
         binding_count = sum(1 for value in requested if value['dataset'] == 'payment_binding')
         if binding_count > 1 and getattr(runner, 'generation_processes', False) is True:
             import multiprocessing
+            import tempfile
             from concurrent.futures import ProcessPoolExecutor
             # 生成是 CPU 密集且 GIL 限制线程扩展；每城独立进程并行，
             # 采集仍串行共用风神会话。
@@ -1434,6 +1528,9 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                                                 os.environ.get('PAYROLL_BINDING_WORKERS', '6'))))
             except (TypeError, ValueError):
                 workers = 6
+            cancel_fd, binding_cancel_path = tempfile.mkstemp(prefix='binding-cancel-', suffix='.flag')
+            os.close(cancel_fd)
+            os.unlink(binding_cancel_path)
             binding_pool = ProcessPoolExecutor(
                 max_workers=min(workers, binding_count),
                 mp_context=multiprocessing.get_context('spawn'))
@@ -1444,7 +1541,7 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
         fresh_binding = any(value['dataset'] == 'payment_binding'
                             and not materials.get(value['city'] + '|' + value['start'][:7])
                             for value in requested)
-        if fresh_binding and config.get('task_kind') != 'payroll_source':
+        if fresh_binding and config.get('task_kind') != 'payroll_source' and materials_future is None:
             from concurrent.futures import ThreadPoolExecutor
             from binding_sources_http import BindingSources
             def material_log(message, *args, **kwargs):
@@ -1485,8 +1582,9 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
             batch_details = {}
             batch_accounts = {}
             batch_infos = {}
+            failed_batch_keys = set()
             if (config.get('batch_detail', True) and fresh_binding and binding_count > 1
-                    and set(config['datasets']) == {'payment_binding'}
+                    and not (set(config['datasets']) & {'rider_detail', 'receive_account', 'rider_info'})
                     and getattr(runner, 'batch_sources', False) is True):
                 fresh = [value for value in requested if value['dataset'] == 'payment_binding'
                          and not materials.get(value['city'] + '|' + value['start'][:7])]
@@ -1503,9 +1601,16 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                     except Exception as exc:
                         message = str(_failure(exc, 'collect', 'rider_detail'))
                         log(message)
-                        update(fresh, 'error', message, phase='failed', **failure_context(exc))
+                        failed_batch_keys = {(value['city'], value['start'][:7]) for value in fresh}
+                        dependent_followups = [
+                            value for value in requested
+                            if value['dataset'] == 'abnormal_followup'
+                            and (value['city'], value['start'][:7]) in failed_batch_keys
+                        ]
+                        update(fresh + dependent_followups, 'error', message, phase='failed', **failure_context(exc))
                         checkpoint_manifest()
-                        return files
+                        if set(config['datasets']) <= {'payment_binding', 'abnormal_followup'}:
+                            return files
             def local_binding(source_paths, employees, proxies, plan, directory, logger, event, cache, exchange, benlai=None,
                               full_binding_dir=None, write_full_binding=False, binding_platforms=None):
                 from binding_download import generate_binding
@@ -1514,6 +1619,15 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                                             benlai=benlai, full_binding_dir=full_binding_dir,
                                             write_full_binding=write_full_binding,
                                             binding_platforms=binding_platforms)
+
+            def _publish_binding_info(job, file, stats):
+                info = publish(file, job['output'], job['description'])
+                city_stats = (stats or {}).get('cities', {}).get(job['description']['city'], {})
+                platform = city_stats.get('bind_platform')
+                if platform not in ('商翼', '本来人力'):
+                    platform = '商翼'
+                info['delivery_group'] = '天津商翼' if platform == '商翼' else '本来人力'
+                return [info]
 
             def finalize_binding_jobs(city=None, month=None, ready_only=False):
                 jobs = [job for job in binding_jobs if city is None or (job['description']['city'] == city and job['description']['start'][:7] == month)]
@@ -1525,6 +1639,8 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                         context.update(raw=job['directory'], kind='payment_binding')
                         # 先等待后台生成结束（此后日志不再追加），再按序回放缓冲日志。
                         set_phase('generating')
+                        if cancelled.is_set() and binding_cancel_path:
+                            Path(binding_cancel_path).touch(exist_ok=True)
                         result = job['generate']()
                         if job.get('process'):
                             file, stats, generated_logs, filter_seconds = result
@@ -1539,14 +1655,85 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                                 for message, args, kwargs in job['logs']:
                                     progress_log(message, *args, **kwargs)
                                 job['logs'].clear()
-                        info = publish(file, job['output'], job['description'])
-                        city_stats = (stats or {}).get('cities', {}).get(job['description']['city'], {})
-                        platform = city_stats.get('bind_platform')
-                        if platform not in ('商翼', '本来人力'):
-                            platform = '商翼'
-                        info['delivery_group'] = '天津商翼' if platform == '商翼' else '本来人力'
-                        return [info]
+                        return _publish_binding_info(job, file, stats)
                     run_step([job['description']], finalize)
+
+            def finalize_followup_jobs(ready_only=False):
+                jobs = [job for job in followup_jobs if not ready_only or job['future'].done()]
+                followup_jobs[:] = [job for job in followup_jobs if job not in jobs]
+                for job in jobs:
+                    if cancelled.is_set() and binding_cancel_path:
+                        Path(binding_cancel_path).touch(exist_ok=True)
+                    payload = job['future'].result()
+                    binding_part = payload.get('binding') or {}
+                    followup_part = payload.get('followup') or {}
+
+                    def finalize_b(job=job, binding_part=binding_part):
+                        context.update(raw=job['directory'], kind='payment_binding')
+                        set_phase('generating')
+                        for message, args, kwargs in binding_part.get('logs', ()):
+                            progress_log(message, *args, **kwargs)
+                        if binding_part.get('error'):
+                            raise BillCollectionError(binding_part['error'])
+                        filter_seconds = binding_part.get('filter_seconds', 0.0)
+                        if filter_seconds:
+                            from generation_performance import record
+                            record('source_row_filter', filter_seconds)
+                        return _publish_binding_info(job, Path(binding_part['file']), binding_part.get('stats'))
+                    run_step([job['description']], finalize_b)
+
+                    def finalize_f(job=job, binding_part=binding_part, followup_part=followup_part):
+                        context.update(raw=job['followup_dir'], kind='abnormal_followup')
+                        set_phase('generating')
+                        if binding_part.get('error'):
+                            raise BillCollectionError(
+                                f"异常骑手跟进缺少来源资料：{DATASETS.get('payment_binding', 'payment_binding')}")
+                        for message, args, kwargs in followup_part.get('logs', ()):
+                            progress_log(message, *args, **kwargs)
+                        if followup_part.get('error'):
+                            raise BillCollectionError(followup_part['error'])
+                        return [publish(Path(followup_part['file']), job['output'], job['followup_description'])]
+                    run_step([job['followup_description']], finalize_f)
+
+            def finalize_order_jobs(*, ready_only=False, max_pending=None):
+                while order_jobs:
+                    if ready_only and not order_jobs[0]['future'].done():
+                        break
+                    if max_pending is not None and len(order_jobs) <= max_pending and not order_jobs[0]['future'].done():
+                        break
+                    job = order_jobs.pop(0)
+                    def finalize(job=job):
+                        context.update(raw=job['raw'] / 'issue_orders', kind='issue_orders', resuming=False)
+                        set_phase('validating')
+                        result, worker_timings = job['future'].result()
+                        from generation_performance import record
+                        for metric_name, seconds in worker_timings.items():
+                            record('orders:' + metric_name, seconds)
+                        proof = result.get('问题单', {}).get('separation_filter')
+                        if proof:
+                            summary = proof['summary']
+                            progress_log(
+                                f"[过滤] {job['city']} problem 取分离站点过滤"
+                                f"（{'仅保留' if job['separation_include'] else '排除'}）："
+                                f"{summary['rows_before']} → {summary['rows_after']} 行")
+                        staged = []
+                        for kind in job['order_selected']:
+                            if kind == 'problem':
+                                paths = problem_paths(job['generated'], job['city'])
+                                for role, label, key in (('problem_summary', '问题单汇总', 'summary'),
+                                                         ('problem_detail', '问题单明细', 'detail')):
+                                    staged.append(publish(
+                                        paths[key], job['output'],
+                                        {**item(job['city'], kind), 'artifact_role': role, 'pre_formatted': True,
+                                         'filename': f"{job['city']}_{label}_{job['plan'].start}至{job['plan'].end}.xlsx"}))
+                                staged.append(publish(
+                                    paths['csv'], job['output'],
+                                    {**item(job['city'], kind), 'record_hidden': True, 'pre_formatted': True}))
+                            else:
+                                source = job['generated'] / (job['city'] + '-' + DATASETS[kind] + '_auto.csv')
+                                staged.append(publish(source, job['output'], item(job['city'], kind)))
+                        return staged
+                    run_step(job['items'], finalize)
             binding_platforms = {}
             if any(value['dataset'] in ('payment_binding', 'abnormal_followup') for value in requested):
                 binding_platforms = config.get('binding_platforms') or {}
@@ -1578,14 +1765,21 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                         return [publish(path, root, description)]
                     run_step([description], city_bill)
                 if 'payment_binding' in city_selected:
+                    finalize_followup_jobs(ready_only=True)
                     from binding_download import month_periods, generate_binding
                     from binding_sources_http import BindingSources
                     if binding_sources is None:
                         binding_sources = BindingSources(root / '原始资料' / '支付绑定公共来源', progress_log, cancelled)
                     for month, first, last in month_periods(config['start'], config['end']):
+                        if (city, month) in failed_batch_keys:
+                            continue
                         description = item(city, 'payment_binding', first, last)
                         if _item_key(description) not in requested_keys:
                             continue
+                        followup_item_present = (
+                            'abnormal_followup' in city_selected
+                            and _item_key(item(city, 'abnormal_followup', first, last)) in requested_keys
+                        )
                         def prepare():
                             directory = raw / 'payment_binding' / month
                             directory.mkdir(parents=True, exist_ok=True)
@@ -1713,9 +1907,9 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                             set_phase('validating')
                             # 与账单使用同一范围；全量模式不预先丢弃取分离骑手。
                             include = separation_filter.filter_direction(config)
-                            exchange = TableExchange(shared_cache()) if 'abnormal_followup' in city_selected else None
-                            binding_tables[(city, month)] = exchange
-                            if binding_pool is None or exchange is not None:
+                            if binding_pool is None:
+                                exchange = TableExchange(shared_cache()) if followup_item_present else None
+                                binding_tables[(city, month)] = exchange
                                 for kind in source_paths:
                                     if kind in separation_filter.COLUMNS and include is not None:
                                         filtered, proof = separation_filter.filter_table(
@@ -1728,9 +1922,10 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                                                    directory, progress_log, cancelled, shared_cache(), exchange, benlai,
                                                    full_binding_dir, write_full_binding,
                                                    binding_platforms=binding_platforms)
-                                logs, future, process_job = None, None, False
+                                binding_jobs.append({'description': description, 'output': output, 'directory': directory,
+                                                     'generate': generate, 'logs': None,
+                                                     'future': None, 'process': False})
                             else:
-                                from binding_generation_worker import generate_binding_process
                                 spec = {
                                     'paths': {kind: str(value) for kind, value in source_paths.items()},
                                     'labels': {kind: DATASETS.get(kind, kind) for kind in source_paths},
@@ -1744,18 +1939,28 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                                     'full_binding_dir': str(full_binding_dir),
                                     'write_full_binding': write_full_binding,
                                     'binding_platforms': binding_platforms,
+                                    'task_cache_key': str(root),
+                                    'cancel_file': binding_cancel_path,
                                 }
-                                future = binding_pool.submit(generate_binding_process, spec)
-                                def generate(future=future):
-                                    result = future.result()
-                                    if result.get('error'):
-                                        raise BillCollectionError(result['error'])
-                                    return (Path(result['file']), result['stats'], result['logs'],
-                                            result.get('filter_seconds', 0.0))
-                                logs, process_job = None, True
-                            binding_jobs.append({'description': description, 'output': output, 'directory': directory,
-                                                 'generate': generate, 'logs': logs,
-                                                 'future': future, 'process': process_job})
+                                if followup_item_present:
+                                    deferred_followup_bindings[(city, month)] = {
+                                        'description': description,
+                                        'output': output,
+                                        'directory': directory,
+                                        'spec': spec,
+                                    }
+                                else:
+                                    from binding_generation_worker import generate_binding_process
+                                    future = binding_pool.submit(generate_binding_process, spec)
+                                    def generate(future=future):
+                                        result = future.result()
+                                        if result.get('error'):
+                                            raise BillCollectionError(result['error'])
+                                        return (Path(result['file']), result['stats'], result['logs'],
+                                                result.get('filter_seconds', 0.0))
+                                    binding_jobs.append({'description': description, 'output': output, 'directory': directory,
+                                                         'generate': generate, 'logs': None,
+                                                         'future': future, 'process': True})
                         run_prepare([description], prepare)
                         # 生成任务全部提交后再统一发布；此前逐城发布会在父进程串行阻塞提交。
                 daily_selected = [key for key in ("delivery_fee", "penalty") if key in city_selected]
@@ -1801,19 +2006,19 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                         run_step([item(city, "rider_monthly", request.start, request.end)], monthly)
                 order_selected = [key for key in ("fraud", "problem") if key in city_selected]
                 if order_selected:
-                    def orders():
-                        source_dir = resume_order_sources.get(city)
-                        context.update(raw=raw / "issue_orders", kind="issue_orders", resuming=source_dir is not None)
-                        pipeline, prepared = None, None
-                        if source_dir is not None:
-                            source_dir = Path(source_dir).resolve()
-                            if source_dir.is_relative_to(root) or not source_dir.is_dir():
-                                raise BillCollectionError("原运单恢复目录无效")
-                            progress_log("[恢复] 复用原运单与报告文件，不重新提交导出")
-                            from fengshen_http_reports import order_recovery_batches
-                            batches = order_recovery_batches(plan, source_dir)
-                            downloads = runner.resume_orders(plan, raw / "issue_orders", set(order_selected), source_dir)
-                        elif hasattr(runner, "orders_batch"):
+                    finalize_order_jobs(ready_only=True)
+                    finalize_order_jobs(max_pending=1)
+                    order_items = [item(city, key) for key in order_selected]
+                    if (order_pool is not None and resume_order_sources.get(city) is None
+                            and hasattr(runner, "orders_batch")):
+                        def prepare_orders(city=city, raw=raw, output=output, plan=plan,
+                                           order_selected=order_selected, order_items=order_items):
+                            context.update(raw=raw / "issue_orders", kind="issue_orders", resuming=False)
+                            from issue_rules import IssueRuleError, config_for as issue_rule_config
+                            try:
+                                issue_rules_for_city = {city: issue_rule_config(city)}
+                            except IssueRuleError as error:
+                                raise BillCollectionError(f"问题单判定规则无法读取：{error}") from None
                             from order_pipeline import OrderPipeline
                             owner_key = hashlib.sha256(config["owner"].encode()).hexdigest()[:24]
                             cache_path = Path(__file__).parent / ".local_downloads" / "order_cache" / owner_key / "sources.sqlite3"
@@ -1822,56 +2027,94 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                                              "order_progress": value})
                             pipeline = OrderPipeline(raw, plan, set(order_selected), cache_path, cancelled, progress,
                                                      refresh=config.get("refresh_history", False))
-                            downloads, prepared, batches = pipeline.collect(runner)
-                        else:
-                            downloads = runner.orders(plan, raw / "issue_orders", set(order_selected))
-                            batches = [(manifest["start"], manifest["end"]) for manifest in downloads]
-                        set_phase("validating")
-                        generated = raw / "order_processed"
-                        generated.mkdir(exist_ok=pipeline is not None)
-                        from order_metrics import measurements
-                        timings = pipeline.metrics.setdefault("timings", {}) if pipeline is not None else {}
-                        separation_include = separation_filter.filter_direction(config)
-                        from issue_rules import IssueRuleError, config_for as issue_rule_config
-                        try:
-                            issue_rules_for_city = {city: issue_rule_config(city)}
-                        except IssueRuleError as error:
-                            raise BillCollectionError(f"问题单判定规则无法读取：{error}") from None
-                        with measurements(timings):
-                            result = prepare_order_files(
-                                downloads, raw, generated, plan, batches,
-                                selected_kinds={DATASETS[k] for k in order_selected},
-                                separation_include=separation_include,
-                                issue_rules=issue_rules_for_city,
-                                **({"prepared_slices": prepared} if prepared is not None else {}))
-                        if pipeline is not None:
-                            pipeline.complete()
-                        proof = result.get("问题单", {}).get("separation_filter")
-                        if proof:
-                            summary = proof["summary"]
-                            progress_log(
-                                f"[过滤] {city} problem 取分离站点过滤"
-                                f"（{'仅保留' if separation_include else '排除'}）："
-                                f"{summary['rows_before']} → {summary['rows_after']} 行")
-                        staged = []
-                        for kind in order_selected:
-                            if kind == "problem":
-                                paths = problem_paths(generated, city)
-                                for role, label, key in (("problem_summary", "问题单汇总", "summary"),
-                                                         ("problem_detail", "问题单明细", "detail")):
-                                    staged.append(publish(
-                                        paths[key], output,
-                                        {**item(city, kind), "artifact_role": role, "pre_formatted": True,
-                                         "filename": f"{city}_{label}_{plan.start}至{plan.end}.xlsx"}))
-                                # Payroll reads the original eight-column CSV; it is not a user deliverable.
-                                staged.append(publish(
-                                    paths["csv"], output,
-                                    {**item(city, kind), "record_hidden": True, "pre_formatted": True}))
+                            pipeline.collect_platform(runner)
+                            generated = raw / "order_processed"
+                            generated.mkdir(exist_ok=True)
+                            separation_include = separation_filter.filter_direction(config)
+                            selected_kinds = {DATASETS[k] for k in order_selected}
+                            fut = order_pool.submit(
+                                pipeline.finish_and_generate,
+                                generated, selected_kinds, separation_include, issue_rules_for_city,
+                            )
+                            order_jobs.append({
+                                "city": city, "raw": raw, "output": output, "generated": generated,
+                                "plan": plan, "order_selected": list(order_selected),
+                                "items": order_items, "separation_include": separation_include,
+                                "pipeline": pipeline, "future": fut,
+                            })
+                        run_prepare(order_items, prepare_orders)
+                    else:
+                        def orders():
+                            source_dir = resume_order_sources.get(city)
+                            context.update(raw=raw / "issue_orders", kind="issue_orders", resuming=source_dir is not None)
+                            pipeline, prepared = None, None
+                            if source_dir is not None:
+                                source_dir = Path(source_dir).resolve()
+                                if source_dir.is_relative_to(root) or not source_dir.is_dir():
+                                    raise BillCollectionError("原运单恢复目录无效")
+                                progress_log("[恢复] 复用原运单与报告文件，不重新提交导出")
+                                from fengshen_http_reports import order_recovery_batches
+                                batches = order_recovery_batches(plan, source_dir)
+                                downloads = runner.resume_orders(plan, raw / "issue_orders", set(order_selected), source_dir)
+                            elif hasattr(runner, "orders_batch"):
+                                from order_pipeline import OrderPipeline
+                                owner_key = hashlib.sha256(config["owner"].encode()).hexdigest()[:24]
+                                cache_path = Path(__file__).parent / ".local_downloads" / "order_cache" / owner_key / "sources.sqlite3"
+                                def progress(value):
+                                    update_item({"status": "running", "phase": current_phase, "_run_event": True,
+                                                 "order_progress": value})
+                                pipeline = OrderPipeline(raw, plan, set(order_selected), cache_path, cancelled, progress,
+                                                         refresh=config.get("refresh_history", False))
+                                downloads, prepared, batches = pipeline.collect(runner)
                             else:
-                                source = generated / (city + "-" + DATASETS[kind] + "_auto.csv")
-                                staged.append(publish(source, output, item(city, kind)))
-                        return staged
-                    run_step([item(city, key) for key in order_selected], orders)
+                                downloads = runner.orders(plan, raw / "issue_orders", set(order_selected))
+                                batches = [(manifest["start"], manifest["end"]) for manifest in downloads]
+                            set_phase("validating")
+                            generated = raw / "order_processed"
+                            generated.mkdir(exist_ok=pipeline is not None)
+                            from order_metrics import measurements
+                            timings = pipeline.metrics.setdefault("timings", {}) if pipeline is not None else {}
+                            separation_include = separation_filter.filter_direction(config)
+                            from issue_rules import IssueRuleError, config_for as issue_rule_config
+                            try:
+                                issue_rules_for_city = {city: issue_rule_config(city)}
+                            except IssueRuleError as error:
+                                raise BillCollectionError(f"问题单判定规则无法读取：{error}") from None
+                            with measurements(timings):
+                                result = prepare_order_files(
+                                    downloads, raw, generated, plan, batches,
+                                    selected_kinds={DATASETS[k] for k in order_selected},
+                                    separation_include=separation_include,
+                                    issue_rules=issue_rules_for_city,
+                                    **({"prepared_slices": prepared} if prepared is not None else {}))
+                            if pipeline is not None:
+                                pipeline.complete()
+                            proof = result.get("问题单", {}).get("separation_filter")
+                            if proof:
+                                summary = proof["summary"]
+                                progress_log(
+                                    f"[过滤] {city} problem 取分离站点过滤"
+                                    f"（{'仅保留' if separation_include else '排除'}）："
+                                    f"{summary['rows_before']} → {summary['rows_after']} 行")
+                            staged = []
+                            for kind in order_selected:
+                                if kind == "problem":
+                                    paths = problem_paths(generated, city)
+                                    for role, label, key in (("problem_summary", "问题单汇总", "summary"),
+                                                             ("problem_detail", "问题单明细", "detail")):
+                                        staged.append(publish(
+                                            paths[key], output,
+                                            {**item(city, kind), "artifact_role": role, "pre_formatted": True,
+                                             "filename": f"{city}_{label}_{plan.start}至{plan.end}.xlsx"}))
+                                    # Payroll reads the original eight-column CSV; it is not a user deliverable.
+                                    staged.append(publish(
+                                        paths["csv"], output,
+                                        {**item(city, kind), "record_hidden": True, "pre_formatted": True}))
+                                else:
+                                    source = generated / (city + "-" + DATASETS[kind] + "_auto.csv")
+                                    staged.append(publish(source, output, item(city, kind)))
+                            return staged
+                        run_step(order_items, orders)
                 if "delivery_waybill" in city_selected:
                     def waybill():
                         from waybill_workbook import merge_waybill_workbooks, write_waybill_workbook
@@ -1984,49 +2227,110 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                                         item(city, "rider_detail"))]
                     run_step([item(city, "rider_detail")], rider_detail)
                 if "abnormal_followup" in city_selected:
-                    # 跟进表要读本任务的支付绑定成品，必须先把后台生成发布完。
+                    # 跟进表要读本任务的支付绑定成品；多城进程池开启时合并为同子进程流水线并行执行。
                     from binding_download import month_periods as _followup_month_periods
                     from abnormal_followup import generate_abnormal_followup
+
+                    def _find_published_source(dataset, city_name=city, month_key=None):
+                        for entry in files:
+                            if entry.get('dataset') != dataset:
+                                continue
+                            if entry.get('city') not in (city_name, ALL_CITIES):
+                                continue
+                            if dataset in ("payment_binding", "rider_monthly") \
+                                    and entry.get('start', '')[:7] != month_key:
+                                continue
+                            source = (root / entry['relative_path']).resolve()
+                            if source.is_file():
+                                return source
+                        raise BillCollectionError(
+                            f"异常骑手跟进缺少来源资料：{DATASETS.get(dataset, dataset)}")
+
                     for month, first, last in _followup_month_periods(config['start'], config['end']):
-                        finalize_binding_jobs(city, month)
-                        if _item_key(item(city, "abnormal_followup", first, last)) not in requested_keys:
+                        if (city, month) in failed_batch_keys:
                             continue
-                        def abnormal():
-                            def find(dataset):
-                                for entry in files:
-                                    if entry.get('dataset') != dataset:
-                                        continue
-                                    if entry.get('city') not in (city, ALL_CITIES):
-                                        continue
-                                    if dataset in ("payment_binding", "rider_monthly") \
-                                            and entry.get('start', '')[:7] != month:
-                                        continue
-                                    source = (root / entry['relative_path']).resolve()
-                                    if source.is_file():
-                                        return source
-                                raise BillCollectionError(
-                                    f"异常骑手跟进缺少来源资料：{DATASETS.get(dataset, dataset)}")
-                            binding_file = find("payment_binding")
-                            ub_file = find("rider_monthly")
-                            goods_file = find("goods_rent")
-                            price_file = find("lanorange_part_price")
-                            archive_file = find("lanorange_rider_archive")
-                            generated_dir = raw / "abnormal_followup"
-                            generated_dir.mkdir(parents=True, exist_ok=True)
-                            context.update(raw=generated_dir, kind="abnormal_followup")
-                            set_phase("generating")
-                            exchange = binding_tables.pop((city, month), None)
+                        followup_desc = item(city, "abnormal_followup", first, last)
+                        if _item_key(followup_desc) not in requested_keys:
+                            continue
+                        if binding_pool is not None:
+                            deferred = deferred_followup_bindings.pop((city, month), None)
+                            if deferred is None:
+                                def missing_binding(followup_desc=followup_desc):
+                                    raise BillCollectionError(
+                                        f"异常骑手跟进缺少来源资料：{DATASETS.get('payment_binding', 'payment_binding')}")
+                                run_step([followup_desc], missing_binding)
+                                continue
                             try:
-                                with generation_context(shared_cache(), exchange):
-                                    generated = generate_abnormal_followup(
-                                        binding_file, ub_file, price_file, archive_file, goods_file,
-                                        city, month, generated_dir, log=progress_log, cancelled=cancelled,
-                                        stamp=config.get('archive_created_at'))
-                            finally:
-                                if exchange is not None:
-                                    exchange.clear()
-                            return [publish(generated, output, item(city, "abnormal_followup", first, last))]
-                        run_step([item(city, "abnormal_followup", first, last)], abnormal)
+                                ub_file = _find_published_source("rider_monthly", city, month)
+                                goods_file = _find_published_source("goods_rent", city, month)
+                                price_file = _find_published_source("lanorange_part_price", city, month)
+                                archive_file = _find_published_source("lanorange_rider_archive", city, month)
+                            except Exception as missing_exc:
+                                from binding_generation_worker import generate_binding_process
+                                b_fut = binding_pool.submit(generate_binding_process, deferred['spec'])
+                                def b_gen(b_fut=b_fut):
+                                    res = b_fut.result()
+                                    if res.get('error'):
+                                        raise BillCollectionError(res['error'])
+                                    return (Path(res['file']), res['stats'], res['logs'],
+                                            res.get('filter_seconds', 0.0))
+                                binding_jobs.append({
+                                    'description': deferred['description'],
+                                    'output': deferred['output'],
+                                    'directory': deferred['directory'],
+                                    'generate': b_gen,
+                                    'logs': None,
+                                    'future': b_fut,
+                                    'process': True,
+                                })
+                                finalize_binding_jobs(city, month)
+                                def fail_missing(missing_exc=missing_exc):
+                                    raise missing_exc
+                                run_step([followup_desc], fail_missing)
+                                continue
+                            from binding_generation_worker import generate_binding_and_followup_process
+                            generated_dir = raw / "abnormal_followup"
+                            combined_spec = {
+                                **deferred['spec'],
+                                'ub_file': str(ub_file),
+                                'price_file': str(price_file),
+                                'archive_file': str(archive_file),
+                                'goods_file': str(goods_file),
+                                'followup_dir': str(generated_dir),
+                                'stamp': config.get('archive_created_at'),
+                            }
+                            fut = binding_pool.submit(generate_binding_and_followup_process, combined_spec)
+                            followup_jobs.append({
+                                **deferred,
+                                'followup_description': followup_desc,
+                                'followup_dir': generated_dir,
+                                'future': fut,
+                            })
+                            finalize_followup_jobs(ready_only=True)
+                        else:
+                            finalize_binding_jobs(city, month)
+                            def abnormal(month=month, first=first, last=last, followup_desc=followup_desc):
+                                binding_file = _find_published_source("payment_binding", city, month)
+                                ub_file = _find_published_source("rider_monthly", city, month)
+                                goods_file = _find_published_source("goods_rent", city, month)
+                                price_file = _find_published_source("lanorange_part_price", city, month)
+                                archive_file = _find_published_source("lanorange_rider_archive", city, month)
+                                generated_dir = raw / "abnormal_followup"
+                                generated_dir.mkdir(parents=True, exist_ok=True)
+                                context.update(raw=generated_dir, kind="abnormal_followup")
+                                set_phase("generating")
+                                exchange = binding_tables.pop((city, month), None)
+                                try:
+                                    with generation_context(shared_cache(), exchange):
+                                        generated = generate_abnormal_followup(
+                                            binding_file, ub_file, price_file, archive_file, goods_file,
+                                            city, month, generated_dir, log=progress_log, cancelled=cancelled,
+                                            stamp=config.get('archive_created_at'))
+                                finally:
+                                    if exchange is not None:
+                                        exchange.clear()
+                                return [publish(generated, output, followup_desc)]
+                            run_step([followup_desc], abnormal)
             detail_cities = {value["city"] for value in requested if value["dataset"] == "rider_detail"}
             detail_files = {entry.get("city"): entry for entry in files if entry.get("dataset") == "rider_detail"}
             detail_items = [value for value in requested if value["dataset"] == "rider_detail"]
@@ -2070,14 +2374,38 @@ def execute_downloads(config, run_dir, log, cancelled, update_item, runner_facto
                     finally:
                         tmp.unlink(missing_ok=True)
                 merge_waybills()
+            for deferred in list(deferred_followup_bindings.values()):
+                from binding_generation_worker import generate_binding_process
+                b_fut = binding_pool.submit(generate_binding_process, deferred['spec'])
+                def _b_gen(b_fut=b_fut):
+                    res = b_fut.result()
+                    if res.get('error'):
+                        raise BillCollectionError(res['error'])
+                    return (Path(res['file']), res['stats'], res['logs'], res.get('filter_seconds', 0.0))
+                binding_jobs.append({
+                    'description': deferred['description'], 'output': deferred['output'],
+                    'directory': deferred['directory'], 'generate': _b_gen,
+                    'logs': None, 'future': b_fut, 'process': True,
+                })
+            deferred_followup_bindings.clear()
+            finalize_order_jobs()
             finalize_binding_jobs()
+            finalize_followup_jobs()
         finally:
+            if cancelled.is_set() and binding_cancel_path:
+                Path(binding_cancel_path).touch(exist_ok=True)
+            if order_pool is not None:
+                order_pool.shutdown(wait=True, cancel_futures=True)
+            for job in order_jobs:
+                job['pipeline'].close()
             if source_pool is not None:
                 source_pool.shutdown(wait=True, cancel_futures=True)
             if materials_pool is not None:
                 materials_pool.shutdown(wait=True, cancel_futures=True)
             if binding_pool is not None:
                 binding_pool.shutdown(wait=True, cancel_futures=True)
+            if binding_cancel_path:
+                Path(binding_cancel_path).unlink(missing_ok=True)
             for exchange in binding_tables.values():
                 if exchange is not None:
                     exchange.clear()

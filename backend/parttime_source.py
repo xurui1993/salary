@@ -347,33 +347,71 @@ def convert_text_numbers(cell, header):
 
 def format_rider_monthly_workbook(source, target):
     """按确认的成品规格重排平台原始导出：删前置说明行，统一表头/数据样式与列宽。"""
-    workbook = load_workbook(source)
+    from openpyxl import Workbook
+    from openpyxl.cell import WriteOnlyCell
+    from excel_styles import prepared_write_only_rows, style_applier
+    from workbook_policy import compression
+
+    src_book = None
+    out_book = None
     try:
-        sheet, header_row = _locate_ub_sheet(workbook)
-        if header_row > 1:
-            sheet.delete_rows(1, header_row - 1)
-        for name in [candidate.title for candidate in workbook if candidate is not sheet]:
-            del workbook[name]
-        for cell in sheet[1]:
-            if isinstance(cell.value, str):
-                cell.value = cell.value.strip()
-            if cell.value is not None:
-                cell.font, cell.fill, cell.alignment = UB_FONT, UB_HEADER_FILL, UB_ALIGNMENT
-        headers = {cell.column: label(cell.value) for cell in sheet[1]}
-        for row in sheet.iter_rows(min_row=2):
-            for cell in row:
-                if cell.value is not None:
-                    cell.font, cell.alignment = UB_FONT, UB_ALIGNMENT
-                    convert_text_numbers(cell, headers.get(cell.column, ""))
+        src_book = load_workbook(source, read_only=True, data_only=False)
+        out_book = Workbook(write_only=True)
+        src_sheet, header_row = _locate_ub_sheet(src_book)
+        out_sheet = out_book.create_sheet(src_sheet.title)
+        prepared_write_only_rows(out_sheet)
+        rows = src_sheet.iter_rows(min_row=header_row)
+        raw_header = list(next(rows, ()))
+        while raw_header and raw_header[-1].value is None:
+            raw_header.pop()
+        max_col = len(raw_header)
         for letter, width in UB_FORMATTED_WIDTHS.items():
-            if column_index_from_string(letter) <= sheet.max_column:
-                sheet.column_dimensions[letter].width = width
-        sheet.sheet_format.defaultRowHeight = UB_ROW_HEIGHT
-        sheet.freeze_panes = "A2"
+            if column_index_from_string(letter) <= max_col:
+                out_sheet.column_dimensions[letter].width = width
+        out_sheet.sheet_format.defaultRowHeight = UB_ROW_HEIGHT
+        out_sheet.freeze_panes = "A2"
+
+        header_style = style_applier(out_sheet, font=UB_FONT, alignment=UB_ALIGNMENT)
+        data_style = style_applier(out_sheet, font=UB_FONT, alignment=UB_ALIGNMENT)
+        headers = {}
+        header_cells = []
+        for col_idx, src_cell in enumerate(raw_header, 1):
+            val = src_cell.value.strip() if isinstance(src_cell.value, str) else src_cell.value
+            cell = WriteOnlyCell(out_sheet, value=val)
+            if val is not None:
+                if not isinstance(val, str) and getattr(src_cell, "data_type", None):
+                    cell.data_type = src_cell.data_type
+                if getattr(src_cell, "number_format", None):
+                    cell.number_format = src_cell.number_format
+                header_style(cell)
+                cell.fill = UB_HEADER_FILL
+            headers[col_idx] = label(val)
+            header_cells.append(cell)
+        out_sheet.append(header_cells)
+
+        for src_row in rows:
+            out_row = []
+            for col_idx, src_cell in enumerate(src_row[:max_col], 1):
+                val = src_cell.value
+                cell = WriteOnlyCell(out_sheet, value=val)
+                if val is not None:
+                    if getattr(src_cell, "data_type", None):
+                        cell.data_type = src_cell.data_type
+                    if getattr(src_cell, "number_format", None):
+                        cell.number_format = src_cell.number_format
+                    data_style(cell)
+                    convert_text_numbers(cell, headers.get(col_idx, ""))
+                out_row.append(cell)
+            out_sheet.append(out_row)
+
         Path(target).parent.mkdir(parents=True, exist_ok=True)
-        workbook.save(target)
+        with compression(3):
+            out_book.save(target)
     finally:
-        workbook.close()
+        if src_book is not None:
+            src_book.close()
+        if out_book is not None:
+            out_book.close()
     return Path(target)
 
 

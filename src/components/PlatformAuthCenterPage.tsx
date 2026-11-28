@@ -247,7 +247,9 @@ export function PlatformAuthCenterPage({
 
   useEffect(() => {
     const preflightHandler = (event: any) => {
-      const items = (event.detail || []).filter((item: any) => item && item.source);
+      const allItems = (event.detail || []).filter((item: any) => item && item.source);
+      const unready = allItems.filter((item: any) => item.ready === false);
+      const items = unready.length > 0 ? unready : allItems;
       setPreflightItems(items);
       setScopeFilter('all');
       setStateFilter('all');

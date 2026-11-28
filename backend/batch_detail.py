@@ -403,6 +403,8 @@ def collect_batch_detail(client, collector, plans, root, log, cancelled, account
             scope_times[plan.city] = (selected - started, time.perf_counter() - selected,
                                       getattr(client, 'rate_limited_count', 0) - retries_before)
             scopes[plan.city] = (plan, teams, agencies)
+            if hasattr(collector, '_batch_teams_cache'):
+                collector._batch_teams_cache[plan.agency_id] = (dict(teams), dict(agencies))
         # 骑手信息优先导出：需要短信确认时，任务开始几秒内就提示，而不是让用户干等账户查询。
         infos = _collect_rider_info(client, collector, plans, scopes, root, log)
         info_written = list(infos.values())

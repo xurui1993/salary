@@ -147,6 +147,7 @@ class RiderHttpCollector:
         self.wait_seconds, self.poll_seconds = wait_seconds, poll_seconds
         self.clock, self.sleep = clock, sleep
         self.scope_recheck_delay = 3.0
+        self._batch_teams_cache = {}
 
     def _checkpoint(self):
         if self.cancelled is not None and self.cancelled.is_set():
@@ -305,7 +306,11 @@ class RiderHttpCollector:
         （单子表「租用记录」，全历史行，不受分页参数限制）。
         """
         self._checkpoint()
-        teams, _ = self._teams(plan)
+        cached_scope = self._batch_teams_cache.get(plan.agency_id)
+        if cached_scope is not None:
+            teams = dict(cached_scope[0])
+        else:
+            teams, _ = self._teams(plan)
         from separation_filter import filter_direction
         include = filter_direction(vars(plan))
         selected = {tid: name for tid, name in teams.items() if include is None or kept(name, include)}

@@ -199,7 +199,7 @@ class FengshenHttpClient:
             raise HttpTransportError("接口或请求方式尚未核实，已停止调用")
         if url == QUERY_URL:
             if self._last_order_query is not None:
-                self.cancelled.wait(max(0, 2.0 - (time.monotonic() - self._last_order_query)))
+                self.cancelled.wait(max(0, 1.25 - (time.monotonic() - self._last_order_query)))
                 self.checkpoint()
             self._last_order_query = time.monotonic()
         headers = self._headers(url)
@@ -333,6 +333,16 @@ class FengshenHttpClient:
     def download(self, url, target, *, authenticated=False):
         """Stream to a temporary file; no redirects can disclose auth headers."""
         return self._download("GET", url, target, authenticated=authenticated)
+
+    def download_isolated(self, url, target, *, cancelled=None):
+        """Thread-safe unauthenticated signed-URL download using a dedicated Session."""
+        with requests.Session() as isolated:
+            helper = FengshenHttpClient(session=requests.Session(), files_session=isolated,
+                                        cancelled=self.cancelled if cancelled is None else cancelled)
+            try:
+                return helper._download("GET", url, target, authenticated=False)
+            finally:
+                helper.session.close()
 
     def daily_file_url(self, task_id, agency_id):
         """Resolve an existing daily task's signed file URL; no export POST."""

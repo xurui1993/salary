@@ -151,7 +151,9 @@ export function SystemConnections({
 
   useEffect(() => {
     const preflightHandler = (event: any) => {
-      setPreflightItems((event.detail || []).filter((item: any) => item && item.source));
+      const allItems = (event.detail || []).filter((item: any) => item && item.source);
+      const unready = allItems.filter((item: any) => item.ready === false);
+      setPreflightItems(unready.length > 0 ? unready : allItems);
       setDrawerOpen(true);
     };
     window.addEventListener(PREFLIGHT_EVENT, preflightHandler);

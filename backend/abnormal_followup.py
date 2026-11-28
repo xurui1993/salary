@@ -413,6 +413,7 @@ def _fill_activity(main_ws, binding_book):
     if missing:
         raise BillCollectionError('主表缺少字段：' + '、'.join(missing))
     matched = 0
+    apply_data = style_applier(main_ws, font=_DATA_FONT, alignment=_CENTER)
     for row_index in range(4, main_ws.max_row + 1):
         team = main_ws.cell(row=row_index, column=header['团队名称']).value
         rider = _rider_key(main_ws.cell(row=row_index, column=header['骑手ID']).value)
@@ -424,13 +425,11 @@ def _fill_activity(main_ws, binding_book):
             orders = int(orders)
         for key, value in (('days', int(days)), ('orders', orders)):
             cell = main_ws.cell(row=row_index, column=columns[key], value=value)
-            cell.font = _DATA_FONT
-            cell.alignment = _CENTER
+            apply_data(cell)
         cell = main_ws.cell(row=row_index, column=columns['last'])
         cell.value = datetime.combine(last, datetime.min.time()) if last is not None else None
         cell.number_format = 'yyyy-mm-dd'
-        cell.font = _DATA_FONT
-        cell.alignment = _CENTER
+        apply_data(cell)
     return matched, len(summary), invalid_dates
 
 
@@ -593,6 +592,7 @@ def _fill_main(main_ws, binding_book, month, city):
     identity = _rider_lookup(_source_sheet(binding_book, '骑手信息表'), '身份证')
     bindings = _binding_statuses(_source_sheet(binding_book, month_label + '骑手绑定情况'))
     # 5) 逐行写主表
+    apply_data = style_applier(main_ws, font=_DATA_FONT, alignment=_CENTER)
     row_idx = 4
     for team, rider, name in members:
         card = identity.get(rider)
@@ -604,8 +604,7 @@ def _fill_main(main_ws, binding_book, month, city):
             cell = main_ws.cell(row=row_idx, column=main_header[field], value=value)
             if field == '骑手ID' and type(value) is int:
                 cell.number_format = '0'
-            cell.font = _DATA_FONT
-            cell.alignment = _CENTER
+            apply_data(cell)
         row_idx += 1
     _center_header_rows(main_ws, 3)
     _center_columns(main_ws)
@@ -688,10 +687,12 @@ def _prune_ub_sheet(book):
     title = ws.title
     book.remove(ws)
     dst_ws = book.create_sheet(title, index)
+    header_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    apply_header = style_applier(dst_ws, font=_HEADER_FONT, alignment=header_align)
+    apply_data = style_applier(dst_ws, font=_DATA_FONT, alignment=_CENTER)
     for column, value in enumerate(titles, 1):
         cell = dst_ws.cell(row=1, column=column, value=value)
-        cell.font = _HEADER_FONT
-        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        apply_header(cell)
         cell.fill = _HEADER_FILL
     for row_index, values in enumerate(rows, 2):
         for column, (value, data_type, number_format) in enumerate(values, 1):
@@ -701,8 +702,7 @@ def _prune_ub_sheet(book):
                 cell.data_type = data_type
                 if number_format:
                     cell.number_format = number_format
-            cell.font = _DATA_FONT
-            cell.alignment = _CENTER
+            apply_data(cell)
     for column, value in enumerate(titles, 1):
         longest = _ub_cell_width(value)
         for values in rows:
@@ -711,6 +711,84 @@ def _prune_ub_sheet(book):
                 longest = max(longest, _ub_cell_width(text))
         dst_ws.column_dimensions[get_column_letter(column)].width = min(
             max(longest + 2, 10), 60)
+    dst_ws.row_dimensions[1].height = 30
+    dst_ws.freeze_panes = f'A{UB_HEADER_ROWS + 1}'
+    _center_columns(dst_ws, len(UB_KEEP_HEADERS))
+
+
+@measured('read_ub')
+def _load_ub_sheet(book, src_path, preamble, log=None, cancelled=None):
+    """流式读取风神 UB 账单并仅投影 18 个业务列，避免 64 列全量 DOM 加载与删行搬移。"""
+    from itertools import islice
+
+    if log is not None:
+        log('[异常骑手跟进] 复制子表「风神薪资方案绑定」…')
+    ws = _find_sheet(book, '风神薪资方案绑定')
+    if ws is None:
+        raise BillCollectionError('生成结构缺少子表：风神薪资方案绑定')
+    src_book = load_workbook(src_path, read_only=True, data_only=False)
+    try:
+        src_ws = _source_sheet(src_book, None)
+        row_iter = src_ws.iter_rows()
+        if preamble > 0:
+            for _ in islice(row_iter, preamble):
+                pass
+        header_cells = tuple(next(row_iter, ()))
+        header = {}
+        for idx, cell in enumerate(header_cells):
+            key = _header_key(cell.value if cell is not None else None)
+            if key and key not in header:
+                header[key] = idx
+        missing = [name for name in UB_KEEP_HEADERS if _header_key(name) not in header]
+        if missing:
+            raise BillCollectionError('风神薪资方案绑定缺少字段：' + '、'.join(missing))
+        source_indices = [header[_header_key(name)] for name in UB_KEEP_HEADERS]
+        titles = [header_cells[idx].value if idx < len(header_cells) and header_cells[idx] is not None else None
+                  for idx in source_indices]
+        rows = []
+        raw_count = preamble + (1 if header_cells else 0)
+        for src_row in row_iter:
+            _checkpoint(cancelled)
+            raw_count += 1
+            row_len = len(src_row)
+            selected = [src_row[idx] if idx < row_len else None for idx in source_indices]
+            if all(cell is None or cell.value is None for cell in selected):
+                continue
+            rows.append([(cell.value, cell.data_type, cell.number_format) if cell is not None else (None, None, None)
+                         for cell in selected])
+    finally:
+        src_book.close()
+
+    if log is not None:
+        log(f'[异常骑手跟进] 子表「风神薪资方案绑定」已复制（{raw_count} 行）')
+
+    index = book.worksheets.index(ws)
+    title = ws.title
+    book.remove(ws)
+    dst_ws = book.create_sheet(title, index)
+    header_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    apply_header = style_applier(dst_ws, font=_HEADER_FONT, alignment=header_align)
+    apply_data = style_applier(dst_ws, font=_DATA_FONT, alignment=_CENTER)
+    longest_widths = [_ub_cell_width(value) for value in titles]
+    for column, value in enumerate(titles, 1):
+        cell = dst_ws.cell(row=1, column=column, value=value)
+        apply_header(cell)
+        cell.fill = _HEADER_FILL
+    for row_index, values in enumerate(rows, 2):
+        for column, (value, data_type, number_format) in enumerate(values, 1):
+            cell = dst_ws.cell(row=row_index, column=column)
+            if value is not None:
+                cell.value = value
+                if data_type is not None:
+                    cell.data_type = data_type
+                if number_format:
+                    cell.number_format = number_format
+                width = _ub_cell_width(value)
+                if width > longest_widths[column - 1]:
+                    longest_widths[column - 1] = width
+            apply_data(cell)
+    for column, longest in enumerate(longest_widths, 1):
+        dst_ws.column_dimensions[get_column_letter(column)].width = min(max(longest + 2, 10), 60)
     dst_ws.row_dimensions[1].height = 30
     dst_ws.freeze_panes = f'A{UB_HEADER_ROWS + 1}'
     _center_columns(dst_ws, len(UB_KEEP_HEADERS))
@@ -748,6 +826,7 @@ def _fill_archive_fields(main_ws, lookup):
     if missing:
         raise BillCollectionError('主表缺少字段：' + '、'.join(missing))
     identity_column = header['骑手身份证']
+    apply_data = style_applier(main_ws, font=_DATA_FONT, alignment=_CENTER)
     matched = unmatched = 0
     for row_index in range(4, main_ws.max_row + 1):
         identity = main_ws.cell(row=row_index, column=identity_column).value
@@ -764,8 +843,7 @@ def _fill_archive_fields(main_ws, lookup):
                 if day is not None:
                     cell.value = datetime.combine(day, datetime.min.time())
                 cell.number_format = 'yyyy-mm-dd'
-            cell.font = _DATA_FONT
-            cell.alignment = _CENTER
+            apply_data(cell)
     return matched, unmatched
 
 
@@ -813,6 +891,7 @@ def _fill_price_flag(main_ws, price_ws):
                if name not in header]
     if missing:
         raise BillCollectionError('主表缺少字段：' + '、'.join(missing))
+    apply_data = style_applier(main_ws, font=_DATA_FONT, alignment=_CENTER)
     parttime = yes_count = 0
     for row_index in range(4, main_ws.max_row + 1):
         identity = main_ws.cell(row=row_index, column=header['骑手身份证']).value
@@ -828,8 +907,7 @@ def _fill_price_flag(main_ws, price_ws):
         else:
             value = '否'
         cell = main_ws.cell(row=row_index, column=header[PRICE_FLAG_FIELD], value=value)
-        cell.font = _DATA_FONT
-        cell.alignment = _CENTER
+        apply_data(cell)
     return parttime, yes_count
 
 
@@ -918,6 +996,7 @@ def _fill_abnormal_flag(main_ws, detail_ws, ub_ws, *, latest_day=...):
         raise BillCollectionError('主表缺少字段：' + '、'.join(missing))
     latest = _detail_max_day(detail_ws) if latest_day is ... else latest_day
     pairs = _fengshen_bindings(ub_ws)
+    apply_data = style_applier(main_ws, font=_DATA_FONT, alignment=_CENTER)
     stats = {'abnormal': 0, 'status': 0, 'absentee': 0, 'salary': 0, 'deduction': 0,
              'matched': 0, 'unmatched': 0}
     for row_index in range(4, main_ws.max_row + 1):
@@ -946,16 +1025,14 @@ def _fill_abnormal_flag(main_ws, detail_ws, ub_ws, *, latest_day=...):
                 reasons.append(f'{kind}未绑定')
                 stats['salary' if kind == '薪资方案' else 'deduction'] += 1
             cell = main_ws.cell(row=row_index, column=columns[name], value=value)
-            cell.font = _DATA_FONT
-            cell.alignment = _CENTER
+            apply_data(cell)
         value = '是' if reasons else '否'
         if reasons:
             stats['abnormal'] += 1
         for column, text in ((columns[ABNORMAL_FLAG_FIELD], value),
                              (columns[ABNORMAL_REASON_FIELD], '；'.join(reasons))):
             cell = main_ws.cell(row=row_index, column=column, value=text)
-            cell.font = _DATA_FONT
-            cell.alignment = _CENTER
+            apply_data(cell)
     return stats
 
 
@@ -1084,11 +1161,12 @@ def _copy_rental_sheet(book, src_path, month, log=None):
         days_column = day_index + 1
         new_header = header[:period_col + 1] + ['租用天数'] + header[period_col + 1:]
         widths = [display_width(value) for value in new_header]
+        apply_header = style_applier(dst_ws, font=_HEADER_FONT, alignment=_CENTER)
+        apply_data = style_applier(dst_ws, font=_DATA_FONT, alignment=_CENTER)
         for column, value in enumerate(new_header, 1):
             cell = dst_ws.cell(row=1, column=column, value=value)
-            cell.font = _HEADER_FONT
+            apply_header(cell)
             cell.fill = _HEADER_FILL
-            cell.alignment = _CENTER
         for row_index, row in enumerate(kept, 2):
             originals = list(row)[:len(header)]
             values = [cell.value for cell in originals]
@@ -1112,8 +1190,7 @@ def _copy_rental_sheet(book, src_path, month, log=None):
                             cell.data_type = source.data_type
                             if source.number_format is not None:
                                 cell.number_format = source.number_format
-                cell.font = _DATA_FONT
-                cell.alignment = _CENTER
+                apply_data(cell)
                 width = display_width(value)
                 if width > widths[column - 1]:
                     widths[column - 1] = width
@@ -1138,6 +1215,7 @@ def _fill_rental_days(main_ws, totals):
     missing = [name for name, column in required.items() if column is None]
     if missing:
         raise BillCollectionError('主表缺少字段：' + '、'.join(missing))
+    apply_data = style_applier(main_ws, font=_DATA_FONT, alignment=_CENTER)
     riders_with_days = 0
     for row_index in range(4, main_ws.max_row + 1):
         team = main_ws.cell(row=row_index, column=required['团队名称']).value
@@ -1148,8 +1226,7 @@ def _fill_rental_days(main_ws, totals):
         for name, kind in RENTAL_DAY_FIELDS:
             cell = main_ws.cell(row=row_index, column=required[name],
                                 value=(entry or {}).get(kind, 0))
-            cell.font = _DATA_FONT
-            cell.alignment = _CENTER
+            apply_data(cell)
     return riders_with_days
 
 
@@ -1165,6 +1242,7 @@ def _fill_maintenance_notes(main_ws):
     missing = [name for name, column in columns.items() if column is None]
     if missing:
         raise BillCollectionError('主表缺少字段：' + '、'.join(missing))
+    apply_data = style_applier(main_ws, font=_DATA_FONT, alignment=_CENTER)
     noted = 0
     for row_index in range(4, main_ws.max_row + 1):
         active = _order_value(main_ws.cell(row=row_index, column=active_column).value) or 0
@@ -1179,8 +1257,7 @@ def _fill_maintenance_notes(main_ws):
         for field, value in ((NOTE_FIELD, note or None),
                              (MAINTENANCE_FOLLOWUP_FIELD, '是' if note else '否')):
             cell = main_ws.cell(row=row_index, column=columns[field], value=value)
-            cell.font = _DATA_FONT
-            cell.alignment = _CENTER
+            apply_data(cell)
     return noted
 
 
@@ -1604,10 +1681,7 @@ def generate_abnormal_followup(binding_file, ub_file, price_file, archive_file, 
         # 3) 其余子表逐个加载来源、用完即释放
         # 平台原始导出表头在第 4 行（前置 3 行说明）；重排成品表头已在第 1 行。
         preamble = rider_bill_header_row(ub_file) - 1
-        _copy_sub_sheet(book, '风神薪资方案绑定', ub_file, None, preamble + 1, log=progress)
-        if preamble:
-            _drop_ub_preamble(book, preamble)
-        _prune_ub_sheet(book)
+        _load_ub_sheet(book, ub_file, preamble, log=progress, cancelled=cancelled)
         progress('[异常骑手跟进] 子表「风神薪资方案绑定」'
                  + (f'已删除前 {preamble} 行说明，' if preamble else '按重排成品直接复制，')
                  + f'并精简为 {len(UB_KEEP_HEADERS)} 列')
@@ -1695,6 +1769,7 @@ def _sheet_suffix(title):
 def _append_rows(dst_ws, src_ws, header_rows):
     """把来源 sheet 表头之后的数据行追加到目标 sheet 末尾，并保留数字/日期格式。"""
     from itertools import islice
+    apply_data = style_applier(dst_ws, font=_DATA_FONT, alignment=_CENTER)
     target_row = dst_ws.max_row + 1
     for source_row in islice(src_ws.iter_rows(), header_rows, None):
         if not any(cell.value is not None for cell in source_row):
@@ -1705,27 +1780,46 @@ def _append_rows(dst_ws, src_ws, header_rows):
                 cell.data_type = source.data_type
                 if source.number_format is not None:
                     cell.number_format = source.number_format
-            cell.font = _DATA_FONT
-            cell.alignment = _CENTER
+            apply_data(cell)
         target_row += 1
     _center_columns(dst_ws)
 
 
 def _sort_archive_sheet(ws):
     """多城市合并后按「项目」升序重排，空项目置后。"""
-    rows = [list(row) for row in ws.iter_rows(min_row=2, values_only=True)
-            if any(value is not None for value in row)]
-    rows.sort(key=lambda row: rider_archive.project_sort_key(row[0] if row else None))
-    if ws.max_row > 1:
-        ws.delete_rows(2, ws.max_row - 1)
-    start = ws.max_row + 1
-    for values in rows:
-        ws.append(values)
-    for row in ws.iter_rows(min_row=start, max_row=ws.max_row):
-        for cell in row:
-            cell.font = _DATA_FONT
-            cell.alignment = _CENTER
-    _center_columns(ws)
+    header_values = [cell.value for cell in ws[1]] if ws.max_row >= 1 else []
+    widths = {col: dim.width for col, dim in ws.column_dimensions.items() if dim.width is not None}
+    rows = [
+        [(cell.value, cell.data_type, cell.number_format) if cell is not None else (None, None, None)
+         for cell in row]
+        for row in ws.iter_rows(min_row=2)
+        if any(cell is not None and cell.value is not None for cell in row)
+    ]
+    rows.sort(key=lambda row: rider_archive.project_sort_key(row[0][0] if row else None))
+    book = ws.parent
+    index = book.worksheets.index(ws)
+    title = ws.title
+    book.remove(ws)
+    dst_ws = book.create_sheet(title, index)
+    apply_header = style_applier(dst_ws, font=_HEADER_FONT, alignment=_CENTER)
+    apply_data = style_applier(dst_ws, font=_DATA_FONT, alignment=_CENTER)
+    for column, value in enumerate(header_values, 1):
+        cell = dst_ws.cell(row=1, column=column, value=value)
+        apply_header(cell)
+        cell.fill = _HEADER_FILL
+    for col, width in widths.items():
+        dst_ws.column_dimensions[col].width = width
+    for row_index, values in enumerate(rows, 2):
+        for column, (value, data_type, number_format) in enumerate(values, 1):
+            cell = dst_ws.cell(row=row_index, column=column, value=value)
+            if value is not None:
+                if data_type is not None:
+                    cell.data_type = data_type
+                if number_format is not None:
+                    cell.number_format = number_format
+            apply_data(cell)
+    dst_ws.freeze_panes = 'A2'
+    _center_columns(dst_ws, max(len(header_values), dst_ws.max_column))
 
 
 def build_followup_summaries(root, config, files, items, cancelled):

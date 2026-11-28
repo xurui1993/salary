@@ -431,19 +431,40 @@ def validate_bill_file(path, max_bytes=200 * 1024 * 1024, *, max_unpacked=None):
                 raise BillCollectionError("账单压缩文件为空、加密或条目数量异常")
             if sum(entry.file_size for entry in entries) > unpacked_limit:
                 raise BillCollectionError("账单压缩文件解压大小超过限制")
-            if archive.testzip() is not None:
-                raise BillCollectionError("账单压缩文件校验失败")
+            worksheets = [entry.filename for entry in entries
+                          if entry.filename.startswith("xl/worksheets/") and entry.filename.endswith(".xml")]
+            xlsx_data_rows = None
+            for entry in entries:
+                try:
+                    with archive.open(entry.filename, "r") as stream:
+                        if len(worksheets) == 1 and entry.filename == worksheets[0]:
+                            row_tags, tail = 0, b""
+                            while chunk := stream.read(1048576):
+                                joined = tail + chunk
+                                row_tags += joined.count(b"<row ") + joined.count(b"<row>")
+                                tail = joined[-4:]
+                            xlsx_data_rows = max(0, row_tags - 1)
+                        else:
+                            while stream.read(1048576):
+                                pass
+                except (zipfile.BadZipFile, zlib.error):
+                    raise BillCollectionError("账单压缩文件校验失败") from None
             names = {entry.filename for entry in entries}
             xlsx = {"[Content_Types].xml", "xl/workbook.xml"}.issubset(names)
             if not xlsx and not any(name.lower().endswith((".xlsx", ".xls", ".csv")) for name in names):
                 raise BillCollectionError("ZIP 中没有账单数据文件")
+    except BillCollectionError:
+        raise
     except (zipfile.BadZipFile, zlib.error):
         raise BillCollectionError("账单压缩文件损坏") from None
     digest = hashlib.sha256()
     with path.open("rb") as source:
-        for chunk in iter(lambda: source.read(65536), b""):
+        for chunk in iter(lambda: source.read(524288), b""):
             digest.update(chunk)
-    return {"bytes": size, "sha256": digest.hexdigest(), "format": "xlsx" if xlsx else "zip"}
+    result = {"bytes": size, "sha256": digest.hexdigest(), "format": "xlsx" if xlsx else "zip"}
+    if xlsx and xlsx_data_rows is not None:
+        result["xlsx_data_rows"] = xlsx_data_rows
+    return result
 
 
 class BillPageCollector:

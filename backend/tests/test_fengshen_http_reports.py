@@ -389,7 +389,7 @@ class ReportTests(unittest.TestCase):
         self.client.request_json.assert_not_called()
 
     def test_large_batch_adaptively_splits_and_recovers(self):
-        self.fixture.total = 300_000
+        self.fixture.total = 400_000
         self.plan.start = (dt.date.fromisoformat(self.plan.end) - dt.timedelta(days=6)).isoformat()
         source = self.root / "split_source"
         self.collector.export_interval = 0.02
@@ -402,6 +402,165 @@ class ReportTests(unittest.TestCase):
         recovered = self.collector.resume_orders(self.plan, self.root / "split_recovered", {"problem"}, source)
         self.assertEqual([(r["start"], r["end"]) for r in recovered],
                          [(r["start"], r["end"]) for r in reports])
+
+    def test_transient_task_url_biz_error_reselects_city_and_recovers(self):
+        original = self.fixture.request
+        task_url_calls = []
+        def flaky_task_url(method, url, **kwargs):
+            if url == TASK_URL:
+                task_url_calls.append(1)
+                if len(task_url_calls) == 1:
+                    raise BillCollectionError("平台拒绝导出，请检查登录状态和账单权限")
+            return original(method, url, **kwargs)
+        self.client.request_json.side_effect = flaky_task_url
+        reports = list(self.collector.orders_stream(self.plan, self.root / "flaky_url", {"problem"}))
+        self.assertEqual(len(reports), 1)
+        self.assertEqual(reports[0]["status"], "success")
+        self.assertEqual(len(task_url_calls), 2)
+        self.assertEqual(self.fixture.exports, 1)
+
+    def test_matching_xlsx_rows_skips_daily_queries_and_recovers_and_prepares(self):
+        from test_fengshen_orders import waybill, WAYBILL_COLUMNS
+        self.fixture.total = 2
+        d1 = (dt.date.fromisoformat(self.plan.end) - dt.timedelta(days=6)).isoformat()
+        d2 = self.plan.end
+        self.plan.start = d1
+        cols = sorted(WAYBILL_COLUMNS)
+        r1 = dict(waybill(waybill_id="W1"), 运单完成时间=d1 + " 10:00:00")
+        r2 = dict(waybill(waybill_id="W2"), 运单完成时间=d2 + " 11:00:00")
+        def write_matching_xlsx(url, target):
+            wb = Workbook()
+            ws = wb.active
+            ws.append(cols)
+            for row in (r1, r2):
+                ws.append([row.get(c, "") for c in cols])
+            wb.save(target)
+            wb.close()
+            return target
+        self.client.download.side_effect = write_matching_xlsx
+        raw_dir = self.root / "raw_skip"
+        out_dir = self.root / "out_skip"
+        out_dir.mkdir()
+        reports = list(self.collector.orders_stream(self.plan, raw_dir / "issue_orders", {"problem"}, concurrency=2))
+        self.assertEqual(len(reports), 1)
+        self.assertIsNone(reports[0]["expected_waybills_by_date"])
+        self.assertEqual(reports[0]["count_basis"], "batch_total")
+        queries = [call for call in self.client.request_json.call_args_list if call.args[1] == QUERY_URL]
+        self.assertEqual(len(queries), 1)
+        outcome = prepare_order_files(reports, raw_dir, out_dir, self.plan, [(d1, d2)], selected_kinds={"问题单"})
+        self.assertIn("问题单", outcome)
+        self.client.request_json.reset_mock()
+        recovered = self.collector.resume_orders(self.plan, self.root / "recovered_skip" / "issue_orders",
+                                                 {"problem"}, raw_dir / "issue_orders")
+        self.assertEqual(len(recovered), 1)
+        self.assertIsNone(recovered[0]["expected_waybills_by_date"])
+        self.assertEqual(recovered[0]["count_basis"], "batch_total")
+        self.client.request_json.assert_not_called()
+
+    def test_mismatching_xlsx_rows_falls_back_to_daily_queries(self):
+        self.fixture.total = 3
+        self.plan.start = (dt.date.fromisoformat(self.plan.end) - dt.timedelta(days=3)).isoformat()
+        reports = list(self.collector.orders_stream(self.plan, self.root / "mismatch", {"fraud"}, concurrency=2))
+        self.assertEqual(len(reports), 1)
+        self.assertEqual(len(reports[0]["expected_waybills_by_date"]), 4)
+        queries = [call for call in self.client.request_json.call_args_list if call.args[1] == QUERY_URL]
+        self.assertEqual(len(queries), 5)
+
+    def test_parallel_isolated_downloads_free_export_slot_immediately(self):
+        import threading
+        self.fixture.total = 1
+        self.plan.start = (dt.date.fromisoformat(self.plan.end) - dt.timedelta(days=15)).isoformat()
+        release_first_download = threading.Event()
+        first_download_started = threading.Event()
+        exports_when_first_blocked = []
+        dl_lock = threading.Lock()
+        dl_count = [0]
+        def isolated_download(url, target):
+            with dl_lock:
+                dl_count[0] += 1
+                idx = dl_count[0]
+            if idx == 1:
+                first_download_started.set()
+                release_first_download.wait(timeout=2.0)
+            wb = Workbook()
+            ws = wb.active
+            ws.append(["原始表头", "金额"])
+            ws.append(["A", 1])
+            wb.save(target)
+            wb.close()
+            return target
+        orig_request = self.fixture.request
+        def tracked_request(method, url, **kwargs):
+            res = orig_request(method, url, **kwargs)
+            if url == EXPORT_URL and self.fixture.exports == 3:
+                exports_when_first_blocked.append(release_first_download.is_set())
+                release_first_download.set()
+            return res
+        self.client.request_json.side_effect = tracked_request
+        self.client.download_isolated = Mock(side_effect=isolated_download)
+        reports = list(self.collector.orders_stream(self.plan, self.root / "parallel_oss", {"fraud"}, concurrency=2))
+        self.assertEqual(len(reports), 3)
+        self.assertEqual(exports_when_first_blocked, [False])
+        for report in reports:
+            if report["start"] < report["end"]:
+                self.assertIsNone(report["expected_waybills_by_date"])
+                self.assertEqual(report["count_basis"], "batch_total")
+
+    def test_validate_bill_file_counts_xlsx_rows_across_tiny_chunk_boundaries(self):
+        from fengshen_bill import validate_bill_file
+        import zipfile
+        xlsx_path = self.root / "rows_check.xlsx"
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["col1", "col2"])
+        for i in range(17):
+            ws.append([f"v{i}", i])
+        wb.save(xlsx_path)
+        wb.close()
+        orig_open = zipfile.ZipFile.open
+        class TinyStream:
+            def __init__(self, inner):
+                self.inner = inner
+            def __enter__(self):
+                self.inner.__enter__()
+                return self
+            def __exit__(self, *args):
+                return self.inner.__exit__(*args)
+            def read(self, _n=-1):
+                return self.inner.read(3)
+        def tiny_open(zf_self, name, mode="r", *args, **kwargs):
+            return TinyStream(orig_open(zf_self, name, mode, *args, **kwargs))
+        with unittest.mock.patch.object(zipfile.ZipFile, "open", tiny_open):
+            proof = validate_bill_file(xlsx_path)
+        self.assertEqual(proof["xlsx_data_rows"], 17)
+
+    def test_oss_404_and_delayed_task_url_recover_in_async_stream(self):
+        calls = {"task": 0, "dl": 0}
+        orig_req = self.fixture.request
+        def delayed_req(method, url, **kwargs):
+            if url == TASK_URL:
+                calls["task"] += 1
+                if calls["task"] <= 2:
+                    raise BillCollectionError("平台拒绝导出，请检查登录状态和账单权限")
+            return orig_req(method, url, **kwargs)
+        def delayed_dl(url, target):
+            calls["dl"] += 1
+            if calls["dl"] == 1:
+                raise HttpTransportError("平台文件下载失败（HTTP 404）", "downloading", "submitted")
+            wb = Workbook()
+            ws = wb.active
+            ws.append(["原始表头", "金额"])
+            ws.append(["A", 1])
+            wb.save(target)
+            wb.close()
+            return target
+        self.client.request_json.side_effect = delayed_req
+        self.client.download_isolated = Mock(side_effect=delayed_dl)
+        reports = list(self.collector.orders_stream(self.plan, self.root / "oss404", {"problem"}, concurrency=3))
+        self.assertEqual(len(reports), 1)
+        self.assertEqual(reports[0]["status"], "success")
+        self.assertGreaterEqual(calls["task"], 4)
+        self.assertEqual(calls["dl"], 2)
 
 
 class WaybillCreatedTests(unittest.TestCase):

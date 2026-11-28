@@ -1748,6 +1748,14 @@ class DownloadManager:
                     groups = sorted({file.get('delivery_group') for file in files
                                      if file.get('dataset') == 'payment_binding'
                                      and file.get('delivery_group') in ('天津商翼', '本来人力')})
+                    want_followup_summary = (
+                        'abnormal_followup' in summary_config.get('datasets', ())
+                        and len(summary_config.get('cities', ())) > 1
+                    )
+                    want_monthly_summary = (
+                        'rider_monthly' in summary_config.get('datasets', ())
+                        and len(summary_config.get('cities', ())) > 1
+                    )
                     platform_summaries = []
                     if groups:
                         platforms = {'天津商翼': ('商翼', '商翼绑定表'),
@@ -1755,14 +1763,20 @@ class DownloadManager:
                         full_dir = run_dir / '原始资料' / '支付绑定平台表'
                         import multiprocessing
                         from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
-                        from binding_summary_worker import build_platform_summary
-                        # 两个平台的汇总各自 CPU 密集且互不依赖；线程受 GIL 限制几乎串行，
-                        # 改为独立进程并行，避免汇总阶段吞掉数十秒。
+                        from binding_summary_worker import (
+                            build_followup_summary_process,
+                            build_platform_summary,
+                            build_rider_monthly_summary_process,
+                        )
+                        # 多平台绑定汇总、异常跟进汇总与月度UB账单汇总均 CPU 密集且互不依赖，
+                        # 统一投入独立进程池并发执行，消除串行尾部等待。
                         process_context = multiprocessing.get_context('spawn')
                         cancel_fd, cancel_path = tempfile.mkstemp(prefix='summary-cancel-', suffix='.flag')
                         os.close(cancel_fd)
                         # 文件存在才表示取消；先删掉占位文件，否则子进程会误判为已取消。
                         os.unlink(cancel_path)
+                        base_files = list(files)
+                        base_items = list(current['items'])
                         specs = []
                         for group in groups:
                             platform, sheet = platforms[group]
@@ -1771,59 +1785,100 @@ class DownloadManager:
                                 raise ValueError('缺少全量平台绑定表：' + sheet)
                             specs.append({
                                 'root': str(run_dir), 'config': summary_config,
-                                'files': list(files), 'items': list(current['items']),
+                                'files': base_files, 'items': base_items,
                                 'platform': platform, 'summary_city': group,
                                 'shared_sheets': (sheet,), 'proof_suffix': '_' + group,
                                 'shared_sources': {sheet: str(source)}, 'cancel_file': cancel_path})
                         log(f'[汇总] 正在并行生成 {len(specs)} 个平台汇总：' + '、'.join(groups))
+                        if want_followup_summary:
+                            log("[汇总] 正在合并异常骑手跟进成品")
+                        if want_monthly_summary:
+                            log("[汇总] 正在合并多城市风神骑手月度UB账单成品")
+                        total_jobs = len(specs) + int(want_followup_summary) + int(want_monthly_summary)
+                        followup_summaries = []
+                        monthly_summaries = []
+                        monthly_logs = []
                         try:
-                            with ProcessPoolExecutor(max_workers=min(2, len(specs)),
+                            with ProcessPoolExecutor(max_workers=min(4, total_jobs),
                                                      mp_context=process_context) as pool:
-                                pending = {pool.submit(build_platform_summary, spec): spec['summary_city']
-                                           for spec in specs}
+                                pending = {}
+                                for idx, spec in enumerate(specs):
+                                    pending[pool.submit(build_platform_summary, spec)] = ('platform', idx)
+                                if want_followup_summary:
+                                    pending[pool.submit(build_followup_summary_process, {
+                                        'root': str(run_dir), 'config': summary_config,
+                                        'files': base_files, 'items': base_items,
+                                        'cancel_file': cancel_path,
+                                    })] = ('followup', 0)
+                                if want_monthly_summary:
+                                    pending[pool.submit(build_rider_monthly_summary_process, {
+                                        'root': str(run_dir), 'config': summary_config,
+                                        'files': base_files, 'items': base_items,
+                                        'cancel_file': cancel_path,
+                                    })] = ('rider_monthly', 0)
+                                platform_results = {}
                                 while pending:
                                     finished, _ = wait(list(pending), timeout=0.25,
                                                        return_when=FIRST_COMPLETED)
                                     if cancelled.is_set():
                                         Path(cancel_path).touch(exist_ok=True)
                                     for future in finished:
-                                        pending.pop(future)
+                                        kind, order_idx = pending.pop(future)
                                         result = future.result()
                                         if result.get('error'):
                                             raise ValueError(result['error'])
-                                        platform_summaries.extend(result['files'])
-                                        for info in result['files']:
-                                            log(f'[汇总] {info["start"][:7]} · {info["city"]}：平台汇总完成'
-                                                f'（{result.get("seconds", 0):.1f} 秒）')
+                                        if kind == 'platform':
+                                            platform_results[order_idx] = result
+                                            for info in result['files']:
+                                                log(f'[汇总] {info["start"][:7]} · {info["city"]}：平台汇总完成'
+                                                    f'（{result.get("seconds", 0):.1f} 秒）')
+                                        elif kind == 'followup':
+                                            followup_summaries = result['files']
+                                        elif kind == 'rider_monthly':
+                                            monthly_summaries = result['files']
+                                            monthly_logs = result.get('logs') or []
+                                for order_idx in sorted(platform_results):
+                                    platform_summaries.extend(platform_results[order_idx]['files'])
                         finally:
                             Path(cancel_path).unlink(missing_ok=True)
                         for info in platform_summaries:
                             files.append(self._file_entry(run, info, config))
+                        summary_active = False
+                        summary_metrics['platforms'] = len(platform_summaries)
+                        if summary_reported:
+                            update_item({"_run_event": True, "status": "running", "phase": "summarizing",
+                                         "summary_progress": {"stage": "completed"}})
+                        for info in followup_summaries:
+                            files.append(self._file_entry(run, info, config))
+                            log('[汇总] 多城市异常骑手跟进已按月合并')
+                        for msg in monthly_logs:
+                            log(msg)
+                        for info in monthly_summaries:
+                            files.append(self._file_entry(run, info, config))
+                            log('[汇总] 多城市风神骑手月度UB账单已按城市生成子表')
                     else:
                         for info in build_binding_summaries(run_dir, summary_config, files, current['items'], cancelled,
                                                             report=log, progress=summary_progress):
                             files.append(self._file_entry(run, info, config))
                             log('[汇总] 多城市支付绑定已按月合并，成功城市明细与城市汇总已核对')
-                    summary_active = False
-                    summary_metrics['platforms'] = len(platform_summaries)
-                    if summary_reported:
-                        update_item({"_run_event": True, "status": "running", "phase": "summarizing",
-                                     "summary_progress": {"stage": "completed"}})
-                    from abnormal_followup import build_followup_summaries
-                    if ('abnormal_followup' in summary_config.get('datasets', ())
-                            and len(summary_config.get('cities', ())) > 1):
-                        log("[汇总] 正在合并异常骑手跟进成品")
-                        for info in build_followup_summaries(run_dir, summary_config, files, current['items'], cancelled):
-                            files.append(self._file_entry(run, info, config))
-                            log('[汇总] 多城市异常骑手跟进已按月合并')
-                    from rider_monthly_summary import build_rider_monthly_summaries
-                    if ('rider_monthly' in summary_config.get('datasets', ())
-                            and len(summary_config.get('cities', ())) > 1):
-                        log("[汇总] 正在合并多城市风神骑手月度UB账单成品")
-                        for info in build_rider_monthly_summaries(run_dir, summary_config, files,
-                                                                  current['items'], cancelled, report=log):
-                            files.append(self._file_entry(run, info, config))
-                            log('[汇总] 多城市风神骑手月度UB账单已按城市生成子表')
+                        summary_active = False
+                        summary_metrics['platforms'] = len(platform_summaries)
+                        if summary_reported:
+                            update_item({"_run_event": True, "status": "running", "phase": "summarizing",
+                                         "summary_progress": {"stage": "completed"}})
+                        from abnormal_followup import build_followup_summaries
+                        if want_followup_summary:
+                            log("[汇总] 正在合并异常骑手跟进成品")
+                            for info in build_followup_summaries(run_dir, summary_config, files, current['items'], cancelled):
+                                files.append(self._file_entry(run, info, config))
+                                log('[汇总] 多城市异常骑手跟进已按月合并')
+                        from rider_monthly_summary import build_rider_monthly_summaries
+                        if want_monthly_summary:
+                            log("[汇总] 正在合并多城市风神骑手月度UB账单成品")
+                            for info in build_rider_monthly_summaries(run_dir, summary_config, files,
+                                                                      current['items'], cancelled, report=log):
+                                files.append(self._file_entry(run, info, config))
+                                log('[汇总] 多城市风神骑手月度UB账单已按城市生成子表')
                     summary_active = False
         except Exception as exc:
             if summary_active:

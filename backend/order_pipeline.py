@@ -329,12 +329,77 @@ def _worker_prepare(download, raw, plan_data, include_violations, spool, cache_p
             "proof": prepared["proof"], "seconds": time.perf_counter() - started}
 
 
+def _cached_prepare_polars(cache, agency_id, days, kind, spool_path):
+    import polars as pl
+    if not days or any(day >= cache.today for day in days):
+        return None
+    now = cache.clock()
+    with cache.connect() as db:
+        rows = db.execute(
+            "SELECT day, captured, payload, digest, rows, source_json FROM slices "
+            "WHERE agency=? AND kind=? AND version=? AND day>=? AND day<=?",
+            (agency_id, kind, SCHEMA_VERSION, days[0], days[-1]),
+        ).fetchall()
+    by_day = {row["day"]: row for row in rows}
+    if not set(days).issubset(by_day):
+        raise CacheMiss("历史缓存缺失、过期或完整性校验失败")
+    required = WAYBILL_COLUMNS if kind == "waybills" else VIOLATION_COLUMNS
+    identity = "运单id" if kind == "waybills" else "违规编号"
+    pieces = []
+    counts = {}
+    for day in days:
+        row = by_day[day]
+        payload = row["payload"]
+        if (not 0 <= now - row["captured"] < CACHE_SECONDS
+                or hashlib.sha256(payload).hexdigest() != row["digest"]):
+            raise CacheMiss("历史缓存缺失、过期或完整性校验失败")
+        if payload[:4] != b"PAR1":
+            return None
+        df = pl.read_parquet(io.BytesIO(payload))
+        if not required.issubset(df.columns) or df.height != row["rows"]:
+            raise CacheMiss("历史缓存内容校验失败，需重新获取")
+        counts[day] = df.height
+        order = json.loads(row["source_json"])
+        positions = order.get("positions")
+        if positions is None:
+            positions = list(range(df.height))
+        if len(positions) != df.height:
+            raise CacheMiss("历史缓存排序信息损坏")
+        df = df.with_columns(
+            pl.lit(str(order.get("batch", day))).alias("__source_batch"),
+            pl.Series("__source_position", positions, dtype=pl.Int64),
+        )
+        pieces.append(df)
+    columns = list(pieces[0].columns)
+    if any(list(df.columns) != columns for df in pieces[1:]):
+        return None
+    combined = pl.concat(pieces, how="vertical")
+    if combined.height > 0:
+        combined = combined.sort(["__source_batch", "__source_position"], maintain_order=True)
+    combined = combined.drop(["__source_batch", "__source_position"])
+    if combined.height > 0 and combined[identity].is_duplicated().any():
+        return None
+    combined.write_parquet(spool_path, compression="zstd")
+    return counts, combined.height
+
+
 @worker_measurements
 def _cached_prepare(cache_path, today, plan_data, include_violations, spool):
     plan = SimpleNamespace(**plan_data)
     cache = OrderCache(cache_path, today=today)
     days, frames, counts = _days(plan.start, plan.end), {}, {}
+    violations_height = 0
     for kind in (("waybills", "violations") if include_violations else ("waybills",)):
+        path = Path(spool) / (plan.start + "_" + plan.end + "_" + kind + ".parquet")
+        fast_result = _cached_prepare_polars(cache, plan.agency_id, days, kind, path)
+        if fast_result is not None:
+            day_counts, total_height = fast_result
+            if kind == "waybills":
+                counts = day_counts
+            else:
+                violations_height = total_height
+            frames[kind] = str(path)
+            continue
         pieces = [cache.get(plan.agency_id, day, kind) for day in days]
         if kind == "waybills":
             counts = dict(zip(days, map(len, pieces)))
@@ -351,13 +416,36 @@ def _cached_prepare(cache_path, today, plan_data, include_violations, spool):
         frame = pd.concat(ordered, ignore_index=True).sort_values(["__source_batch", "__source_position"], kind="stable")
         frame = frame.drop(columns=["__source_batch", "__source_position"]).reset_index(drop=True)
         frame = merge_slices([frame], "运单id" if kind == "waybills" else "违规编号")
-        path = Path(spool) / (plan.start + "_" + plan.end + "_" + kind + ".parquet")
+        if kind == "violations":
+            violations_height = len(frame)
         dump_frame(frame, path)
         frames[kind] = str(path)
     return {"files": frames, "hashes": {kind: file_hash(path) for kind, path in frames.items()},
             "counts": counts, "proof": {"start": plan.start, "end": plan.end,
              "waybills": sum(counts.values()), "count_basis": "daily_verified", "query_total": sum(counts.values()),
-             "batch_total_inconsistent": False, **({"violations": len(frame)} if include_violations else {})}, "seconds": 0}
+             "batch_total_inconsistent": False, **({"violations": violations_height} if include_violations else {})}, "seconds": 0}
+
+
+@worker_measurements
+def _worker_generate_deliverables(references, downloads, raw, generated, plan_data, batches,
+                                  selected_kinds, separation_include, issue_rules,
+                                  include_violations, cancel_path):
+    from order_sources import prepare_order_files
+    def checkpoint():
+        if Path(cancel_path).exists():
+            raise BillCollectionError("任务已取消")
+    checkpoint()
+    worker_timings = {}
+    prepared = PreparedSlices(references, include_violations, checkpoint, {"timings": worker_timings})
+    plan = SimpleNamespace(**plan_data)
+    result = prepare_order_files(
+        downloads, Path(raw), Path(generated), plan, batches,
+        selected_kinds=selected_kinds,
+        separation_include=separation_include,
+        issue_rules=issue_rules,
+        prepared_slices=prepared,
+    )
+    return {"result": result, "load_seconds": prepared.timings.get("load_seconds", 0.0)}
 
 
 class OrderPipeline:
@@ -465,7 +553,15 @@ class OrderPipeline:
             except FutureTimeout:
                 self.emit("processing")
 
-    def collect(self, runner):
+    def close(self):
+        executor = getattr(self, "_executor", None)
+        if executor is not None:
+            self._executor = None
+            if self.cancelled.is_set():
+                self.cancel_path.touch()
+            executor.shutdown(wait=True, cancel_futures=True)
+
+    def collect_platform(self, runner):
         import os
         segments = self.segments()
         self.metrics["batches"] = len(segments)
@@ -473,28 +569,31 @@ class OrderPipeline:
         desired_workers = max(len(segments), 3 if total_days >= 4 else 1)
         workers = max(1, min(4, desired_workers, (os.cpu_count() or 2) // 2))
         executor = ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("spawn"))
+        self._executor = executor
         platform = []
         cached_batches = 0
         try:
+            cached_jobs = []
             for number, (first, last, cached) in enumerate(segments, 1):
                 if self.cancelled.is_set():
                     raise BillCollectionError("任务已取消")
-                pending = [future for future in self.futures if not future.done()]
-                if len(pending) >= workers + 1:
-                    self._settle(pending[0])
-                self.metrics["batch"] = number
-                self.emit("collecting")
-                plan = SimpleNamespace(**{**vars(self.plan), "start": first, "end": last})
                 if cached:
-                    cache_started = time.perf_counter()
-                    future = executor.submit(_cached_prepare, str(self.cache.path), self.cache.today,
-                                             vars(plan), self.include_violations, str(self.spool))
+                    plan = SimpleNamespace(**{**vars(self.plan), "start": first, "end": last})
+                    fut = executor.submit(_cached_prepare, str(self.cache.path), self.cache.today,
+                                          vars(plan), self.include_violations, str(self.spool))
+                    cached_jobs.append((number, first, last, plan, fut))
+                else:
+                    platform.append((number, first, last))
+            if cached_jobs:
+                cache_started = time.perf_counter()
+                for number, first, last, plan, fut in cached_jobs:
+                    self.metrics["batch"] = number
+                    self.emit("collecting")
                     try:
-                        reference = self._wait(future)
+                        reference = self._wait(fut)
                     except CacheMiss:
-                        cached = False
-                    self.metrics["cache_seconds"] += time.perf_counter() - cache_started
-                if cached:
+                        platform.append((number, first, last))
+                        continue
                     directory = self.raw / "issue_orders" / (first + "_" + last)
                     directory.mkdir(parents=True, exist_ok=False)
                     manifest = {"dataset": "issue_orders", "transport": "history_cache", "status": "success",
@@ -511,8 +610,8 @@ class OrderPipeline:
                     cached_batches += 1
                     self.metrics["obtained"] += 1
                     self.emit()
-                else:
-                    platform.append((number, first, last))
+                self.metrics["cache_seconds"] += time.perf_counter() - cache_started
+                platform.sort(key=lambda item: item[1])
             stream = getattr(runner, "orders_stream", None)
             if platform and stream is not None:
                 iterator = stream(self.plan, self.raw / "issue_orders", self.selected,
@@ -560,19 +659,56 @@ class OrderPipeline:
                         raise BillCollectionError("流水处理批次与平台下载不一致")
                     self._queue_stream(manifests[0], executor)
                     self.emit()
-            self.references = [self._reference(future) for future in self.futures]
-            self.downloads.sort(key=lambda value: value["start"])
-            self.references.sort(key=lambda value: value["proof"]["start"])
+        except BaseException:
+            self.close()
+            raise
+
+    def _settle_all_references(self):
+        self.references = [self._reference(future) for future in self.futures]
+        self.downloads.sort(key=lambda value: value["start"])
+        self.references.sort(key=lambda value: value["proof"]["start"])
+
+    def finish_local(self):
+        try:
+            self._settle_all_references()
         finally:
-            if self.cancelled.is_set():
-                self.cancel_path.touch()
-            executor.shutdown(wait=True, cancel_futures=True)
+            self.close()
         self.emit("merging")
         load_started = time.perf_counter()
         prepared = self.load_prepared()
         self.metrics["receipt_check_seconds"] = time.perf_counter() - load_started
         self.finalize_started = time.perf_counter()
         return self.downloads, prepared, [(value["start"], value["end"]) for value in self.downloads]
+
+    def finish_and_generate(self, generated, selected_kinds, separation_include, issue_rules):
+        self.progress = lambda _: None
+        executor = self._executor
+        try:
+            self._settle_all_references()
+            load_started = time.perf_counter()
+            self.load_prepared()
+            self.metrics["receipt_check_seconds"] = time.perf_counter() - load_started
+            self.finalize_started = time.perf_counter()
+            batches = [(value["start"], value["end"]) for value in self.downloads]
+            gen_future = executor.submit(
+                _worker_generate_deliverables,
+                self.references, self.downloads, str(self.raw), str(generated),
+                vars(self.plan), batches, selected_kinds, separation_include,
+                issue_rules, self.include_violations, str(self.cancel_path),
+            )
+            outcome = self._wait(gen_future)
+            self.metrics["load_seconds"] = outcome.get("load_seconds", 0.0)
+            timings = self.metrics.setdefault("timings", {})
+            for name, seconds in outcome.get("timings", {}).items():
+                timings[name] = timings.get(name, 0) + seconds
+            self.complete()
+            return outcome["result"], dict(timings)
+        finally:
+            self.close()
+
+    def collect(self, runner):
+        self.collect_platform(runner)
+        return self.finish_local()
 
     def _queue_stream(self, manifest, executor):
         self.downloads.append(manifest)

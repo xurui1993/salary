@@ -252,6 +252,26 @@ class CacheAndPipelineTests(unittest.TestCase):
             pipeline.collect(runner)
         self.assertEqual(runner.calls, [])
 
+    def test_finish_and_generate_runs_in_worker_and_reuses_polars_cache(self):
+        plan = SimpleNamespace(city="泉州", agency_id="2", start=(self.today-dt.timedelta(days=4)).isoformat(),
+                               end=(self.today-dt.timedelta(days=1)).isoformat())
+        cache_path = self.root / "cache.sqlite"
+        cold = OrderPipeline(self.root / "cold_gen", plan, {"fraud", "problem"}, cache_path, threading.Event())
+        cold.collect_platform(self.runner())
+        out_cold = (self.root / "cold_gen" / "order_processed")
+        out_cold.mkdir(exist_ok=True)
+        result_cold, _ = cold.finish_and_generate(out_cold, {"欺诈单", "问题单"}, False, {})
+        self.assertEqual(result_cold["问题单"]["status"], "empty")
+        warm = OrderPipeline(self.root / "warm_gen", plan, {"fraud", "problem"}, cache_path, threading.Event())
+        warm_runner = self.runner()
+        warm.collect_platform(warm_runner)
+        self.assertEqual(warm_runner.calls, [])
+        self.assertEqual(warm.metrics["cached_days"], 4)
+        out_warm = (self.root / "warm_gen" / "order_processed")
+        out_warm.mkdir(exist_ok=True)
+        result_warm, _ = warm.finish_and_generate(out_warm, {"欺诈单", "问题单"}, False, {})
+        self.assertEqual(result_warm["问题单"]["rows"], result_cold["问题单"]["rows"])
+
 
 if __name__ == "__main__":
     unittest.main()

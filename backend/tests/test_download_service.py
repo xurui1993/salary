@@ -551,10 +551,10 @@ class DownloadServiceTests(unittest.TestCase):
         with self.assertRaises(service.ValidationError):
             self.config(["problem"], refresh_history="true")
 
-    def test_order_export_concurrency_is_limited_to_one_or_two(self):
+    def test_order_export_concurrency_is_limited_to_one_to_three(self):
         self.assertNotIn("order_export_concurrency", self.config(["problem"]))
-        self.assertEqual(self.config(["problem"], order_export_concurrency=2)["order_export_concurrency"], 2)
-        for value in (0, 3, True, "2"):
+        self.assertEqual(self.config(["problem"], order_export_concurrency=3)["order_export_concurrency"], 3)
+        for value in (0, 4, True, "2"):
             with self.subTest(value=value), self.assertRaises(service.ValidationError):
                 self.config(["problem"], order_export_concurrency=value)
 

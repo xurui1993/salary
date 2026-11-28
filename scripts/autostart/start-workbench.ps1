@@ -78,12 +78,27 @@ if ($pythonExe) {
   $env:PYTHON_PATH = $pythonExe
 }
 
-Write-AutostartLog "Starting dev server. root=$root node=$nodeExe python=$pythonExe"
-$process = Start-Process -FilePath $nodeExe -ArgumentList @($tsxCli, 'server.ts') `
-  -WorkingDirectory $root -WindowStyle Hidden `
-  -RedirectStandardOutput $outFile -RedirectStandardError $errFile -PassThru
-Write-AutostartLog "Started process $($process.Id)."
-$process.WaitForExit()
-$code = $process.ExitCode
-Write-AutostartLog "Server exited with code $code."
-exit $code
+while ($true) {
+  $existing = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
+  if ($existing) {
+    Write-AutostartLog 'Port 3000 is already listening; skip startup.'
+    exit 0
+  }
+  foreach ($file in @($outFile, $errFile)) {
+    if (Test-Path $file) {
+      $size = (Get-Item $file).Length
+      if ($size -ge 10MB) {
+        Move-Item -Force $file ($file + '.1')
+      }
+    }
+  }
+  Write-AutostartLog "Starting dev server. root=$root node=$nodeExe python=$pythonExe"
+  $process = Start-Process -FilePath $nodeExe -ArgumentList @($tsxCli, 'server.ts') `
+    -WorkingDirectory $root -WindowStyle Hidden `
+    -RedirectStandardOutput $outFile -RedirectStandardError $errFile -PassThru
+  Write-AutostartLog "Started process $($process.Id)."
+  $process.WaitForExit()
+  $code = $process.ExitCode
+  Write-AutostartLog "Server exited with code $code; restarting in 3s..."
+  Start-Sleep -Seconds 3
+}

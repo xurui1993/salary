@@ -4,12 +4,14 @@ Parameters follow the official salary-bill-ub bundle and the previously
 observed order interfaces. No browser or DOM automation is used at runtime.
 Export receipts are durable and submissions are never automatically replayed.
 """
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait as wait_futures
 import csv
 import datetime as dt
 import hashlib
 import json
 import math
 import shutil
+import threading
 import time
 from pathlib import Path
 
@@ -18,7 +20,7 @@ from fengshen_bill import (
     MONTHLY_QUERY_URL, atomic_json, monthly_export_scope, nested_value,
     validate_bill_file,
 )
-from order_metrics import measured
+from order_metrics import _current as _current_timings, measured
 from fengshen_http import HttpTransportError
 from fengshen_orders import (
     EXPORT_URL, QUERY_URL, TASKS_URL, TASK_URL, VIOLATIONS_URL, ENUMERATE_URL,
@@ -27,12 +29,58 @@ from fengshen_orders import (
 )
 
 MONTHLY_SCOPE_ATTEMPTS = 3
-DEFAULT_ORDER_EXPORT_CONCURRENCY = 2
-ORDER_EXPORT_MIN_INTERVAL = 14.0
-ADAPTIVE_SPLIT_ROW_THRESHOLD = 160_000
-ADAPTIVE_TARGET_BATCH_ROWS = 120_000
+DEFAULT_ORDER_EXPORT_CONCURRENCY = 3
+ORDER_EXPORT_MIN_INTERVAL = 6.0
+ADAPTIVE_SPLIT_ROW_THRESHOLD = 235_000
+ADAPTIVE_TARGET_BATCH_ROWS = 155_000
+OSS_DOWNLOAD_WORKERS = 4
+WAYBILL_FETCH_ATTEMPTS = 8
 # High-volume cities expand about 10x (7 days ~1.7GB); the default cap targets small bills.
 ORDER_WAYBILL_MAX_UNPACKED = 4 * 1024 ** 3
+
+
+class _CombinedCancel:
+    def __init__(self, primary, secondary):
+        self.primary, self.secondary = primary, secondary
+
+    def is_set(self):
+        return self.primary.is_set() or self.secondary.is_set()
+
+    def wait(self, timeout):
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        while not self.is_set():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            if self.secondary.wait(min(0.2, remaining)):
+                return True
+        return True
+
+
+def _fetch_and_validate_waybill(download_fn, file_url, target):
+    target = Path(target)
+    dl_started = time.perf_counter()
+    file = download_fn(file_url, target)
+    dl_seconds = time.perf_counter() - dl_started
+    val_started = time.perf_counter()
+    proof = validate_bill_file(file, max_unpacked=ORDER_WAYBILL_MAX_UNPACKED)
+    if proof["format"] != "xlsx":
+        raise BillCollectionError("运单导出不是有效 XLSX 文件")
+    val_seconds = time.perf_counter() - val_started
+    info = {"path": Path(file).name, "bytes": proof["bytes"], "sha256": proof["sha256"]}
+    return info, proof.get("xlsx_data_rows"), dl_seconds, dl_seconds + val_seconds
+
+
+def _fetch_violation_file(download_fn, file_url, target):
+    target = Path(target)
+    dl_started = time.perf_counter()
+    file = download_fn(file_url, target)
+    dl_seconds = time.perf_counter() - dl_started
+    return file_info(file), dl_seconds
+
+
+def _is_oss_not_ready_404(exc):
+    return isinstance(exc, HttpTransportError) and "HTTP 404" in str(exc)
 
 
 class MonthlyScopeMismatch(BillCollectionError):
@@ -191,11 +239,15 @@ def order_recovery_manifests(plan, source, selected):
         total, counts = query.get("expected_waybills"), query.get("expected_waybills_by_date")
         days = [(dt.date.fromisoformat(first) + dt.timedelta(days=n)).isoformat()
                 for n in range((dt.date.fromisoformat(last) - dt.date.fromisoformat(first)).days + 1)]
+        valid_counts = (
+            (counts is None and query.get("count_basis") == "batch_total" and type(total) is int and total > 0)
+            or (isinstance(counts, dict) and set(counts) == set(days)
+                and all(type(v) is int and v >= 0 for v in counts.values()))
+        )
         if (query.get("status") != "success" or ledger.get("submission_state") != "submitted"
                 or ledger.get("scope", {}).get("dataset") != "issue_orders"
                 or not isinstance(task.get("task_id"), str) or not task["task_id"].isdigit()
-                or type(total) is not int or total < 0 or not isinstance(counts, dict)
-                or set(counts) != set(days) or any(type(v) is not int or v < 0 for v in counts.values())):
+                or type(total) is not int or total < 0 or not valid_counts):
             raise BillCollectionError("原运单提交或数量回执不完整")
         # The platform's range total may differ from the daily query sum.
         # prepare_order_files enforces every exported day's actual row count;
@@ -220,6 +272,7 @@ def order_recovery_manifests(plan, source, selected):
             "agency_id": plan.agency_id, "start": first, "end": last, "time_basis": "tracking_finish",
             "merchant_group": "物流合作商", "all_city_riders": True, "files": files, "file_checks": checks,
             "task_id": task["task_id"], "expected_waybills": total, "expected_waybills_by_date": counts,
+            **({"count_basis": query["count_basis"]} if "count_basis" in query else {}),
             **({"live_day_snapshot": query["live_day_snapshot"]} if "live_day_snapshot" in query else {}),
             "recovery_only": True}))
     return result
@@ -241,6 +294,29 @@ class ReportHttpCollector:
         interval = min(self.poll_interval, 2.0) if since < 60 else self.poll_interval
         self.client.cancelled.wait(min(interval, max(0, deadline - time.monotonic())))
         self.client.checkpoint()
+
+    @measured("platform_poll_wait_seconds")
+    def _wait_seconds(self, seconds):
+        self.client.checkpoint()
+        self.client.cancelled.wait(max(0.0, float(seconds)))
+        self.client.checkpoint()
+
+    @staticmethod
+    def _record_source_download_seconds(seconds):
+        value = _current_timings.get()
+        if value is not None:
+            value["source_download_seconds"] = value.get("source_download_seconds", 0) + seconds
+
+    def _isolated_downloader(self, cancelled=None):
+        client_vars = vars(self.client) if hasattr(self.client, "__dict__") else {}
+        if "download_isolated" in client_vars:
+            fn = self.client.download_isolated
+            return lambda url, target: fn(url, target)
+        if "download" in client_vars:
+            return None
+        if hasattr(self.client, "download_isolated"):
+            return lambda url, target: self.client.download_isolated(url, target, cancelled=cancelled)
+        return None
 
     @staticmethod
     def _failure(exc, manifest, path, phase, submission):
@@ -319,7 +395,8 @@ class ReportHttpCollector:
                          body={"params": {"request": {"current": 1, "pageSize": 20}}}))
 
     def _count(self, request, created=False, product_id=None):
-        self.client.assert_city(request.agency_id)
+        if getattr(self.client, "current_agency", None) != request.agency_id:
+            self.client.assert_city(request.agency_id)
         return query_count(self.client.request_json("POST", QUERY_URL,
                            body=order_body(request, created=created, product_id=product_id)),
                            request.agency_id)
@@ -341,7 +418,9 @@ class ReportHttpCollector:
             self.client.select_city(request.agency_id)
             after = self._count(OrderRequest(today, today, request.agency_id), created, product_id)
             self.log("[校验] 当天运单持续新增，正在核对导出前后实时快照数量")
-            return {"date": today, "before": state["expected_waybills_by_date"][today],
+            daily = state.get("expected_waybills_by_date")
+            before = daily[today] if isinstance(daily, dict) and today in daily else after
+            return {"date": today, "before": before,
                     "after": after, "task_id": task_id, "started_at": started_at, "checked_at": time.time()}
         return None
 
@@ -356,35 +435,72 @@ class ReportHttpCollector:
     def _download_order_file(self, url, target):
         return self.client.download(url, target)
 
-    def _download_waybill_file(self, state, target, *, with_info=False):
-        """Fetch the completed export up to 4 times; large OSS downloads can truncate."""
+    def _download_waybill_file(self, state, target, *, with_info=False, with_rows=False, agency_id=None):
+        """Fetch the completed export; large OSS uploads or URL lookups can lag behind status=1."""
+        from fengshen_bill import AuthenticationRequired
         target = Path(target)
-        max_attempts = 4
+        max_attempts = WAYBILL_FETCH_ATTEMPTS if self.poll_interval >= 1.0 else 4
         for attempt in range(1, max_attempts + 1):
             state["failure_phase"] = "downloading"
-            self.log("[下载] 正在获取本批运单原始文件")
-            payload = self.client.request_json("POST", TASK_URL,
-                        body={"params": {"request": {"taskId": int(state["task_id"])}}})
-            file = self._download_order_file(nested_value(payload, ["result", "data"]), target)
-            state["failure_phase"] = "validating"
             try:
+                if attempt > 1 and agency_id is not None:
+                    if hasattr(self.client, "current_agency"):
+                        self.client.current_agency = None
+                    self.client.select_city(agency_id)
+                self.log("[下载] 正在获取本批运单原始文件")
+                payload = self.client.request_json("POST", TASK_URL,
+                            body={"params": {"request": {"taskId": int(state["task_id"])}}})
+                file_url = nested_value(payload, ["result", "data"])
+                if not isinstance(file_url, str) or not file_url.strip():
+                    raise BillCollectionError("运单导出文件地址尚未就绪")
+                file = self._download_order_file(file_url, target)
+                state["failure_phase"] = "validating"
                 proof = validate_bill_file(file, max_unpacked=ORDER_WAYBILL_MAX_UNPACKED)
                 if proof["format"] != "xlsx":
                     raise BillCollectionError("运单导出不是有效 XLSX 文件")
+                info = {"path": Path(file).name, "bytes": proof["bytes"], "sha256": proof["sha256"]}
+                if with_info and with_rows:
+                    return file, info, proof.get("xlsx_data_rows")
                 if with_info:
-                    return file, {"path": Path(file).name, "bytes": proof["bytes"], "sha256": proof["sha256"]}
+                    return file, info
                 return file
-            except BillCollectionError:
+            except AuthenticationRequired:
                 target.unlink(missing_ok=True)
+                raise
+            except (BillCollectionError, HttpTransportError) as exc:
+                target.unlink(missing_ok=True)
+                if isinstance(exc, HttpTransportError) and not _is_oss_not_ready_404(exc):
+                    raise
                 files_session = getattr(self.client, "files_session", None)
                 if files_session is not None:
                     files_session.close()
                 if attempt == max_attempts:
                     raise
-                self.log(f"[下载] 本批运单文件校验未通过，正在重新获取（第 {attempt + 1}/{max_attempts} 次）")
+                self.log(f"[下载] 本批运单文件获取或校验未通过，正在重新获取（第 {attempt + 1}/{max_attempts} 次）")
                 if self.poll_interval >= 1.0:
-                    self.client.cancelled.wait(min(8.0, 2.0 * attempt))
+                    self.client.cancelled.wait(min(10.0, 2.0 * attempt))
                     self.client.checkpoint()
+
+    def _try_waybill_url(self, item, *, reselect=False):
+        from fengshen_bill import AuthenticationRequired
+        request, state = item["request"], item["state"]
+        state["failure_phase"] = "downloading"
+        try:
+            if reselect:
+                if hasattr(self.client, "current_agency"):
+                    self.client.current_agency = None
+                self.client.select_city(request.agency_id)
+            elif getattr(self.client, "current_agency", None) != request.agency_id:
+                self.client.select_city(request.agency_id)
+            self.log("[下载] 正在获取本批运单原始文件")
+            payload = self.client.request_json("POST", TASK_URL,
+                        body={"params": {"request": {"taskId": int(state["task_id"])}}})
+            file_url = nested_value(payload, ["result", "data"])
+            if not isinstance(file_url, str) or not file_url.strip():
+                raise BillCollectionError("运单导出文件地址尚未就绪")
+            return file_url
+        except (AuthenticationRequired, HttpTransportError) as exc:
+            self._fail_item(item, exc)
 
     @measured("order_counts_seconds")
     def _prepare_counts(self, request, created=False, product_id=None):
@@ -456,7 +572,8 @@ class ReportHttpCollector:
                     if type(matched.get("status")) is not int or matched["status"] != 1:
                         raise BillCollectionError("运单导出成功状态与已核实协议不符")
                     file = self._download_waybill_file(
-                        state, raw / ("waybills_created.xlsx" if created else "waybills.xlsx"))
+                        state, raw / ("waybills_created.xlsx" if created else "waybills.xlsx"),
+                        agency_id=request.agency_id)
                     snapshot = self._live_snapshot(request, state, receipt["started_at"], state["task_id"],
                                                    dates_created, product_id)
                     if snapshot is not None:
@@ -507,6 +624,8 @@ class ReportHttpCollector:
                         expected_waybills=state.get("expected_waybills"),
                         expected_waybills_by_date=state.get("expected_waybills_by_date"),
                         timings={key: round(value, 3) for key, value in item["timings"].items()})
+        if "count_basis" in state:
+            manifest["count_basis"] = state["count_basis"]
         if "live_day_snapshot" in state:
             manifest["live_day_snapshot"] = state["live_day_snapshot"]
         atomic_json(item["path"], manifest)
@@ -534,7 +653,8 @@ class ReportHttpCollector:
 
     @measured("order_counts_seconds")
     def _initial_counts(self, request):
-        self.client.select_city(request.agency_id)
+        if getattr(self.client, "current_agency", None) != request.agency_id:
+            self.client.select_city(request.agency_id)
         total = self._count(request)
         first, last = dt.date.fromisoformat(request.start), dt.date.fromisoformat(request.end)
         days = [(first + dt.timedelta(days=n)).isoformat() for n in range((last - first).days + 1)]
@@ -561,7 +681,8 @@ class ReportHttpCollector:
         day = pending[0]
         try:
             started = time.perf_counter()
-            self.client.select_city(request.agency_id)
+            if getattr(self.client, "current_agency", None) != request.agency_id:
+                self.client.select_city(request.agency_id)
             count = self._count(OrderRequest(day, day, request.agency_id))
             self._mark(item, "counts", time.perf_counter() - started)
             pending.pop(0)
@@ -678,24 +799,98 @@ class ReportHttpCollector:
                 self._fail_item(item, exc)
         return finished
 
-    def _prefetch_violations(self, item):
+    def _prefetch_violations(self, item, oss_pool=None, isolated_download=None):
         request, directory = item["request"], item["directory"]
         v_state = {}
         try:
             started = time.perf_counter()
-            item["violations_info"] = self._violations(request, directory, v_state)
+            if oss_pool is None or isolated_download is None:
+                item["violations_info"] = self._violations(request, directory, v_state)
+                self._mark(item, "violations", time.perf_counter() - started)
+                return
+            first, last = request.timestamps
+            body = {"params": {"request": {"violationStartTime": first,
+                                          "violationEndTime": last, "appealStatus": []}}}
+            self.client.assert_city(request.agency_id)
+            v_state.update(failure_phase="submitting", submission_state="unknown")
+            payload, _ = self.client.submit_once(VIOLATIONS_URL, body, directory / "violation_submission.json",
+                                                {"agency_id": request.agency_id, "start": request.start,
+                                                 "end": request.end, "dataset": "violations"})
+            v_state["submission_state"] = "submitted"
+            url = nested_value(payload, ["result", "data", "fileUrl"])
             self._mark(item, "violations", time.perf_counter() - started)
+            if url == "":
+                from order_sources import VIOLATION_COLUMNS
+                item["violations_info"] = self._empty(directory, "violations_empty.csv", VIOLATION_COLUMNS)
+            else:
+                self.log("[下载] 正在获取本批服务奖惩原始文件")
+                target = directory / "violations.csv"
+                fut = oss_pool.submit(_fetch_violation_file, isolated_download, url, target)
+                item["violations_future"] = (fut, url, isolated_download)
         except Exception as exc:
             item["state"].update(v_state)
             self._fail_item(item, exc)
 
-    def _download_batch(self, item):
+    def _resolve_violations_future(self, item):
+        fut, url, isolated_download = item.pop("violations_future")
+        target = item["directory"] / "violations.csv"
+        max_attempts = 4
+        for attempt in range(1, max_attempts + 1):
+            try:
+                if attempt == 1:
+                    info, dl_seconds = fut.result()
+                else:
+                    info, dl_seconds = _fetch_violation_file(isolated_download, url, target)
+                self._record_source_download_seconds(dl_seconds)
+                self._mark(item, "violations", dl_seconds)
+                item["violations_info"] = info
+                return info
+            except (BillCollectionError, HttpTransportError) as exc:
+                target.unlink(missing_ok=True)
+                if isinstance(exc, HttpTransportError) and not _is_oss_not_ready_404(exc):
+                    raise
+                if attempt == max_attempts:
+                    raise
+                if self.poll_interval >= 1.0:
+                    self.client.cancelled.wait(min(6.0, 2.0 * attempt))
+                    self.client.checkpoint()
+
+    def _schedule_waybill_download(self, item, oss_pool, isolated_download, *, reselect=False):
+        max_attempts = WAYBILL_FETCH_ATTEMPTS if self.poll_interval >= 1.0 else 4
+        attempt = item.get("download_attempt", 1)
+        try:
+            file_url = self._try_waybill_url(item, reselect=reselect)
+        except BillCollectionError as exc:
+            if attempt >= max_attempts:
+                self._fail_item(item, exc)
+            item["download_attempt"] = attempt + 1
+            item["download_future"] = None
+            self.log(f"[下载] 本批运单文件地址尚未就绪，正在等待重取（第 {attempt + 1}/{max_attempts} 次）")
+            delay = min(10.0, 2.0 * attempt) if self.poll_interval >= 1.0 else 0.0
+            item["retry_after"] = time.monotonic() + delay
+            return False
+        target = item["directory"] / "waybills.xlsx"
+        item["download_future"] = oss_pool.submit(
+            _fetch_and_validate_waybill, isolated_download, file_url, target)
+        return True
+
+    def _apply_waybill_count_proof(self, item, xlsx_rows):
+        if not item.get("pending_days"):
+            return
+        request, directory, state = item["request"], item["directory"], item["state"]
+        today = dt.datetime.now(SHANGHAI).date().isoformat()
+        if (xlsx_rows is not None and xlsx_rows == state.get("expected_waybills")
+                and not (request.start <= today <= request.end)):
+            item["pending_days"] = []
+            state["expected_waybills_by_date"] = None
+            state["count_basis"] = "batch_total"
+            atomic_json(directory / "query_state.json", {
+                "status": "success", "agency_id": request.agency_id,
+                "start": request.start, "end": request.end, **state})
+
+    def _finalize_downloaded_item(self, item, total_batches):
         request, directory, state = item["request"], item["directory"], item["state"]
         try:
-            self._finish_daily_counts(item)
-            started = time.perf_counter()
-            _, waybill_info = self._download_waybill_file(state, directory / "waybills.xlsx", with_info=True)
-            self._mark(item, "download", time.perf_counter() - started)
             started = time.perf_counter()
             snapshot = self._live_snapshot(request, state, item["receipt"]["started_at"],
                                            state["task_id"])
@@ -705,30 +900,51 @@ class ReportHttpCollector:
                 atomic_json(directory / "query_state.json", {"status": "success",
                             "agency_id": request.agency_id, "start": request.start,
                             "end": request.end, **state})
-            files = {"waybills": waybill_info}
+            files = {"waybills": item["waybill_info"]}
             if item["include_violations"]:
                 if "violations_info" in item:
                     files["violations"] = item["violations_info"]
+                elif "violations_future" in item:
+                    state["failure_phase"] = "downloading"
+                    files["violations"] = self._resolve_violations_future(item)
                 else:
                     started = time.perf_counter()
                     files["violations"] = self._violations(request, directory, state)
                     self._mark(item, "violations", time.perf_counter() - started)
-            return self._success(item, files)
+            manifest = self._success(item, files)
+            manifest["total_stream_batches"] = total_batches
+            return manifest
         except Exception as exc:
             self._fail_item(item, exc)
+
+    def _download_batch(self, item):
+        request, directory, state = item["request"], item["directory"], item["state"]
+        try:
+            started = time.perf_counter()
+            _, waybill_info, xlsx_rows = self._download_waybill_file(
+                state, directory / "waybills.xlsx", with_info=True, with_rows=True,
+                agency_id=request.agency_id)
+            self._mark(item, "download", time.perf_counter() - started)
+            item["waybill_info"] = waybill_info
+            self._apply_waybill_count_proof(item, xlsx_rows)
+            self._finish_daily_counts(item)
+        except Exception as exc:
+            self._fail_item(item, exc)
+        return self._finalize_downloaded_item(item, item["manifest"].get("total_stream_batches", 1))
 
     def orders_stream(self, plan, raw, selected, batches=None, *,
                       concurrency=DEFAULT_ORDER_EXPORT_CONCURRENCY,
                       allow_existing_batches=False):
         """Yield completed batch manifests while up to `concurrency` exports wait."""
+        from fengshen_bill import AuthenticationRequired
         if not selected or not set(selected) <= {"fraud", "problem"}:
             raise HttpTransportError("运单下载项无效")
         try:
             concurrency = int(concurrency)
         except (TypeError, ValueError):
             raise HttpTransportError("运单导出并发数无效") from None
-        if concurrency not in (1, 2):
-            raise HttpTransportError("运单导出并发数只能为 1 或 2")
+        if concurrency not in (1, 2, 3):
+            raise HttpTransportError("运单导出并发数只能为 1、2 或 3")
         raw = Path(raw)
         max_days = 90 if set(selected) == {"problem"} else 60
         batches = list(batches if batches is not None
@@ -738,15 +954,84 @@ class ReportHttpCollector:
         if not allow_existing_batches and raw.exists() and any(raw.rglob("*submission.json")):
             raise HttpTransportError("本目录已有运单导出记录，请查询原任务，不能重复提交",
                                      "waiting_export", "unknown")
+        self.client.checkpoint()
+        if hasattr(self.client, "current_agency"):
+            self.client.current_agency = None
+        self.client.select_city(plan.agency_id)
         include_violations = "problem" in selected
         queue = [[first, last, True] for first, last in batches]
+        stream_abort = threading.Event()
+        stream_cancel = _CombinedCancel(self.client.cancelled, stream_abort)
+        isolated_download = self._isolated_downloader(stream_cancel) if concurrency >= 2 else None
+        oss_pool = ThreadPoolExecutor(max_workers=OSS_DOWNLOAD_WORKERS) if isolated_download is not None else None
+        max_fetch_attempts = WAYBILL_FETCH_ATTEMPTS if self.poll_interval >= 1.0 else 4
         active = {}
+        downloading = {}
+        counting = {}
+        last_poll_at = None
         next_index = 0
         try:
-            while next_index < len(queue) or active:
+            while next_index < len(queue) or active or downloading or counting:
                 self.client.checkpoint()
-                while next_index < len(queue) and len(active) < concurrency:
-                    if (active and self.export_interval > 0 and self._last_export_at is not None
+                progressed = False
+                for index in list(sorted(downloading)):
+                    item = downloading[index]
+                    fut = item.get("download_future")
+                    if fut is None:
+                        if time.monotonic() >= item.get("retry_after", 0):
+                            try:
+                                self._schedule_waybill_download(
+                                    item, oss_pool, isolated_download, reselect=True)
+                            except BaseException:
+                                downloading.pop(index, None)
+                                raise
+                            progressed = True
+                        continue
+                    if not fut.done():
+                        continue
+                    target = item["directory"] / "waybills.xlsx"
+                    try:
+                        waybill_info, xlsx_rows, dl_seconds, total_dl_seconds = fut.result()
+                    except AuthenticationRequired as exc:
+                        target.unlink(missing_ok=True)
+                        downloading.pop(index, None)
+                        self._fail_item(item, exc)
+                    except (BillCollectionError, HttpTransportError) as exc:
+                        target.unlink(missing_ok=True)
+                        if isinstance(exc, HttpTransportError) and not _is_oss_not_ready_404(exc):
+                            downloading.pop(index, None)
+                            self._fail_item(item, exc)
+                        attempt = item["download_attempt"]
+                        if attempt >= max_fetch_attempts:
+                            downloading.pop(index, None)
+                            self._fail_item(item, exc)
+                        item["download_attempt"] = attempt + 1
+                        item["download_future"] = None
+                        self.log(f"[下载] 本批运单文件获取或校验未通过，正在重新获取（第 {attempt + 1}/{max_fetch_attempts} 次）")
+                        delay = min(10.0, 2.0 * attempt) if self.poll_interval >= 1.0 else 0.0
+                        item["retry_after"] = time.monotonic() + delay
+                        progressed = True
+                        continue
+                    except Exception as exc:
+                        target.unlink(missing_ok=True)
+                        downloading.pop(index, None)
+                        self._fail_item(item, exc)
+                    downloading.pop(index)
+                    self._record_source_download_seconds(dl_seconds)
+                    self._mark(item, "download", total_dl_seconds)
+                    item["waybill_info"] = waybill_info
+                    self._apply_waybill_count_proof(item, xlsx_rows)
+                    progressed = True
+                    if item.get("pending_days"):
+                        counting[index] = item
+                    else:
+                        yield self._finalize_downloaded_item(item, len(queue))
+
+                just_submitted = False
+                while (next_index < len(queue) and len(active) < concurrency
+                       and len(downloading) < OSS_DOWNLOAD_WORKERS):
+                    if ((active or downloading or counting) and self.export_interval > 0
+                            and self._last_export_at is not None
                             and time.monotonic() - self._last_export_at < self.export_interval):
                         break
                     index = next_index
@@ -781,6 +1066,7 @@ class ReportHttpCollector:
                     atomic_json(path, manifest)
                     self.log(f"[资料] 正在通过接口采集运单第 {index + 1}/{len(queue)} 批：{first} 至 {last}")
                     next_index += 1
+                    progressed = True
                     completed = self._prepare_batch(item, counts_info, include_violations)
                     if completed is not None:
                         completed["total_stream_batches"] = len(queue)
@@ -788,37 +1074,98 @@ class ReportHttpCollector:
                     else:
                         active[index] = item
                         self._associate(item)
-                if active:
+                        just_submitted = True
+
+                poll_due = (active and (
+                    last_poll_at is None or just_submitted or self.poll_interval < 1.0
+                    or time.monotonic() - last_poll_at >= min(self.poll_interval, 1.5)))
+                if poll_due:
+                    last_poll_at = time.monotonic()
                     finished = self._poll_batches(active)
                     for index in finished:
                         item = active.pop(index)
-                        result_manifest = self._download_batch(item)
-                        result_manifest["total_stream_batches"] = len(queue)
-                        yield result_manifest
-                    if not finished:
-                        progressed = False
-                        for index in sorted(active):
-                            item = active[index]
-                            if item["include_violations"] and "violations_info" not in item:
-                                self._prefetch_violations(item)
-                                progressed = True
-                                break
-                        if not progressed:
-                            for index in sorted(active):
-                                item = active[index]
-                                if item.get("pending_days"):
-                                    self._step_daily_count(item)
-                                    progressed = True
-                                    break
-                        if not progressed:
-                            earliest = min(item["submitted_at"] for item in active.values())
-                            deadline = min(item["deadline"] for item in active.values())
-                            self._wait(deadline, earliest)
+                        progressed = True
+                        if oss_pool is None:
+                            result_manifest = self._download_batch(item)
+                            result_manifest["total_stream_batches"] = len(queue)
+                            yield result_manifest
+                        else:
+                            if (item["include_violations"]
+                                    and "violations_info" not in item
+                                    and "violations_future" not in item):
+                                self._prefetch_violations(item, oss_pool, isolated_download)
+                            item["download_attempt"] = 1
+                            self._schedule_waybill_download(
+                                item, oss_pool, isolated_download, reselect=False)
+                            downloading[index] = item
+
+                if progressed:
+                    continue
+
+                if counting:
+                    index = min(counting)
+                    item = counting[index]
+                    self._step_daily_count(item)
+                    if not item.get("pending_days"):
+                        counting.pop(index)
+                        yield self._finalize_downloaded_item(item, len(queue))
+                    continue
+
+                viol_done = False
+                for index in sorted(active):
+                    item = active[index]
+                    if (item["include_violations"]
+                            and "violations_info" not in item
+                            and "violations_future" not in item):
+                        self._prefetch_violations(item, oss_pool, isolated_download)
+                        viol_done = True
+                        break
+                if viol_done:
+                    continue
+
+                now = time.monotonic()
+                wait_candidates = []
+                if (next_index < len(queue) and len(active) < concurrency
+                        and len(downloading) < OSS_DOWNLOAD_WORKERS
+                        and self.export_interval > 0 and self._last_export_at is not None):
+                    wait_candidates.append(max(0.0, (self._last_export_at + self.export_interval) - now))
+                if active:
+                    earliest = min(item["submitted_at"] for item in active.values())
+                    deadline = min(item["deadline"] for item in active.values())
+                    poll_span = min(self.poll_interval, 2.0) if (now - earliest) < 60 else self.poll_interval
+                    next_poll_in = 0.0 if last_poll_at is None else max(0.0, (last_poll_at + poll_span) - now)
+                    wait_candidates.append(min(next_poll_in, max(0.0, deadline - now)))
+                for item in downloading.values():
+                    if item.get("download_future") is None:
+                        wait_candidates.append(max(0.0, item.get("retry_after", now) - now))
+                dl_futures = [item["download_future"] for item in downloading.values()
+                              if item.get("download_future") is not None]
+                if dl_futures:
+                    budget = min(wait_candidates) if wait_candidates else 0.5
+                    wait_futures(dl_futures, timeout=min(max(0.0, budget), 0.5), return_when=FIRST_COMPLETED)
+                    self.client.checkpoint()
+                elif wait_candidates:
+                    self._wait_seconds(min(wait_candidates))
+                elif active:
+                    earliest = min(item["submitted_at"] for item in active.values())
+                    deadline = min(item["deadline"] for item in active.values())
+                    self._wait(deadline, earliest)
+                else:
+                    self._wait_seconds(min(self.poll_interval, 0.2))
         except BaseException:
-            for item in active.values():
-                if not item["settled"]:
-                    self._interrupt(item)
+            stream_abort.set()
+            if oss_pool is not None:
+                oss_pool.shutdown(wait=True, cancel_futures=True)
+                oss_pool = None
+            for group in (active, downloading, counting):
+                for item in group.values():
+                    if not item["settled"]:
+                        self._interrupt(item)
             raise
+        finally:
+            stream_abort.set()
+            if oss_pool is not None:
+                oss_pool.shutdown(wait=True, cancel_futures=True)
 
     def orders(self, plan, raw, selected, *, allow_existing_batches=False):
         max_days = 90 if set(selected) == {"problem"} else 60

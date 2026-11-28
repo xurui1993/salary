@@ -122,10 +122,11 @@ def write_sheet(sheet, rows, widths):
     """把 14 列数据写入普通工作表，表头加粗、全表居中、冻结首行。"""
     if sheet.max_row > 0:
         sheet.delete_rows(1, sheet.max_row)
+    apply_header = style_applier(sheet, font=HEADER_FONT, alignment=CENTER)
+    apply_data = style_applier(sheet, font=DATA_FONT, alignment=CENTER)
     for column, name in enumerate(COLUMNS, 1):
         cell = sheet.cell(row=1, column=column, value=name)
-        cell.font = HEADER_FONT
-        cell.alignment = CENTER
+        apply_header(cell)
         dimension = sheet.column_dimensions[get_column_letter(column)]
         dimension.width = column_width(widths[column - 1])
         dimension.alignment = CENTER
@@ -137,8 +138,7 @@ def write_sheet(sheet, rows, widths):
                 cell.data_type = source.data_type
                 if source.number_format is not None:
                     cell.number_format = source.number_format
-            cell.font = DATA_FONT
-            cell.alignment = CENTER
+            apply_data(cell)
     sheet.freeze_panes = 'A2'
 
 
@@ -222,7 +222,7 @@ def format_full_workbook(path, output_dir, cancelled=None):
             raise BillCollectionError('蓝橙全量成品没有可交付工作表')
         output = output_dir / ('.骑手档案_' + uuid.uuid4().hex + '.xlsx')
         try:
-            with compression(6):
+            with compression(3):
                 target.save(output)
         except Exception:
             output.unlink(missing_ok=True)

@@ -217,7 +217,7 @@ def _filter_xlsx_loaded(path, column, include, output_dir):
             padded = values + [None] * max(0, len(header) - len(values))
             if kept(padded[position], include):
                 sheet.append([_text_cell(sheet, value) for value in padded[:len(header)]])
-        with compression(6):
+        with compression(3):
             target.save(output)
         return output, proof
     except Exception:
@@ -267,7 +267,7 @@ def _stream_filter_xlsx(path, column, include, output_dir):
             if kept(values[position], include):
                 sheet.append([_text_cell(sheet, value) for value in values[:len(header)]])
                 after += 1
-        with compression(6):
+        with compression(3):
             target.save(output)
         saved = True
         return output, {'column': column, 'rows_before': before, 'rows_after': after}

@@ -157,8 +157,11 @@ def filter_workbook(path, output_dir, months, city=None, cancelled=None):
         if not visible:
             raise BillCollectionError('蓝橙价格档案没有可交付工作表')
         # 业务表先写，说明表按最终统计更新“不按日期筛选”的描述。
+        from excel_styles import prepared_write_only_rows
+        from workbook_policy import compression
         for current in [sheet] + [ws for ws in visible if ws is not sheet]:
             output = target.create_sheet(current.title[:31])
+            prepared_write_only_rows(output)
             if current is sheet:
                 rows = _filtered(current, months, city, cancelled, stats)
                 output.append([_write_cell(output, cell) for cell in next(rows)])
@@ -173,7 +176,8 @@ def filter_workbook(path, output_dir, months, city=None, cancelled=None):
                 _copy_visible(current, output, note)
         result = output_dir / ('.价格档案_' + uuid.uuid4().hex + '.xlsx')
         try:
-            target.save(result)
+            with compression(3):
+                target.save(result)
         except Exception:
             result.unlink(missing_ok=True)
             raise
@@ -185,18 +189,21 @@ def filter_workbook(path, output_dir, months, city=None, cancelled=None):
 
 def write_filtered_sheet(destination, source, months, city, cancelled=None):
     """把筛选后的价格档案写入目标工作表，表头加粗、全表居中、冻结首行。"""
+    from excel_styles import style_applier
+
     months = _month_set(months)
     city = normalize_city(city) if city is not None else None
     stats = _stats(months)
     rows = _filtered(source, months, city, cancelled, stats)
     if destination.max_row > 0:
         destination.delete_rows(1, destination.max_row)
+    apply_header = style_applier(destination, font=HEADER_FONT, alignment=CENTER)
+    apply_data = style_applier(destination, font=DATA_FONT, alignment=CENTER)
     header = next(rows)
     widths = [display_width(cell.value) for cell in header]
     for column, source_cell in enumerate(header, 1):
         cell = destination.cell(row=1, column=column, value=source_cell.value)
-        cell.font = HEADER_FONT
-        cell.alignment = CENTER
+        apply_header(cell)
         widths[column - 1] = max(widths[column - 1], display_width(source_cell.value))
     row_index = 1
     for row in rows:
@@ -208,8 +215,7 @@ def write_filtered_sheet(destination, source, months, city, cancelled=None):
                 cell.data_type = source_cell.data_type
                 if source_cell.number_format is not None:
                     cell.number_format = source_cell.number_format
-            cell.font = DATA_FONT
-            cell.alignment = CENTER
+            apply_data(cell)
             widths[column - 1] = max(widths[column - 1], display_width(value))
     for column, width in enumerate(widths, 1):
         dimension = destination.column_dimensions[get_column_letter(column)]

@@ -673,11 +673,22 @@ function AuthorizedDownloadCenter({ apiFetch, workspaceId, onOpenFengshenLogin, 
   }, [workspaceId]);
 
   const getJson = useCallback(async (url: string, init: RequestInit = {}) => {
-    const response = await apiRef.current(url, { ...init, signal: init.signal || AbortSignal.timeout(15000) });
+    const requestInit = init.signal
+      ? init
+      : ({ ...init, signal: AbortSignal.timeout(30000), timeoutMs: 30000 } as RequestInit);
+    const response = await apiRef.current(url, requestInit);
     const data = await response.json().catch(() => null);
     if (!response.ok || !data || data.success === false) {
-      const reason = data?.error || data?.detail || data?.message;
-      throw new DownloadRequestError(typeof reason === 'string' ? reason : '下载服务暂不可用，请稍后重试', response.status);
+      const rawReason = data?.error ?? data?.detail ?? data?.message;
+      const reason =
+        typeof rawReason === 'string'
+          ? rawReason
+          : typeof rawReason?.message === 'string'
+            ? rawReason.message
+            : typeof data?.message === 'string'
+              ? data.message
+              : '';
+      throw new DownloadRequestError(reason || '下载服务暂不可用，请稍后重试', response.status);
     }
     return data;
   }, []);
