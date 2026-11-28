@@ -279,7 +279,13 @@ class FengshenHttpClient:
         receipt_path, receipt = self._begin_submission(receipt_path, scope)
         try:
             result = self.request_json("POST", url, body=body)
-        except Exception:
+        except PlatformRateLimited:
+            receipt.update(error_kind="PlatformRateLimited")
+            atomic_json(receipt_path, receipt)
+            raise HttpTransportError("平台导出提交过于频繁被限流；已保留记录，不会自动重试", "submitting", "unknown") from None
+        except Exception as exc:
+            receipt.update(error_kind=type(exc).__name__)
+            atomic_json(receipt_path, receipt)
             raise HttpTransportError("导出提交结果尚未确认；已保留记录，不会自动重试", "submitting", "unknown") from None
         receipt.update(submission_state="submitted", finished_at=time.time())
         atomic_json(receipt_path, receipt)
@@ -411,7 +417,7 @@ class FengshenHttpClient:
                                                      "downloading", "unknown")
                     size = 0
                     with temporary.open("xb") as output:
-                        for chunk in response.iter_content(65536):
+                        for chunk in response.iter_content(524288):
                             self.checkpoint()
                             size += len(chunk)
                             if size > MAX_FILE:
@@ -419,6 +425,9 @@ class FengshenHttpClient:
                             output.write(chunk)
                     if not size:
                         raise HttpTransportError("平台返回了空文件", "downloading", "submitted")
+                    expected_length = response.headers.get("Content-Length", "").strip()
+                    if expected_length.isdigit() and size != int(expected_length):
+                        raise HttpTransportRetryable("平台文件传输未完整结束", "downloading", "submitted")
                     # rename on Windows refuses an existing target.
                     temporary.rename(target)
                     return target
